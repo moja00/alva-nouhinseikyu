@@ -8591,19 +8591,128 @@ async function triggerServerSyncAll() {
 }
 window.triggerServerSyncAll = triggerServerSyncAll;
 
-// アプリ起動
-if (document.readyState === 'loading') {
-  window.addEventListener('DOMContentLoaded', async () => {
-    if (typeof pullAllServerDataToLocal === 'function') {
-      try { await pullAllServerDataToLocal(); } catch(e) {}
+// Firebase Config & Auth Setup
+const firebaseConfig = {
+  apiKey: "AIzaSyCcYbAnJ8kTPFOnBeBwPR6tcgps2BuxmIg",
+  authDomain: "alva-epr.firebaseapp.com",
+  projectId: "alva-epr",
+  storageBucket: "alva-epr.firebasestorage.app",
+  messagingSenderId: "638640828372",
+  appId: "1:638640828372:web:41c9abc6ee315a96f03041",
+  measurementId: "G-6VNMXHD3WG"
+};
+
+function setupFirebaseAuth() {
+  if (typeof firebase === 'undefined') {
+    console.error('Firebase SDK is not loaded.');
+    return;
+  }
+  
+  if (!firebase.apps.length) {
+    firebase.initializeApp(firebaseConfig);
+  }
+  const auth = firebase.auth();
+
+  window.signOutApp = () => {
+    auth.signOut().then(() => {
+      window.location.reload();
+    });
+  };
+
+  const loginOverlay = document.getElementById('loginOverlay');
+  const loginEmailInput = document.getElementById('loginEmail');
+  const btnSendLoginLink = document.getElementById('btnSendLoginLink');
+  const loginMessageArea = document.getElementById('loginMessageArea');
+  const btnLogout = document.getElementById('btnLogout');
+
+  if (auth.isSignInWithEmailLink(window.location.href)) {
+    let email = window.localStorage.getItem('emailForSignIn');
+    if (!email) {
+      email = window.prompt('確認のため、ログインに使用したメールアドレスを入力してください');
     }
-    initApp();
+    if (email) {
+      auth.signInWithEmailLink(email, window.location.href)
+        .then((result) => {
+          window.localStorage.removeItem('emailForSignIn');
+          window.history.replaceState({}, document.title, window.location.pathname);
+          if (loginMessageArea) {
+            loginMessageArea.style.color = '#16a34a';
+            loginMessageArea.innerText = 'ログインに成功しました。';
+          }
+        })
+        .catch((error) => {
+          console.error(error);
+          if (loginMessageArea) {
+            loginMessageArea.style.color = '#dc2626';
+            loginMessageArea.innerText = 'ログインエラー: ' + error.message;
+          }
+        });
+    }
+  }
+
+  auth.onAuthStateChanged((user) => {
+    if (user) {
+      if (loginOverlay) loginOverlay.style.display = 'none';
+      if (btnLogout) btnLogout.style.display = 'inline-flex';
+    } else {
+      if (loginOverlay) loginOverlay.style.display = 'flex';
+      if (btnLogout) btnLogout.style.display = 'none';
+    }
   });
+
+  if (btnSendLoginLink && loginEmailInput) {
+    btnSendLoginLink.addEventListener('click', () => {
+      const email = loginEmailInput.value.trim();
+      if (!email) {
+        if (loginMessageArea) {
+          loginMessageArea.style.color = '#dc2626';
+          loginMessageArea.innerText = 'メールアドレスを入力してください。';
+        }
+        return;
+      }
+      
+      const actionCodeSettings = {
+        url: window.location.origin + window.location.pathname,
+        handleCodeInApp: true
+      };
+      
+      btnSendLoginLink.disabled = true;
+      btnSendLoginLink.innerText = '送信中...';
+      
+      auth.sendSignInLinkToEmail(email, actionCodeSettings)
+        .then(() => {
+          window.localStorage.setItem('emailForSignIn', email);
+          if (loginMessageArea) {
+            loginMessageArea.style.color = '#16a34a';
+            loginMessageArea.innerText = '指定のメールアドレスにログイン用URLを送信しました。\nメール内のリンクをタップしてください。';
+          }
+          btnSendLoginLink.innerText = 'ログイン用メールを送信';
+          btnSendLoginLink.disabled = false;
+        })
+        .catch((error) => {
+          console.error(error);
+          if (loginMessageArea) {
+            loginMessageArea.style.color = '#dc2626';
+            loginMessageArea.innerText = 'メールの送信に失敗しました: ' + error.message;
+          }
+          btnSendLoginLink.innerText = 'ログイン用メールを送信';
+          btnSendLoginLink.disabled = false;
+        });
+    });
+  }
+}
+
+// アプリ起動
+async function bootstrapApp() {
+  setupFirebaseAuth();
+  if (typeof pullAllServerDataToLocal === 'function') {
+    try { await pullAllServerDataToLocal(); } catch(e) {}
+  }
+  initApp();
+}
+
+if (document.readyState === 'loading') {
+  window.addEventListener('DOMContentLoaded', bootstrapApp);
 } else {
-  (async () => {
-    if (typeof pullAllServerDataToLocal === 'function') {
-      try { await pullAllServerDataToLocal(); } catch(e) {}
-    }
-    initApp();
-  })();
+  bootstrapApp();
 }

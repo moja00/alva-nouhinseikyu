@@ -13,9 +13,30 @@
   <link rel="stylesheet" href="css/print.css?v=20261004_payroll_sheet_fix_3" media="print">
   <!-- ブラウザ内AI文字認識（OCR）エンジン -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.4.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.4.0/firebase-auth-compat.js"></script>
 </head>
 
 <body>
+
+  <!-- Firebase Login Overlay -->
+  <div id="loginOverlay" style="display: flex; position: fixed; inset: 0; background: #0f172a; z-index: 999999; align-items: center; justify-content: center; flex-direction: column; padding: 20px;">
+    <div style="background: #ffffff; border-radius: 12px; padding: 32px; width: 100%; max-width: 400px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); text-align: center;">
+      <div style="width: 64px; height: 64px; background: linear-gradient(135deg, #4f46e5, #06b6d4); border-radius: 16px; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; color: #fff; font-size: 2rem; font-weight: bold;">A</div>
+      <h2 style="font-size: 1.5rem; color: #1e293b; margin: 0 0 16px;">🔐 Alva-works ERP</h2>
+      <p style="color: #475569; font-size: 0.95rem; line-height: 1.5; margin-bottom: 24px;">メールアドレスを入力してください。<br>パスワード不要のログインリンクをお送りします。</p>
+      
+      <input type="email" id="loginEmail" placeholder="your-name@example.com" style="width: 100%; box-sizing: border-box; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; margin-bottom: 16px; font-size: 1rem; outline: none; transition: border-color 0.2s;">
+      
+      <button type="button" id="btnSendLoginLink" style="width: 100%; padding: 12px; background: #4f46e5; color: #fff; border: none; border-radius: 8px; font-size: 1rem; font-weight: bold; cursor: pointer; transition: background 0.2s;">
+        ログイン用メールを送信
+      </button>
+      
+      <div id="loginMessageArea" style="margin-top: 16px; font-size: 0.85rem; color: #dc2626; min-height: 20px;"></div>
+    </div>
+  </div>
 
   <!-- アプリヘッダー -->
   <header class="app-header">
@@ -111,6 +132,9 @@
           <line x1="12" y1="3" x2="12" y2="15" />
         </svg>
         データ管理
+      </button>
+      <button type="button" id="btnLogout" class="btn btn-secondary btn-sm" style="display: none; border-color: #ef4444; color: #ef4444;" title="ログアウト">
+        🚪 ログアウト
       </button>
     </div>
   </header>
@@ -4329,7 +4353,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261004_voice_modal_3"></script>
+  <script src="js/app.bundle.js?v=20261004_firebase_auth_1"></script>
 </body>
 
 </html>
