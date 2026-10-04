@@ -6787,6 +6787,25 @@ function renderAll() {
     DOM.sheetLeadMessage.textContent = '上記の金額を正に領収いたしました。';
   }
 
+  // 音声入力ボタンの制御（既存書類の上書き防止）
+  const btnVoice = document.getElementById('btnVoiceInput');
+  if (btnVoice) {
+    const historyList = typeof getHistoryList === 'function' ? getHistoryList() : [];
+    const isExisting = historyList.some(doc => doc.id === currentDoc.id);
+    
+    if (isExisting) {
+      btnVoice.disabled = true;
+      btnVoice.style.opacity = '0.5';
+      btnVoice.style.cursor = 'not-allowed';
+      btnVoice.title = '新規作成時のみ音声入力が利用できます';
+    } else {
+      btnVoice.disabled = false;
+      btnVoice.style.opacity = '1';
+      btnVoice.style.cursor = 'pointer';
+      btnVoice.title = '音声で一括入力';
+    }
+  }
+
   // 自社情報
   DOM.sheetIssuerName.textContent = currentDoc.issuer?.name || '';
   if (currentDoc.issuer?.invoiceNumber) {
