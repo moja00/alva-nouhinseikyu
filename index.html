@@ -2822,7 +2822,7 @@
         </div>
 
         <!-- 右カラム：今月の勤怠実績サマリー ＆ 打刻履歴テーブル -->
-        <div style="display: flex; flex-direction: column; gap: 16px;">
+        <div style="display: flex; flex-direction: column; gap: 16px; min-width: 0; max-width: 100%;">
 
           <!-- 実績サマリーカード -->
           <div
@@ -2877,7 +2877,7 @@
 
           <!-- 打刻履歴一覧テーブル -->
           <div
-            style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); flex: 1; display: flex; flex-direction: column;">
+            style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); flex: 1; display: flex; flex-direction: column; max-width: 100%; min-width: 0; overflow: hidden; box-sizing: border-box;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
               <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                 <span style="font-size: 0.875rem; font-weight: 700; color: #1e293b;">タイムカード履歴・打刻一覧</span>
@@ -4311,7 +4311,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261004_attendance_month_filter_1"></script>
+  <script src="js/app.bundle.js?v=20261004_attendance_month_filter_2"></script>
 </body>
 
 </html>
