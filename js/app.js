@@ -8686,7 +8686,7 @@ function setupFirebaseAuth() {
       }
       
       const actionCodeSettings = {
-        url: "https://alva-epr.web.app/",
+        url: "https://alva-billcraft-jwrpj53tma-an.a.run.app/",
         handleCodeInApp: true
       };
       
