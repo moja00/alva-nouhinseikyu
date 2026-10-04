@@ -8659,56 +8659,45 @@ function setupFirebaseAuth() {
     }
   });
 
-  if (btnSendLoginLink && loginEmailInput) {
-    btnSendLoginLink.addEventListener('click', async () => {
+  const btnLoginWithPassword = document.getElementById('btnLoginWithPassword');
+  const loginPasswordInput = document.getElementById('loginPassword');
+
+  if (btnLoginWithPassword && loginEmailInput && loginPasswordInput) {
+    btnLoginWithPassword.addEventListener('click', async () => {
       const email = loginEmailInput.value.trim();
-      if (!email) {
+      const password = loginPasswordInput.value.trim();
+      
+      if (!email || !password) {
         if (loginMessageArea) {
           loginMessageArea.style.color = '#dc2626';
-          loginMessageArea.innerText = 'メールアドレスを入力してください。';
+          loginMessageArea.innerText = 'メールアドレスとパスワードを入力してください。';
         }
         return;
       }
       
-      const ALLOWED_EMAILS = [
-        "miyazaki@alva-works.com",
-        "infoalvaworks@gmail.com"
-      ];
-      
-      const isAllowed = ALLOWED_EMAILS.includes(email) || email.endsWith('@alva-works.com');
-      
-      if (!isAllowed) {
-        if (loginMessageArea) {
-          loginMessageArea.style.color = '#dc2626';
-          loginMessageArea.innerText = 'エラー：許可されていないメールアドレスです。';
-        }
-        return;
-      }
-      
-      const actionCodeSettings = {
-        url: "https://alva-billcraft-jwrpj53tma-an.a.run.app/",
-        handleCodeInApp: true
-      };
-      
-      btnSendLoginLink.disabled = true;
-      btnSendLoginLink.innerText = '送信中...';
+      btnLoginWithPassword.disabled = true;
+      btnLoginWithPassword.innerText = 'ログイン処理中...';
       
       try {
-        await auth.sendSignInLinkToEmail(email, actionCodeSettings);
-        window.localStorage.setItem('emailForSignIn', email);
+        await auth.signInWithEmailAndPassword(email, password);
         if (loginMessageArea) {
           loginMessageArea.style.color = '#16a34a';
-          loginMessageArea.innerText = '指定のメールアドレスにログイン用URLを送信しました。\nメール内のリンクをタップしてください。';
+          loginMessageArea.innerText = 'ログインに成功しました。';
         }
       } catch (error) {
         console.error(error);
         if (loginMessageArea) {
           loginMessageArea.style.color = '#dc2626';
-          loginMessageArea.innerText = 'メールの送信に失敗しました: ' + error.message;
+          // User friendly message for common errors
+          if (error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
+             loginMessageArea.innerText = 'メールアドレスまたはパスワードが間違っています。';
+          } else {
+             loginMessageArea.innerText = 'ログインエラー: ' + error.message;
+          }
         }
       } finally {
-        btnSendLoginLink.innerText = 'ログイン用メールを送信';
-        btnSendLoginLink.disabled = false;
+        btnLoginWithPassword.innerText = 'パスワードでログイン';
+        btnLoginWithPassword.disabled = false;
       }
     });
   }
