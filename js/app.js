@@ -8686,7 +8686,7 @@ function setupFirebaseAuth() {
       }
       
       const actionCodeSettings = {
-        url: "http://localhost:3000/",
+        url: "https://alva-epr.web.app/",
         handleCodeInApp: true
       };
       
