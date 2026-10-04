@@ -2837,10 +2837,16 @@ label.form-label {
     color: #0f172a !important;
     line-height: 1.35 !important;
     margin-bottom: 4px !important;
+    white-space: normal !important;
     word-break: break-all !important;
   }
 
-  /* 単価をはっきり大きく */
+  .master-item-note {
+    white-space: normal !important;
+    word-break: break-all !important;
+  }
+
+  /* 単価をはっきり大きく・折り返し対応 */
   .master-item-price-row {
     display: flex !important;
     flex-wrap: wrap !important;
@@ -2852,6 +2858,18 @@ label.form-label {
     font-size: 1.25rem !important;
     font-weight: 900 !important;
     color: #2563eb !important;
+  }
+
+  .master-item-pricing {
+    display: flex !important;
+    align-items: baseline !important;
+    justify-content: space-between !important;
+    background: #f1f5f9 !important;
+    padding: 8px 12px !important;
+    border-radius: 6px !important;
+    margin: 4px 0 !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
   }
 
   /* カード下部のアクションボタン：フルワイドで押しやすく */
@@ -2882,6 +2900,233 @@ label.form-label {
   .modal-footer .btn {
     height: 42px !important;
     font-size: 0.95rem !important;
+  }
+
+  /* ==========================================================================
+     納品・請求書編集画面：明細入力行＆商品追加・選択モーダルのスマホ表示最適化
+     ========================================================================== */
+
+  /* 1. 明細行の入力・編集エリア（エディタサイドバー内） */
+  .item-card {
+    padding: 10px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+  }
+
+  .item-card-header {
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+  }
+
+  /* メイン入力グリッド：単価・金額（小計）が右端にはみ出さず、下段に50%ずつ綺麗に折り返す */
+  .item-grid {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+    align-items: flex-end !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  /* 上段：数量（約33%） */
+  .item-grid > div:nth-child(1),
+  .item-col-qty {
+    flex: 1 1 calc(33.333% - 6px) !important;
+    min-width: 65px !important;
+    max-width: calc(33.333% - 6px) !important;
+    box-sizing: border-box !important;
+    order: 1 !important;
+  }
+
+  /* 上段：単位（約33%） */
+  .item-grid > div:nth-child(2),
+  .item-col-unit {
+    flex: 1 1 calc(33.333% - 6px) !important;
+    min-width: 55px !important;
+    max-width: calc(33.333% - 6px) !important;
+    box-sizing: border-box !important;
+    order: 2 !important;
+  }
+
+  /* 上段：税率（約33%） */
+  .item-grid > div:nth-child(4),
+  .item-col-tax {
+    flex: 1 1 calc(33.333% - 6px) !important;
+    min-width: 75px !important;
+    max-width: calc(33.333% - 6px) !important;
+    box-sizing: border-box !important;
+    order: 3 !important;
+  }
+
+  /* 下段：単価(税抜)（50%折り返し） */
+  .item-grid > div:nth-child(3),
+  .item-col-price {
+    flex: 1 1 calc(50% - 4px) !important;
+    width: calc(50% - 4px) !important;
+    min-width: 120px !important;
+    box-sizing: border-box !important;
+    order: 4 !important;
+  }
+
+  /* 下段：小計(金額)（50%折り返し） */
+  .item-grid > div:nth-child(5),
+  .item-col-total {
+    flex: 1 1 calc(50% - 4px) !important;
+    width: calc(50% - 4px) !important;
+    min-width: 110px !important;
+    box-sizing: border-box !important;
+    order: 5 !important;
+  }
+
+  /* 各入力欄の横幅を100%にして画面外への押し出しを防止 */
+  .item-input-qty,
+  .item-input-unit,
+  .item-select-tax,
+  .item-input-price,
+  .item-input-price-large {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .item-line-total {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    text-align: right !important;
+    word-break: break-all !important;
+  }
+
+  /* ユーザー価格アシストパネル */
+  .item-discount-panel {
+    padding: 8px 10px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .item-discount-panel-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 4px !important;
+  }
+
+  .user-price-control-group {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .user-price-control-group input.item-input-user-price {
+    min-width: 0 !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .item-user-price-preview-bar {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 4px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  /* 2. テーブル形式の場合（明細直接入力テーブル） */
+  .iqe-table-responsive-container,
+  .table-responsive-container {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    box-sizing: border-box !important;
+    margin-bottom: 12px !important;
+  }
+
+  #iqeItemsTable {
+    min-width: 620px !important;
+    width: 100% !important;
+  }
+
+  #iqeItemsTable th,
+  #iqeItemsTable td {
+    white-space: nowrap !important;
+  }
+
+  #iqeItemsTable input,
+  #iqeItemsTable select {
+    box-sizing: border-box !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  /* 3. ポップアップ / モーダル形式の場合（商品選択・新規商品登録・値引き） */
+  #itemMasterModal.modal-overlay,
+  #quickNewItemModal.modal-overlay,
+  #discountModal.modal-overlay {
+    padding: 10px 8px !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+
+  #itemMasterModal .modal-card,
+  #quickNewItemModal .modal-card,
+  #discountModal .modal-card {
+    width: 95% !important;
+    max-width: 480px !important;
+    box-sizing: border-box !important;
+    margin: 0 auto !important;
+    height: auto !important;
+    max-height: 90vh !important;
+    border-radius: 12px !important;
+  }
+
+  /* モーダル内フォーム行の折り返しと全幅・50%均等割り付け */
+  #itemMasterFormContainer .form-row,
+  #quickNewItemModal .form-row,
+  #discountModal .form-row {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+    margin-bottom: 10px !important;
+  }
+
+  #itemMasterFormContainer .form-row > .form-group,
+  #quickNewItemModal .form-row > .form-group,
+  #discountModal .form-row > .form-group {
+    flex: 1 1 calc(50% - 4px) !important;
+    min-width: 120px !important;
+    width: auto !important;
+    box-sizing: border-box !important;
+  }
+
+  /* 単価・金額・数量のinput要素の固定幅を解除し100%に調整 */
+  #itemMasterInputPrice,
+  #itemMasterInputUnit,
+  #itemMasterSelectTax,
+  #calcInputUserPriceInc,
+  #quickInputItemName,
+  #quickInputItemSku,
+  #quickInputItemUnit,
+  #quickInputItemUnitCost,
+  #quickInputItemUnitPrice,
+  #quickInputItemSafetyStock,
+  #discountBaseUserPriceInc,
+  #discountInputValue {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  #calcResultPreview {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 8px !important;
+  }
+
+  #btnApplyCalcPrice {
+    width: 100% !important;
+    height: 38px !important;
   }
 }
 

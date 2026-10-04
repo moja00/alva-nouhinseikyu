@@ -9,7 +9,7 @@
   <meta name="googlebot" content="noindex, nofollow, noarchive, nosnippet">
   <meta name="description" content="株式会社アルバワークス 統合業務システム。インボイス納品請求書発行、財務会計、AI経費OCR解析、タイムカード勤怠管理。">
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="css/style.css?v=20261004_responsive_header_5">
+  <link rel="stylesheet" href="css/style.css?v=20261004_item_mobile_fix_1">
   <link rel="stylesheet" href="css/print.css?v=20261004_payroll_sheet_fix_3" media="print">
   <!-- ブラウザ内AI文字認識（OCR）エンジン -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -1879,8 +1879,8 @@
             </button>
           </div>
 
-          <div style="border: 1px solid var(--border-color, #e2e8f0); border-radius: 6px; overflow-x: auto;">
-            <table class="data-table" style="width: 100%; margin: 0; font-size: 0.8rem;" id="iqeItemsTable">
+          <div class="iqe-table-responsive-container" style="border: 1px solid var(--border-color, #e2e8f0); border-radius: 6px; overflow-x: auto; width: 100%; -webkit-overflow-scrolling: touch; box-sizing: border-box;">
+            <table class="data-table" style="width: 100%; min-width: 620px; margin: 0; font-size: 0.8rem;" id="iqeItemsTable">
               <thead>
                 <tr style="background: #f1f5f9;">
                   <th style="min-width: 220px;">品名・項目</th>
@@ -4294,7 +4294,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261004_v25"></script>
+  <script src="js/app.bundle.js?v=20261004_item_mobile_fix_1"></script>
 </body>
 
 </html>

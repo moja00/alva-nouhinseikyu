@@ -1478,22 +1478,22 @@ function renderItemInputCards() {
 
       <!-- メイン入力グリッド（単価(税抜)を特大表示） -->
       <div class="item-grid">
-        <div>
+        <div class="item-col-qty">
           <label class="form-label" style="font-size: 0.725rem;">数量</label>
           <input type="number" class="form-input item-input-qty" value="${item.quantity !== undefined ? item.quantity : 1}" step="any">
         </div>
-        <div>
+        <div class="item-col-unit">
           <label class="form-label" style="font-size: 0.725rem;">単位</label>
           <input type="text" class="form-input item-input-unit" placeholder="式" value="${escapeHtml(item.unit || '')}">
         </div>
-        <div>
+        <div class="item-col-price">
           <label class="item-label-price-large">
             <span>単価 (税抜)</span>
             <span style="font-size: 0.68rem; color: var(--primary); font-weight: 600;">★</span>
           </label>
           <input type="number" class="form-input item-input-price item-input-price-large" value="${item.unitPrice !== undefined ? item.unitPrice : 0}" placeholder="0">
         </div>
-        <div>
+        <div class="item-col-tax">
           <label class="form-label" style="font-size: 0.725rem;">税率</label>
           <select class="form-select item-select-tax">
             <option value="10" ${item.taxRate === 10 ? 'selected' : ''}>10% (標準)</option>
@@ -1501,7 +1501,7 @@ function renderItemInputCards() {
             <option value="0" ${item.taxRate === 0 ? 'selected' : ''}>0% (非課税)</option>
           </select>
         </div>
-        <div>
+        <div class="item-col-total">
           <label class="form-label" style="font-size: 0.725rem;">小計</label>
           <div class="item-line-total" style="font-size: 1.05rem; font-weight: 700; color: ${isDiscount ? 'var(--danger)' : 'var(--text-primary)'}; padding: 8px 0; text-align: right;">
             ${formatCurrency((Number(item.quantity) || 0) * (Number(item.unitPrice) || 0))}
