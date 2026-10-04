@@ -7737,7 +7737,7 @@ function setupEventListeners() {
       };
 
       const processVoiceInput = async (textToProcess) => {
-        if (!textToProcess || !textToProcess.trim()) {
+        if (!textToProcess || !textToProcess.trim() || textToProcess.includes('のように話してください')) {
            closeVoiceModal();
            return;
         }
@@ -7749,6 +7749,15 @@ function setupEventListeners() {
         showToast('音声を解析しています...', 'info');
         
         try {
+          // 【修正1】 新規作成としてフォームを初期化する
+          const defaultType = 'invoice';
+          const profile = typeof loadIssuerProfile === 'function' ? loadIssuerProfile() : (currentDoc ? currentDoc.issuer : null);
+          currentDoc = typeof createEmptyInvoice === 'function' ? createEmptyInvoice(defaultType) : {};
+          currentDoc.docType = defaultType;
+          if (profile) {
+            currentDoc.issuer = { ...profile };
+          }
+
           const response = await fetch('/api/gemini/voice-to-invoice', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -7829,10 +7838,14 @@ function setupEventListeners() {
 
       recognition.onerror = (event) => {
         console.error('音声認識エラー:', event.error);
-        if (event.error !== 'aborted') {
-            alert('マイクの使用が許可されていないか、エラーが発生しました: ' + event.error);
+        if (event.error === 'not-allowed') {
+            preview.innerHTML = '<span style="color: #dc2626; font-weight: bold;">マイクへのアクセスが許可されていません。</span><br>ブラウザのアドレスバー横の鍵アイコン（または端末の設定）からマイクの使用を「許可」にして再度お試しください。';
+            btnComplete.disabled = true;
+            // モーダルは開いたままにし、ユーザーが「🚫 中止」で閉じられるようにする
+        } else if (event.error !== 'aborted') {
+            showToast('音声認識に失敗しました: ' + event.error, 'error');
+            closeVoiceModal();
         }
-        closeVoiceModal();
       };
       
       let silenceTimer = null;
