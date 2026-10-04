@@ -14334,7 +14334,7 @@ window.triggerServerSyncAll = triggerServerSyncAll;
 
 // Firebase Config & Auth Setup
 const firebaseConfig = {
-  apiKey: "AIzaSyCcYbAnJ8kTPFOnBeBwPR6tcgps2BuxmIg",
+  apiKey: "AIzaSyDndSYhOKJBU58-M0J0KQT1zKcNwFLnIQI",
   authDomain: "alva-epr.firebaseapp.com",
   projectId: "alva-epr",
   storageBucket: "alva-epr.firebasestorage.app",
