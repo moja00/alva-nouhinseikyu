@@ -1944,36 +1944,74 @@ function setupEventListeners() {
   }
 
   const btnVoiceInput = document.getElementById('btnVoiceInput');
+  let voiceRecognitionInstance = null;
+  let isVoiceAnalyzing = false;
+
   if (btnVoiceInput) {
     btnVoiceInput.addEventListener('click', () => {
+      if (isVoiceAnalyzing) return; // 解析中なら何もしない
+
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRecognition) {
         alert('お使いのブラウザは音声認識に対応していません。（Chrome, Safari等をご利用ください）');
         return;
       }
       
+      const modal = document.getElementById('voiceInputModal');
+      const preview = document.getElementById('voiceInputPreview');
+      const btnCancel = document.getElementById('btnVoiceInputCancel');
+      const btnComplete = document.getElementById('btnVoiceInputComplete');
+
+      if (!modal) return;
+
+      modal.style.display = 'flex';
+      preview.innerHTML = '『奥村塗料宛にDP-5000を1個、26万円で請求書』のように話してください';
+      preview.style.color = '#94a3b8';
+      btnComplete.innerHTML = '✅ 完了して入力';
+      btnComplete.disabled = false;
+      btnCancel.disabled = false;
+
+      let finalTranscript = '';
+      let hasStartedSpeaking = false;
+
       const recognition = new SpeechRecognition();
       recognition.lang = 'ja-JP';
-      recognition.interimResults = false;
-      recognition.maxAlternatives = 1;
+      recognition.interimResults = true;
+      recognition.continuous = true;
 
-      const originalText = btnVoiceInput.innerHTML;
-      btnVoiceInput.innerHTML = '🎙️ 認識中... お話しください';
-      btnVoiceInput.style.backgroundColor = '#fee2e2';
-      btnVoiceInput.style.color = '#dc2626';
-      
-      recognition.start();
+      voiceRecognitionInstance = recognition;
 
-      recognition.onresult = async (event) => {
-        const text = event.results[0][0].transcript;
-        console.log('音声認識結果:', text);
+      recognition.onresult = (event) => {
+        let interimTranscript = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          } else {
+            interimTranscript += event.results[i][0].transcript;
+          }
+        }
+        hasStartedSpeaking = true;
+        preview.style.color = '#0f172a';
+        preview.innerHTML = finalTranscript + '<i style="color: #64748b;">' + interimTranscript + '</i>';
+      };
+
+      const processVoiceInput = async (textToProcess) => {
+        if (!textToProcess || !textToProcess.trim()) {
+           closeVoiceModal();
+           return;
+        }
+        isVoiceAnalyzing = true;
+        btnComplete.innerHTML = '🔄 AI解析中...';
+        btnComplete.disabled = true;
+        btnCancel.disabled = true;
+        
         showToast('音声を解析しています...', 'info');
         
         try {
           const response = await fetch('/api/gemini/voice-to-invoice', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text })
+            body: JSON.stringify({ text: textToProcess })
           });
           
           if (!response.ok) throw new Error('サーバーエラー');
@@ -2016,35 +2054,60 @@ function setupEventListeners() {
           saveActiveDoc(currentDoc);
           populateFormFromDoc();
           renderAll();
-          showToast('音声入力の結果を反映しました！', 'success');
+          showToast('音声からフォームを入力しました', 'success');
           
         } catch (err) {
           console.error(err);
           alert('音声の解析に失敗しました: ' + err.message);
         } finally {
-          btnVoiceInput.innerHTML = originalText;
-          btnVoiceInput.style.backgroundColor = '#eef2ff';
-          btnVoiceInput.style.color = '#4f46e5';
+          isVoiceAnalyzing = false;
+          closeVoiceModal();
         }
       };
-      
+
+      const closeVoiceModal = () => {
+        if (voiceRecognitionInstance) {
+           voiceRecognitionInstance.onend = null;
+           voiceRecognitionInstance.stop();
+           voiceRecognitionInstance = null;
+        }
+        modal.style.display = 'none';
+        isVoiceAnalyzing = false;
+      };
+
+      btnCancel.onclick = () => {
+        closeVoiceModal();
+      };
+
+      btnComplete.onclick = () => {
+        if (voiceRecognitionInstance) {
+           voiceRecognitionInstance.stop();
+        }
+        processVoiceInput(preview.innerText);
+      };
+
       recognition.onerror = (event) => {
         console.error('音声認識エラー:', event.error);
         if (event.error !== 'aborted') {
-            alert('音声認識に失敗しました: ' + event.error);
+            alert('マイクの使用が許可されていないか、エラーが発生しました: ' + event.error);
         }
-        btnVoiceInput.innerHTML = originalText;
-        btnVoiceInput.style.backgroundColor = '#eef2ff';
-        btnVoiceInput.style.color = '#4f46e5';
+        closeVoiceModal();
       };
       
-      recognition.onend = () => {
-         if (btnVoiceInput.innerHTML.includes('認識中')) {
-             btnVoiceInput.innerHTML = originalText;
-             btnVoiceInput.style.backgroundColor = '#eef2ff';
-             btnVoiceInput.style.color = '#4f46e5';
-         }
+      let silenceTimer = null;
+      recognition.onspeechstart = () => {
+         if (silenceTimer) clearTimeout(silenceTimer);
       };
+      recognition.onspeechend = () => {
+         silenceTimer = setTimeout(() => {
+             if (voiceRecognitionInstance && !isVoiceAnalyzing && hasStartedSpeaking) {
+                 voiceRecognitionInstance.stop();
+                 processVoiceInput(preview.innerText);
+             }
+         }, 3000);
+      };
+
+      recognition.start();
     });
   }
 
