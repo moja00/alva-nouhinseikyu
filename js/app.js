@@ -8661,7 +8661,7 @@ function setupFirebaseAuth() {
   });
 
   if (btnSendLoginLink && loginEmailInput) {
-    btnSendLoginLink.addEventListener('click', () => {
+    btnSendLoginLink.addEventListener('click', async () => {
       const email = loginEmailInput.value.trim();
       if (!email) {
         if (loginMessageArea) {
@@ -8686,33 +8686,38 @@ function setupFirebaseAuth() {
         return;
       }
       
+      // ログインリンクをクリックした時に戻ってくるURL
+      let returnUrl = window.location.origin + window.location.pathname;
+      // file:// プロトコルで開いている場合はFirebaseに弾かれるため localhost 等にフォールバック
+      if (returnUrl.startsWith('file://') || returnUrl === 'null') {
+        returnUrl = 'http://localhost:8000/';
+      }
+      
       const actionCodeSettings = {
-        url: window.location.origin + window.location.pathname,
+        url: returnUrl,
         handleCodeInApp: true
       };
       
       btnSendLoginLink.disabled = true;
       btnSendLoginLink.innerText = '送信中...';
       
-      auth.sendSignInLinkToEmail(email, actionCodeSettings)
-        .then(() => {
-          window.localStorage.setItem('emailForSignIn', email);
-          if (loginMessageArea) {
-            loginMessageArea.style.color = '#16a34a';
-            loginMessageArea.innerText = '指定のメールアドレスにログイン用URLを送信しました。\nメール内のリンクをタップしてください。';
-          }
-          btnSendLoginLink.innerText = 'ログイン用メールを送信';
-          btnSendLoginLink.disabled = false;
-        })
-        .catch((error) => {
-          console.error(error);
-          if (loginMessageArea) {
-            loginMessageArea.style.color = '#dc2626';
-            loginMessageArea.innerText = 'メールの送信に失敗しました: ' + error.message;
-          }
-          btnSendLoginLink.innerText = 'ログイン用メールを送信';
-          btnSendLoginLink.disabled = false;
-        });
+      try {
+        await auth.sendSignInLinkToEmail(email, actionCodeSettings);
+        window.localStorage.setItem('emailForSignIn', email);
+        if (loginMessageArea) {
+          loginMessageArea.style.color = '#16a34a';
+          loginMessageArea.innerText = '指定のメールアドレスにログイン用URLを送信しました。\nメール内のリンクをタップしてください。';
+        }
+      } catch (error) {
+        console.error(error);
+        if (loginMessageArea) {
+          loginMessageArea.style.color = '#dc2626';
+          loginMessageArea.innerText = 'メールの送信に失敗しました: ' + error.message;
+        }
+      } finally {
+        btnSendLoginLink.innerText = 'ログイン用メールを送信';
+        btnSendLoginLink.disabled = false;
+      }
     });
   }
 }
