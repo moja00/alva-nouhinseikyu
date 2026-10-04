@@ -268,6 +268,11 @@
               </svg>
               書類履歴
             </button>
+            <button type="button" id="btnVoiceInput" class="btn btn-secondary btn-xs"
+              style="padding: 4px 10px; font-size: 0.775rem; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; color: #4f46e5; border-color: #c7d2fe; background: #eef2ff;"
+              title="音声で一括入力">
+              🎙️ 音声で一括入力
+            </button>
             <button type="button" id="btnNewDoc" class="btn btn-secondary btn-xs"
               style="padding: 4px 10px; font-size: 0.775rem; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;"
               title="新しい書類を作成">
@@ -2823,9 +2828,18 @@
           <div
             style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
             <div
-              style="display: justify-content: space-between; align-items: center; margin-bottom: 12px; display: flex; flex-wrap: wrap; gap: 8px;">
-              <span style="font-size: 0.9rem; font-weight: 700; color: #1e293b;">今月の勤怠実績サマリー</span>
-              <div style="display: flex; gap: 8px;">
+              style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
+              <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                <span id="attendanceSummaryTitle" style="font-size: 0.9rem; font-weight: 700; color: #1e293b;">勤怠実績サマリー</span>
+                <div style="display: inline-flex; align-items: center; gap: 6px; background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 4px 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); max-width: 100%;">
+                  <span style="font-size: 0.775rem; font-weight: 700; color: #334155; white-space: nowrap;">📅 表示期間:</span>
+                  <select id="attendanceMonthFilter" class="form-select"
+                    style="padding: 3px 8px; font-size: 0.825rem; font-weight: 700; border: 1px solid #94a3b8; border-radius: 6px; background: #ffffff; color: #1e293b; cursor: pointer; max-width: 100%;">
+                    <!-- JSで動的生成、初期当月 -->
+                  </select>
+                </div>
+              </div>
+              <div style="display: flex; gap: 8px; flex-wrap: wrap;">
                 <button type="button" class="btn btn-primary btn-sm" id="btnOpenAttendanceSheetModal"
                   onclick="window.openAttendanceSheetModal &amp;&amp; window.openAttendanceSheetModal()"
                   style="font-size: 0.75rem; padding: 5px 12px; display: inline-flex; align-items: center; gap: 5px;">
@@ -2864,14 +2878,17 @@
           <!-- 打刻履歴一覧テーブル -->
           <div
             style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); flex: 1; display: flex; flex-direction: column;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-              <span style="font-size: 0.875rem; font-weight: 700; color: #1e293b;">タイムカード履歴・打刻一覧</span>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+              <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                <span style="font-size: 0.875rem; font-weight: 700; color: #1e293b;">タイムカード履歴・打刻一覧</span>
+                <span id="attendanceHistoryFilterBadge" style="font-size: 0.75rem; color: #0284c7; background: #e0f2fe; padding: 2px 8px; border-radius: 9999px; font-weight: 600;">表示期間連動</span>
+              </div>
               <button type="button" class="btn btn-secondary btn-sm" id="btnToggleManualAttendanceForm"
                 style="font-size: 0.75rem; padding: 4px 10px; color: #059669; border-color: #86efac; background: #f0fdf4;">
                 ➕ 打刻漏れ・手動入力
               </button>
             </div>
-            <div style="overflow-x: auto; flex: 1;">
+            <div style="width: 100% !important; max-width: 100% !important; overflow-x: auto !important; -webkit-overflow-scrolling: touch; box-sizing: border-box !important; flex: 1;">
               <table class="acc-table" style="width: 100%; border-collapse: collapse; font-size: 0.8rem;">
                 <thead>
                   <tr style="background: #f1f5f9; color: #475569; text-align: center;">
@@ -4294,7 +4311,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261004_item_mobile_fix_1"></script>
+  <script src="js/app.bundle.js?v=20261004_attendance_month_filter_1"></script>
 </body>
 
 </html>

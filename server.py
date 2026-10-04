@@ -248,6 +248,89 @@ def call_gemini_vision_ocr(image_base64_data_url):
                                 ocr_data['invoiceNumber'] = f"T{inv}"
                             elif inv.startswith('t'):
                                 ocr_data['invoiceNumber'] = f"T{inv[1:]}"
+                            
+                            return ocr_data
+            except urllib.error.HTTPError as http_err:
+                print(f"HTTPError: {http_err.code} {http_err.reason}")
+                err_res = http_err.read().decode()
+                print(f"Details: {err_res}")
+                last_err = err_res
+                time.sleep(2)
+            except Exception as net_err:
+                print(f"Request Exception: {net_err}")
+                last_err = str(net_err)
+                time.sleep(2)
+                
+    return {"error": f"APIリクエストに失敗しました: {last_err}"}
+
+def call_gemini_voice_to_invoice(text):
+    allowed, limit_msg = check_and_record_rate_limit()
+    if not allowed:
+        return {"error": limit_msg, "isRateLimit": True}
+
+    prompt = (
+        "以下の音声テキストを解析し、請求書や納品書の入力用データとしてJSON形式で抽出してください。\n"
+        f"「来月末」などの相対的な日付は現在日付({datetime.now().strftime('%Y-%m-%d')})を基準に計算し、YYYY-MM-DD形式にしてください。\n"
+        "抽出できない項目は空文字またはnullにしてください。金額は数値のみにしてください。\n\n"
+        f"音声テキスト: 「{text}」\n\n"
+        "【出力スキーマ】\n"
+        "{\n"
+        '  "documentType": "請求書", // または納品書\n'
+        '  "clientName": "会社名",\n'
+        '  "issueDate": "YYYY-MM-DD",\n'
+        '  "dueDate": "YYYY-MM-DD",\n'
+        '  "items": [\n'
+        '    {\n'
+        '      "name": "商品名",\n'
+        '      "quantity": 1,\n'
+        '      "unitPrice": 1000\n'
+        '    }\n'
+        '  ],\n'
+        '  "notes": "備考"\n'
+        "}\n"
+        "純粋なJSON文字列のみを出力してください。Markdownのコードブロック(```json)は含めないでください。"
+    )
+
+    request_payload = {
+        "contents": [
+            {
+                "role": "user",
+                "parts": [{"text": prompt}]
+            }
+        ],
+        "generationConfig": {
+            "response_mime_type": "application/json",
+            "temperature": 0.1
+        }
+    }
+
+    req_json = json.dumps(request_payload).encode('utf-8')
+    model = 'gemini-1.5-flash'
+    url = f"https://us-central1-aiplatform.googleapis.com/v1/projects/alva-epr-510301/locations/us-central1/publishers/google/models/{model}:generateContent"
+
+    token = get_vertex_token()
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    req = urllib.request.Request(url, data=req_json, headers=headers, method="POST")
+
+    try:
+        with urllib.request.urlopen(req, timeout=15) as res:
+            res_body = res.read().decode('utf-8')
+            parsed_res = json.loads(res_body)
+            candidates = parsed_res.get('candidates', [])
+            if candidates and 'content' in candidates[0]:
+                parts = candidates[0]['content'].get('parts', [])
+                if parts and 'text' in parts[0]:
+                    raw_text = parts[0]['text'].strip()
+                    raw_text = re.sub(r'^```json\s*', '', raw_text)
+                    raw_text = re.sub(r'\s*```$', '', raw_text)
+                    return json.loads(raw_text)
+            return {"error": "Geminiレスポンスのパースに失敗しました。"}
+    except Exception as e:
+        return {"error": f"Gemini APIリクエストエラー: {str(e)}"}
+
 
                             ocr_data["engine"] = model
                             print(f"[Gemini OCR 成功] モデル: {model} | 支払先: {ocr_data.get('payee')} | インボイス: {ocr_data.get('invoiceNumber')} | 金額: ¥{ocr_data.get('amount')}")
@@ -1001,6 +1084,32 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_header('Content-Type', 'application/json; charset=utf-8')
                 self.end_headers()
                 self.wfile.write(json.dumps(ocr_result, ensure_ascii=False).encode('utf-8'))
+            except Exception as e:
+                self.send_response(500)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": f"サーバーエラー: {str(e)}"}).encode('utf-8'))
+            return
+
+        if self.path == '/api/gemini/voice-to-invoice':
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length).decode('utf-8')
+            try:
+                data = json.loads(post_data)
+                text = data.get('text', '')
+                if not text:
+                    self.send_response(400)
+                    self.send_header('Content-Type', 'application/json; charset=utf-8')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": "音声テキストが提供されていません"}).encode('utf-8'))
+                    return
+
+                result = call_gemini_voice_to_invoice(text)
+                
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.end_headers()
+                self.wfile.write(json.dumps(result, ensure_ascii=False).encode('utf-8'))
             except Exception as e:
                 self.send_response(500)
                 self.send_header('Content-Type', 'application/json; charset=utf-8')

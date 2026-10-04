@@ -550,6 +550,9 @@ const DOM = {
   displayClockInTime: document.getElementById('displayClockInTime'),
   btnClockOut: document.getElementById('btnClockOut'),
   displayClockOutTime: document.getElementById('displayClockOutTime'),
+  attendanceSummaryTitle: document.getElementById('attendanceSummaryTitle'),
+  attendanceMonthFilter: document.getElementById('attendanceMonthFilter'),
+  attendanceHistoryFilterBadge: document.getElementById('attendanceHistoryFilterBadge'),
   summaryWorkDays: document.getElementById('summaryWorkDays'),
   summaryTotalWorkHours: document.getElementById('summaryTotalWorkHours'),
   summaryTotalOvertime: document.getElementById('summaryTotalOvertime'),
@@ -1940,6 +1943,111 @@ function setupEventListeners() {
     });
   }
 
+  const btnVoiceInput = document.getElementById('btnVoiceInput');
+  if (btnVoiceInput) {
+    btnVoiceInput.addEventListener('click', () => {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        alert('お使いのブラウザは音声認識に対応していません。（Chrome, Safari等をご利用ください）');
+        return;
+      }
+      
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'ja-JP';
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+
+      const originalText = btnVoiceInput.innerHTML;
+      btnVoiceInput.innerHTML = '🎙️ 認識中... お話しください';
+      btnVoiceInput.style.backgroundColor = '#fee2e2';
+      btnVoiceInput.style.color = '#dc2626';
+      
+      recognition.start();
+
+      recognition.onresult = async (event) => {
+        const text = event.results[0][0].transcript;
+        console.log('音声認識結果:', text);
+        showToast('音声を解析しています...', 'info');
+        
+        try {
+          const response = await fetch('/api/gemini/voice-to-invoice', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text })
+          });
+          
+          if (!response.ok) throw new Error('サーバーエラー');
+          const data = await response.json();
+          if (data.error) throw new Error(data.error);
+          
+          console.log('解析結果:', data);
+          
+          if (data.documentType === '納品書') {
+            currentDoc.docType = 'delivery';
+            const docTypeBtn = document.querySelector(`.doc-type-btn[data-type="delivery"]`);
+            if (docTypeBtn) {
+              document.querySelectorAll('.doc-type-btn').forEach(btn => btn.classList.remove('active'));
+              docTypeBtn.classList.add('active');
+            }
+          } else {
+            currentDoc.docType = 'invoice';
+            const docTypeBtn = document.querySelector(`.doc-type-btn[data-type="invoice"]`);
+            if (docTypeBtn) {
+              document.querySelectorAll('.doc-type-btn').forEach(btn => btn.classList.remove('active'));
+              docTypeBtn.classList.add('active');
+            }
+          }
+          
+          if (data.clientName) currentDoc.client.name = data.clientName;
+          if (data.issueDate) currentDoc.issueDate = data.issueDate;
+          if (data.dueDate) currentDoc.dueDate = data.dueDate;
+          if (data.notes) currentDoc.notes = data.notes;
+          
+          if (data.items && data.items.length > 0) {
+            currentDoc.items = data.items.map(item => ({
+              id: 'item_' + Math.random().toString(36).substr(2, 9),
+              name: item.name || '',
+              quantity: item.quantity || 1,
+              unitPrice: item.unitPrice || 0,
+              taxRate: item.taxRate || 10
+            }));
+          }
+          
+          saveActiveDoc(currentDoc);
+          populateFormFromDoc();
+          renderAll();
+          showToast('音声入力の結果を反映しました！', 'success');
+          
+        } catch (err) {
+          console.error(err);
+          alert('音声の解析に失敗しました: ' + err.message);
+        } finally {
+          btnVoiceInput.innerHTML = originalText;
+          btnVoiceInput.style.backgroundColor = '#eef2ff';
+          btnVoiceInput.style.color = '#4f46e5';
+        }
+      };
+      
+      recognition.onerror = (event) => {
+        console.error('音声認識エラー:', event.error);
+        if (event.error !== 'aborted') {
+            alert('音声認識に失敗しました: ' + event.error);
+        }
+        btnVoiceInput.innerHTML = originalText;
+        btnVoiceInput.style.backgroundColor = '#eef2ff';
+        btnVoiceInput.style.color = '#4f46e5';
+      };
+      
+      recognition.onend = () => {
+         if (btnVoiceInput.innerHTML.includes('認識中')) {
+             btnVoiceInput.innerHTML = originalText;
+             btnVoiceInput.style.backgroundColor = '#eef2ff';
+             btnVoiceInput.style.color = '#4f46e5';
+         }
+      };
+    });
+  }
+
   // 新規作成
   if (DOM.btnNewDoc) {
     DOM.btnNewDoc.addEventListener('click', () => {
@@ -2751,12 +2859,16 @@ function setupEventListeners() {
     DOM.btnClockOut.addEventListener('click', handleClockOut);
   }
 
+  // 勤怠表示期間フィルター変更イベント
+  if (DOM.attendanceMonthFilter) {
+    DOM.attendanceMonthFilter.addEventListener('change', (e) => {
+      handleAttendanceMonthFilterChange(e.target.value);
+    });
+  }
+
   // 勤怠CSVエクスポート
   if (DOM.btnExportAttendanceCSV) {
-    DOM.btnExportAttendanceCSV.addEventListener('click', () => {
-      exportAttendanceToCSV(getAttendanceList(), currentSheetYM);
-      showToast('勤怠集計CSVをダウンロードしました！', 'success');
-    });
+    DOM.btnExportAttendanceCSV.addEventListener('click', handleExportAttendanceCSV);
   }
 
   // 打刻漏れ手動入力フォーム制御
@@ -2775,11 +2887,21 @@ function setupEventListeners() {
 
   // 出勤簿（A4帳票）モーダル制御
   if (DOM.btnOpenAttendanceSheetModal) {
-    DOM.btnOpenAttendanceSheetModal.addEventListener('click', () => openAttendanceSheetModal());
+    DOM.btnOpenAttendanceSheetModal.addEventListener('click', () => {
+      const targetYM = (typeof currentAttendanceFilterMonth !== 'undefined' && currentAttendanceFilterMonth && currentAttendanceFilterMonth !== 'all')
+        ? currentAttendanceFilterMonth
+        : (typeof getTodayDateString === 'function' ? getTodayDateString().substring(0, 7) : '');
+      openAttendanceSheetModal(targetYM);
+    });
   }
   const btnOpenAttendanceSheetScreen = document.getElementById('btnOpenAttendanceSheetScreen');
   if (btnOpenAttendanceSheetScreen) {
-    btnOpenAttendanceSheetScreen.addEventListener('click', () => openAttendanceSheetModal());
+    btnOpenAttendanceSheetScreen.addEventListener('click', () => {
+      const targetYM = (typeof currentAttendanceFilterMonth !== 'undefined' && currentAttendanceFilterMonth && currentAttendanceFilterMonth !== 'all')
+        ? currentAttendanceFilterMonth
+        : (typeof getTodayDateString === 'function' ? getTodayDateString().substring(0, 7) : '');
+      openAttendanceSheetModal(targetYM);
+    });
   }
   if (DOM.btnCloseAttendanceSheetModal) {
     DOM.btnCloseAttendanceSheetModal.addEventListener('click', closeAttendanceSheetModal);
@@ -6737,6 +6859,143 @@ function updateAttendanceLiveClock() {
   }
 }
 
+// ==========================================================================
+// 勤怠月別フィルター ＆ CSV出力ロジック
+// ==========================================================================
+let currentAttendanceFilterMonth = getTodayDateString().substring(0, 7);
+
+function populateAttendanceMonthFilter() {
+  const select = DOM.attendanceMonthFilter || document.getElementById('attendanceMonthFilter');
+  if (!select) return;
+
+  const currentVal = currentAttendanceFilterMonth || getTodayDateString().substring(0, 7);
+  const now = new Date();
+  const options = [];
+
+  // 1. 直近12ヶ月分（当月から過去11ヶ月前まで）
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const ym = `${y}-${m}`;
+    options.push({
+      value: ym,
+      label: i === 0 ? `${y}年${m}月（当月）` : `${y}年${m}月`
+    });
+  }
+
+  // 2. 打刻履歴に12ヶ月より前のデータが存在すればそれらも追加
+  const list = typeof getAttendanceList === 'function' ? getAttendanceList() : [];
+  const extraMonths = new Set();
+  list.forEach(item => {
+    const dStr = item.date || item.workDate || '';
+    if (dStr && dStr.length >= 7) {
+      const ym = dStr.substring(0, 7);
+      if (!options.some(o => o.value === ym)) {
+        extraMonths.add(ym);
+      }
+    }
+  });
+  Array.from(extraMonths).sort((a, b) => b.localeCompare(a)).forEach(ym => {
+    const [y, m] = ym.split('-');
+    options.push({
+      value: ym,
+      label: `${y}年${m}月`
+    });
+  });
+
+  // 3. 全期間の選択肢を追加
+  options.push({
+    value: 'all',
+    label: '全期間（すべて）'
+  });
+
+  // select要素のoptionを構築
+  let html = '';
+  options.forEach(opt => {
+    const isSelected = opt.value === currentVal ? ' selected' : '';
+    html += `<option value="${opt.value}"${isSelected}>${escapeHtml(opt.label)}</option>`;
+  });
+  select.innerHTML = html;
+  select.value = currentVal;
+}
+
+function handleAttendanceMonthFilterChange(selectedMonth) {
+  console.log("【勤怠月別フィルター】切り替え", selectedMonth);
+  currentAttendanceFilterMonth = selectedMonth || getTodayDateString().substring(0, 7);
+  updateAttendanceFilterView();
+}
+window.handleAttendanceMonthFilterChange = handleAttendanceMonthFilterChange;
+
+function updateAttendanceFilterView() {
+  console.log("【勤怠表示更新】実行開始", { filterMonth: currentAttendanceFilterMonth });
+  const list = typeof getAttendanceList === 'function' ? getAttendanceList() : [];
+  const isAll = currentAttendanceFilterMonth === 'all';
+  const currentYM = isAll ? 'all' : (currentAttendanceFilterMonth || getTodayDateString().substring(0, 7));
+
+  // 1. 実績サマリー集計
+  const summary = calculateMonthlyAttendance(list, currentYM);
+
+  // 見出し更新
+  const summaryTitleEl = DOM.attendanceSummaryTitle || document.getElementById('attendanceSummaryTitle');
+  if (summaryTitleEl) {
+    if (isAll) {
+      summaryTitleEl.textContent = '全期間の勤怠実績サマリー';
+    } else {
+      const [y, m] = currentYM.split('-');
+      const todayYM = getTodayDateString().substring(0, 7);
+      if (currentYM === todayYM) {
+        summaryTitleEl.textContent = `今月の勤怠実績サマリー（${y}年${m}月）`;
+      } else {
+        summaryTitleEl.textContent = `${y}年${m}月の勤怠実績サマリー`;
+      }
+    }
+  }
+
+  // 出勤日数、総実働時間、総残業時間の更新
+  if (DOM.summaryWorkDays) {
+    DOM.summaryWorkDays.textContent = `${summary.workDays}日`;
+  }
+  if (DOM.summaryTotalWorkHours) {
+    DOM.summaryTotalWorkHours.textContent = formatMinutesToHours(summary.totalWorkMinutes);
+  }
+  if (DOM.summaryTotalOvertime) {
+    DOM.summaryTotalOvertime.textContent = formatMinutesToHours(summary.totalOvertimeMinutes);
+  }
+
+  // 2. 打刻履歴テーブルの描画
+  renderAttendanceHistoryTable();
+}
+
+function handleExportAttendanceCSV() {
+  console.log("【勤怠CSV出力】実行開始", { targetMonth: currentAttendanceFilterMonth });
+  try {
+    const list = typeof getAttendanceList === 'function' ? getAttendanceList() : [];
+    const isAll = currentAttendanceFilterMonth === 'all';
+    const targetMonth = isAll ? 'all' : (currentAttendanceFilterMonth || getTodayDateString().substring(0, 7));
+    const csvContent = exportAttendanceToCSV(list, targetMonth);
+
+    const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const fileName = isAll
+      ? `出勤簿_全期間_${getTodayDateString()}.csv`
+      : `出勤簿_${targetMonth}.csv`;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    console.log("【勤怠CSV出力】完了", { fileName });
+    showToast(`勤怠集計CSV（${isAll ? '全期間' : targetMonth}）をダウンロードしました！`, 'success');
+  } catch (err) {
+    console.error("【勤怠CSV出力】エラー", err);
+    showToast('CSV出力中にエラーが発生しました', 'error');
+  }
+}
+window.handleExportAttendanceCSV = handleExportAttendanceCSV;
+
 function updateAttendanceUI() {
   const todayRec = getTodayAttendance();
 
@@ -6789,22 +7048,11 @@ function updateAttendanceUI() {
     DOM.displayClockOutTime.textContent = todayRec && todayRec.clockOut ? `打刻: ${todayRec.clockOut}` : '未打刻';
   }
 
-  // 月間サマリー更新
-  const currentMonth = getTodayDateString().substring(0, 7);
-  const summary = calculateMonthlyAttendance(getAttendanceList(), currentMonth);
+  // 月別フィルターの選択肢を更新
+  populateAttendanceMonthFilter();
 
-  if (DOM.summaryWorkDays) {
-    DOM.summaryWorkDays.textContent = `${summary.workDays}日`;
-  }
-  if (DOM.summaryTotalWorkHours) {
-    DOM.summaryTotalWorkHours.textContent = formatMinutesToHours(summary.totalWorkMinutes);
-  }
-  if (DOM.summaryTotalOvertime) {
-    DOM.summaryTotalOvertime.textContent = formatMinutesToHours(summary.totalOvertimeMinutes);
-  }
-
-  // 履歴テーブル更新
-  renderAttendanceHistoryTable();
+  // 月別集計サマリー ＆ 履歴テーブルを更新
+  updateAttendanceFilterView();
 }
 
 function handleClockIn() {
@@ -6826,13 +7074,38 @@ function handleClockOut() {
 }
 
 function renderAttendanceHistoryTable() {
-  if (!DOM.attendanceTableBody) return;
-  const list = getAttendanceList();
+  const tableBody = DOM.attendanceTableBody || document.getElementById('attendanceTableBody');
+  if (!tableBody) return;
+  const list = typeof getAttendanceList === 'function' ? getAttendanceList() : [];
 
-  const validList = list.filter(r => r && (r.date || r.workDate));
+  const isAll = currentAttendanceFilterMonth === 'all';
+  const filterYM = isAll ? '' : (currentAttendanceFilterMonth || getTodayDateString().substring(0, 7));
+
+  // 有効なレコードかつ対象期間で絞り込み
+  const validList = list.filter(r => {
+    if (!r) return false;
+    const dateVal = r.date || r.workDate || (r.rawRecord && r.rawRecord.targetMonth ? r.rawRecord.targetMonth + '-01' : '');
+    if (!dateVal) return false;
+    if (isAll) return true;
+    return dateVal.startsWith(filterYM);
+  });
+
+  // バッジ表示の更新
+  const badgeEl = DOM.attendanceHistoryFilterBadge || document.getElementById('attendanceHistoryFilterBadge');
+  if (badgeEl) {
+    if (isAll) {
+      badgeEl.textContent = `全期間（${validList.length}件）`;
+    } else {
+      const [y, m] = filterYM.split('-');
+      badgeEl.textContent = `${y}年${m}月（${validList.length}件）`;
+    }
+  }
 
   if (validList.length === 0) {
-    DOM.attendanceTableBody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--slate-400); padding: 24px;">打刻履歴はありません</td></tr>`;
+    const emptyMsg = isAll
+      ? '打刻履歴はありません'
+      : `${filterYM.replace('-', '年')}月の打刻履歴はありません`;
+    tableBody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--slate-400); padding: 24px;">${escapeHtml(emptyMsg)}</td></tr>`;
     return;
   }
 
@@ -6892,7 +7165,7 @@ function renderAttendanceHistoryTable() {
       </tr>
     `;
   });
-  DOM.attendanceTableBody.innerHTML = html;
+  tableBody.innerHTML = html;
 }
 
 window.__deleteAttendanceRecord = async function(date, id = '') {
@@ -7002,7 +7275,9 @@ function openAttendanceSheetModal(targetYM = '') {
     }
     document.body.style.overflow = 'hidden';
 
-    currentSheetYM = targetYM || currentSheetYM || getTodayDateString().substring(0, 7);
+    let fallbackYM = currentAttendanceFilterMonth;
+    if (fallbackYM === 'all' || !fallbackYM) fallbackYM = getTodayDateString().substring(0, 7);
+    currentSheetYM = targetYM || fallbackYM;
     const selector = DOM.sheetMonthSelector || document.getElementById('sheetMonthSelector');
     if (selector) {
       selector.value = currentSheetYM;

@@ -146,26 +146,31 @@ export function calculateMonthlyAttendance(attendanceList = [], targetMonth = ''
     list = [];
   }
   const currentYM = ym || getTodayDateString().substring(0, 7);
-  const filtered = list.filter(att => att && (att.date || '').startsWith(currentYM));
+  const isAll = currentYM === 'all';
+  const filtered = isAll
+    ? list.filter(att => att && (att.date || att.workDate))
+    : list.filter(att => att && (att.date || att.workDate || '').startsWith(currentYM));
 
   let workDays = 0;
   let totalWorkMinutes = 0;
   let totalOvertimeMinutes = 0;
 
   filtered.forEach(att => {
-    if (att.clockIn && att.clockOut) {
+    const clockIn = att.clockIn || att.startTime || '';
+    const clockOut = att.clockOut || att.endTime || '';
+    if (clockIn && clockOut) {
       workDays += 1;
-      const res = calculateWorkDuration(att.clockIn, att.clockOut);
+      const res = calculateWorkDuration(clockIn, clockOut);
       totalWorkMinutes += res.workMinutes;
       totalOvertimeMinutes += res.overtimeMinutes;
-    } else if (att.clockIn || att.clockOut) {
+    } else if (clockIn || clockOut) {
       workDays += 1; // 出勤中または退勤のみ
     }
   });
 
   return {
     targetMonth: currentYM,
-    records: filtered.sort((a, b) => (b.date || '').localeCompare(a.date || '')),
+    records: filtered.sort((a, b) => ((b.date || b.workDate || '')).localeCompare(a.date || a.workDate || '')),
     workDays,
     totalWorkMinutes,
     totalWorkHoursText: formatMinutesToHours(totalWorkMinutes),
@@ -188,17 +193,21 @@ export function exportAttendanceToCSV(attendanceList = [], targetMonth = '') {
     list = typeof getAttendanceList === 'function' ? getAttendanceList() : [];
   }
   const currentYM = ym || getTodayDateString().substring(0, 7);
-  const filtered = list
-    .filter(att => att && (att.date || '').startsWith(currentYM))
-    .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  const isAll = currentYM === 'all';
+  const filtered = (isAll
+    ? list.filter(att => att && (att.date || att.workDate))
+    : list.filter(att => att && (att.date || att.workDate || '').startsWith(currentYM)))
+    .sort((a, b) => ((a.date || a.workDate || '')).localeCompare(b.date || b.workDate || ''));
 
   const headers = ['日付', '出勤時刻', '退勤時刻', '自動休憩(分)', '実働時間(10進法)', '実労働(分)', '残業時間(10進法)', '残業(分)', '備考'];
   const rows = filtered.map(att => {
-    const calc = calculateWorkDuration(att.clockIn, att.clockOut);
+    const clockIn = att.clockIn || att.startTime || '';
+    const clockOut = att.clockOut || att.endTime || '';
+    const calc = calculateWorkDuration(clockIn, clockOut);
     return [
-      att.date,
-      att.clockIn || '',
-      att.clockOut || '',
+      att.date || att.workDate || '',
+      clockIn,
+      clockOut,
       calc.breakMinutes,
       `"${formatMinutesToDecimalHours(calc.workMinutes, true)}"`,
       calc.workMinutes,
