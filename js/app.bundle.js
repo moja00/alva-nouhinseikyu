@@ -7684,6 +7684,111 @@ function setupEventListeners() {
     });
   }
 
+  const btnVoiceInput = document.getElementById('btnVoiceInput');
+  if (btnVoiceInput) {
+    btnVoiceInput.addEventListener('click', () => {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        alert('お使いのブラウザは音声認識に対応していません。（Chrome, Safari等をご利用ください）');
+        return;
+      }
+      
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'ja-JP';
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+
+      const originalText = btnVoiceInput.innerHTML;
+      btnVoiceInput.innerHTML = '🎙️ 認識中... お話しください';
+      btnVoiceInput.style.backgroundColor = '#fee2e2';
+      btnVoiceInput.style.color = '#dc2626';
+      
+      recognition.start();
+
+      recognition.onresult = async (event) => {
+        const text = event.results[0][0].transcript;
+        console.log('音声認識結果:', text);
+        showToast('音声を解析しています...', 'info');
+        
+        try {
+          const response = await fetch('/api/gemini/voice-to-invoice', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text })
+          });
+          
+          if (!response.ok) throw new Error('サーバーエラー');
+          const data = await response.json();
+          if (data.error) throw new Error(data.error);
+          
+          console.log('解析結果:', data);
+          
+          if (data.documentType === '納品書') {
+            currentDoc.docType = 'delivery';
+            const docTypeBtn = document.querySelector(`.doc-type-btn[data-type="delivery"]`);
+            if (docTypeBtn) {
+              document.querySelectorAll('.doc-type-btn').forEach(btn => btn.classList.remove('active'));
+              docTypeBtn.classList.add('active');
+            }
+          } else {
+            currentDoc.docType = 'invoice';
+            const docTypeBtn = document.querySelector(`.doc-type-btn[data-type="invoice"]`);
+            if (docTypeBtn) {
+              document.querySelectorAll('.doc-type-btn').forEach(btn => btn.classList.remove('active'));
+              docTypeBtn.classList.add('active');
+            }
+          }
+          
+          if (data.clientName) currentDoc.client.name = data.clientName;
+          if (data.issueDate) currentDoc.issueDate = data.issueDate;
+          if (data.dueDate) currentDoc.dueDate = data.dueDate;
+          if (data.notes) currentDoc.notes = data.notes;
+          
+          if (data.items && data.items.length > 0) {
+            currentDoc.items = data.items.map(item => ({
+              id: 'item_' + Math.random().toString(36).substr(2, 9),
+              name: item.name || '',
+              quantity: item.quantity || 1,
+              unitPrice: item.unitPrice || 0,
+              taxRate: item.taxRate || 10
+            }));
+          }
+          
+          saveActiveDoc(currentDoc);
+          populateFormFromDoc();
+          renderAll();
+          showToast('音声入力の結果を反映しました！', 'success');
+          
+        } catch (err) {
+          console.error(err);
+          alert('音声の解析に失敗しました: ' + err.message);
+        } finally {
+          btnVoiceInput.innerHTML = originalText;
+          btnVoiceInput.style.backgroundColor = '#eef2ff';
+          btnVoiceInput.style.color = '#4f46e5';
+        }
+      };
+      
+      recognition.onerror = (event) => {
+        console.error('音声認識エラー:', event.error);
+        if (event.error !== 'aborted') {
+            alert('音声認識に失敗しました: ' + event.error);
+        }
+        btnVoiceInput.innerHTML = originalText;
+        btnVoiceInput.style.backgroundColor = '#eef2ff';
+        btnVoiceInput.style.color = '#4f46e5';
+      };
+      
+      recognition.onend = () => {
+         if (btnVoiceInput.innerHTML.includes('認識中')) {
+             btnVoiceInput.innerHTML = originalText;
+             btnVoiceInput.style.backgroundColor = '#eef2ff';
+             btnVoiceInput.style.color = '#4f46e5';
+         }
+      };
+    });
+  }
+
   // 新規作成
   if (DOM.btnNewDoc) {
     DOM.btnNewDoc.addEventListener('click', () => {
@@ -12911,7 +13016,9 @@ function openAttendanceSheetModal(targetYM = '') {
     }
     document.body.style.overflow = 'hidden';
 
-    currentSheetYM = targetYM || currentSheetYM || getTodayDateString().substring(0, 7);
+    let fallbackYM = currentAttendanceFilterMonth;
+    if (fallbackYM === 'all' || !fallbackYM) fallbackYM = getTodayDateString().substring(0, 7);
+    currentSheetYM = targetYM || fallbackYM;
     const selector = DOM.sheetMonthSelector || document.getElementById('sheetMonthSelector');
     if (selector) {
       selector.value = currentSheetYM;
