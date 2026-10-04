@@ -14339,8 +14339,7 @@ const firebaseConfig = {
   projectId: "alva-epr",
   storageBucket: "alva-epr.firebasestorage.app",
   messagingSenderId: "638640828372",
-  appId: "1:638640828372:web:41c9abc6ee315a96f03041",
-  measurementId: "G-6VNMXHD3WG"
+  appId: "1:638640828372:web:41c9abc6ee315a96f03041"
 };
 
 function setupFirebaseAuth() {
@@ -14427,15 +14426,8 @@ function setupFirebaseAuth() {
         return;
       }
       
-      // ログインリンクをクリックした時に戻ってくるURL
-      let returnUrl = window.location.origin + window.location.pathname;
-      // file:// プロトコルで開いている場合はFirebaseに弾かれるため localhost 等にフォールバック
-      if (returnUrl.startsWith('file://') || returnUrl === 'null') {
-        returnUrl = 'http://localhost:8000/';
-      }
-      
       const actionCodeSettings = {
-        url: returnUrl,
+        url: "http://localhost:3000/",
         handleCodeInApp: true
       };
       
