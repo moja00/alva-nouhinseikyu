@@ -7699,9 +7699,9 @@ function setupEventListeners() {
       }
       
       const modal = document.getElementById('voiceInputModal');
-      const preview = document.getElementById('voiceInputPreview');
-      const btnCancel = document.getElementById('btnVoiceInputCancel');
-      const btnComplete = document.getElementById('btnVoiceInputComplete');
+      const preview = document.getElementById('voiceInterimText');
+      const btnCancel = document.getElementById('btnCancelVoice');
+      const btnComplete = document.getElementById('btnCompleteVoice');
 
       if (!modal) return;
 

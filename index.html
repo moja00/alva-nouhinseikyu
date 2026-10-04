@@ -4065,34 +4065,23 @@
     </div>
   </div>
 
-  <!-- 音声入力モーダル -->
-  <div class="modal-overlay" id="voiceInputModal" style="display: none; position: fixed; inset: 0; z-index: 99999; background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); align-items: center; justify-content: center; padding: 16px; box-sizing: border-box;">
-    <div class="modal-card" style="max-width: 400px; width: 90%; display: flex; flex-direction: column; padding: 24px; background: #ffffff; border-radius: 12px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4); text-align: center;">
-      <h3 style="font-size: 1.1rem; font-weight: 700; color: #1e293b; margin-top: 0; margin-bottom: 16px;">🎙️ 音声を聞き取っています...</h3>
-      
-      <!-- アニメーション付きマイクアイコン的な表現 -->
-      <div style="margin: 20px auto; width: 60px; height: 60px; background: #eef2ff; border-radius: 50%; display: flex; align-items: center; justify-content: center; position: relative;">
-        <div style="position: absolute; inset: 0; border-radius: 50%; border: 2px solid #6366f1; animation: voicePulse 1.5s infinite;"></div>
-        <span style="font-size: 28px;">🎤</span>
-      </div>
-      
-      <!-- テキストプレビュー領域 -->
-      <div id="voiceInputPreview" style="min-height: 80px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-bottom: 20px; font-size: 0.95rem; color: #475569; text-align: left; display: flex; align-items: center; justify-content: center; line-height: 1.5; word-break: break-all;">
-        『奥村塗料宛にDP-5000を1個、26万円で請求書』のように話してください
-      </div>
-      
-      <div style="display: flex; gap: 12px;">
-        <button type="button" id="btnVoiceInputCancel" class="btn btn-secondary" style="flex: 1; padding: 10px; font-weight: 600;">🚫 中止</button>
-        <button type="button" id="btnVoiceInputComplete" class="btn btn-primary" style="flex: 1; padding: 10px; font-weight: 600; background: #0284c7; border-color: #0284c7;">✅ 完了して入力</button>
-      </div>
-    </div>
-  </div>
-  <style>
-    @keyframes voicePulse {
-      0% { transform: scale(1); opacity: 0.8; }
-      100% { transform: scale(1.6); opacity: 0; }
-    }
-  </style>
+   <!-- 音声入力モーダル -->
+   <div id="voiceInputModal" class="voice-modal-overlay" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 99999; display: flex; align-items: center; justify-content: center;">
+     <div style="background: #ffffff; border-radius: 12px; padding: 24px; width: 90%; max-width: 420px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); text-align: center;">
+       <h3 style="margin-top: 0; font-size: 1.1rem; color: #1e293b;">🎙️ 音声を聞き取っています...</h3>
+       <div id="voiceInterimText" style="min-height: 80px; max-height: 140px; overflow-y: auto; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 12px; margin: 16px 0; font-size: 0.95rem; color: #334155; text-align: left;">
+         話しかけてください（例: 「奥村塗料宛にDP-5000を1個、26万円で請求書」）
+       </div>
+       <div style="display: flex; gap: 12px; justify-content: center;">
+         <button type="button" id="btnCancelVoice" style="padding: 10px 20px; border-radius: 6px; border: 1px solid #cbd5e1; background: #ffffff; color: #64748b; font-weight: bold; cursor: pointer;">
+           🚫 中止
+         </button>
+         <button type="button" id="btnCompleteVoice" style="padding: 10px 20px; border-radius: 6px; border: none; background: #0284c7; color: #ffffff; font-weight: bold; cursor: pointer;">
+           ✅ 完了して入力
+         </button>
+       </div>
+     </div>
+   </div>
 
   <!-- 経費精算書（立替金精算申請書）モーダル -->
   <div class="modal-overlay" id="expenseSettlementModal"
@@ -4340,7 +4329,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261004_voice_modal_1"></script>
+  <script src="js/app.bundle.js?v=20261004_voice_modal_2"></script>
 </body>
 
 </html>
