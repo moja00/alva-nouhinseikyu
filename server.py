@@ -249,19 +249,29 @@ def call_gemini_vision_ocr(image_base64_data_url):
                             elif inv.startswith('t'):
                                 ocr_data['invoiceNumber'] = f"T{inv[1:]}"
                             
+                            ocr_data["engine"] = model
+                            print(f"[Gemini OCR 成功] モデル: {model} | 支払先: {ocr_data.get('payee')} | インボイス: {ocr_data.get('invoiceNumber')} | 金額: ¥{ocr_data.get('amount')}")
                             return ocr_data
-            except urllib.error.HTTPError as http_err:
-                print(f"HTTPError: {http_err.code} {http_err.reason}")
-                err_res = http_err.read().decode()
-                print(f"Details: {err_res}")
-                last_err = err_res
-                time.sleep(2)
-            except Exception as net_err:
-                print(f"Request Exception: {net_err}")
-                last_err = str(net_err)
-                time.sleep(2)
-                
-    return {"error": f"APIリクエストに失敗しました: {last_err}"}
+            except urllib.error.HTTPError as e:
+                err_msg = e.read().decode('utf-8', errors='ignore')
+                print(f"\n========== [Gemini API HTTP Error ({model} 試行{attempt+1})] ==========")
+                print(f"Status: {e.code}")
+                print(f"Body: {err_msg}")
+                print(f"==============================================================\n")
+                last_err = f"Gemini APIエラー ({model} {e.code}): {err_msg}"
+                if e.code == 503 and attempt == 0:
+                    time.sleep(1.5)  # 一時的混雑時は1.5秒待機してリトライ
+                    continue
+                # 404, 400などの場合はこのモデルへの再試行をやめて次のモデルへ
+                break
+            except Exception as e:
+                print(f"[Gemini API Error ({model} 試行{attempt+1})] {e}")
+                last_err = str(e)
+                break
+        
+        print(f"[Gemini API] {model} での解析に失敗しました。次のモデルを試します。")
+
+    return {"error": f"Gemini APIでの解析に失敗しました: {last_err}"}
 
 def call_gemini_voice_to_invoice(text):
     allowed, limit_msg = check_and_record_rate_limit()
@@ -330,31 +340,6 @@ def call_gemini_voice_to_invoice(text):
             return {"error": "Geminiレスポンスのパースに失敗しました。"}
     except Exception as e:
         return {"error": f"Gemini APIリクエストエラー: {str(e)}"}
-
-
-                            ocr_data["engine"] = model
-                            print(f"[Gemini OCR 成功] モデル: {model} | 支払先: {ocr_data.get('payee')} | インボイス: {ocr_data.get('invoiceNumber')} | 金額: ¥{ocr_data.get('amount')}")
-                            return ocr_data
-            except urllib.error.HTTPError as e:
-                err_msg = e.read().decode('utf-8', errors='ignore')
-                print(f"\n========== [Gemini API HTTP Error ({model} 試行{attempt+1})] ==========")
-                print(f"Status: {e.code}")
-                print(f"Body: {err_msg}")
-                print(f"==============================================================\n")
-                last_err = f"Gemini APIエラー ({model} {e.code}): {err_msg}"
-                if e.code == 503 and attempt == 0:
-                    time.sleep(1.5)  # 一時的混雑時は1.5秒待機してリトライ
-                    continue
-                # 404, 400などの場合はこのモデルへの再試行をやめて次のモデルへ
-                break
-            except Exception as e:
-                print(f"[Gemini API Error ({model} 試行{attempt+1})] {e}")
-                last_err = str(e)
-                break
-        
-        print(f"[Gemini API] {model} での解析に失敗しました。次のモデルを試します。")
-
-    return {"error": f"Gemini APIでの解析に失敗しました: {last_err}"}
 
 
 DATA_DIR = os.path.join(BASE_DIR, 'data')
