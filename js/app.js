@@ -1944,12 +1944,141 @@ function setupEventListeners() {
   }
 
   const btnVoiceInput = document.getElementById('btnVoiceInput');
-  let voiceRecognitionInstance = null;
-  let isVoiceAnalyzing = false;
+  window.voiceRecognition = null;
+  window.isVoiceAnalyzing = false;
+  window.voiceSilenceTimer = null;
+  window.hasStartedSpeaking = false;
+
+  window.closeVoiceModal = () => {
+    if (window.voiceRecognition) {
+      try {
+        window.voiceRecognition.onend = null;
+        window.voiceRecognition.abort();
+      } catch (e) {
+        console.warn(e);
+      }
+      window.voiceRecognition = null;
+    }
+    const modal = document.getElementById('voiceInputModal');
+    if (modal) {
+      modal.style.display = 'none';
+    }
+    if (window.voiceSilenceTimer) {
+      clearTimeout(window.voiceSilenceTimer);
+      window.voiceSilenceTimer = null;
+    }
+    window.isVoiceAnalyzing = false;
+  };
+
+  window.completeVoiceInput = () => {
+    if (window.voiceRecognition) {
+      try {
+        window.voiceRecognition.stop();
+      } catch (e) {
+        console.warn(e);
+      }
+    }
+    const preview = document.getElementById('voiceInterimText');
+    if (preview && typeof window.processVoiceInput === 'function') {
+      window.processVoiceInput(preview.innerText);
+    }
+  };
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      const modal = document.getElementById('voiceInputModal');
+      if (modal && modal.style.display !== 'none') {
+        window.closeVoiceModal();
+      }
+    }
+  });
+
+  window.processVoiceInput = async (textToProcess) => {
+    if (!textToProcess || !textToProcess.trim() || textToProcess.includes('のように話してください')) {
+       window.closeVoiceModal();
+       return;
+    }
+    window.isVoiceAnalyzing = true;
+    const btnComplete = document.getElementById('btnCompleteVoice');
+    const btnCancel = document.getElementById('btnCancelVoice');
+    
+    if (btnComplete) {
+      btnComplete.innerHTML = '🔄 AI解析中...';
+      btnComplete.disabled = true;
+    }
+    if (btnCancel) btnCancel.disabled = true;
+    
+    showToast('音声を解析しています...', 'info');
+    
+    try {
+      const defaultType = 'invoice';
+      const profile = typeof loadIssuerProfile === 'function' ? loadIssuerProfile() : (currentDoc ? currentDoc.issuer : null);
+      currentDoc = typeof createEmptyInvoice === 'function' ? createEmptyInvoice(defaultType) : {};
+      currentDoc.docType = defaultType;
+      if (profile) {
+        currentDoc.issuer = { ...profile };
+      }
+
+      const response = await fetch('/api/gemini/voice-to-invoice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: textToProcess })
+      });
+      
+      if (!response.ok) throw new Error('サーバーエラー');
+      const data = await response.json();
+      if (data.error) throw new Error(data.error);
+      
+      console.log('解析結果:', data);
+      
+      if (data.documentType === '納品書') {
+        currentDoc.docType = 'delivery';
+        const docTypeBtn = document.querySelector(`.doc-type-btn[data-type="delivery"]`);
+        if (docTypeBtn) {
+          document.querySelectorAll('.doc-type-btn').forEach(btn => btn.classList.remove('active'));
+          docTypeBtn.classList.add('active');
+        }
+      } else {
+        currentDoc.docType = 'invoice';
+        const docTypeBtn = document.querySelector(`.doc-type-btn[data-type="invoice"]`);
+        if (docTypeBtn) {
+          document.querySelectorAll('.doc-type-btn').forEach(btn => btn.classList.remove('active'));
+          docTypeBtn.classList.add('active');
+        }
+      }
+      
+      if (data.clientName) currentDoc.client.name = data.clientName;
+      if (data.issueDate) currentDoc.issueDate = data.issueDate;
+      if (data.dueDate) currentDoc.dueDate = data.dueDate;
+      if (data.notes) currentDoc.notes = data.notes;
+      
+      if (data.items && data.items.length > 0) {
+        currentDoc.items = data.items.map(item => ({
+          id: 'item_' + Math.random().toString(36).substr(2, 9),
+          name: item.name || '',
+          quantity: item.quantity || 1,
+          unitPrice: item.unitPrice || 0,
+          taxRate: item.taxRate || 10
+        }));
+      }
+      
+      saveActiveDoc(currentDoc);
+      populateFormFromDoc();
+      renderAll();
+      showToast('音声からフォームを入力しました', 'success');
+      
+    } catch (err) {
+      console.error(err);
+      alert('音声の解析に失敗しました: ' + err.message);
+    } finally {
+      window.isVoiceAnalyzing = false;
+      window.closeVoiceModal();
+    }
+  };
 
   if (btnVoiceInput) {
     btnVoiceInput.addEventListener('click', () => {
-      if (isVoiceAnalyzing) return; // 解析中なら何もしない
+      if (window.isVoiceAnalyzing) return; 
 
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRecognition) {
@@ -1972,14 +2101,14 @@ function setupEventListeners() {
       btnCancel.disabled = false;
 
       let finalTranscript = '';
-      let hasStartedSpeaking = false;
+      window.hasStartedSpeaking = false;
 
       const recognition = new SpeechRecognition();
       recognition.lang = 'ja-JP';
       recognition.interimResults = true;
       recognition.continuous = true;
 
-      voiceRecognitionInstance = recognition;
+      window.voiceRecognition = recognition;
 
       recognition.onresult = (event) => {
         let interimTranscript = '';
@@ -1990,109 +2119,9 @@ function setupEventListeners() {
             interimTranscript += event.results[i][0].transcript;
           }
         }
-        hasStartedSpeaking = true;
+        window.hasStartedSpeaking = true;
         preview.style.color = '#0f172a';
         preview.innerHTML = finalTranscript + '<i style="color: #64748b;">' + interimTranscript + '</i>';
-      };
-
-      const processVoiceInput = async (textToProcess) => {
-        if (!textToProcess || !textToProcess.trim() || textToProcess.includes('のように話してください')) {
-           closeVoiceModal();
-           return;
-        }
-        isVoiceAnalyzing = true;
-        btnComplete.innerHTML = '🔄 AI解析中...';
-        btnComplete.disabled = true;
-        btnCancel.disabled = true;
-        
-        showToast('音声を解析しています...', 'info');
-        
-        try {
-          // 【修正1】 新規作成としてフォームを初期化する
-          const defaultType = 'invoice';
-          const profile = typeof loadIssuerProfile === 'function' ? loadIssuerProfile() : (currentDoc ? currentDoc.issuer : null);
-          currentDoc = typeof createEmptyInvoice === 'function' ? createEmptyInvoice(defaultType) : {};
-          currentDoc.docType = defaultType;
-          if (profile) {
-            currentDoc.issuer = { ...profile };
-          }
-
-          const response = await fetch('/api/gemini/voice-to-invoice', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: textToProcess })
-          });
-          
-          if (!response.ok) throw new Error('サーバーエラー');
-          const data = await response.json();
-          if (data.error) throw new Error(data.error);
-          
-          console.log('解析結果:', data);
-          
-          if (data.documentType === '納品書') {
-            currentDoc.docType = 'delivery';
-            const docTypeBtn = document.querySelector(`.doc-type-btn[data-type="delivery"]`);
-            if (docTypeBtn) {
-              document.querySelectorAll('.doc-type-btn').forEach(btn => btn.classList.remove('active'));
-              docTypeBtn.classList.add('active');
-            }
-          } else {
-            currentDoc.docType = 'invoice';
-            const docTypeBtn = document.querySelector(`.doc-type-btn[data-type="invoice"]`);
-            if (docTypeBtn) {
-              document.querySelectorAll('.doc-type-btn').forEach(btn => btn.classList.remove('active'));
-              docTypeBtn.classList.add('active');
-            }
-          }
-          
-          if (data.clientName) currentDoc.client.name = data.clientName;
-          if (data.issueDate) currentDoc.issueDate = data.issueDate;
-          if (data.dueDate) currentDoc.dueDate = data.dueDate;
-          if (data.notes) currentDoc.notes = data.notes;
-          
-          if (data.items && data.items.length > 0) {
-            currentDoc.items = data.items.map(item => ({
-              id: 'item_' + Math.random().toString(36).substr(2, 9),
-              name: item.name || '',
-              quantity: item.quantity || 1,
-              unitPrice: item.unitPrice || 0,
-              taxRate: item.taxRate || 10
-            }));
-          }
-          
-          saveActiveDoc(currentDoc);
-          populateFormFromDoc();
-          renderAll();
-          showToast('音声からフォームを入力しました', 'success');
-          
-        } catch (err) {
-          console.error(err);
-          alert('音声の解析に失敗しました: ' + err.message);
-        } finally {
-          isVoiceAnalyzing = false;
-          closeVoiceModal();
-        }
-      };
-
-      const closeVoiceModal = () => {
-        if (voiceRecognitionInstance) {
-           voiceRecognitionInstance.onend = null;
-           voiceRecognitionInstance.stop();
-           voiceRecognitionInstance = null;
-        }
-        modal.style.display = 'none';
-        isVoiceAnalyzing = false;
-      };
-
-      btnCancel.onclick = () => {
-        closeVoiceModal();
-      };
-
-      btnComplete.onclick = () => {
-        if (voiceRecognitionInstance) {
-           voiceRecognitionInstance.stop();
-        }
-        processVoiceInput(preview.innerText);
       };
 
       recognition.onerror = (event) => {
@@ -2100,22 +2129,19 @@ function setupEventListeners() {
         if (event.error === 'not-allowed') {
             preview.innerHTML = '<span style="color: #dc2626; font-weight: bold;">マイクへのアクセスが許可されていません。</span><br>ブラウザのアドレスバー横の鍵アイコン（または端末の設定）からマイクの使用を「許可」にして再度お試しください。';
             btnComplete.disabled = true;
-            // モーダルは開いたままにし、ユーザーが「🚫 中止」で閉じられるようにする
         } else if (event.error !== 'aborted') {
             showToast('音声認識に失敗しました: ' + event.error, 'error');
-            closeVoiceModal();
+            window.closeVoiceModal();
         }
       };
       
-      let silenceTimer = null;
       recognition.onspeechstart = () => {
-         if (silenceTimer) clearTimeout(silenceTimer);
+         if (window.voiceSilenceTimer) clearTimeout(window.voiceSilenceTimer);
       };
       recognition.onspeechend = () => {
-         silenceTimer = setTimeout(() => {
-             if (voiceRecognitionInstance && !isVoiceAnalyzing && hasStartedSpeaking) {
-                 voiceRecognitionInstance.stop();
-                 processVoiceInput(preview.innerText);
+         window.voiceSilenceTimer = setTimeout(() => {
+             if (window.voiceRecognition && !window.isVoiceAnalyzing && window.hasStartedSpeaking) {
+                 window.completeVoiceInput();
              }
          }, 3000);
       };
