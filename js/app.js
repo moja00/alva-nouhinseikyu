@@ -8671,6 +8671,21 @@ function setupFirebaseAuth() {
         return;
       }
       
+      const ALLOWED_EMAILS = [
+        "miyazaki@alva-works.com",
+        "infoalvaworks@gmail.com"
+      ];
+      
+      const isAllowed = ALLOWED_EMAILS.includes(email) || email.endsWith('@alva-works.com');
+      
+      if (!isAllowed) {
+        if (loginMessageArea) {
+          loginMessageArea.style.color = '#dc2626';
+          loginMessageArea.innerText = 'エラー：許可されていないメールアドレスです。';
+        }
+        return;
+      }
+      
       const actionCodeSettings = {
         url: window.location.origin + window.location.pathname,
         handleCodeInApp: true
