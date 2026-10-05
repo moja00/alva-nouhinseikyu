@@ -321,18 +321,14 @@ def call_gemini_voice_to_invoice(text):
     }
 
     req_json = json.dumps(request_payload).encode('utf-8')
-    model = 'gemini-2.0-flash' # または gemini-1.5-flash
+    model = 'gemini-2.0-flash'
     api_key = get_gemini_api_key()
-    token = get_vertex_token()
     headers = {"Content-Type": "application/json"}
     
-    if token:
-        url = f"https://us-central1-aiplatform.googleapis.com/v1/projects/alva-epr-510301/locations/us-central1/publishers/google/models/{model}:generateContent"
-        headers["Authorization"] = f"Bearer {token}"
-    elif api_key:
-        url = f"https://generativelanguage.googleapis.com/v1/models/{model}:generateContent?key={api_key}"
-    else:
-        return {"error": "APIキーもGCP認証トークンも存在しません。"}
+    if not api_key:
+        return {"error": "GEMINI_API_KEYが設定されていません。"}
+        
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
 
     req = urllib.request.Request(url, data=req_json, headers=headers, method="POST")
 
