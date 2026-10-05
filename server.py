@@ -321,37 +321,53 @@ def call_gemini_voice_to_invoice(text):
     }
 
     req_json = json.dumps(request_payload).encode('utf-8')
-    model = 'gemini-2.0-flash'
+    candidate_models = ['gemini-2.0-flash', 'gemini-1.5-flash']
+    last_err = None
     
     api_key = get_gemini_api_key()
     token = get_vertex_token()
-    headers = {"Content-Type": "application/json"}
     
-    if token:
-        url = f"https://us-central1-aiplatform.googleapis.com/v1/projects/alva-epr-510301/locations/us-central1/publishers/google/models/{model}:generateContent"
-        headers["Authorization"] = f"Bearer {token}"
-    elif api_key:
-        url = f"https://generativelanguage.googleapis.com/v1/models/{model}:generateContent?key={api_key}"
-    else:
-        return {"error": "APIキーもGCP認証トークンも存在しません。"}
+    for model in candidate_models:
+        headers = {"Content-Type": "application/json"}
+        
+        if token:
+            url = f"https://us-central1-aiplatform.googleapis.com/v1/projects/alva-epr-510301/locations/us-central1/publishers/google/models/{model}:generateContent"
+            headers["Authorization"] = f"Bearer {token}"
+        elif api_key:
+            url = f"https://generativelanguage.googleapis.com/v1/models/{model}:generateContent?key={api_key}"
+        else:
+            return {"error": "APIキーもGCP認証トークンも存在しません。"}
 
-    req = urllib.request.Request(url, data=req_json, headers=headers, method="POST")
+        req = urllib.request.Request(url, data=req_json, headers=headers, method="POST")
 
-    try:
-        with urllib.request.urlopen(req, timeout=15) as res:
-            res_body = res.read().decode('utf-8')
-            parsed_res = json.loads(res_body)
-            candidates = parsed_res.get('candidates', [])
-            if candidates and 'content' in candidates[0]:
-                parts = candidates[0]['content'].get('parts', [])
-                if parts and 'text' in parts[0]:
-                    raw_text = parts[0]['text'].strip()
-                    raw_text = re.sub(r'^```json\s*', '', raw_text)
-                    raw_text = re.sub(r'\s*```$', '', raw_text)
-                    return json.loads(raw_text)
-            return {"error": "Geminiレスポンスのパースに失敗しました。"}
-    except Exception as e:
-        return {"error": f"Gemini APIリクエストエラー: {str(e)}"}
+        for attempt in range(2):
+            try:
+                with urllib.request.urlopen(req, timeout=15) as res:
+                    res_body = res.read().decode('utf-8')
+                    parsed_res = json.loads(res_body)
+                    candidates = parsed_res.get('candidates', [])
+                    if candidates and 'content' in candidates[0]:
+                        parts = candidates[0]['content'].get('parts', [])
+                        if parts and 'text' in parts[0]:
+                            raw_text = parts[0]['text'].strip()
+                            raw_text = re.sub(r'^```json\s*', '', raw_text)
+                            raw_text = re.sub(r'\s*```$', '', raw_text)
+                            parsed_data = json.loads(raw_text)
+                            parsed_data["engine"] = model
+                            return parsed_data
+            except urllib.error.HTTPError as e:
+                err_msg = e.read().decode('utf-8', errors='ignore')
+                last_err = f"Gemini APIエラー ({model} {e.code}): {err_msg}"
+                if e.code == 503 and attempt == 0:
+                    time.sleep(1.5)
+                    continue
+                # 404等の場合は再試行を諦め、次のモデルへ
+                break
+            except Exception as e:
+                last_err = str(e)
+                break
+                
+    return {"error": f"音声の解析に失敗しました: {last_err}"}
 
 
 DATA_DIR = os.path.join(BASE_DIR, 'data')
