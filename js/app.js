@@ -2067,6 +2067,10 @@ function setupEventListeners() {
       }
       
       if (data.clientName) currentDoc.client.name = data.clientName;
+      if (data.clientHonorific !== undefined) currentDoc.client.honorific = data.clientHonorific;
+      if (data.clientZip !== undefined) currentDoc.client.zip = data.clientZip;
+      if (data.clientAddress !== undefined) currentDoc.client.address = data.clientAddress;
+      if (data.clientContact !== undefined) currentDoc.client.contactPerson = data.clientContact;
       if (data.issueDate) currentDoc.issueDate = data.issueDate;
       if (data.dueDate) currentDoc.dueDate = data.dueDate;
       if (data.notes) currentDoc.notes = data.notes;

@@ -290,7 +290,7 @@ def call_gemini_voice_to_invoice(text):
     clients = get_fs_collection('clients', DEFAULT_CLIENTS)
     items = get_fs_collection('items', DEFAULT_ITEMS)
     
-    clients_summary = "\n".join([f"- ID: {c.get('id')}, 名称: {c.get('name')}" for c in clients if c.get('name')])
+    clients_summary = "\n".join([f"- ID: {c.get('id')}, 名称: {c.get('name')}, 敬称: {c.get('honorific','')}, 郵便番号: {c.get('zip','')}, 住所: {c.get('address','')}, 担当者: {c.get('contactPerson','')}" for c in clients if c.get('name')])
     items_summary = "\n".join([f"- ID: {i.get('id')}, 品名: {i.get('name')}, 単価: {i.get('unitPrice')}" for i in items if i.get('name')])
 
     prompt = (
@@ -302,15 +302,19 @@ def call_gemini_voice_to_invoice(text):
         "【商品マスタ】\n"
         f"{items_summary}\n\n"
         "【重要指示】\n"
-        "- 発話された宛名や取引先が「取引先マスタ」に近しい場合、マスタに登録されている正式名称と取引先IDを優先して出力してください。\n"
+        "- 発話された宛名や取引先が「取引先マスタ」に近しい場合、マスタに登録されている正式名称、取引先ID、敬称、郵便番号、住所、担当者を優先して出力してください。\n"
         "- 発話された品名が「商品マスタ」に存在する場合、マスタの正式品名・商品ID・標準単価を適用して明細JSONを構築してください。\n"
-        "- マスタに該当するものがない場合のみ、音声から聞き取った通りの文字列（IDはnull）を出力してください。\n\n"
+        "- マスタに該当するものがない場合のみ、音声から聞き取った通りの文字列（IDなどはnull）を出力してください。\n\n"
         f"音声テキスト: 「{text}」\n\n"
         "【出力スキーマ】\n"
         "{\n"
         '  "documentType": "請求書", // または納品書\n'
         '  "clientId": "マスタに合致すればID、なければnull",\n'
         '  "clientName": "会社名（マスタ合致時はマスタの名称）",\n'
+        '  "clientHonorific": "敬称（マスタ合致時はマスタの敬称）",\n'
+        '  "clientZip": "郵便番号（マスタ合致時はマスタの郵便番号）",\n'
+        '  "clientAddress": "住所（マスタ合致時はマスタの住所）",\n'
+        '  "clientContact": "担当者（マスタ合致時はマスタの担当者）",\n'
         '  "issueDate": "YYYY-MM-DD",\n'
         '  "dueDate": "YYYY-MM-DD",\n'
         '  "items": [\n'
