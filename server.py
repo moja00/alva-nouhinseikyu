@@ -195,24 +195,30 @@ def call_gemini_vision_ocr(image_base64_data_url):
 
     req_json = json.dumps(request_payload).encode('utf-8')
 
-    candidate_models = ['gemini-2.5-flash']
+    candidate_models = ['gemini-2.0-flash', 'gemini-1.5-flash']
     last_err = None
 
+    api_key = get_gemini_api_key()
+    token = get_vertex_token()
+
     for model in candidate_models:
-        url = f"https://us-central1-aiplatform.googleapis.com/v1/projects/alva-epr-510301/locations/us-central1/publishers/google/models/{model}:generateContent"
-        url_for_log = url
-
-        print(f"\n========== [Vertex AI Request ({model})] ==========")
-        print(f"URL: {url_for_log}")
-        print(f"Body: {json.dumps(request_payload, ensure_ascii=False)}")
-        print(f"======================================================\n")
-
-        token = get_vertex_token()
         headers = {
             "Content-Type": "application/json"
         }
+        
         if token:
+            url = f"https://us-central1-aiplatform.googleapis.com/v1/projects/alva-epr-510301/locations/us-central1/publishers/google/models/{model}:generateContent"
             headers["Authorization"] = f"Bearer {token}"
+        elif api_key:
+            url = f"https://generativelanguage.googleapis.com/v1/models/{model}:generateContent?key={api_key}"
+        else:
+            return {"error": "APIキーもGCP認証トークンも存在しません。", "isRateLimit": False}
+
+        url_for_log = url.split("?key=")[0] if "?key=" in url else url
+        print(f"\n========== [Gemini API Request ({model})] ==========")
+        print(f"URL: {url_for_log}")
+        print(f"Body: {json.dumps(request_payload, ensure_ascii=False)}")
+        print(f"======================================================\n")
 
         req = urllib.request.Request(
             url,
@@ -221,7 +227,7 @@ def call_gemini_vision_ocr(image_base64_data_url):
             method="POST"
         )
 
-        print(f"[DEBUG] Vertex AI Headers: {req.headers}")
+        print(f"[DEBUG] API Headers (keys only): {list(req.headers.keys())}")
 
         for attempt in range(2):
             try:
@@ -315,13 +321,18 @@ def call_gemini_voice_to_invoice(text):
     }
 
     req_json = json.dumps(request_payload).encode('utf-8')
-    model = 'gemini-1.5-flash'
-    url = f"https://us-central1-aiplatform.googleapis.com/v1/projects/alva-epr-510301/locations/us-central1/publishers/google/models/{model}:generateContent"
-
+    model = 'gemini-2.0-flash' # または gemini-1.5-flash
+    api_key = get_gemini_api_key()
     token = get_vertex_token()
     headers = {"Content-Type": "application/json"}
+    
     if token:
+        url = f"https://us-central1-aiplatform.googleapis.com/v1/projects/alva-epr-510301/locations/us-central1/publishers/google/models/{model}:generateContent"
         headers["Authorization"] = f"Bearer {token}"
+    elif api_key:
+        url = f"https://generativelanguage.googleapis.com/v1/models/{model}:generateContent?key={api_key}"
+    else:
+        return {"error": "APIキーもGCP認証トークンも存在しません。"}
 
     req = urllib.request.Request(url, data=req_json, headers=headers, method="POST")
 
