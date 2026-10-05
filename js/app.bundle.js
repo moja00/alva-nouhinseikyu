@@ -7817,13 +7817,28 @@ function setupEventListeners() {
       if (data.notes) currentDoc.notes = data.notes;
       
       if (data.items && data.items.length > 0) {
-        currentDoc.items = data.items.map(item => ({
-          id: 'item_' + Math.random().toString(36).substr(2, 9),
-          name: item.name || '',
-          quantity: item.quantity || 1,
-          unitPrice: item.unitPrice || 0,
-          taxRate: item.taxRate || 10
-        }));
+        currentDoc.items = data.items.map(item => {
+          let uPrice = Number(item.userPrice) || 0;
+          let uUnitPrice = Number(item.unitPrice) || 0;
+          let uTax = Number(item.taxRate) || 10;
+          
+          if (uPrice > 0) {
+            // 販売店利益20%ルールに基づいて税抜仕切り単価を自動逆算
+            const res = typeof calculateWholesalePrice === 'function' ? calculateWholesalePrice(uPrice, uTax) : { wholesaleUnitPriceEx: uUnitPrice };
+            if (res.wholesaleUnitPriceEx) {
+              uUnitPrice = res.wholesaleUnitPriceEx;
+            }
+          }
+          
+          return {
+            id: 'item_' + Math.random().toString(36).substr(2, 9),
+            name: item.name || '',
+            quantity: item.quantity || 1,
+            unitPrice: uUnitPrice,
+            taxRate: uTax,
+            userPrice: uPrice
+          };
+        });
       }
       
       saveActiveDoc(currentDoc);
