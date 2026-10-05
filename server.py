@@ -287,20 +287,36 @@ def call_gemini_voice_to_invoice(text):
     if not allowed:
         return {"error": limit_msg, "isRateLimit": True}
 
+    clients = get_fs_collection('clients', DEFAULT_CLIENTS)
+    items = get_fs_collection('items', DEFAULT_ITEMS)
+    
+    clients_summary = "\n".join([f"- ID: {c.get('id')}, 名称: {c.get('name')}" for c in clients if c.get('name')])
+    items_summary = "\n".join([f"- ID: {i.get('id')}, 品名: {i.get('name')}, 単価: {i.get('unitPrice')}" for i in items if i.get('name')])
+
     prompt = (
         "以下の音声テキストを解析し、請求書や納品書の入力用データとしてJSON形式で抽出してください。\n"
         f"「来月末」などの相対的な日付は現在日付({datetime.now().strftime('%Y-%m-%d')})を基準に計算し、YYYY-MM-DD形式にしてください。\n"
         "抽出できない項目は空文字またはnullにしてください。金額は数値のみにしてください。\n\n"
+        "【取引先マスタ】\n"
+        f"{clients_summary}\n\n"
+        "【商品マスタ】\n"
+        f"{items_summary}\n\n"
+        "【重要指示】\n"
+        "- 発話された宛名や取引先が「取引先マスタ」に近しい場合、マスタに登録されている正式名称と取引先IDを優先して出力してください。\n"
+        "- 発話された品名が「商品マスタ」に存在する場合、マスタの正式品名・商品ID・標準単価を適用して明細JSONを構築してください。\n"
+        "- マスタに該当するものがない場合のみ、音声から聞き取った通りの文字列（IDはnull）を出力してください。\n\n"
         f"音声テキスト: 「{text}」\n\n"
         "【出力スキーマ】\n"
         "{\n"
         '  "documentType": "請求書", // または納品書\n'
-        '  "clientName": "会社名",\n'
+        '  "clientId": "マスタに合致すればID、なければnull",\n'
+        '  "clientName": "会社名（マスタ合致時はマスタの名称）",\n'
         '  "issueDate": "YYYY-MM-DD",\n'
         '  "dueDate": "YYYY-MM-DD",\n'
         '  "items": [\n'
         '    {\n'
-        '      "name": "商品名",\n'
+        '      "id": "マスタに合致すればID、なければnull",\n'
+        '      "name": "商品名（マスタ合致時はマスタの名称）",\n'
         '      "quantity": 1,\n'
         '      "unitPrice": 1000\n'
         '    }\n'
