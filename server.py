@@ -195,7 +195,7 @@ def call_gemini_vision_ocr(image_base64_data_url):
 
     req_json = json.dumps(request_payload).encode('utf-8')
 
-    candidate_models = ['gemini-2.0-flash-001', 'gemini-1.5-flash-002']
+    candidate_models = ['gemini-2.0-flash-001', 'gemini-1.5-flash-002', 'gemini-1.5-flash']
     last_err = None
 
     api_key = get_gemini_api_key()
@@ -206,11 +206,13 @@ def call_gemini_vision_ocr(image_base64_data_url):
             "Content-Type": "application/json"
         }
         
-        if token:
+        # Vertex AI と Google AI Studio (APIキー) の両方を試行できるようにする
+        # ※Vertex AI が 404 の場合は API キーのエンドポイントへフォールバック
+        if api_key:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+        elif token:
             url = f"https://us-central1-aiplatform.googleapis.com/v1/projects/alva-epr-510301/locations/us-central1/publishers/google/models/{model}:generateContent"
             headers["Authorization"] = f"Bearer {token}"
-        elif api_key:
-            url = f"https://generativelanguage.googleapis.com/v1/models/{model}:generateContent?key={api_key}"
         else:
             return {"error": "APIキーもGCP認証トークンも存在しません。", "isRateLimit": False}
 
@@ -321,20 +323,24 @@ def call_gemini_voice_to_invoice(text):
     }
 
     req_json = json.dumps(request_payload).encode('utf-8')
-    candidate_models = ['gemini-2.0-flash-001', 'gemini-1.5-flash-002']
+    candidate_models = ['gemini-2.0-flash-001', 'gemini-1.5-flash-002', 'gemini-1.5-flash']
     last_err = None
     
     api_key = get_gemini_api_key()
     token = get_vertex_token()
     
     for model in candidate_models:
-        headers = {"Content-Type": "application/json"}
+        headers = {
+            "Content-Type": "application/json"
+        }
         
-        if token:
+        # Vertex AI と Google AI Studio (APIキー) の両方を試行できるようにする
+        # ※Vertex AI が 404 の場合は API キーのエンドポイントへフォールバック
+        if api_key:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+        elif token:
             url = f"https://us-central1-aiplatform.googleapis.com/v1/projects/alva-epr-510301/locations/us-central1/publishers/google/models/{model}:generateContent"
             headers["Authorization"] = f"Bearer {token}"
-        elif api_key:
-            url = f"https://generativelanguage.googleapis.com/v1/models/{model}:generateContent?key={api_key}"
         else:
             return {"error": "APIキーもGCP認証トークンも存在しません。"}
 
