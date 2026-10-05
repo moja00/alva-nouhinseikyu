@@ -195,7 +195,7 @@ def call_gemini_vision_ocr(image_base64_data_url):
 
     req_json = json.dumps(request_payload).encode('utf-8')
 
-    candidate_models = ['gemini-2.0-flash-001', 'gemini-1.5-flash-002', 'gemini-1.5-flash']
+    candidate_models = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.0-flash-001', 'gemini-1.5-flash-002']
     last_err = None
 
     api_key = get_gemini_api_key()
@@ -323,7 +323,7 @@ def call_gemini_voice_to_invoice(text):
     }
 
     req_json = json.dumps(request_payload).encode('utf-8')
-    candidate_models = ['gemini-2.0-flash-001', 'gemini-1.5-flash-002', 'gemini-1.5-flash']
+    candidate_models = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.0-flash-001', 'gemini-1.5-flash-002']
     last_err = None
     
     api_key = get_gemini_api_key()
