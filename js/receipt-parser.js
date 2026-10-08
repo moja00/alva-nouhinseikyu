@@ -452,7 +452,7 @@ export async function analyzeReceiptImage(dataUrlOrFile, onProgress = null, expe
     try {
       if (onProgress) onProgress('✨ Google Gemini AIで超高精度解析中...');
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 60000);
+      const timeoutId = setTimeout(() => controller.abort(), 20000); // 20秒でタイムアウト
 
       const fetchFn = (typeof window !== 'undefined' && window.apiFetch) ? window.apiFetch : fetch;
       const res = await fetchFn('ocr', {
@@ -466,118 +466,41 @@ export async function analyzeReceiptImage(dataUrlOrFile, onProgress = null, expe
       if (!res.ok) {
         const errorText = await res.text();
         console.error('Gemini OCR API failed with status:', res.status, errorText);
-        if (typeof showToast === 'function') showToast('⚠️ AI解析失敗: ' + (errorText.substring(0, 50)), 'error');
-        throw new Error('API returns ' + res.status);
+        if (onProgress) onProgress('❌ 解析失敗 (APIエラー)');
+        if (typeof showToast === 'function') showToast('AI読み取りに失敗しました。お手数ですが、再度お試しいただくか手動でご入力ください。', 'error');
+        return null;
       }
 
-      if (res.ok) {
-        const geminiResult = await res.json();
-        if (geminiResult && !geminiResult.error && (geminiResult.amount || geminiResult.payee)) {
-          return {
-            date: geminiResult.date || new Date().toISOString().split('T')[0],
-            amount: Number(geminiResult.amount) || 0,
-            payee: geminiResult.payee || '',
-            category: geminiResult.category || '消耗品費',
-            taxRate: Number(geminiResult.taxRate) || 10,
-            invoiceNumber: geminiResult.invoiceNumber || '',
-            note: geminiResult.note || '',
-            engine: geminiResult.engine || 'gemini-flash',
-            receiptDataUrl: typeof dataUrl === 'string' ? dataUrl : ''
-          };
-        } else if (geminiResult && geminiResult.error) {
-          console.warn('Gemini API returned error:', geminiResult.error);
-          if (typeof window !== 'undefined') {
-            window.lastGeminiError = geminiResult.error;
-          }
-        }
+      const geminiResult = await res.json();
+      if (geminiResult && !geminiResult.error && (geminiResult.amount || geminiResult.payee)) {
+        return {
+          date: geminiResult.date || new Date().toISOString().split('T')[0],
+          amount: Number(geminiResult.amount) || 0,
+          payee: geminiResult.payee || '',
+          category: geminiResult.category || '消耗品費',
+          taxRate: Number(geminiResult.taxRate) || 10,
+          invoiceNumber: geminiResult.invoiceNumber || '',
+          note: geminiResult.note || '',
+          engine: geminiResult.engine || 'gemini-flash',
+          receiptDataUrl: typeof dataUrl === 'string' ? dataUrl : ''
+        };
+      } else if (geminiResult && geminiResult.error) {
+        console.warn('Gemini API returned error:', geminiResult.error);
+        if (typeof window !== 'undefined') window.lastGeminiError = geminiResult.error;
+        if (onProgress) onProgress('❌ 解析失敗');
+        if (typeof showToast === 'function') showToast('AI読み取りに失敗しました。お手数ですが、再度お試しいただくか手動でご入力ください。', 'error');
+        return null;
       }
     } catch (e) {
       console.log('Gemini API Error:', e);
-      // Gemini APIの明確なエラー(500, 400等)が返ってきた場合は、勝手にローカルOCRへ進まずここで処理を中断する。
-      // これにより、ユーザーはトーストでエラー内容を確認できる。
-      if (e.message && e.message.includes('API returns')) {
-        if (onProgress) onProgress('❌ 解析失敗 (APIエラー)');
-        return null; // 中断
-      }
-      console.log('Gemini API proxy unavailable, falling back to local OCR engine');
+      if (onProgress) onProgress('❌ 解析失敗');
+      if (typeof showToast === 'function') showToast('AI読み取りに失敗しました。お手数ですが、再度お試しいただくか手動でご入力ください。', 'error');
+      return null;
     }
   }
 
-  // ========================================================================
-  // ローカルOCRパイプライン（Tesseract.js + 学習辞書フォールバック）
-  // ========================================================================
-  let ocrInputUrl = dataUrl;
-  try {
-    if (typeof dataUrl === 'string' && dataUrl.startsWith('data:')) {
-      ocrInputUrl = await preprocessImageForOcr(dataUrl);
-    }
-  } catch (e) {
-    ocrInputUrl = dataUrl;
-  }
-
-  let extractedRawText = '';
-
-  // 1. ブラウザネイティブの TextDetector API（最速）
-  if (typeof window !== 'undefined' && 'TextDetector' in window && typeof ocrInputUrl === 'string' && ocrInputUrl.startsWith('data:')) {
-    try {
-      if (onProgress) onProgress('ネイティブOCRで解析中...');
-      const detector = new window.TextDetector();
-      const img = new Image();
-      await new Promise((resolve, reject) => {
-        img.onload = resolve;
-        img.onerror = reject;
-        img.src = ocrInputUrl;
-      });
-      const detectedTexts = await detector.detect(img);
-      extractedRawText = detectedTexts.map(t => t.rawValue).join('\n');
-    } catch (e) {
-      console.warn('TextDetector failed, trying next method:', e);
-    }
-  }
-
-  // 2. Tesseract.js（ブラウザ内Wasm OCRエンジン）
-  if (!extractedRawText && typeof window !== 'undefined' && window.Tesseract && typeof ocrInputUrl === 'string' && ocrInputUrl.startsWith('data:')) {
-    try {
-      if (onProgress) onProgress('AI文字認識エンジンで解析中...');
-      const ocrPromise = (async () => {
-        const ret = await window.Tesseract.recognize(ocrInputUrl, 'eng+jpn', {
-          logger: m => {
-            if (onProgress && m.status === 'recognizing text' && m.progress) {
-              onProgress(`文字認識中... ${Math.round(m.progress * 100)}%`);
-            }
-          }
-        });
-        return ret?.data?.text || '';
-      })();
-
-      // 最大10秒でタイムアウトして安全にフォールバック
-      const timeoutPromise = new Promise(resolve => setTimeout(() => resolve(''), 10000));
-      extractedRawText = await Promise.race([ocrPromise, timeoutPromise]);
-    } catch (err) {
-      console.warn('Tesseract OCR error:', err);
-    }
-  }
-
-  // 3. テキストからレシート情報を抽出（過去の登録履歴から自動学習）
-  const parsed = parseReceiptText(extractedRawText, expenseHistory);
-  parsed.receiptDataUrl = typeof dataUrl === 'string' ? dataUrl : '';
-
-  // 4. ファイル名からのスマート補完（OCRで漏れた場合の補助）
-  if (fileName) {
-    const fnDate = fileName.match(/202[4-9][\-_]?[0-1][0-9][\-_]?[0-3][0-9]/);
-    if (fnDate && (!parsed.date || parsed.date === new Date().toISOString().split('T')[0])) {
-      const clean = fnDate[0].replace(/[\-_]/g, '');
-      parsed.date = `${clean.substr(0, 4)}-${clean.substr(4, 2)}-${clean.substr(6, 2)}`;
-    }
-    const fnAmount = fileName.match(/([0-9]{2,7})(?:円|yen)/i);
-    if (fnAmount && (!parsed.amount || parsed.amount === 0)) {
-      parsed.amount = Number(fnAmount[1]);
-    }
-    const fnPayee = fileName.match(/(セブン|ローソン|ファミマ|出光|eneos|jr|アスクル|amazon|ビックカメラ|ヨドバシ|タクシー)/i);
-    if (fnPayee && !parsed.payee) {
-      parsed.payee = fnPayee[0];
-    }
-  }
-
-  return parsed;
+  // HTTP以外の環境やdataUrlがない場合などのフェールセーフ
+  if (onProgress) onProgress('❌ 解析失敗');
+  if (typeof showToast === 'function') showToast('AI読み取りに失敗しました。お手数ですが、再度お試しいただくか手動でご入力ください。', 'error');
+  return null;
 }
