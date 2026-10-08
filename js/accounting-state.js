@@ -21,6 +21,11 @@ export const ACCOUNT_CATEGORIES = [
   { code: '612', name: '租税公課', group: 'expense', taxType: 'exempt', description: '印紙税、固定資産税、自動車税、登録免許税' },
   { code: '613', name: '保険料', group: 'expense', taxType: 'exempt', description: '損害保険、火災保険、賠償責任保険' },
   { code: '614', name: '修繕費', group: 'expense', taxType: 'taxable', description: '建物・設備・PC等の修理・メンテナンス' },
+  { code: '615', name: '給料賃金', group: 'expense', taxType: 'exempt', description: '役員報酬、従業員給与' },
+  { code: '616', name: '法定福利費', group: 'expense', taxType: 'exempt', description: '社会保険料、労働保険料（会社負担分）' },
+  { code: '617', name: '減価償却費', group: 'expense', taxType: 'exempt', description: '固定資産の減価償却費' },
+  { code: '618', name: '荷造運賃', group: 'expense', taxType: 'taxable', description: '商品の梱包・発送費、運送費' },
+  { code: '619', name: '外注費', group: 'cost', taxType: 'taxable', description: '外部委託費（デザイン、システム開発等）' },
   { code: '699', name: '雑費', group: 'expense', taxType: 'taxable', description: '他の科目に当てはまらない少額出費' }
 ];
 

@@ -616,6 +616,11 @@ const ACCOUNT_CATEGORIES = [
   { code: '612', name: '租税公課', group: 'expense', taxType: 'exempt', description: '印紙税、固定資産税、自動車税、登録免許税' },
   { code: '613', name: '保険料', group: 'expense', taxType: 'exempt', description: '損害保険、火災保険、賠償責任保険' },
   { code: '614', name: '修繕費', group: 'expense', taxType: 'taxable', description: '建物・設備・PC等の修理・メンテナンス' },
+  { code: '615', name: '給料賃金', group: 'expense', taxType: 'exempt', description: '役員報酬、従業員給与' },
+  { code: '616', name: '法定福利費', group: 'expense', taxType: 'exempt', description: '社会保険料、労働保険料（会社負担分）' },
+  { code: '617', name: '減価償却費', group: 'expense', taxType: 'exempt', description: '固定資産の減価償却費' },
+  { code: '618', name: '荷造運賃', group: 'expense', taxType: 'taxable', description: '商品の梱包・発送費、運送費' },
+  { code: '619', name: '外注費', group: 'cost', taxType: 'taxable', description: '外部委託費（デザイン、システム開発等）' },
   { code: '699', name: '雑費', group: 'expense', taxType: 'taxable', description: '他の科目に当てはまらない少額出費' }
 ];
 
@@ -1946,17 +1951,54 @@ function formatCurrency(num = 0) {
  * 画像圧縮、OCRテキスト抽出、正規表現パターンによる日付・金額・店名・科目自動抽出
  */
 
+function getExifOrientation(file) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const view = new DataView(e.target.result);
+      if (view.getUint16(0, false) !== 0xFFD8) return resolve(-2);
+      const length = view.byteLength;
+      let offset = 2;
+      while (offset < length) {
+        if (view.getUint16(offset+2, false) <= 8) return resolve(-1);
+        const marker = view.getUint16(offset, false);
+        offset += 2;
+        if (marker === 0xFFE1) {
+          if (view.getUint32(offset += 2, false) !== 0x45786966) return resolve(-1);
+          const little = view.getUint16(offset += 6, false) === 0x4949;
+          offset += view.getUint32(offset + 4, little);
+          const tags = view.getUint16(offset, little);
+          offset += 2;
+          for (let i = 0; i < tags; i++) {
+            if (view.getUint16(offset + (i * 12), little) === 0x0112) {
+              return resolve(view.getUint16(offset + (i * 12) + 8, little));
+            }
+          }
+        }
+        else if ((marker & 0xFF00) !== 0xFF00) break;
+        else offset += view.getUint16(offset, false);
+      }
+      return resolve(-1);
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
 /**
- * アップロードされた画像をブラウザCanvasで適切なサイズに圧縮（長辺1200px、JPEG 0.85）
+ * アップロードされた画像をブラウザCanvasで適切なサイズに圧縮（長辺1600px、JPEG 0.92）
+ * EXIFによるスマホ横倒し・反転を検知し、正しい向きに補正してAPIに送信する
  * @param {File} file 画像ファイル
  * @returns {Promise<string>} Base64 DataURL
  */
-function compressReceiptImage(file) {
-  return new Promise((resolve, reject) => {
-    if (!file) {
-      return reject(new Error('ファイルが指定されていません'));
-    }
+async function compressReceiptImage(file) {
+  if (!file) return Promise.reject(new Error('ファイルが指定されていません'));
 
+  let orientation = 1;
+  try {
+    orientation = await getExifOrientation(file);
+  } catch(e) {}
+
+  return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       const dataUrl = e.target.result;
@@ -1967,7 +2009,7 @@ function compressReceiptImage(file) {
       const img = new Image();
       img.onload = () => {
         try {
-          const maxDimension = 2000;
+          const maxDimension = 1600; // OCR文字が潰れないよう1600px維持
           let width = img.width || 800;
           let height = img.height || 600;
 
@@ -1982,23 +2024,39 @@ function compressReceiptImage(file) {
           }
 
           const canvas = document.createElement('canvas');
-          canvas.width = width;
-          canvas.height = height;
           const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.drawImage(img, 0, 0, width, height);
-            const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.92);
-            resolve(compressedDataUrl);
-          } else {
-            resolve(dataUrl);
+          if (!ctx) {
+            return resolve(dataUrl);
           }
+
+          if ([5, 6, 7, 8].includes(orientation)) {
+             canvas.width = height;
+             canvas.height = width;
+          } else {
+             canvas.width = width;
+             canvas.height = height;
+          }
+
+          switch (orientation) {
+            case 2: ctx.transform(-1, 0, 0, 1, width, 0); break;
+            case 3: ctx.transform(-1, 0, 0, -1, width, height); break;
+            case 4: ctx.transform(1, 0, 0, -1, 0, height); break;
+            case 5: ctx.transform(0, 1, 1, 0, 0, 0); break;
+            case 6: ctx.transform(0, 1, -1, 0, height, 0); break;
+            case 7: ctx.transform(0, -1, -1, 0, height, width); break;
+            case 8: ctx.transform(0, -1, 1, 0, 0, width); break;
+            default: break;
+          }
+
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.92);
+          resolve(compressedDataUrl);
         } catch (err) {
           console.warn('Canvas compression error, using raw DataURL:', err);
           resolve(dataUrl);
         }
       };
       img.onerror = () => {
-        // 画像デコードに失敗してもDataURLとしてそのまま渡す
         resolve(dataUrl);
       };
       img.src = dataUrl;
