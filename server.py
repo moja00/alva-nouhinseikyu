@@ -23,20 +23,6 @@ from datetime import datetime
 PORT = int(os.environ.get("PORT", 3000))
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-def get_vertex_token():
-    # Cloud Run / メタデータサーバーからトークン取得
-    try:
-        req = urllib.request.Request(
-            "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token",
-            headers={"Metadata-Flavor": "Google"}
-        )
-        with urllib.request.urlopen(req, timeout=5) as res:
-            data = json.loads(res.read().decode())
-            return data.get("access_token")
-    except Exception as e:
-        print(f"Metadata token fetch failed: {e}")
-        return None
-
 def load_env():
     env_path = os.path.join(BASE_DIR, '.env')
     if os.path.exists(env_path):
@@ -56,6 +42,43 @@ def load_env():
             print(f"[警告] .env 読み込みエラー: {e}")
 
 load_env()
+
+# ==============================================================================
+# Vertex AI (google-genai SDK) クライアント初期化
+# ==============================================================================
+try:
+    from google import genai
+    from google.genai import types
+    _genai_imported = True
+except ImportError:
+    _genai_imported = False
+    genai = None
+    types = None
+
+client = None
+
+def get_genai_client():
+    global client
+    if client is not None:
+        return client
+    if not _genai_imported:
+        print("[Vertex AI] google-genai パッケージが未インストールです。")
+        return None
+    try:
+        # Google Cloudプロジェクトおよびリージョンを指定してVertex AIモードで起動
+        client = genai.Client(
+            vertexai=True,
+            project=os.environ.get("GOOGLE_CLOUD_PROJECT", "alva-epr-510301"),
+            location=os.environ.get("GOOGLE_CLOUD_LOCATION", "asia-northeast1")
+        )
+        print("[Vertex AI] genai.Client が正常に初期化されました (ADC認証)")
+        return client
+    except Exception as e:
+        print(f"[Vertex AI] genai.Client 初期化エラー: {e}")
+        return None
+
+if _genai_imported:
+    get_genai_client()
 
 def get_gemini_api_key():
     return os.environ.get('GEMINI_API_KEY', '').strip()
@@ -125,12 +148,12 @@ def get_rate_limit_status():
 
 def call_gemini_vision_ocr(image_base64_data_url):
     """
-    Google Gemini AI (最新 Flash モデル) を使用してレシート画像を解析
+    Google Cloud Vertex AI (Gemini 2.5 Flash) を使用してレシート画像を解析
     無料枠セーフティリミッター付き
     """
-    api_key = get_gemini_api_key()
-    if not api_key:
-        return {"error": "GEMINI_API_KEY が .env に設定されていません。"}
+    ai_client = get_genai_client()
+    if not ai_client:
+        return {"error": "Vertex AI クライアントが初期化されていません。ADC認証またはgoogle-genaiパッケージを確認してください。"}
 
     # 無料枠安全チェック
     allowed, limit_msg = check_and_record_rate_limit()
@@ -146,6 +169,13 @@ def call_gemini_vision_ocr(image_base64_data_url):
         mime_match = re.search(r'data:(image\/[a-zA-Z0-9\+\-\.]+);base64', header)
         if mime_match:
             mime_type = mime_match.group(1)
+
+    try:
+        raw_bytes = base64.b64decode(b64_data)
+    except Exception as e:
+        return {"error": f"画像のBase64デコードに失敗しました: {e}"}
+
+    image_part = types.Part.from_bytes(data=raw_bytes, mime_type=mime_type)
 
     prompt = (
         "あなたは日本のレシート・領収書解析の専門家です。画像内に実際に印字されている文字・数字のみを正確に抽出してください。推測や創作は厳禁です。\n\n"
@@ -174,117 +204,42 @@ def call_gemini_vision_ocr(image_base64_data_url):
         "純粋なJSON文字列のみを出力してください。Markdownのコードブロック(```json)は含めないでください。"
     )
 
-    request_payload = {
-        "contents": [
-            {
-                "role": "user",
-                "parts": [
-                    {"text": prompt},
-                    {
-                        "inline_data": {
-                            "mime_type": mime_type,
-                            "data": b64_data
-                        }
-                    }
-                ]
-            }
-        ],
-        "generationConfig": {
-            "response_mime_type": "application/json",
-            "temperature": 0.1
-        }
-    }
-
-    req_json = json.dumps(request_payload).encode('utf-8')
-
-    default_model = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
-    candidate_models = [default_model, "gemini-3.8-flash"]
-    last_err = None
-
-    api_key = get_gemini_api_key()
-    token = get_vertex_token()
-
-    for model in candidate_models:
-        headers = {
-            "Content-Type": "application/json"
-        }
-        
-        if api_key and len(api_key) > 0:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-            if "Authorization" in headers:
-                del headers["Authorization"]
-        elif token:
-            url = f"https://us-central1-aiplatform.googleapis.com/v1/projects/alva-epr-510301/locations/us-central1/publishers/google/models/{model}:generateContent"
-            headers["Authorization"] = f"Bearer {token}"
-        else:
-            return {"error": "APIキーもGCP認証トークンも存在しません。", "isRateLimit": False}
-
-        url_for_log = url.split("?key=")[0] if "?key=" in url else url
-        print(f"\n========== [Gemini API Request ({model})] ==========")
-        print(f"URL: {url_for_log}")
-        print(f"Body: {json.dumps(request_payload, ensure_ascii=False)}")
-        print(f"======================================================\n")
-
-        req = urllib.request.Request(
-            url,
-            data=req_json,
-            headers=headers,
-            method="POST"
+    model_name = "gemini-2.5-flash"
+    try:
+        print(f"\n========== [Vertex AI OCR Request ({model_name})] ==========")
+        response = ai_client.models.generate_content(
+            model=model_name,
+            contents=[image_part, prompt],
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.1
+            )
         )
+        print(f"========== [Vertex AI OCR Response ({model_name})] ==========")
+        raw_text = response.text.strip() if response.text else "{}"
+        raw_text = re.sub(r'^```json\s*', '', raw_text)
+        raw_text = re.sub(r'\s*```$', '', raw_text)
+        ocr_data = json.loads(raw_text)
 
-        print(f"[DEBUG] API Headers (keys only): {list(req.headers.keys())}")
+        # インボイス番号の正規化（Tが付いていない13桁数字の場合はTを自動補完）
+        inv = str(ocr_data.get('invoiceNumber', '')).strip()
+        if re.match(r'^\d{13}$', inv):
+            ocr_data['invoiceNumber'] = f"T{inv}"
+        elif inv.startswith('t'):
+            ocr_data['invoiceNumber'] = f"T{inv[1:]}"
 
-        for attempt in range(2):
-            try:
-                with urllib.request.urlopen(req, timeout=20) as res:
-                    res_body = res.read().decode('utf-8')
-                    print(f"\n========== [Gemini API Response ({model})] =========")
-                    print(f"Status: {res.status}")
-                    print(f"Body: {res_body}")
-                    print(f"========================================================\n")
-
-                    parsed_res = json.loads(res_body)
-                    candidates = parsed_res.get('candidates', [])
-                    if candidates and 'content' in candidates[0]:
-                        parts = candidates[0]['content'].get('parts', [])
-                        if parts and 'text' in parts[0]:
-                            raw_text = parts[0]['text'].strip()
-                            raw_text = re.sub(r'^```json\s*', '', raw_text)
-                            raw_text = re.sub(r'\s*```$', '', raw_text)
-                            ocr_data = json.loads(raw_text)
-
-                            # インボイス番号の正規化（Tが付いていない13桁数字の場合はTを自動補完）
-                            inv = str(ocr_data.get('invoiceNumber', '')).strip()
-                            if re.match(r'^\d{13}$', inv):
-                                ocr_data['invoiceNumber'] = f"T{inv}"
-                            elif inv.startswith('t'):
-                                ocr_data['invoiceNumber'] = f"T{inv[1:]}"
-                            
-                            ocr_data["engine"] = model
-                            print(f"[Gemini OCR 成功] モデル: {model} | 支払先: {ocr_data.get('payee')} | インボイス: {ocr_data.get('invoiceNumber')} | 金額: ¥{ocr_data.get('amount')}")
-                            return ocr_data
-            except urllib.error.HTTPError as e:
-                err_msg = e.read().decode('utf-8', errors='ignore')
-                print(f"\n========== [Gemini API HTTP Error ({model} 試行{attempt+1})] ==========")
-                print(f"Status: {e.code}")
-                print(f"Body: {err_msg}")
-                print(f"==============================================================\n")
-                last_err = f"Gemini APIエラー ({model} {e.code}): {err_msg}"
-                if e.code == 503 and attempt == 0:
-                    time.sleep(1.5)  # 一時的混雑時は1.5秒待機してリトライ
-                    continue
-                # 404, 400などの場合はこのモデルへの再試行をやめて次のモデルへ
-                break
-            except Exception as e:
-                print(f"[Gemini API Error ({model} 試行{attempt+1})] {e}")
-                last_err = str(e)
-                break
-        
-        print(f"[Gemini API] {model} での解析に失敗しました。次のモデルを試します。")
-
-    return {"error": f"Gemini APIでの解析に失敗しました: {last_err}"}
+        ocr_data["engine"] = model_name
+        print(f"[Gemini OCR 成功] モデル: {model_name} | 支払先: {ocr_data.get('payee')} | インボイス: {ocr_data.get('invoiceNumber')} | 金額: ¥{ocr_data.get('amount')}")
+        return ocr_data
+    except Exception as e:
+        print(f"[Vertex AI OCR Error ({model_name})] {e}")
+        return {"error": f"Vertex AIでの解析に失敗しました: {e}"}
 
 def call_gemini_voice_to_invoice(text):
+    ai_client = get_genai_client()
+    if not ai_client:
+        return {"error": "Vertex AI クライアントが初期化されていません。ADC認証またはgoogle-genaiパッケージを確認してください。"}
+
     allowed, limit_msg = check_and_record_rate_limit()
     if not allowed:
         return {"error": limit_msg, "isRateLimit": True}
@@ -334,72 +289,25 @@ def call_gemini_voice_to_invoice(text):
         "純粋なJSON文字列のみを出力してください。Markdownのコードブロック(```json)は含めないでください。"
     )
 
-    request_payload = {
-        "contents": [
-            {
-                "role": "user",
-                "parts": [{"text": prompt}]
-            }
-        ],
-        "generationConfig": {
-            "response_mime_type": "application/json",
-            "temperature": 0.1
-        }
-    }
-
-    req_json = json.dumps(request_payload).encode('utf-8')
-    default_model = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
-    candidate_models = [default_model, "gemini-3.8-flash"]
-    last_err = None
-    
-    api_key = get_gemini_api_key()
-    token = get_vertex_token()
-    
-    for model in candidate_models:
-        headers = {
-            "Content-Type": "application/json"
-        }
-        
-        if api_key and len(api_key) > 0:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-            if "Authorization" in headers:
-                del headers["Authorization"]
-        elif token:
-            url = f"https://us-central1-aiplatform.googleapis.com/v1/projects/alva-epr-510301/locations/us-central1/publishers/google/models/{model}:generateContent"
-            headers["Authorization"] = f"Bearer {token}"
-        else:
-            return {"error": "APIキーもGCP認証トークンも存在しません。"}
-
-        req = urllib.request.Request(url, data=req_json, headers=headers, method="POST")
-
-        for attempt in range(2):
-            try:
-                with urllib.request.urlopen(req, timeout=15) as res:
-                    res_body = res.read().decode('utf-8')
-                    parsed_res = json.loads(res_body)
-                    candidates = parsed_res.get('candidates', [])
-                    if candidates and 'content' in candidates[0]:
-                        parts = candidates[0]['content'].get('parts', [])
-                        if parts and 'text' in parts[0]:
-                            raw_text = parts[0]['text'].strip()
-                            raw_text = re.sub(r'^```json\s*', '', raw_text)
-                            raw_text = re.sub(r'\s*```$', '', raw_text)
-                            parsed_data = json.loads(raw_text)
-                            parsed_data["engine"] = model
-                            return parsed_data
-            except urllib.error.HTTPError as e:
-                err_msg = e.read().decode('utf-8', errors='ignore')
-                last_err = f"Gemini APIエラー ({model} {e.code}): {err_msg}"
-                if e.code == 503 and attempt == 0:
-                    time.sleep(1.5)
-                    continue
-                # 404等の場合は再試行を諦め、次のモデルへ
-                break
-            except Exception as e:
-                last_err = str(e)
-                break
-                
-    return {"error": f"音声の解析に失敗しました: {last_err}"}
+    model_name = "gemini-2.5-flash"
+    try:
+        response = ai_client.models.generate_content(
+            model=model_name,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.1
+            )
+        )
+        raw_text = response.text.strip() if response.text else "{}"
+        raw_text = re.sub(r'^```json\s*', '', raw_text)
+        raw_text = re.sub(r'\s*```$', '', raw_text)
+        parsed_data = json.loads(raw_text)
+        parsed_data["engine"] = model_name
+        return parsed_data
+    except Exception as e:
+        print(f"[Vertex AI Voice Error ({model_name})] {e}")
+        return {"error": f"音声の解析に失敗しました: {e}"}
 
 
 DATA_DIR = os.path.join(BASE_DIR, 'data')
@@ -884,17 +792,17 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
                 self.path = '/api/' + qs['endpoint'][0]
 
         if self.path == '/api/status':
-            api_key = get_gemini_api_key()
-            has_key = bool(api_key and len(api_key) > 5)
+            ai_client = get_genai_client()
+            has_client = ai_client is not None
             rate_info = get_rate_limit_status()
             self.send_response(200)
             self.send_header('Content-Type', 'application/json; charset=utf-8')
             self.end_headers()
             res_data = {
-                "hasGeminiKey": has_key,
-                "model": "gemini-flash-latest",
+                "hasGeminiKey": has_client,
+                "model": "gemini-2.5-flash",
                 "rateLimit": rate_info,
-                "message": f"Gemini AI有効（本日残り {rate_info['dailyRemaining']}回/無料安全モード）" if has_key else "GEMINI_API_KEY未設定"
+                "message": f"Vertex AI (gemini-2.5-flash) 有効（本日残り {rate_info['dailyRemaining']}回/安全モード）" if has_client else "Vertex AI 未認証 (ADCまたはgoogle-genaiの環境を確認してください)"
             }
             self.wfile.write(json.dumps(res_data, ensure_ascii=False).encode('utf-8'))
             return
@@ -1612,11 +1520,11 @@ if __name__ == '__main__':
     print("=" * 60)
     print(" Alva-works ERP - 統合業務管理サーバー起動中")
     print(f" URL: http://localhost:{PORT}")
-    has_key = bool(get_gemini_api_key())
-    if has_key:
-        print(" [AI OCR] Gemini API連携: 有効 (Gemini 3.6/Flash マルチモデル・無料枠ガード付き)")
+    ai_client = get_genai_client()
+    if ai_client:
+        print(" [AI OCR] Vertex AI (gemini-2.5-flash) 連携: 有効 (google-genai SDK / ADC認証)")
     else:
-        print(" [AI OCR] Gemini API連携: 未設定 (.env に GEMINI_API_KEY を設定可能)")
+        print(" [AI OCR] Vertex AI 連携: 未認証 (ADC認証またはgoogle-genaiのインストールが必要です)")
     print(" 終了するには Ctrl+C を押してください")
     print("=" * 60)
 
