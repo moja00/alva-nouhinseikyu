@@ -125,15 +125,15 @@ def verify_firebase_auth(handler):
     if not token:
         token = handler.headers.get('x-firebase-auth', '').strip()
 
-    # 3. クエリパラメータフォールバック (?token=... または ?auth=... 等)
+    # 3. クエリパラメータフォールバック (?token=... または ?auth=...)
     if not token:
         try:
             parsed = urllib.parse.urlparse(handler.path)
             qs = urllib.parse.parse_qs(parsed.query)
-            for k in ('token', 'auth', 'authToken', '_token'):
-                if k in qs and qs[k] and qs[k][0].strip():
-                    token = qs[k][0].strip()
-                    break
+            if 'token' in qs:
+                token = qs['token'][0].strip()
+            elif 'auth' in qs:
+                token = qs['auth'][0].strip()
         except Exception:
             pass
 
@@ -916,10 +916,7 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
         if 'api.php' in parsed_url.path:
             qs = urllib.parse.parse_qs(parsed_url.query)
             if 'endpoint' in qs:
-                endpoint_val = qs['endpoint'][0]
-                remaining_qs = {k: v for k, v in qs.items() if k != 'endpoint'}
-                new_query = urllib.parse.urlencode(remaining_qs, doseq=True)
-                self.path = '/api/' + endpoint_val + ('?' + new_query if new_query else '')
+                self.path = '/api/' + qs['endpoint'][0]
                 parsed_url = urllib.parse.urlparse(self.path)
 
         clean_path = parsed_url.path
@@ -1118,10 +1115,7 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
         if 'api.php' in parsed_url.path:
             qs = urllib.parse.parse_qs(parsed_url.query)
             if 'endpoint' in qs:
-                endpoint_val = qs['endpoint'][0]
-                remaining_qs = {k: v for k, v in qs.items() if k != 'endpoint'}
-                new_query = urllib.parse.urlencode(remaining_qs, doseq=True)
-                self.path = '/api/' + endpoint_val + ('?' + new_query if new_query else '')
+                self.path = '/api/' + qs['endpoint'][0]
                 parsed_url = urllib.parse.urlparse(self.path)
 
         clean_path = parsed_url.path
@@ -1687,10 +1681,7 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
         if 'api.php' in parsed_url.path:
             qs = urllib.parse.parse_qs(parsed_url.query)
             if 'endpoint' in qs:
-                endpoint_val = qs['endpoint'][0]
-                remaining_qs = {k: v for k, v in qs.items() if k != 'endpoint'}
-                new_query = urllib.parse.urlencode(remaining_qs, doseq=True)
-                self.path = '/api/' + endpoint_val + ('?' + new_query if new_query else '')
+                self.path = '/api/' + qs['endpoint'][0]
                 parsed_url = urllib.parse.urlparse(self.path)
 
         clean_path = parsed_url.path

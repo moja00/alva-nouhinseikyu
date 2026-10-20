@@ -3256,18 +3256,12 @@ async function apiFetch(path, options = {}) {
   }
 
   const dir = getAppBaseDir();
-  const baseCandidates = [
+  const candidates = [
     `${dir}api.php?endpoint=${clean}`,
     `api.php?endpoint=${clean}`,
     `${dir}api/${clean}`,
     `/api/${clean}`
   ];
-
-  // プロキシ（api.php / Apache / Nginx / Cloud Run）環境での Authorization ヘッダー欠落を完全防止するため、
-  // トークンが存在する場合は全てのURL候補に ?token= または &token= を自動付与
-  const candidates = token
-    ? baseCandidates.map(u => u.includes('?') ? `${u}&token=${encodeURIComponent(token)}` : `${u}?token=${encodeURIComponent(token)}`)
-    : baseCandidates;
 
   const headers = new Headers(options.headers || {});
   if (token) {
@@ -3277,25 +3271,9 @@ async function apiFetch(path, options = {}) {
     headers.set('X-Firebase-Auth', token);
   }
 
-  // POST / PUT 送信時に JSON ボディ内にもトークンを含める
-  let body = options.body;
-  if (token && body && typeof body === 'string') {
-    try {
-      const parsed = JSON.parse(body);
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        parsed._token = token;
-        parsed.authToken = token;
-        body = JSON.stringify(parsed);
-      }
-    } catch (e) {
-      // JSON形式でない場合はそのまま
-    }
-  }
-
   const fetchOpts = {
     credentials: 'same-origin',
     ...options,
-    body: body !== undefined ? body : options.body,
     headers
   };
 
