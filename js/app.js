@@ -6145,12 +6145,25 @@ function initMultiReceiptHandlers() {
     });
   }
 
-  // ESCキーとショートカット
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && DOM.multiReceiptModal && DOM.multiReceiptModal.style.display === 'flex') {
+  // イベント委譲（非同期生成やDOMバインド漏れにも100%確実に反応させる）
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('#btnResumeMultiReceipt')) {
+      console.log("【複数レシート】再開ボタン クリック検知 (Event Delegation)");
+      resumeMultiReceiptModal();
+    }
+    if (e.target.closest('#btnCloseMultiReceiptModal') || e.target.closest('#btnMultiReceiptDone')) {
+      console.log("【複数レシート】閉じるボタン クリック検知 (Event Delegation)");
       closeMultiReceiptModal();
     }
-    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && DOM.multiReceiptModal && DOM.multiReceiptModal.style.display === 'flex') {
+  });
+
+  // ESCキーとショートカット
+  document.addEventListener('keydown', (e) => {
+    const modal = DOM.multiReceiptModal || document.getElementById('multiReceiptModal');
+    if (e.key === 'Escape' && modal && (modal.style.display === 'flex' || modal.classList.contains('active'))) {
+      closeMultiReceiptModal();
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && modal && (modal.style.display === 'flex' || modal.classList.contains('active'))) {
       e.preventDefault();
       saveCurrentMultiReceiptItem(true);
     }
@@ -6161,6 +6174,7 @@ function initMultiReceiptHandlers() {
  * 複数画像を受け取って確認・個別登録モーダルを開く
  */
 async function openMultiReceiptModal(files) {
+  console.log("【複数レシート】openMultiReceiptModal 実行開始", files);
   if (!files || files.length === 0) return;
 
   const validFiles = Array.from(files).filter(f => {
@@ -6200,8 +6214,10 @@ async function openMultiReceiptModal(files) {
     multiReceiptSession.currentIndex = 0;
   }
 
-  if (DOM.multiReceiptModal) {
-    DOM.multiReceiptModal.style.display = 'flex';
+  const modal = DOM.multiReceiptModal || document.getElementById('multiReceiptModal');
+  if (modal) {
+    modal.classList.add('active');
+    modal.style.display = 'flex';
     document.body.style.overflow = 'hidden';
   }
 
@@ -6813,9 +6829,12 @@ function updateMultiReceiptProgress() {
 }
 
 function closeMultiReceiptModal() {
+  console.log("【複数レシート】closeMultiReceiptModal 実行開始");
   syncCurrentMultiReceiptFormData();
-  if (DOM.multiReceiptModal) {
-    DOM.multiReceiptModal.style.display = 'none';
+  const modal = DOM.multiReceiptModal || document.getElementById('multiReceiptModal');
+  if (modal) {
+    modal.classList.remove('active');
+    modal.style.display = 'none';
   }
   document.body.style.overflow = '';
   updateMultiReceiptProgress();
@@ -6826,22 +6845,55 @@ function closeMultiReceiptModal() {
 }
 
 function resumeMultiReceiptModal() {
-  if (!multiReceiptSession.items || multiReceiptSession.items.length === 0) return;
-  if (DOM.multiReceiptModal) {
-    DOM.multiReceiptModal.style.display = 'flex';
-    document.body.style.overflow = 'hidden';
+  console.log("【複数レシート】resumeMultiReceiptModal 実行開始", { itemsCount: multiReceiptSession.items?.length });
+  const modal = DOM.multiReceiptModal || document.getElementById('multiReceiptModal');
+  if (!modal) {
+    console.error("【複数レシート】multiReceiptModal がDOMに存在しません");
+    return;
   }
+
+  // もしセッションが空（再読み込み後など）の場合は画像選択ダイアログを開く
+  if (!multiReceiptSession.items || multiReceiptSession.items.length === 0) {
+    console.warn("【複数レシート】キューが空のため画像ファイル選択を開きます");
+    const fileInput = DOM.receiptFileInput || document.getElementById('receiptFileInput');
+    if (fileInput) fileInput.click();
+    return;
+  }
+
+  modal.classList.add('active');
+  modal.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+
   const firstUnsaved = multiReceiptSession.items.findIndex(it => !it.isSaved);
   if (firstUnsaved >= 0) {
     loadMultiReceiptItem(firstUnsaved);
   } else {
     loadMultiReceiptItem(multiReceiptSession.currentIndex || 0);
   }
+  renderMultiReceiptTabs();
+  console.log("【複数レシート】resumeMultiReceiptModal 完了（表示中）");
 }
 
 window.openMultiReceiptModal = openMultiReceiptModal;
 window.closeMultiReceiptModal = closeMultiReceiptModal;
 window.resumeMultiReceiptModal = resumeMultiReceiptModal;
+window.saveCurrentMultiReceiptItem = saveCurrentMultiReceiptItem;
+window.saveAllRemainingMultiReceiptItems = saveAllRemainingMultiReceiptItems;
+window.skipCurrentMultiReceiptItem = skipCurrentMultiReceiptItem;
+window.rotateCurrentMultiReceiptImage = rotateCurrentMultiReceiptImage;
+window.zoomCurrentMultiReceiptImage = zoomCurrentMultiReceiptImage;
+window.prevMultiReceiptItem = () => {
+  syncCurrentMultiReceiptFormData();
+  if (multiReceiptSession.currentIndex > 0) {
+    loadMultiReceiptItem(multiReceiptSession.currentIndex - 1);
+  }
+};
+window.nextMultiReceiptItem = () => {
+  syncCurrentMultiReceiptFormData();
+  if (multiReceiptSession.currentIndex < multiReceiptSession.items.length - 1) {
+    loadMultiReceiptItem(multiReceiptSession.currentIndex + 1);
+  }
+};
 
 /**
  * 複数レシートファイルの受付

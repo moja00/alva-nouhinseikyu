@@ -3213,5 +3213,21 @@ label.form-label {
   }
 }
 
+#multiReceiptModal {
+  z-index: 99999 !important;
+}
+
+#multiReceiptModal.active {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  display: flex !important;
+}
+
+#multiReceiptModal.active .modal-card {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  transform: translateY(0) !important;
+}
+
 
 

@@ -51,9 +51,9 @@
           <span class="brand-subtitle">統合業務スイート</span>
           <span id="systemDeployBadge"
             style="font-size: 0.65rem; background: #ecfdf5; color: #047857; border: 1px solid #6ee7b7; padding: 2px 8px; border-radius: 9999px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; letter-spacing: 0.3px;"
-            title="最新デプロイバージョン: 2026/10/20 複数レシート個別確認対応">
+            title="最新デプロイバージョン: 2026/10/20 複数レシート個別確認対応 (v2)">
             <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #10b981; box-shadow: 0 0 4px #10b981;"></span>
-            v2026.10.20-multi
+            v2026.10.20-multi-v2
           </span>
         </h1>
       </div>
@@ -2440,7 +2440,8 @@
                 </div>
               </div>
               <button type="button" id="btnResumeMultiReceipt" class="btn btn-primary btn-sm"
-                style="background: #4f46e5; border-color: #4f46e5; font-size: 0.75rem; font-weight: 700; padding: 4px 10px;">
+                onclick="window.resumeMultiReceiptModal && window.resumeMultiReceiptModal()"
+                style="background: #4f46e5; border-color: #4f46e5; font-size: 0.75rem; font-weight: 700; padding: 4px 10px; cursor: pointer;">
                 確認・登録を再開 ➔
               </button>
             </div>
@@ -4402,9 +4403,9 @@
 
   <!-- 複数レシート個別確認・登録モーダル -->
   <div id="multiReceiptModal" class="modal-overlay"
-    style="display: none; position: fixed; inset: 0; z-index: 99998; background: rgba(15, 23, 42, 0.75); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); align-items: center; justify-content: center; padding: 16px; box-sizing: border-box;">
+    style="display: none; opacity: 1 !important; pointer-events: auto !important; position: fixed; inset: 0; z-index: 99999; background: rgba(15, 23, 42, 0.75); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); align-items: center; justify-content: center; padding: 16px; box-sizing: border-box;">
     <div id="multiReceiptCard" class="modal-card"
-      style="max-width: 1100px; width: 96%; max-height: 94vh; display: flex; flex-direction: column; padding: 0; background: #ffffff; border-radius: 14px; overflow: hidden; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.45); border: 1px solid #cbd5e1; position: relative;">
+      style="max-width: 1100px; width: 96%; max-height: 94vh; display: flex; flex-direction: column; padding: 0; background: #ffffff; border-radius: 14px; overflow: hidden; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.45); border: 1px solid #cbd5e1; position: relative; opacity: 1 !important; pointer-events: auto !important;">
 
       <!-- ヘッダー -->
       <div
@@ -4429,6 +4430,7 @@
             </select>
           </div>
           <button type="button" id="btnCloseMultiReceiptModal"
+            onclick="window.closeMultiReceiptModal && window.closeMultiReceiptModal()"
             style="background: #f1f5f9; border: 1px solid #e2e8f0; color: #64748b; font-size: 16px; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-weight: 700;"
             title="閉じる（後から再開可能）">✕</button>
         </div>
@@ -4456,11 +4458,13 @@
             </span>
             <div style="display: flex; gap: 6px;">
               <button type="button" id="btnRotateMultiReceiptImage"
+                onclick="window.rotateCurrentMultiReceiptImage && window.rotateCurrentMultiReceiptImage()"
                 style="background: #334155; color: #f8fafc; border: 1px solid #475569; border-radius: 4px; padding: 3px 8px; font-size: 0.725rem; font-weight: 600; cursor: pointer;"
                 title="90度回転">
                 🔄 回転
               </button>
               <button type="button" id="btnZoomMultiReceiptImage"
+                onclick="window.zoomCurrentMultiReceiptImage && window.zoomCurrentMultiReceiptImage()"
                 style="background: #3b82f6; color: white; border: none; border-radius: 4px; padding: 3px 8px; font-size: 0.725rem; font-weight: 600; cursor: pointer;"
                 title="大画面で拡大">
                 🔍 拡大
@@ -4626,26 +4630,32 @@
         style="padding: 12px 20px; background: #ffffff; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
         <div style="display: flex; align-items: center; gap: 8px;">
           <button type="button" class="btn btn-outline btn-sm" id="btnMultiReceiptSkip"
-            style="color: #ef4444; border-color: #fca5a5; background: #fff5f5;" title="このレシートを登録せずにスキップ">
+            onclick="window.skipCurrentMultiReceiptItem && window.skipCurrentMultiReceiptItem()"
+            style="color: #ef4444; border-color: #fca5a5; background: #fff5f5; cursor: pointer;" title="このレシートを登録せずにスキップ">
             🗑️ この画像を除外
           </button>
           <button type="button" class="btn btn-secondary btn-sm" id="btnMultiReceiptSaveAll"
-            style="font-weight: 600;" title="残りのレシートを現在のAI解析結果のまま一括登録">
+            onclick="window.saveAllRemainingMultiReceiptItems && window.saveAllRemainingMultiReceiptItems()"
+            style="font-weight: 600; cursor: pointer;" title="残りのレシートを現在のAI解析結果のまま一括登録">
             ⚡ 残りを一括登録
           </button>
         </div>
         <div style="display: flex; align-items: center; gap: 8px;">
-          <button type="button" class="btn btn-secondary btn-sm" id="btnMultiReceiptPrev">
+          <button type="button" class="btn btn-secondary btn-sm" id="btnMultiReceiptPrev"
+            onclick="window.prevMultiReceiptItem && window.prevMultiReceiptItem()" style="cursor: pointer;">
             ◀ 前へ
           </button>
-          <button type="button" class="btn btn-secondary btn-sm" id="btnMultiReceiptNext">
+          <button type="button" class="btn btn-secondary btn-sm" id="btnMultiReceiptNext"
+            onclick="window.nextMultiReceiptItem && window.nextMultiReceiptItem()" style="cursor: pointer;">
             次へ ▶
           </button>
           <button type="button" class="btn btn-primary btn-sm" id="btnMultiReceiptSaveSingle"
-            style="background: #4f46e5; border-color: #4f46e5; font-weight: 700; padding: 6px 18px; box-shadow: 0 2px 6px rgba(79, 70, 229, 0.3);">
+            onclick="window.saveCurrentMultiReceiptItem && window.saveCurrentMultiReceiptItem(true)"
+            style="background: #4f46e5; border-color: #4f46e5; font-weight: 700; padding: 6px 18px; box-shadow: 0 2px 6px rgba(79, 70, 229, 0.3); cursor: pointer;">
             💾 この内容で登録（次へ ➔）
           </button>
-          <button type="button" class="btn btn-outline btn-sm" id="btnMultiReceiptDone">
+          <button type="button" class="btn btn-outline btn-sm" id="btnMultiReceiptDone"
+            onclick="window.closeMultiReceiptModal && window.closeMultiReceiptModal()" style="cursor: pointer;">
             完了して閉じる
           </button>
         </div>
@@ -4658,7 +4668,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261020_multi_receipt_1"></script>
+  <script src="js/app.bundle.js?v=20261020_multi_receipt_2"></script>
 </body>
 
 </html>
