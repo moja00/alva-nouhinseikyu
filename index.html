@@ -440,18 +440,24 @@
 
             <div class="form-row">
               <div class="form-group">
+                <label class="form-label" for="inputClientCode">得意先コード (任意)</label>
+                <input type="text" id="inputClientCode" class="form-input" placeholder="例: C001, V002" style="font-family: monospace;">
+              </div>
+              <div class="form-group">
                 <label class="form-label" for="inputClientZip">郵便番号</label>
                 <input type="text" id="inputClientZip" class="form-input" placeholder="100-0001">
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label" for="inputClientAddress">住所</label>
+                <input type="text" id="inputClientAddress" class="form-input" placeholder="東京都千代田区千代田1-1">
               </div>
               <div class="form-group">
                 <label class="form-label" for="inputClientContact">部署・担当者名 (任意)</label>
                 <input type="text" id="inputClientContact" class="form-input" placeholder="例: 開発部 佐藤 様">
               </div>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label" for="inputClientAddress">住所</label>
-              <input type="text" id="inputClientAddress" class="form-input" placeholder="東京都千代田区千代田1-1">
             </div>
           </div>
 
@@ -665,6 +671,9 @@
 
             <!-- 取引先情報 -->
             <div class="sheet-client-box">
+              <div class="client-code-row" id="sheetClientCodeRow" style="display: none; font-size: 0.775rem; color: #475569; font-weight: 600; margin-bottom: 3px; letter-spacing: 0.02em;">
+                得意先コード: <span id="sheetClientCode" style="font-family: monospace, sans-serif; font-weight: 700; color: #0f172a;"></span>
+              </div>
               <div class="client-name-row">
                 <span class="client-name" id="sheetClientName">株式会社サンプル</span>
                 <span class="client-honorific" id="sheetClientHonorific">御中</span>
@@ -1634,6 +1643,10 @@
           <input type="hidden" id="clientMasterEditId" value="">
 
           <div class="form-row" style="margin-bottom: 10px;">
+            <div class="form-group" style="flex: 0.9;">
+              <label class="form-label" for="clientMasterInputCode" style="font-size: 0.8rem;">得意先コード (任意)</label>
+              <input type="text" id="clientMasterInputCode" class="form-input" placeholder="例: C001, V002" style="font-family: monospace;">
+            </div>
             <div class="form-group" style="flex: 1.6;">
               <label class="form-label" for="clientMasterInputName" style="font-size: 0.8rem;">取引先 会社名 / 屋号 <span
                   style="color: var(--danger);">*</span></label>

@@ -119,6 +119,7 @@ export function createEmptyInvoice(docType = 'invoice') {
     dueDate: dates.due,
     title: '', // 件名は空白
     client: {
+      code: '',
       name: '', // 取引先名は空白
       honorific: '御中',
       zip: '',

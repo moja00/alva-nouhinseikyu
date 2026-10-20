@@ -144,6 +144,7 @@ const DOM = {
   inputTitle: document.getElementById('inputTitle'),
 
   // 取引先入力
+  inputClientCode: document.getElementById('inputClientCode'),
   inputClientName: document.getElementById('inputClientName'),
   inputClientHonorific: document.getElementById('inputClientHonorific'),
   inputClientZip: document.getElementById('inputClientZip'),
@@ -182,6 +183,8 @@ const DOM = {
   sheetRowDueDate: document.getElementById('sheetRowDueDate'),
   sheetLabelDueDate: document.getElementById('sheetLabelDueDate'),
   sheetDueDate: document.getElementById('sheetDueDate'),
+  sheetClientCodeRow: document.getElementById('sheetClientCodeRow'),
+  sheetClientCode: document.getElementById('sheetClientCode'),
   sheetClientName: document.getElementById('sheetClientName'),
   sheetClientHonorific: document.getElementById('sheetClientHonorific'),
   sheetClientZip: document.getElementById('sheetClientZip'),
@@ -301,6 +304,7 @@ const DOM = {
   clientMasterFormContainer: document.getElementById('clientMasterFormContainer'),
   clientMasterFormTitle: document.getElementById('clientMasterFormTitle'),
   clientMasterEditId: document.getElementById('clientMasterEditId'),
+  clientMasterInputCode: document.getElementById('clientMasterInputCode'),
   clientMasterInputName: document.getElementById('clientMasterInputName'),
   clientMasterInputHonorific: document.getElementById('clientMasterInputHonorific'),
   clientMasterSelectCategory: document.getElementById('clientMasterSelectCategory'),
@@ -955,6 +959,7 @@ function populateFormFromDoc() {
   DOM.inputTitle.value = currentDoc.title || '';
 
   // 取引先
+  if (DOM.inputClientCode) DOM.inputClientCode.value = currentDoc.client?.code || '';
   DOM.inputClientName.value = currentDoc.client?.name || '';
   DOM.inputClientHonorific.value = currentDoc.client?.honorific || '御中';
   DOM.inputClientZip.value = currentDoc.client?.zip || '';
@@ -1026,6 +1031,18 @@ function renderAll() {
     DOM.sheetRowDueDate.style.display = 'table-row';
     DOM.sheetLabelDueDate.textContent = meta.dueLabel;
     DOM.sheetDueDate.textContent = formatJapaneseDate(currentDoc.dueDate);
+  }
+
+  // 得意先コード
+  const clientCode = (currentDoc.client?.code || '').trim();
+  if (DOM.sheetClientCode && DOM.sheetClientCodeRow) {
+    if (clientCode) {
+      DOM.sheetClientCode.textContent = clientCode;
+      DOM.sheetClientCodeRow.style.display = 'block';
+    } else {
+      DOM.sheetClientCode.textContent = '';
+      DOM.sheetClientCodeRow.style.display = 'none';
+    }
   }
 
   // 取引先
@@ -1793,6 +1810,7 @@ function setupEventListeners() {
   bindInput(DOM.inputDueDate, val => currentDoc.dueDate = val);
   bindInput(DOM.inputTitle, val => currentDoc.title = val);
 
+  if (DOM.inputClientCode) bindInput(DOM.inputClientCode, val => currentDoc.client.code = val);
   bindInput(DOM.inputClientName, val => currentDoc.client.name = val);
   if (DOM.inputClientHonorific) {
     DOM.inputClientHonorific.addEventListener('change', e => {
@@ -2066,6 +2084,10 @@ function setupEventListeners() {
         }
       }
       
+      if (data.clientCode !== undefined) {
+        currentDoc.client.code = data.clientCode || '';
+        if (DOM.inputClientCode) DOM.inputClientCode.value = data.clientCode || '';
+      }
       if (data.clientName) currentDoc.client.name = data.clientName;
       if (data.clientHonorific !== undefined) currentDoc.client.honorific = data.clientHonorific;
       if (data.clientZip !== undefined) currentDoc.client.zip = data.clientZip;
@@ -3838,6 +3860,7 @@ function toggleNewClientForm(show = null) {
 function resetClientMasterForm() {
   if (DOM.clientMasterEditId) DOM.clientMasterEditId.value = '';
   if (DOM.clientMasterFormTitle) DOM.clientMasterFormTitle.textContent = '新規取引先の登録';
+  if (DOM.clientMasterInputCode) DOM.clientMasterInputCode.value = '';
   if (DOM.clientMasterInputName) DOM.clientMasterInputName.value = '';
   if (DOM.clientMasterInputHonorific) DOM.clientMasterInputHonorific.value = '御中';
   if (DOM.clientMasterSelectCategory) DOM.clientMasterSelectCategory.value = 'customer';
@@ -3865,6 +3888,7 @@ function handleSaveClientMaster() {
 
   const clientData = {
     id: DOM.clientMasterEditId ? DOM.clientMasterEditId.value || undefined : undefined,
+    code: DOM.clientMasterInputCode ? DOM.clientMasterInputCode.value.trim() : '',
     name,
     honorific: DOM.clientMasterInputHonorific ? DOM.clientMasterInputHonorific.value : '御中',
     category: DOM.clientMasterSelectCategory ? DOM.clientMasterSelectCategory.value : 'customer',
@@ -3950,6 +3974,10 @@ function renderClientMasterList(filter = 'all', searchQuery = '') {
       catBadge = `<span style="font-size: 11px; font-weight: 700; background: #dcfce7; color: #15803d; padding: 2px 8px; border-radius: 4px;">得意先 (売上)</span>`;
     }
 
+    const codeBadge = client.code
+      ? `<span style="font-size: 11px; font-family: monospace; background: #e2e8f0; color: #1e293b; padding: 2px 6px; border-radius: 4px; font-weight: 700;">コード: ${escapeHtml(client.code)}</span>`
+      : '';
+
     const invoiceBadge = client.invoiceNumber
       ? `<span style="font-size: 11px; font-family: monospace; background: #f1f5f9; color: #475569; padding: 2px 6px; border-radius: 4px; font-weight: 600;">🏷️ ${escapeHtml(client.invoiceNumber)}</span>`
       : '';
@@ -3960,6 +3988,7 @@ function renderClientMasterList(filter = 'all', searchQuery = '') {
           <strong style="font-size: 1rem; color: #1e293b;">${escapeHtml(client.name)}</strong>
           <span style="font-size: 0.85rem; color: #64748b;">${escapeHtml(client.honorific || '御中')}</span>
           ${catBadge}
+          ${codeBadge}
           ${invoiceBadge}
           <span style="font-size: 11px; color: #94a3b8; margin-left: auto;">実績: ${totalUsage}回</span>
         </div>
@@ -4009,6 +4038,7 @@ function applyClientToDocument(client) {
   if (!client) return;
 
   // 帳票オブジェクトに反映
+  currentDoc.client.code = client.code || '';
   currentDoc.client.name = client.name || '';
   currentDoc.client.honorific = client.honorific !== undefined ? client.honorific : '御中';
   currentDoc.client.zip = client.zip || '';
@@ -4016,6 +4046,7 @@ function applyClientToDocument(client) {
   currentDoc.client.contactPerson = client.contactPerson || '';
 
   // 入力フォームに反映
+  if (DOM.inputClientCode) DOM.inputClientCode.value = client.code || '';
   if (DOM.inputClientName) DOM.inputClientName.value = client.name || '';
   if (DOM.inputClientHonorific) DOM.inputClientHonorific.value = client.honorific !== undefined ? client.honorific : '御中';
   if (DOM.inputClientZip) DOM.inputClientZip.value = client.zip || '';
@@ -4045,6 +4076,7 @@ function editClientMaster(client) {
 
   if (DOM.clientMasterEditId) DOM.clientMasterEditId.value = client.id;
   if (DOM.clientMasterFormTitle) DOM.clientMasterFormTitle.textContent = `取引先の編集: ${client.name}`;
+  if (DOM.clientMasterInputCode) DOM.clientMasterInputCode.value = client.code || '';
   if (DOM.clientMasterInputName) DOM.clientMasterInputName.value = client.name || '';
   if (DOM.clientMasterInputHonorific) DOM.clientMasterInputHonorific.value = client.honorific !== undefined ? client.honorific : '御中';
   if (DOM.clientMasterSelectCategory) DOM.clientMasterSelectCategory.value = client.category || 'customer';
@@ -4078,7 +4110,7 @@ function updateClientMasterDatalist() {
   if (!DOM.clientMasterDatalist) return;
   const clients = getClientMasterList(true);
   DOM.clientMasterDatalist.innerHTML = clients
-    .map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.address ? ` (${c.address})` : '')}</option>`)
+    .map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.code ? `[${c.code}] ` : '')}${escapeHtml(c.address ? ` (${c.address})` : '')}</option>`)
     .join('');
 }
 
@@ -4092,6 +4124,10 @@ function handleClientNameAutocomplete() {
   const matched = findClientByName(inputVal);
   if (matched && matched.name.toLowerCase() === inputVal.toLowerCase()) {
     // 一致した場合、他のフィールドを自動補完
+    if (matched.code) {
+      if (DOM.inputClientCode) DOM.inputClientCode.value = matched.code;
+      currentDoc.client.code = matched.code;
+    }
     if (matched.honorific !== undefined) {
       DOM.inputClientHonorific.value = matched.honorific;
       currentDoc.client.honorific = matched.honorific;
