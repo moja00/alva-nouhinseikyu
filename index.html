@@ -46,9 +46,15 @@
       style="cursor: pointer;" title="メインポータルMENUへ戻る">
       <div class="brand-logo" style="background: linear-gradient(135deg, #4f46e5, #06b6d4);">A</div>
       <div>
-        <h1 class="brand-title">
+        <h1 class="brand-title" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
           Alva-works ERP
           <span class="brand-subtitle">統合業務スイート</span>
+          <span id="systemDeployBadge"
+            style="font-size: 0.65rem; background: #ecfdf5; color: #047857; border: 1px solid #6ee7b7; padding: 2px 8px; border-radius: 9999px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; letter-spacing: 0.3px;"
+            title="最新デプロイバージョン: 2026/10/20 複数レシート個別確認対応">
+            <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #10b981; box-shadow: 0 0 4px #10b981;"></span>
+            v2026.10.20-multi
+          </span>
         </h1>
       </div>
     </div>
@@ -71,9 +77,12 @@
         <span class="app-switch-label">財務会計</span>
       </button>
       <button type="button" class="app-switch-btn" data-app="expenses"
-        onclick="window.switchAppView &amp;&amp; window.switchAppView('expenses')" title="経費精算・AIレシートOCR読み込み">
+        onclick="window.switchAppView &amp;&amp; window.switchAppView('expenses')" title="経費精算・AIレシートOCR読み込み（複数枚個別確認対応）">
         <span class="app-switch-icon">📷</span>
-        <span class="app-switch-label">経費読み込み</span>
+        <span class="app-switch-label" style="display: inline-flex; align-items: center; gap: 4px;">
+          経費読み込み
+          <span style="font-size: 9px; background: #4f46e5; color: #fff; padding: 1px 5px; border-radius: 6px; font-weight: 700; line-height: 1.2;">NEW</span>
+        </span>
       </button>
       <button type="button" class="app-switch-btn" data-app="attendance"
         onclick="window.switchAppView &amp;&amp; window.switchAppView('attendance')" title="出退勤打刻・タイムカード・出勤簿A4">
@@ -204,10 +213,16 @@
           onclick="window.switchAppView &amp;&amp; window.switchAppView('expenses')" title="経費読み込み専用画面へ">
           <div class="portal-card-header">
             <div class="portal-card-icon icon-expenses">📷</div>
-            <span class="portal-card-tag tag-expenses">AI OCR解析</span>
+            <div style="display: flex; gap: 4px; align-items: center;">
+              <span class="portal-card-tag tag-expenses">AI OCR解析</span>
+              <span style="font-size: 10px; background: #e0e7ff; color: #4338ca; border: 1px solid #c7d2fe; padding: 2px 7px; border-radius: 9999px; font-weight: 700;">✨複数枚対応済</span>
+            </div>
           </div>
-          <h3 class="portal-card-title">経費読み込み</h3>
-          <p class="portal-card-desc">レシートや領収書の写真・画像をアップロード。Gemini AIが店名・適格請求書番号・日付・税率を瞬時に自動抽出。</p>
+          <h3 class="portal-card-title" style="display: flex; align-items: center; justify-content: space-between;">
+            <span>経費読み込み</span>
+            <span style="font-size: 10px; background: #ecfdf5; color: #047857; border: 1px solid #6ee7b7; padding: 2px 6px; border-radius: 4px; font-weight: 700;">NEW</span>
+          </h3>
+          <p class="portal-card-desc">複数画像のドロップ対応！レシート・領収書を1枚ずつプレビュー確認しながら個別に経費登録できます。</p>
           <div class="portal-card-footer">
             <span class="portal-card-action">専用画面を開く <span class="arrow">→</span></span>
           </div>
@@ -4643,7 +4658,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261004_firebase_auth_1"></script>
+  <script src="js/app.bundle.js?v=20261020_multi_receipt_1"></script>
 </body>
 
 </html>
