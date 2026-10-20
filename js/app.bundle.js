@@ -15553,6 +15553,42 @@ async function triggerServerSyncAll() {
 }
 window.triggerServerSyncAll = triggerServerSyncAll;
 
+async function triggerManualSyncInvoices(btnEl) {
+  const btn = btnEl || document.getElementById('btnSyncHistoryToolbar') || document.getElementById('btnSyncHistoryManual');
+  const origHtml = btn ? btn.innerHTML : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '⏳ 同期中...';
+  }
+  try {
+    if (typeof syncInvoicesHistoryWithServer === 'function') {
+      const synced = await syncInvoicesHistoryWithServer();
+      // 編集中書類が更新されたかチェックしてUI反映
+      const activeDoc = typeof loadActiveDoc === 'function' ? loadActiveDoc() : null;
+      if (activeDoc && currentDoc && activeDoc.id === currentDoc.id) {
+        currentDoc.isIssued = activeDoc.isIssued;
+        currentDoc.isCancelled = activeDoc.isCancelled;
+        currentDoc.issuedAt = activeDoc.issuedAt;
+        if (typeof populateFormFromDoc === 'function') populateFormFromDoc();
+        if (typeof renderAll === 'function') renderAll();
+      }
+      if (typeof filterAndRenderHistoryList === 'function') {
+        filterAndRenderHistoryList();
+      }
+      showToast('サーバーから最新の書類履歴を同期しました！', 'success');
+    }
+  } catch (err) {
+    console.warn('Manual sync invoices failed:', err);
+    showToast('書類履歴の同期に失敗しました', 'danger');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = origHtml;
+    }
+  }
+}
+window.triggerManualSyncInvoices = triggerManualSyncInvoices;
+
 // Firebase Config & Auth Setup
 const firebaseConfig = {
   apiKey: "AIzaSyCcYbAnJ8kTPFOmBeBwPR6tcgps2BuxmIg",
