@@ -786,6 +786,8 @@ def save_fs_collection(col_name, data_list, id_field='id', deleted_ids=None):
     他端末で追加された最新データを消さないよう、送られてこなかったIDの自動一括削除（洗い替え）は行わない。
     明示的に deleted_ids が渡された場合のみ、そのIDを削除する。
     """
+    doc_ref = None
+    del_doc_ref = None
     try:
         batch = db.batch()
         count = 0
@@ -807,10 +809,11 @@ def save_fs_collection(col_name, data_list, id_field='id', deleted_ids=None):
                 if d_id:
                     clean_did = str(d_id).strip()
                     new_deleted_set.add(clean_did)
+                    del_doc_ref = db.collection(col_name).document(clean_did)
                     if col_name == 'invoices':
-                        batch.set(doc_ref, {'_deleted': True}, merge=True)
+                        batch.set(del_doc_ref, {'_deleted': True}, merge=True)
                     else:
-                        batch.delete(doc_ref)
+                        batch.delete(del_doc_ref)
                     count += 1
                     if count == 500:
                         batch.commit()
