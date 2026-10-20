@@ -578,9 +578,13 @@ export function deleteDocFromHistory(id) {
   try {
     const list = getHistoryList().filter(item => item.id !== id);
     localStorageSetItemAndSync(KEYS.HISTORY, JSON.stringify(list));
-    // サーバーファイル（data/invoices/invoices_history.json）にも即時保存
+    // サーバーのFirestoreから個別削除
+    deleteServerEntity('invoices', id).catch(e => {
+      console.warn('Server invoices history delete failed:', e);
+    });
+    // 互換性のため履歴全体も保存
     saveServerInvoicesHistory(list).catch(e => {
-      console.warn('Server invoices history delete save failed:', e);
+      console.warn('Server invoices history save failed:', e);
     });
     return true;
   } catch (e) {
@@ -634,6 +638,84 @@ export function getAppBaseDir() {
   return path;
 }
 
+/**
+ * 現在ログイン中の Firebase Auth ユーザーから ID トークンを取得
+ * ページ読み込み直後などでセッション復元中の場合は待機する
+ */
+export async function getFirebaseAuthToken() {
+  if (typeof firebase === 'undefined' || !firebase.auth) {
+    return null;
+  }
+  const auth = firebase.auth();
+
+  // すでに currentUser が存在する場合は即座にトークンを取得
+  if (auth.currentUser) {
+    try {
+      return await auth.currentUser.getIdToken();
+    } catch (e) {
+      console.warn('[Auth] getIdToken failed:', e);
+      return null;
+    }
+  }
+
+  // ページ初期化時などセッション復元中の場合（最大2.5秒待機）
+  return new Promise((resolve) => {
+    let resolved = false;
+    const timer = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        if (unsubscribe) unsubscribe();
+        resolve(null);
+      }
+    }, 2500);
+
+    const unsubscribe = auth.onAuthStateChanged(async (user) => {
+      if (resolved) return;
+      resolved = true;
+      clearTimeout(timer);
+      if (unsubscribe) unsubscribe();
+      if (user) {
+        try {
+          const token = await user.getIdToken();
+          resolve(token);
+        } catch (e) {
+          resolve(null);
+        }
+      } else {
+        resolve(null);
+      }
+    });
+  });
+}
+
+/**
+ * サーバー(Firestore)上のデータを個別削除
+ * 洗い替え削除を廃止し、削除操作されたアイテムのみを安全・確実に削除
+ * @param {'items'|'clients'|'expenses'|'invoices'|'attendance'|'inventory'|'payroll_records'} collection
+ * @param {string} id
+ */
+export async function deleteServerEntity(collection, id) {
+  if (!id) return false;
+  try {
+    const res = await apiFetch('delete-item', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ collection, id: String(id) })
+    });
+    if (!res.ok) {
+      // フォールバック: DELETE /api/{collection}?id={id}
+      const delRes = await apiFetch(`${collection}?id=${encodeURIComponent(id)}`, {
+        method: 'DELETE'
+      });
+      return delRes.ok;
+    }
+    return res.ok;
+  } catch (err) {
+    console.warn(`[deleteServerEntity] Failed to delete ${collection}/${id}:`, err);
+    return false;
+  }
+}
+
 export async function apiFetch(path, options = {}) {
   const clean = path.replace(/^\/?api\/?/, '').replace(/^\//, '');
   const dir = getAppBaseDir();
@@ -650,9 +732,21 @@ export async function apiFetch(path, options = {}) {
     `/api/${clean}`
   ];
 
+  // 認証トークンの自動取得・ヘッダー付与
+  const headers = new Headers(options.headers || {});
+  try {
+    const token = await getFirebaseAuthToken();
+    if (token && !headers.has('Authorization')) {
+      headers.set('Authorization', `Bearer ${token}`);
+    }
+  } catch (authErr) {
+    console.warn('[apiFetch] Auth token error:', authErr);
+  }
+
   const fetchOpts = {
     credentials: 'same-origin',
-    ...options
+    ...options,
+    headers
   };
 
   let lastErr = null;
@@ -671,6 +765,8 @@ export async function apiFetch(path, options = {}) {
 }
 
 if (typeof window !== 'undefined') {
+  window.getFirebaseAuthToken = getFirebaseAuthToken;
+  window.deleteServerEntity = deleteServerEntity;
   window.apiFetch = apiFetch;
 }
 
@@ -1157,6 +1253,10 @@ export function deleteItemFromMaster(id) {
   try {
     const list = getItemMasterList(false).filter(i => i.id !== id);
     saveItemMasterList(list);
+    // サーバーのFirestoreから個別削除
+    deleteServerEntity('items', id).catch(e => {
+      console.warn('Server item delete failed:', e);
+    });
     return true;
   } catch (e) {
     console.error('Failed to delete item from master:', e);
@@ -1434,31 +1534,75 @@ export function rescueMastersFromHistory() {
  */
 export async function syncMastersWithServer() {
   try {
-    // 1. 商品マスタの同期
+    // 1. 商品マスタの同期（スマートマージ: サーバー・ローカル双方の最新データを保護）
     const serverItems = await fetchServerMasterItems();
+    const localItems = getItemMasterList(false);
     if (serverItems && Array.isArray(serverItems)) {
-      // サーバーを正としてローカルを上書き（1対1の同期）
-      const validItems = serverItems.filter(i => !SAMPLE_ITEM_KEYS.has(getMasterKey(i.name)));
+      const mergedMap = new Map();
+      serverItems.forEach(i => {
+        if (i && (i.id || i.name)) mergedMap.set(i.id || i.name, i);
+      });
+      let hasLocalChanges = false;
+      localItems.forEach(i => {
+        const key = i.id || i.name;
+        if (!key) return;
+        if (!mergedMap.has(key)) {
+          mergedMap.set(key, i);
+          hasLocalChanges = true;
+        } else {
+          const sItem = mergedMap.get(key);
+          const lTime = new Date(i.updatedAt || i.createdAt || 0).getTime();
+          const sTime = new Date(sItem.updatedAt || sItem.createdAt || 0).getTime();
+          if (lTime > sTime) {
+            mergedMap.set(key, i);
+            hasLocalChanges = true;
+          }
+        }
+      });
+      const validItems = Array.from(mergedMap.values()).filter(i => !SAMPLE_ITEM_KEYS.has(getMasterKey(i.name)));
       const mergedItems = deduplicateItemMasterList(validItems);
-      // LocalStorageを更新
       localStorageSetItemAndSync(KEYS.ITEM_MASTER, JSON.stringify(mergedItems));
-      console.log(`[マスタ同期完了] 商品マスタ: サーバーの全 ${mergedItems.length} 件でローカルを上書き同期しました`);
-    } else {
-      // サーバー上にまだファイルがない場合、ローカルの内容をサーバーへ書き込み
-      const localItems = getItemMasterList(false);
+      if (hasLocalChanges) {
+        saveServerMasterItems(mergedItems).catch(() => { });
+      }
+      console.log(`[マスタ同期完了] 商品マスタ: 全 ${mergedItems.length} 件をスマート同期しました`);
+    } else if (localItems && localItems.length > 0) {
       await saveServerMasterItems(localItems);
     }
 
-    // 2. 取引先マスタの同期
+    // 2. 取引先マスタの同期（スマートマージ: サーバー・ローカル双方の最新データを保護）
     const serverClients = await fetchServerMasterClients();
+    const localClients = getClientMasterList(false);
     if (serverClients && Array.isArray(serverClients)) {
-      // サーバーを正としてローカルを上書き（1対1の同期）
-      const validClients = serverClients.filter(c => !SAMPLE_CLIENT_KEYS.has(getMasterKey(c.name)));
+      const mergedMap = new Map();
+      serverClients.forEach(c => {
+        if (c && (c.id || c.name)) mergedMap.set(c.id || c.name, c);
+      });
+      let hasLocalChanges = false;
+      localClients.forEach(c => {
+        const key = c.id || c.name;
+        if (!key) return;
+        if (!mergedMap.has(key)) {
+          mergedMap.set(key, c);
+          hasLocalChanges = true;
+        } else {
+          const sClient = mergedMap.get(key);
+          const lTime = new Date(c.updatedAt || c.createdAt || 0).getTime();
+          const sTime = new Date(sClient.updatedAt || sClient.createdAt || 0).getTime();
+          if (lTime > sTime) {
+            mergedMap.set(key, c);
+            hasLocalChanges = true;
+          }
+        }
+      });
+      const validClients = Array.from(mergedMap.values()).filter(c => !SAMPLE_CLIENT_KEYS.has(getMasterKey(c.name)));
       const finalClients = deduplicateClientMasterList(validClients);
       localStorageSetItemAndSync(KEYS.CLIENT_MASTER, JSON.stringify(finalClients));
-      console.log(`[マスタ同期完了] 取引先マスタ: サーバーの全 ${finalClients.length} 件でローカルを上書き同期しました`);
-    } else {
-      const localClients = getClientMasterList(false);
+      if (hasLocalChanges) {
+        saveServerMasterClients(finalClients).catch(() => { });
+      }
+      console.log(`[マスタ同期完了] 取引先マスタ: 全 ${finalClients.length} 件をスマート同期しました`);
+    } else if (localClients && localClients.length > 0) {
       await saveServerMasterClients(localClients);
     }
 
@@ -1748,6 +1892,10 @@ export function deleteClientFromMaster(id) {
   try {
     const list = getClientMasterList(false).filter(c => c.id !== id);
     saveClientMasterList(list);
+    // サーバーのFirestoreから個別削除
+    deleteServerEntity('clients', id).catch(e => {
+      console.warn('Server client delete failed:', e);
+    });
     return true;
   } catch (e) {
     console.error('Failed to delete client from master:', e);
@@ -2196,9 +2344,12 @@ export function deleteExpense(id) {
       list[existingIndex].isDeleted = true;
       list[existingIndex].updatedAt = new Date().toISOString();
       localStorageSetItemAndSync(KEYS.EXPENSES, JSON.stringify(list));
-      // サーバーファイル（data/expenses/expenses.json）にも即時保存
+      // サーバーのFirestoreから個別削除（関連レシート画像も自動クリーンアップ）
+      deleteServerEntity('expenses', id).catch(e => {
+        console.warn('Server expenses delete failed:', e);
+      });
       saveServerExpenses(list).catch(e => {
-        console.warn('Server expenses delete save failed:', e);
+        console.warn('Server expenses save failed:', e);
       });
       return true;
     }
@@ -2338,7 +2489,8 @@ export function deleteAttendance(idOrDate) {
   try {
     const list = getAttendanceList().filter(a => a.id !== idOrDate && a.date !== idOrDate);
     localStorageSetItemAndSync(KEYS.ATTENDANCE, JSON.stringify(list));
-    // サーバー（data/attendance/attendance.json）側からも即時削除して1対1整合性を維持
+    // サーバー（Firestore）側からも即時削除
+    deleteServerEntity('attendance', idOrDate).catch(() => { });
     deleteServerAttendanceRecord(idOrDate, idOrDate).catch(() => { });
     saveServerAttendance(list).catch(() => { });
     return true;
@@ -2813,6 +2965,9 @@ export function deleteInventoryItem(id) {
     const filtered = list.filter(i => i.id !== id);
     localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(filtered));
     saveServerInventory(filtered).catch(() => { });
+    deleteServerEntity('inventory', id).catch(e => {
+      console.warn('Server inventory delete failed:', e);
+    });
     return true;
   } catch (e) {
     console.error('Failed to delete inventory item:', e);
@@ -3295,6 +3450,9 @@ export function deletePayrollRecord(targetMonthOrId) {
     records = records.filter(r => r.id !== targetMonthOrId && r.targetMonth !== targetMonthOrId);
     localStorageSetItemAndSync(KEYS.PAYROLL_RECORDS, JSON.stringify(records));
     saveServerPayrollRecords(records);
+    deleteServerEntity('payroll_records', targetMonthOrId).catch(e => {
+      console.warn('Server payroll record delete failed:', e);
+    });
     return true;
   } catch (e) {
     console.error('Failed to delete payroll record:', e);

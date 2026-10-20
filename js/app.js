@@ -2095,7 +2095,7 @@ function setupEventListeners() {
         currentDoc.issuer = { ...profile };
       }
 
-      const response = await fetch('/api/gemini/voice-to-invoice', {
+      const response = await (window.apiFetch || fetch)('gemini/voice-to-invoice', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: textToProcess })
@@ -9524,10 +9524,18 @@ function setupFirebaseAuth() {
     }
   }
 
-  auth.onAuthStateChanged((user) => {
+  auth.onAuthStateChanged(async (user) => {
     if (user) {
       if (loginOverlay) loginOverlay.style.display = 'none';
       if (btnLogout) btnLogout.style.display = 'inline-flex';
+      // ログイン完了時にサーバーから最新データを自動同期
+      if (typeof pullAllServerDataToLocal === 'function') {
+        try {
+          await pullAllServerDataToLocal();
+        } catch (syncErr) {
+          console.warn('[Auth Sync] Data pull error:', syncErr);
+        }
+      }
     } else {
       if (loginOverlay) loginOverlay.style.display = 'flex';
       if (btnLogout) btnLogout.style.display = 'none';

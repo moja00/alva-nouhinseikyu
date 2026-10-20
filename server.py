@@ -81,7 +81,7 @@ if _genai_imported:
     get_genai_client()
 
 import firebase_admin
-from firebase_admin import credentials, firestore, storage
+from firebase_admin import credentials, firestore, storage, auth
 
 try:
     firebase_admin.initialize_app(options={
@@ -93,6 +93,50 @@ try:
     print("[Firebase] Initialized with ADC")
 except Exception as e:
     print(f"[Firebase] Initialization error: {e}")
+
+
+def verify_firebase_auth(handler):
+    """
+    リクエストヘッダーまたはクエリパラメータから Firebase Auth ID トークンを抽出し、
+    firebase_admin.auth.verify_id_token で署名と有効期限を検証する。
+    認証成功時は decoded_token (dict) を返す。
+    未認証または検証失敗時は HTTP 401 を応答し、None を返す。
+    """
+    token = None
+    auth_header = handler.headers.get('Authorization', '')
+    if auth_header and auth_header.startswith('Bearer '):
+        token = auth_header.split('Bearer ', 1)[1].strip()
+    
+    if not token:
+        # 画像プレビュー等のGETリクエスト用フォールバック
+        try:
+            parsed = urllib.parse.urlparse(handler.path)
+            qs = urllib.parse.parse_qs(parsed.query)
+            if 'token' in qs:
+                token = qs['token'][0]
+            elif 'auth' in qs:
+                token = qs['auth'][0]
+        except Exception:
+            pass
+
+    if not token:
+        handler.send_response(401)
+        handler.send_header('Content-Type', 'application/json; charset=utf-8')
+        handler.end_headers()
+        handler.wfile.write(json.dumps({"error": "Unauthorized: 認証トークンがありません。ログインしてください。"}, ensure_ascii=False).encode('utf-8'))
+        return None
+
+    try:
+        decoded_token = auth.verify_id_token(token)
+        return decoded_token
+    except Exception as e:
+        print(f"[Auth] Firebase ID Token 検証失敗: {e}")
+        handler.send_response(401)
+        handler.send_header('Content-Type', 'application/json; charset=utf-8')
+        handler.end_headers()
+        handler.wfile.write(json.dumps({"error": f"Unauthorized: 認証トークンが無効または期限切れです ({str(e)})"}, ensure_ascii=False).encode('utf-8'))
+        return None
+
 
 
 # ==============================================================================
@@ -689,35 +733,35 @@ def get_fs_document(col_name, doc_id, default_data=None):
         print(f"[Firestore] GET {col_name}/{doc_id} error: {e}")
         return default_data
 
-def save_fs_collection(col_name, data_list, id_field='id'):
+def save_fs_collection(col_name, data_list, id_field='id', deleted_ids=None):
+    """
+    コレクション内のデータをUpsert（追加・更新）する。
+    他端末で追加された最新データを消さないよう、送られてこなかったIDの自動一括削除（洗い替え）は行わない。
+    明示的に deleted_ids が渡された場合のみ、そのIDを削除する。
+    """
     try:
-        incoming_ids = set()
-        for item in data_list:
-            doc_id = item.get(id_field)
-            if doc_id:
-                incoming_ids.add(doc_id)
-        
-        existing_docs = db.collection(col_name).stream()
-        docs_to_delete = []
-        for doc in existing_docs:
-            if doc.id not in incoming_ids:
-                docs_to_delete.append(doc.reference)
-        
         batch = db.batch()
         count = 0
-        
-        for ref in docs_to_delete:
-            batch.delete(ref)
-            count += 1
-            if count == 500:
-                batch.commit()
-                batch = db.batch()
-                count = 0
-                
+
+        # 明示的に削除指定されたIDがあれば削除
+        if deleted_ids:
+            for d_id in deleted_ids:
+                if d_id:
+                    doc_ref = db.collection(col_name).document(str(d_id))
+                    batch.delete(doc_ref)
+                    count += 1
+                    if count == 500:
+                        batch.commit()
+                        batch = db.batch()
+                        count = 0
+
+        # 送信されたアイテムのUpsert（追加・更新）のみ実行
         for item in data_list:
+            if not isinstance(item, dict):
+                continue
             doc_id = item.get(id_field)
             if doc_id:
-                doc_ref = db.collection(col_name).document(doc_id)
+                doc_ref = db.collection(col_name).document(str(doc_id))
                 batch.set(doc_ref, item)
                 count += 1
                 if count == 500:
@@ -733,9 +777,40 @@ def save_fs_collection(col_name, data_list, id_field='id'):
         print(f"[Firestore] save_fs_collection error in {col_name}: {e}")
         return False, str(e)
 
+def delete_fs_item(col_name, item_id):
+    """
+    指定コレクションから指定IDのドキュメントを個別削除する。
+    経費の場合は関連レシート画像も自動クリーンアップ。
+    """
+    try:
+        clean_id = str(item_id).strip()
+        if not clean_id:
+            return False, "IDが空です"
+
+        # 経費の場合、紐づくレシート画像があればStorageから削除
+        if col_name == 'expenses':
+            doc_snap = db.collection('expenses').document(clean_id).get()
+            if doc_snap.exists:
+                e_data = doc_snap.to_dict() or {}
+                receipt_url = e_data.get('receiptUrl', '') or e_data.get('receiptImage', '')
+                if receipt_url and '/api/receipt/' in receipt_url:
+                    url_id = receipt_url.split('/api/receipt/')[-1].split('?')[0]
+                    target_id = re.sub(r'[^a-zA-Z0-9_\-]', '', url_id)
+                    if target_id:
+                        blob = bucket.blob(f"receipts/{target_id}.jpg")
+                        if blob.exists():
+                            blob.delete()
+
+        db.collection(col_name).document(clean_id).delete()
+        print(f"[Firestore 個別削除成功] コレクション: {col_name}, ID: {clean_id}")
+        return True, ""
+    except Exception as e:
+        print(f"[Firestore 個別削除エラー] {col_name}/{item_id}: {e}")
+        return False, str(e)
+
 def save_fs_document(col_name, doc_id, data):
     try:
-        db.collection(col_name).document(doc_id).set(data)
+        db.collection(col_name).document(str(doc_id)).set(data)
         return True, ""
     except Exception as e:
         return False, str(e)
@@ -788,6 +863,12 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
             qs = urllib.parse.parse_qs(parsed_url.query)
             if 'endpoint' in qs:
                 self.path = '/api/' + qs['endpoint'][0]
+
+        # APIリクエストに対する Firebase Auth トークン認証
+        if self.path.startswith('/api/'):
+            user = verify_firebase_auth(self)
+            if not user:
+                return
 
         if self.path == '/api/status':
             ai_client = get_genai_client()
@@ -971,12 +1052,47 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
         return super().do_GET()
 
     def do_POST(self):
-
         parsed_url = urllib.parse.urlparse(self.path)
         if 'api.php' in parsed_url.path:
             qs = urllib.parse.parse_qs(parsed_url.query)
             if 'endpoint' in qs:
                 self.path = '/api/' + qs['endpoint'][0]
+
+        # APIリクエストに対する Firebase Auth トークン認証
+        if self.path.startswith('/api/'):
+            user = verify_firebase_auth(self)
+            if not user:
+                return
+
+        # 個別データ削除API (汎用: items, clients, expenses, invoices, attendance, inventory, payroll_records)
+        if self.path == '/api/delete-item':
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length).decode('utf-8')
+            try:
+                payload = json.loads(post_data)
+                col_name = payload.get('collection')
+                item_id = payload.get('id')
+                if not col_name or not item_id:
+                    self.send_response(400)
+                    self.send_header('Content-Type', 'application/json; charset=utf-8')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": "collectionとidは必須です"}).encode('utf-8'))
+                    return
+                
+                success, err = delete_fs_item(col_name, item_id)
+                if not success:
+                    raise Exception(err)
+                
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": True, "collection": col_name, "id": item_id}).encode('utf-8'))
+            except Exception as e:
+                self.send_response(500)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
+            return
 
         # 一括同期 (Push)
         if self.path == '/api/sync/push-all':
@@ -1008,12 +1124,6 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
             return
-
-        parsed_url = urllib.parse.urlparse(self.path)
-        if 'api.php' in parsed_url.path:
-            qs = urllib.parse.parse_qs(parsed_url.query)
-            if 'endpoint' in qs:
-                self.path = '/api/' + qs['endpoint'][0]
 
         if self.path == '/api/ocr':
             content_length = int(self.headers.get('Content-Length', 0))
@@ -1179,10 +1289,15 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
             content_length = int(self.headers.get('Content-Length', 0))
             post_data = self.rfile.read(content_length).decode('utf-8')
             try:
-                items_data = json.loads(post_data)
+                payload = json.loads(post_data)
+                deleted_ids = None
+                items_data = payload
+                if isinstance(payload, dict):
+                    deleted_ids = payload.get('deletedIds')
+                    items_data = payload.get('items', payload.get('list', []))
                 if not isinstance(items_data, list):
                     raise ValueError("データ形式が配列ではありません")
-                success, err = save_fs_collection("items", items_data)
+                success, err = save_fs_collection("items", items_data, deleted_ids=deleted_ids)
                 if not success:
                     raise Exception(err)
                 print(f"[商品マスタ 保存成功] 件数: {len(items_data)}件 (Firestore)")
@@ -1202,10 +1317,15 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
             content_length = int(self.headers.get('Content-Length', 0))
             post_data = self.rfile.read(content_length).decode('utf-8')
             try:
-                clients_data = json.loads(post_data)
+                payload = json.loads(post_data)
+                deleted_ids = None
+                clients_data = payload
+                if isinstance(payload, dict):
+                    deleted_ids = payload.get('deletedIds')
+                    clients_data = payload.get('clients', payload.get('list', []))
                 if not isinstance(clients_data, list):
                     raise ValueError("データ形式が配列ではありません")
-                success, err = save_fs_collection("clients", clients_data)
+                success, err = save_fs_collection("clients", clients_data, deleted_ids=deleted_ids)
                 if not success:
                     raise Exception(err)
                 print(f"[取引先マスタ 保存成功] 件数: {len(clients_data)}件 (Firestore)")
@@ -1246,10 +1366,15 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
             content_length = int(self.headers.get('Content-Length', 0))
             post_data = self.rfile.read(content_length).decode('utf-8')
             try:
-                att_data = json.loads(post_data)
+                payload = json.loads(post_data)
+                deleted_ids = None
+                att_data = payload
+                if isinstance(payload, dict):
+                    deleted_ids = payload.get('deletedIds')
+                    att_data = payload.get('attendance', payload.get('list', []))
                 if not isinstance(att_data, list):
                     raise ValueError("データ形式が配列ではありません")
-                success, err = save_fs_collection("attendance", att_data)
+                success, err = save_fs_collection("attendance", att_data, deleted_ids=deleted_ids)
                 if not success:
                     raise Exception(err)
                 print(f"[勤怠データ 保存成功] 件数: {len(att_data)}件 (Firestore)")
@@ -1342,10 +1467,15 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
             content_length = int(self.headers.get('Content-Length', 0))
             post_data = self.rfile.read(content_length).decode('utf-8')
             try:
-                records = json.loads(post_data)
+                payload = json.loads(post_data)
+                deleted_ids = None
+                records = payload
+                if isinstance(payload, dict):
+                    deleted_ids = payload.get('deletedIds')
+                    records = payload.get('records', payload.get('list', []))
                 if not isinstance(records, list):
                     raise ValueError("データ形式が配列ではありません")
-                success, err = save_fs_collection("payroll_records", records)
+                success, err = save_fs_collection("payroll_records", records, deleted_ids=deleted_ids)
                 if not success:
                     raise Exception(err)
                 print(f"[給与明細レコード 保存成功] 件数: {len(records)}件 (Firestore)")
@@ -1410,8 +1540,15 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
             content_length = int(self.headers.get('Content-Length', 0))
             post_data = self.rfile.read(content_length).decode('utf-8')
             try:
-                invoices = json.loads(post_data)
-                success, err = save_fs_collection("invoices", invoices)
+                payload = json.loads(post_data)
+                deleted_ids = None
+                invoices = payload
+                if isinstance(payload, dict):
+                    deleted_ids = payload.get('deletedIds')
+                    invoices = payload.get('invoices', payload.get('list', []))
+                if not isinstance(invoices, list):
+                    raise ValueError("データ形式が配列ではありません")
+                success, err = save_fs_collection("invoices", invoices, deleted_ids=deleted_ids)
                 if not success: raise Exception(err)
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json; charset=utf-8')
@@ -1450,23 +1587,17 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
             content_length = int(self.headers.get('Content-Length', 0))
             post_data = self.rfile.read(content_length).decode('utf-8')
             try:
-                expenses = json.loads(post_data)
-                
-                existing_expenses = get_fs_collection('expenses', [])
-                existing_ids = {e.get('id'): e for e in existing_expenses}
-                incoming_ids = {e.get('id') for e in expenses if e.get('id')}
-                
-                for eid, e_data in existing_ids.items():
-                    if eid not in incoming_ids:
-                        receipt_url = e_data.get('receiptUrl', '')
-                        if receipt_url and '/api/receipt/' in receipt_url:
-                            url_id = receipt_url.split('/api/receipt/')[-1].split('?')[0]
-                            target_id = re.sub(r'[^a-zA-Z0-9_\-]', '', url_id)
-                            blob = bucket.blob(f"receipts/{target_id}.jpg")
-                            if blob.exists(): blob.delete()
-                        db.collection('expenses').document(eid).delete()
+                payload = json.loads(post_data)
+                deleted_ids = None
+                expenses = payload
+                if isinstance(payload, dict):
+                    deleted_ids = payload.get('deletedIds')
+                    expenses = payload.get('expenses', payload.get('list', []))
+                if not isinstance(expenses, list):
+                    raise ValueError("データ形式が配列ではありません")
 
-                success, err = save_fs_collection('expenses', expenses)
+                # 送信データのみをUpsert（洗い替え一括削除を廃止し、他端末の最新経費を保護）
+                success, err = save_fs_collection('expenses', expenses, deleted_ids=deleted_ids)
                 if not success: raise Exception(err)
                 
                 self.send_response(200)
@@ -1484,26 +1615,56 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
 
     def do_DELETE(self):
-        # 勤怠打刻データ 個別削除API
-        if self.path.startswith('/api/attendance'):
-            try:
-                import urllib.parse
-                parsed = urllib.parse.urlparse(self.path)
-                params = urllib.parse.parse_qs(parsed.query)
-                target_id = params.get('id', [None])[0]
+        parsed_url = urllib.parse.urlparse(self.path)
+        if 'api.php' in parsed_url.path:
+            qs = urllib.parse.parse_qs(parsed_url.query)
+            if 'endpoint' in qs:
+                self.path = '/api/' + qs['endpoint'][0]
 
-                if target_id:
-                    db.collection('attendance').document(target_id).delete()
-                
-                self.send_response(200)
-                self.send_header('Content-Type', 'application/json; charset=utf-8')
-                self.end_headers()
-                self.wfile.write(json.dumps({"success": True}).encode('utf-8'))
-            except Exception as e:
-                self.send_response(500)
-                self.send_header('Content-Type', 'application/json; charset=utf-8')
-                self.end_headers()
-                self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
+        # APIリクエストに対する Firebase Auth トークン認証
+        if self.path.startswith('/api/'):
+            user = verify_firebase_auth(self)
+            if not user:
+                return
+
+        try:
+            parsed = urllib.parse.urlparse(self.path)
+            params = urllib.parse.parse_qs(parsed.query)
+            target_id = params.get('id', [None])[0]
+
+            path_clean = parsed.path.rstrip('/')
+            col_map = {
+                '/api/attendance': 'attendance',
+                '/api/expenses': 'expenses',
+                '/api/invoices': 'invoices',
+                '/api/invoices/history': 'invoices',
+                '/api/master/items': 'items',
+                '/api/items': 'items',
+                '/api/master/clients': 'clients',
+                '/api/clients': 'clients',
+                '/api/inventory': 'inventory',
+                '/api/payroll/records': 'payroll_records',
+                '/api/payroll_records': 'payroll_records'
+            }
+            col_name = col_map.get(path_clean)
+            if col_name and target_id:
+                success, err = delete_fs_item(col_name, target_id)
+                if success:
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json; charset=utf-8')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"success": True, "collection": col_name, "id": target_id}).encode('utf-8'))
+                else:
+                    self.send_response(500)
+                    self.send_header('Content-Type', 'application/json; charset=utf-8')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": err}).encode('utf-8'))
+                return
+        except Exception as e:
+            self.send_response(500)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
             return
 
         self.send_response(404)
