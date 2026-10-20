@@ -18,7 +18,7 @@ import threading
 import sys
 import uuid
 import time
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 PORT = int(os.environ.get("PORT", 3000))
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -811,7 +811,7 @@ def save_fs_collection(col_name, data_list, id_field='id', deleted_ids=None):
                     new_deleted_set.add(clean_did)
                     del_doc_ref = db.collection(col_name).document(clean_did)
                     if col_name == 'invoices':
-                        batch.set(del_doc_ref, {'_deleted': True}, merge=True)
+                        batch.set(del_doc_ref, {'_deleted': True, 'deletedAt': datetime.now(timezone.utc).isoformat()}, merge=True)
                     else:
                         batch.delete(del_doc_ref)
                     count += 1
@@ -916,6 +916,69 @@ def save_fs_document(col_name, doc_id, data):
         return True, ""
     except Exception as e:
         return False, str(e)
+
+TRASH_RETENTION_DAYS = 30
+_last_trash_cleanup_time = 0
+
+def cleanup_expired_trash_invoices():
+    """
+    30日以上経過した削除済み書類（ゴミ箱伝票）をFirestoreから完全消去（物理削除）する。
+    """
+    try:
+        now = datetime.now(timezone.utc)
+        retention_threshold = now - timedelta(days=TRASH_RETENTION_DAYS)
+
+        # Firestoreから _deleted: True の書類を走査
+        trash_docs = db.collection('invoices').where('_deleted', '==', True).stream()
+        expired_ids = []
+        for doc in trash_docs:
+            data = doc.to_dict() or {}
+            deleted_at_str = data.get('deletedAt') or data.get('updatedAt')
+            if deleted_at_str:
+                try:
+                    clean_del_str = str(deleted_at_str).replace('Z', '+00:00')
+                    dt_del = datetime.fromisoformat(clean_del_str)
+                    if dt_del.tzinfo is None:
+                        dt_del = dt_del.replace(tzinfo=timezone.utc)
+                    if dt_del < retention_threshold:
+                        expired_ids.append(doc.id)
+                except Exception:
+                    pass
+        
+        if expired_ids:
+            batch = db.batch()
+            b_count = 0
+            for exp_id in expired_ids:
+                batch.delete(db.collection('invoices').document(exp_id))
+                b_count += 1
+                if b_count == 500:
+                    batch.commit()
+                    batch = db.batch()
+                    b_count = 0
+            if b_count > 0:
+                batch.commit()
+            
+            # settings/deleted_invoices からも期限切れIDを除外
+            del_doc = get_fs_document('settings', 'deleted_invoices', {'ids': []})
+            existing_ids = del_doc.get('ids', []) if isinstance(del_doc, dict) else []
+            expired_set = set(expired_ids)
+            cleaned_ids = [i for i in existing_ids if i not in expired_set]
+            if len(cleaned_ids) != len(existing_ids):
+                save_fs_document('settings', 'deleted_invoices', {'ids': cleaned_ids})
+                
+            print(f"[ゴミ箱自動消去] 30日を経過した削除書類 {len(expired_ids)}件 をクラウドから完全消去しました: {expired_ids}")
+    except Exception as e:
+        print(f"[ゴミ箱クリーンアップエラー]: {e}")
+
+def maybe_cleanup_expired_trash():
+    global _last_trash_cleanup_time
+    now_ts = time.time()
+    if now_ts - _last_trash_cleanup_time > 3600: # 1時間に1回実行
+        _last_trash_cleanup_time = now_ts
+        try:
+            cleanup_expired_trash_invoices()
+        except Exception as e:
+            print(f"[ゴミ箱クリーンアップ実行エラー]: {e}")
 
 def load_json_file(filepath, default_data):
     if os.path.exists(filepath):
@@ -1122,6 +1185,7 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
 
         # 請求書履歴一覧取得API
         if self.path == '/api/invoices/history':
+            maybe_cleanup_expired_trash()
             invoices = get_fs_collection('invoices', [])
             del_doc = get_fs_document('settings', 'deleted_invoices', {'ids': []})
             deleted_ids = set(del_doc.get('ids', [])) if isinstance(del_doc, dict) else set()

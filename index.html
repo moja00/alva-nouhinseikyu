@@ -51,9 +51,9 @@
           <span class="brand-subtitle">統合業務スイート</span>
           <span id="systemDeployBadge"
             style="font-size: 0.65rem; background: #ecfdf5; color: #047857; border: 1px solid #6ee7b7; padding: 2px 8px; border-radius: 9999px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; letter-spacing: 0.3px;"
-            title="最新デプロイバージョン: 2026/10/20 Firestore保存バッチ変数初期化バグ修正 (v13)">
+            title="最新デプロイバージョン: 2026/10/20 クラウド・ローカルごみ箱30日自動消去設定 (v14)">
             <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #10b981; box-shadow: 0 0 4px #10b981;"></span>
-            v2026.10.20-sync-v13
+            v2026.10.20-sync-v14
           </span>
         </h1>
       </div>
@@ -169,9 +169,9 @@
             Alva-works 業務ポータル
             <span class="portal-version-badge"
               style="font-size: 0.75rem; background: #ecfdf5; color: #047857; border: 1px solid #6ee7b7; padding: 3px 10px; border-radius: 9999px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; letter-spacing: 0.3px;"
-              title="最新デプロイバージョン: 2026/10/20 Firestore保存バッチ変数初期化バグ修正 (v13)">
+              title="最新デプロイバージョン: 2026/10/20 クラウド・ローカルごみ箱30日自動消去設定 (v14)">
               <span style="display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #10b981; box-shadow: 0 0 6px #10b981;"></span>
-              v2026.10.20-sync-v13
+              v2026.10.20-sync-v14
             </span>
           </h2>
           <p class="portal-sub-heading" style="color: #475569; font-weight: 500;">
@@ -293,7 +293,7 @@
         </button>
         <div style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
-          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.20-sync-v13</span>
+          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.20-sync-v14</span>
         </div>
       </div>
 
@@ -1156,7 +1156,7 @@
       <!-- 説明ガイドバナー -->
       <div style="padding: 10px 22px; background: #fff5f5; border-bottom: 1px solid #fecaca; font-size: 0.8rem; color: #7f1d1d; display: flex; align-items: center; gap: 8px;">
         <span>💡</span>
-        <span>間違えて削除してしまった書類を一覧から選択して復活できます。「復元する」ボタンを押すと、書類履歴リストへ元通り復帰し、他端末とも自動同期されます。</span>
+        <span>間違えて削除してしまった書類を一覧から選択して復活できます（※削除後30日間保持され、以降はクラウド・端末から自動消去されます）。「復元する」ボタンを押すと、書類履歴リストへ元通り復帰し、他端末とも自動同期されます。</span>
       </div>
 
       <!-- 削除済み書類リスト表示領域 -->
@@ -4771,7 +4771,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261020_sync_v13"></script>
+  <script src="js/app.bundle.js?v=20261020_sync_v14"></script>
 </body>
 
 </html>

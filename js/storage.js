@@ -63,17 +63,33 @@ export function removeDeletedDocId(id) {
   } catch (e) { }
 }
 
+const TRASH_RETENTION_DAYS = 30;
+
 /**
- * ごみ箱（削除済み書類一覧）を取得
+ * ごみ箱（削除済み書類一覧）を取得（30日経過データは自動消去）
  * @returns {Array<any>}
  */
 export function getTrashList() {
   try {
     const raw = localStorage.getItem(KEYS.TRASH_HISTORY);
     const list = raw ? JSON.parse(raw) : [];
-    // 中身（書類番号、取引先、明細、または金額）が1つも存在しない空骨データを除外
-    return list.filter(item => {
+    const now = Date.now();
+    const maxAgeMs = TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+
+    let hasExpired = false;
+    const validList = list.filter(item => {
       if (!item || !item.id) return false;
+
+      // 30日（TRASH_RETENTION_DAYS）を経過した削除書類は自動消去
+      if (item.deletedAt) {
+        const deletedTime = new Date(item.deletedAt).getTime();
+        if (!isNaN(deletedTime) && (now - deletedTime > maxAgeMs)) {
+          hasExpired = true;
+          return false;
+        }
+      }
+
+      // 中身（書類番号、取引先、明細、または金額）が1つも存在しない空骨データを除外
       const full = item.fullDoc || item;
       const docNum = item.docNumber || item.number || full.docNumber || full.number;
       const client = item.clientName || item.client?.name || full.clientName || full.client?.name;
@@ -81,6 +97,13 @@ export function getTrashList() {
       const total = item.grandTotal ?? item.totalAmount ?? (item.totals && item.totals.total) ?? (full.totals && full.totals.total);
       return !!(docNum || client || (items && items.length > 0) || (total && total > 0));
     });
+
+    if (hasExpired) {
+      saveTrashList(validList);
+      console.log(`【ごみ箱】30日を経過した古い削除書類を自動消去しました (残${validList.length}件)`);
+    }
+
+    return validList;
   } catch (e) {
     return [];
   }
