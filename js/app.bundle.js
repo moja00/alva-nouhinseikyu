@@ -2482,22 +2482,33 @@ const KEYS = {
 
 let syncTimeout = null;
 function localStorageSetItemAndSync(key, value) {
-  localStorage.setItem(key, value);
+  try {
+    localStorage.setItem(key, value);
+  } catch (e) {
+    console.warn('[LocalStorage] setItem error:', e);
+  }
   if (syncTimeout) clearTimeout(syncTimeout);
   syncTimeout = setTimeout(async () => {
     if (typeof window !== 'undefined' && window.pushAllLocalDataToServer) {
-      try {
-        const res = await window.pushAllLocalDataToServer();
-        if (!res.success && typeof showToast === 'function') {
-          showToast('⚠️ サーバーへの自動保存に失敗しました: ' + res.error, 'error');
-        }
-      } catch (e) {
-        if (typeof showToast === 'function') {
-          showToast('⚠️ サーバー通信エラー: 自動保存失敗', 'error');
+      // 未ログイン状態なら無駄な通信とエラーを避けてスキップ
+      if (typeof firebase !== 'undefined' && firebase.auth) {
+        const auth = firebase.auth();
+        const hasUser = !!auth.currentUser;
+        const cachedToken = (typeof getFirebaseAuthToken === 'function') ? await getFirebaseAuthToken(false) : null;
+        if (!hasUser && !cachedToken) {
+          return;
         }
       }
+      try {
+        const res = await window.pushAllLocalDataToServer();
+        if (!res.success) {
+          console.warn('[自動保存] バックグラウンド保存保留:', res.error);
+        }
+      } catch (e) {
+        console.warn('[自動保存] 通信エラー (次回操作時に再試行):', e);
+      }
     }
-  }, 1000);
+  }, 1200);
 }
 
 
@@ -3093,54 +3104,99 @@ function getAppBaseDir() {
   return path;
 }
 
+// 直近のトークンキャッシュ（メモリおよびlocalStorage）
+let _memoryCachedToken = null;
+const CACHED_TOKEN_KEY = 'billcraft_cached_id_token';
+
 /**
  * 現在ログイン中の Firebase Auth ユーザーから ID トークンを取得
- * ページ読み込み直後などでセッション復元中の場合は待機する
+ * ページ読み込み直後などでセッション復元中の場合は待機し、キャッシュフォールバックも行う
+ * @param {boolean} forceRefresh 強制的に最新トークンを再取得するかどうか
  */
-async function getFirebaseAuthToken() {
-  if (typeof firebase === 'undefined' || !firebase.auth) {
-    return null;
-  }
-  const auth = firebase.auth();
+async function getFirebaseAuthToken(forceRefresh = false) {
+  // 1. Firebase SDK が利用可能かチェック
+  if (typeof firebase !== 'undefined' && firebase.auth) {
+    const auth = firebase.auth();
 
-  // すでに currentUser が存在する場合は即座にトークンを取得
-  if (auth.currentUser) {
-    try {
-      return await auth.currentUser.getIdToken();
-    } catch (e) {
-      console.warn('[Auth] getIdToken failed:', e);
-      return null;
+    // 1-1. すでに currentUser が存在する場合はトークンを取得
+    if (auth.currentUser) {
+      try {
+        const token = await auth.currentUser.getIdToken(forceRefresh);
+        if (token) {
+          _memoryCachedToken = token;
+          try { localStorage.setItem(CACHED_TOKEN_KEY, token); } catch (e) {}
+          return token;
+        }
+      } catch (e) {
+        console.warn('[Auth] getIdToken error, falling back to cached token:', e);
+      }
+    }
+
+    // 1-2. currentUser が null の場合、セッション復元を最大1.5秒待機
+    if (!forceRefresh) {
+      const restoredToken = await new Promise((resolve) => {
+        let resolved = false;
+        const timer = setTimeout(() => {
+          if (!resolved) {
+            resolved = true;
+            if (unsubscribe) unsubscribe();
+            resolve(null);
+          }
+        }, 1500);
+
+        const unsubscribe = auth.onAuthStateChanged(async (user) => {
+          if (resolved) return;
+          resolved = true;
+          clearTimeout(timer);
+          if (unsubscribe) unsubscribe();
+          if (user) {
+            try {
+              const token = await user.getIdToken();
+              if (token) {
+                _memoryCachedToken = token;
+                try { localStorage.setItem(CACHED_TOKEN_KEY, token); } catch (e) {}
+                resolve(token);
+                return;
+              }
+            } catch (e) {}
+          }
+          resolve(null);
+        });
+      });
+
+      if (restoredToken) return restoredToken;
     }
   }
 
-  // ページ初期化時などセッション復元中の場合（最大2.5秒待機）
-  return new Promise((resolve) => {
-    let resolved = false;
-    const timer = setTimeout(() => {
-      if (!resolved) {
-        resolved = true;
-        if (unsubscribe) unsubscribe();
-        resolve(null);
-      }
-    }, 2500);
+  // 2. 直近のキャッシュトークンにフォールバック（画面遷移・初期ロード直後・一時オフライン）
+  if (_memoryCachedToken) return _memoryCachedToken;
+  try {
+    const localCached = localStorage.getItem(CACHED_TOKEN_KEY);
+    if (localCached) {
+      _memoryCachedToken = localCached;
+      return localCached;
+    }
+  } catch (e) {}
 
-    const unsubscribe = auth.onAuthStateChanged(async (user) => {
-      if (resolved) return;
-      resolved = true;
-      clearTimeout(timer);
-      if (unsubscribe) unsubscribe();
-      if (user) {
-        try {
-          const token = await user.getIdToken();
-          resolve(token);
-        } catch (e) {
-          resolve(null);
+  // 3. Firebase SDK 内部のローカルストレージからトークン抽出を試みるフォールバック
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('firebase:authUser:')) {
+        const raw = localStorage.getItem(k);
+        if (raw) {
+          const authData = JSON.parse(raw);
+          if (authData && authData.stsTokenManager && authData.stsTokenManager.accessToken) {
+            const fbToken = authData.stsTokenManager.accessToken;
+            _memoryCachedToken = fbToken;
+            return fbToken;
+          }
         }
-      } else {
-        resolve(null);
       }
-    });
-  });
+    }
+  } catch (e) {}
+
+  return null;
 }
 
 /**
@@ -3189,7 +3245,7 @@ async function apiFetch(path, options = {}) {
   // 認証トークンの自動取得・ヘッダー付与
   const headers = new Headers(options.headers || {});
   try {
-    const token = await getFirebaseAuthToken();
+    const token = await getFirebaseAuthToken(false);
     if (token && !headers.has('Authorization')) {
       headers.set('Authorization', `Bearer ${token}`);
     }
@@ -3204,16 +3260,39 @@ async function apiFetch(path, options = {}) {
   };
 
   let lastErr = null;
+  let response = null;
+
   for (const url of candidates) {
     try {
       const res = await fetch(url, fetchOpts);
       if (res.status !== 404 && res.status !== 405) {
-        return res;
+        response = res;
+        break;
       }
     } catch (e) {
       lastErr = e;
     }
   }
+
+  // 401 (Unauthorized) の場合: トークン強制再取得（forceRefresh）して1度だけ自動リトライ
+  if (response && response.status === 401 && !options._isRetry) {
+    try {
+      const freshToken = await getFirebaseAuthToken(true);
+      if (freshToken) {
+        const retryHeaders = new Headers(options.headers || {});
+        retryHeaders.set('Authorization', `Bearer ${freshToken}`);
+        return await apiFetch(path, {
+          ...options,
+          headers: retryHeaders,
+          _isRetry: true
+        });
+      }
+    } catch (refreshErr) {
+      console.warn('[apiFetch] Token refresh retry failed:', refreshErr);
+    }
+  }
+
+  if (response) return response;
   if (lastErr) throw lastErr;
   return new Response(JSON.stringify({ error: 'Endpoint not reachable' }), { status: 404 });
 }
@@ -15369,6 +15448,7 @@ function setupFirebaseAuth() {
   const auth = firebase.auth();
 
   window.signOutApp = () => {
+    try { localStorage.removeItem('billcraft_cached_id_token'); } catch (e) {}
     auth.signOut().then(() => {
       window.location.reload();
     });
@@ -15409,6 +15489,10 @@ function setupFirebaseAuth() {
     if (user) {
       if (loginOverlay) loginOverlay.style.display = 'none';
       if (btnLogout) btnLogout.style.display = 'inline-flex';
+      try {
+        const token = await user.getIdToken();
+        if (token) localStorage.setItem('billcraft_cached_id_token', token);
+      } catch (e) {}
       // ログイン完了時にサーバーから最新データを自動同期
       if (typeof pullAllServerDataToLocal === 'function') {
         try {
@@ -15420,6 +15504,7 @@ function setupFirebaseAuth() {
     } else {
       if (loginOverlay) loginOverlay.style.display = 'flex';
       if (btnLogout) btnLogout.style.display = 'none';
+      try { localStorage.removeItem('billcraft_cached_id_token'); } catch (e) {}
     }
   });
 

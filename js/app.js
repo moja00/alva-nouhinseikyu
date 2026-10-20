@@ -9488,6 +9488,7 @@ function setupFirebaseAuth() {
   const auth = firebase.auth();
 
   window.signOutApp = () => {
+    try { localStorage.removeItem('billcraft_cached_id_token'); } catch (e) {}
     auth.signOut().then(() => {
       window.location.reload();
     });
@@ -9528,6 +9529,10 @@ function setupFirebaseAuth() {
     if (user) {
       if (loginOverlay) loginOverlay.style.display = 'none';
       if (btnLogout) btnLogout.style.display = 'inline-flex';
+      try {
+        const token = await user.getIdToken();
+        if (token) localStorage.setItem('billcraft_cached_id_token', token);
+      } catch (e) {}
       // ログイン完了時にサーバーから最新データを自動同期
       if (typeof pullAllServerDataToLocal === 'function') {
         try {
@@ -9539,6 +9544,7 @@ function setupFirebaseAuth() {
     } else {
       if (loginOverlay) loginOverlay.style.display = 'flex';
       if (btnLogout) btnLogout.style.display = 'none';
+      try { localStorage.removeItem('billcraft_cached_id_token'); } catch (e) {}
     }
   });
 
