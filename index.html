@@ -49,12 +49,6 @@
         <h1 class="brand-title" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
           Alva-works ERP
           <span class="brand-subtitle">統合業務スイート</span>
-          <span id="systemDeployBadge"
-            style="font-size: 0.65rem; background: #ecfdf5; color: #047857; border: 1px solid #6ee7b7; padding: 2px 8px; border-radius: 9999px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; letter-spacing: 0.3px;"
-            title="最新デプロイバージョン: 2026/10/20 ポータルツールバー整理 (v15)">
-            <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #10b981; box-shadow: 0 0 4px #10b981;"></span>
-            v2026.10.20-sync-v15
-          </span>
         </h1>
       </div>
     </div>
@@ -167,12 +161,6 @@
           </div>
           <h2 class="portal-main-heading" style="color: #0f172a; font-weight: 800; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
             Alva-works 業務ポータル
-            <span class="portal-version-badge"
-              style="font-size: 0.75rem; background: #ecfdf5; color: #047857; border: 1px solid #6ee7b7; padding: 3px 10px; border-radius: 9999px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; letter-spacing: 0.3px;"
-              title="最新デプロイバージョン: 2026/10/20 ポータルツールバー整理 (v15)">
-              <span style="display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #10b981; box-shadow: 0 0 6px #10b981;"></span>
-              v2026.10.20-sync-v15
-            </span>
           </h2>
           <p class="portal-sub-heading" style="color: #475569; font-weight: 500;">
             行いたい業務を選択してください。どの画面からでも上部メニューから切り替えが可能です。</p>
@@ -286,9 +274,14 @@
         <button type="button" class="quick-link-btn" onclick="document.getElementById('btnOpenBackup').click()">
           💾 データ管理・バックアップ
         </button>
+        <button type="button" class="quick-link-btn"
+          onclick="window.triggerServerSyncAll &amp;&amp; window.triggerServerSyncAll()"
+          style="background: linear-gradient(135deg, #0284c7, #2563eb); color: #ffffff; border: none; font-weight: 700; box-shadow: 0 2px 6px rgba(37,99,235,0.3);">
+          ☁️ サーバー全同期（端末間共有・アップロード）
+        </button>
         <div style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
-          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.20-sync-v15</span>
+          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.20-sync-v16</span>
         </div>
       </div>
 
@@ -4766,7 +4759,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261020_sync_v15"></script>
+  <script src="js/app.bundle.js?v=20261020_sync_v16"></script>
 </body>
 
 </html>
