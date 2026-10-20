@@ -3264,8 +3264,11 @@ async function apiFetch(path, options = {}) {
   ];
 
   const headers = new Headers(options.headers || {});
-  if (token && !headers.has('Authorization')) {
-    headers.set('Authorization', `Bearer ${token}`);
+  if (token) {
+    if (!headers.has('Authorization')) {
+      headers.set('Authorization', `Bearer ${token}`);
+    }
+    headers.set('X-Firebase-Auth', token);
   }
 
   const fetchOpts = {
@@ -3296,6 +3299,7 @@ async function apiFetch(path, options = {}) {
       if (freshToken) {
         const retryHeaders = new Headers(options.headers || {});
         retryHeaders.set('Authorization', `Bearer ${freshToken}`);
+        retryHeaders.set('X-Firebase-Auth', freshToken);
         return await apiFetch(path, {
           ...options,
           headers: retryHeaders,

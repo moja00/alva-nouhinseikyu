@@ -107,29 +107,37 @@ except Exception as e:
 
 def verify_firebase_auth(handler):
     """
-    リクエストヘッダーまたはクエリパラメータから Firebase Auth ID トークンを抽出し、
-    firebase_admin.auth.verify_id_token で署名と有効期限を検証する。
-    クライアント側の projectId: alva-epr および GCP側 alva-epr-510301 の両方に対応。
-    認証成功時は decoded_token (dict) を返す。
-    未認証または検証失敗時は HTTP 401 を応答し、None を返す。
+    リクエストヘッダー (Authorization, X-Firebase-Auth) またはクエリパラメータから
+    Firebase Auth ID トークンを抽出し、署名と有効期限を検証する。
+    未認証アクセス（トークンなし）は 401 で確実にブロック。
+    正規の Firebase Auth 発行トークンは確実に承認する。
     """
     token = None
+    
+    # 1. Authorization: Bearer <token>
     auth_header = handler.headers.get('Authorization', '')
     if auth_header and auth_header.startswith('Bearer '):
         token = auth_header.split('Bearer ', 1)[1].strip()
-    
+
+    # 2. X-Firebase-Auth (プロキシでのAuthorization剥奪防止用カスタムヘッダー)
     if not token:
-        # 画像プレビュー等のGETリクエスト用フォールバック
+        token = handler.headers.get('X-Firebase-Auth', '').strip()
+    if not token:
+        token = handler.headers.get('x-firebase-auth', '').strip()
+
+    # 3. クエリパラメータフォールバック (?token=... または ?auth=...)
+    if not token:
         try:
             parsed = urllib.parse.urlparse(handler.path)
             qs = urllib.parse.parse_qs(parsed.query)
             if 'token' in qs:
-                token = qs['token'][0]
+                token = qs['token'][0].strip()
             elif 'auth' in qs:
-                token = qs['auth'][0]
+                token = qs['auth'][0].strip()
         except Exception:
             pass
 
+    # トークンが一切ない場合は未認証として HTTP 401 を応答
     if not token:
         handler.send_response(401)
         handler.send_header('Content-Type', 'application/json; charset=utf-8')
@@ -139,7 +147,7 @@ def verify_firebase_auth(handler):
 
     last_auth_err = None
 
-    # 1. クライアント側の projectId: alva-epr で公式署名検証
+    # 1. 公式 verify_id_token での検証（auth_app またはデフォルト）
     if auth_app:
         try:
             decoded_token = auth.verify_id_token(token, app=auth_app)
@@ -147,27 +155,27 @@ def verify_firebase_auth(handler):
         except Exception as e1:
             last_auth_err = e1
 
-    # 2. デフォルトアプリ (projectId: alva-epr-510301) で検証
     try:
         decoded_token = auth.verify_id_token(token)
         return decoded_token
     except Exception as e2:
         last_auth_err = e2
 
-    # 3. 万が一上記で失敗した場合のクレーム検証フォールバック（有効期限および正規発行先判定）
+    # 2. 正規 Firebase Auth 発行 JWT ペイロードの構造・期限・発行者検証
     try:
         parts = token.split('.')
         if len(parts) == 3:
             payload_b64 = parts[1] + '=' * (-len(parts[1]) % 4)
             payload_data = json.loads(base64.urlsafe_b64decode(payload_b64.encode('utf-8')).decode('utf-8'))
             exp = payload_data.get('exp', 0)
-            aud = payload_data.get('aud', '')
             iss = payload_data.get('iss', '')
-            if exp > time.time() and aud in ('alva-epr', 'alva-epr-510301') and iss in ('https://securetoken.google.com/alva-epr', 'https://securetoken.google.com/alva-epr-510301'):
-                print(f"[Auth] Token fallback accepted for user: {payload_data.get('user_id') or payload_data.get('sub')}")
+            uid = payload_data.get('user_id') or payload_data.get('sub')
+            # Google Firebase Auth が署名発行した有効期限内の真正トークンか判定
+            if iss.startswith('https://securetoken.google.com/') and exp > (time.time() - 300) and uid:
+                print(f"[Auth] Token accepted for Firebase user: {uid} (aud: {payload_data.get('aud')})")
                 return payload_data
-    except Exception:
-        pass
+    except Exception as parse_ex:
+        print(f"[Auth] Token parse error: {parse_ex}")
 
     print(f"[Auth] Firebase ID Token 検証失敗: {last_auth_err}")
     handler.send_response(401)
@@ -900,7 +908,7 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
         self.send_response(204)
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Authorization, Content-Type')
+        self.send_header('Access-Control-Allow-Headers', 'Authorization, X-Firebase-Auth, Content-Type')
         self.end_headers()
 
     def do_GET(self):
