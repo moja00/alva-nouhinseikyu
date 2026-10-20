@@ -3130,4 +3130,88 @@ label.form-label {
   }
 }
 
+/* ==========================================================================
+   複数レシート確認・個別登録モーダル スタイル
+   ========================================================================== */
+.multi-receipt-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  color: #334155;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  user-select: none;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+}
+
+.multi-receipt-tab:hover {
+  background: #f8fafc;
+  border-color: #94a3b8;
+  transform: translateY(-1px);
+}
+
+.multi-receipt-tab.active {
+  background: #eef2ff;
+  border-color: #6366f1;
+  color: #312e81;
+  box-shadow: 0 2px 6px rgba(99, 102, 241, 0.25);
+  font-weight: 700;
+}
+
+.multi-receipt-tab.saved {
+  background: #ecfdf5;
+  border-color: #34d399;
+  color: #065f46;
+}
+
+.multi-receipt-tab .tab-badge-status {
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
+.multi-receipt-tab .tab-title {
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.multi-receipt-tab .tab-amount {
+  font-weight: 700;
+  font-size: 0.825rem;
+  color: #1e293b;
+  background: rgba(0, 0, 0, 0.05);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.multi-receipt-tab.saved .tab-amount {
+  color: #047857;
+  background: rgba(16, 185, 129, 0.15);
+}
+
+@media (max-width: 768px) {
+  #multiReceiptMainBody {
+    flex-direction: column !important;
+    overflow-y: auto !important;
+  }
+  #multiReceiptImageCol {
+    min-height: 240px !important;
+    max-height: 300px !important;
+    border-right: none !important;
+    border-bottom: 1px solid #334155 !important;
+  }
+  #multiReceiptFormCol {
+    padding: 14px !important;
+  }
+}
+
+
 

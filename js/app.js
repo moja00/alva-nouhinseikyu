@@ -481,6 +481,45 @@ const DOM = {
   receiptOcrStatus: document.getElementById('receiptOcrStatus'),
   receiptOcrStatusText: document.getElementById('receiptOcrStatusText'),
   geminiOcrBadge: document.getElementById('geminiOcrBadge'),
+  // 複数レシート読み取り確認・個別登録モーダル
+  multiReceiptModal: document.getElementById('multiReceiptModal'),
+  multiReceiptProgressBadge: document.getElementById('multiReceiptProgressBadge'),
+  multiReceiptGlobalClaimant: document.getElementById('multiReceiptGlobalClaimant'),
+  btnCloseMultiReceiptModal: document.getElementById('btnCloseMultiReceiptModal'),
+  multiReceiptTabBar: document.getElementById('multiReceiptTabBar'),
+  multiReceiptFileNameDisp: document.getElementById('multiReceiptFileNameDisp'),
+  btnRotateMultiReceiptImage: document.getElementById('btnRotateMultiReceiptImage'),
+  btnZoomMultiReceiptImage: document.getElementById('btnZoomMultiReceiptImage'),
+  multiReceiptImagePreview: document.getElementById('multiReceiptImagePreview'),
+  multiReceiptOcrOverlay: document.getElementById('multiReceiptOcrOverlay'),
+  multiReceiptOcrOverlayText: document.getElementById('multiReceiptOcrOverlayText'),
+  multiReceiptStatusBanner: document.getElementById('multiReceiptStatusBanner'),
+  multiReceiptStatusBannerText: document.getElementById('multiReceiptStatusBannerText'),
+  multiReceiptItemStatusBadge: document.getElementById('multiReceiptItemStatusBadge'),
+  labelMultiReceiptTypeExpense: document.getElementById('labelMultiReceiptTypeExpense'),
+  labelMultiReceiptTypePurchase: document.getElementById('labelMultiReceiptTypePurchase'),
+  radioMultiReceiptTypeExpense: document.getElementById('radioMultiReceiptTypeExpense'),
+  radioMultiReceiptTypePurchase: document.getElementById('radioMultiReceiptTypePurchase'),
+  multiReceiptInventoryPanel: document.getElementById('multiReceiptInventoryPanel'),
+  multiReceiptSelectInventoryItem: document.getElementById('multiReceiptSelectInventoryItem'),
+  multiReceiptInputInQty: document.getElementById('multiReceiptInputInQty'),
+  multiReceiptInputClaimant: document.getElementById('multiReceiptInputClaimant'),
+  multiReceiptInputDate: document.getElementById('multiReceiptInputDate'),
+  multiReceiptSelectCategory: document.getElementById('multiReceiptSelectCategory'),
+  multiReceiptInputAmount: document.getElementById('multiReceiptInputAmount'),
+  multiReceiptSelectTax: document.getElementById('multiReceiptSelectTax'),
+  multiReceiptInputPayee: document.getElementById('multiReceiptInputPayee'),
+  multiReceiptInputInvoiceNum: document.getElementById('multiReceiptInputInvoiceNum'),
+  multiReceiptInputNote: document.getElementById('multiReceiptInputNote'),
+  btnMultiReceiptSkip: document.getElementById('btnMultiReceiptSkip'),
+  btnMultiReceiptSaveAll: document.getElementById('btnMultiReceiptSaveAll'),
+  btnMultiReceiptPrev: document.getElementById('btnMultiReceiptPrev'),
+  btnMultiReceiptNext: document.getElementById('btnMultiReceiptNext'),
+  btnMultiReceiptSaveSingle: document.getElementById('btnMultiReceiptSaveSingle'),
+  btnMultiReceiptDone: document.getElementById('btnMultiReceiptDone'),
+  multiReceiptResumeBanner: document.getElementById('multiReceiptResumeBanner'),
+  multiReceiptResumeText: document.getElementById('multiReceiptResumeText'),
+  btnResumeMultiReceipt: document.getElementById('btnResumeMultiReceipt'),
   formExpenseInput: document.getElementById('formExpenseInput'),
   expenseEditId: document.getElementById('expenseEditId'),
   expenseInputDate: document.getElementById('expenseInputDate'),
@@ -6023,10 +6062,789 @@ function initReceiptUploadHandlers() {
       handleReceiptFiles(e.target.files);
     }
   });
+
+  // 複数レシート確認・登録ハンドラーの初期化
+  initMultiReceiptHandlers();
+}
+
+// ============================================================================
+// 複数レシート読み取り確認・個別登録マネージャー
+// ============================================================================
+let multiReceiptSession = {
+  items: [], // Array<{ id, file, fileName, rawImage, rotation, status, parsed, formData, isSaved, savedExpId }>
+  currentIndex: 0,
+  globalClaimant: '小林俊介'
+};
+
+function initMultiReceiptHandlers() {
+  if (DOM.btnCloseMultiReceiptModal) {
+    DOM.btnCloseMultiReceiptModal.addEventListener('click', closeMultiReceiptModal);
+  }
+  if (DOM.btnMultiReceiptDone) {
+    DOM.btnMultiReceiptDone.addEventListener('click', closeMultiReceiptModal);
+  }
+  if (DOM.btnResumeMultiReceipt) {
+    DOM.btnResumeMultiReceipt.addEventListener('click', resumeMultiReceiptModal);
+  }
+  if (DOM.btnRotateMultiReceiptImage) {
+    DOM.btnRotateMultiReceiptImage.addEventListener('click', rotateCurrentMultiReceiptImage);
+  }
+  if (DOM.btnZoomMultiReceiptImage) {
+    DOM.btnZoomMultiReceiptImage.addEventListener('click', zoomCurrentMultiReceiptImage);
+  }
+  if (DOM.radioMultiReceiptTypeExpense) {
+    DOM.radioMultiReceiptTypeExpense.addEventListener('change', () => setMultiReceiptEntryType('expense'));
+  }
+  if (DOM.radioMultiReceiptTypePurchase) {
+    DOM.radioMultiReceiptTypePurchase.addEventListener('change', () => setMultiReceiptEntryType('purchase'));
+  }
+  if (DOM.multiReceiptGlobalClaimant) {
+    DOM.multiReceiptGlobalClaimant.addEventListener('change', (e) => {
+      const newClaimant = e.target.value;
+      multiReceiptSession.globalClaimant = newClaimant;
+      if (DOM.multiReceiptInputClaimant) {
+        DOM.multiReceiptInputClaimant.value = newClaimant;
+      }
+      multiReceiptSession.items.forEach(it => {
+        if (!it.isSaved && it.formData) {
+          it.formData.claimant = newClaimant;
+        }
+      });
+      showToast(`👤 立替者を【${newClaimant}】に設定しました`, 'info');
+    });
+  }
+  if (DOM.btnMultiReceiptPrev) {
+    DOM.btnMultiReceiptPrev.addEventListener('click', () => {
+      syncCurrentMultiReceiptFormData();
+      if (multiReceiptSession.currentIndex > 0) {
+        loadMultiReceiptItem(multiReceiptSession.currentIndex - 1);
+      }
+    });
+  }
+  if (DOM.btnMultiReceiptNext) {
+    DOM.btnMultiReceiptNext.addEventListener('click', () => {
+      syncCurrentMultiReceiptFormData();
+      if (multiReceiptSession.currentIndex < multiReceiptSession.items.length - 1) {
+        loadMultiReceiptItem(multiReceiptSession.currentIndex + 1);
+      }
+    });
+  }
+  if (DOM.btnMultiReceiptSaveSingle) {
+    DOM.btnMultiReceiptSaveSingle.addEventListener('click', () => {
+      saveCurrentMultiReceiptItem(true);
+    });
+  }
+  if (DOM.btnMultiReceiptSaveAll) {
+    DOM.btnMultiReceiptSaveAll.addEventListener('click', () => {
+      saveAllRemainingMultiReceiptItems();
+    });
+  }
+  if (DOM.btnMultiReceiptSkip) {
+    DOM.btnMultiReceiptSkip.addEventListener('click', () => {
+      skipCurrentMultiReceiptItem();
+    });
+  }
+
+  // ESCキーとショートカット
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && DOM.multiReceiptModal && DOM.multiReceiptModal.style.display === 'flex') {
+      closeMultiReceiptModal();
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && DOM.multiReceiptModal && DOM.multiReceiptModal.style.display === 'flex') {
+      e.preventDefault();
+      saveCurrentMultiReceiptItem(true);
+    }
+  });
 }
 
 /**
- * 複数レシートファイルの一括・順次解析＆自動登録
+ * 複数画像を受け取って確認・個別登録モーダルを開く
+ */
+async function openMultiReceiptModal(files) {
+  if (!files || files.length === 0) return;
+
+  const validFiles = Array.from(files).filter(f => {
+    return (f.type && f.type.startsWith('image/')) || /\.(jpe?g|png|webp|gif|heic|bmp|tiff)$/i.test(f.name || '');
+  });
+
+  if (validFiles.length === 0) {
+    alert('画像ファイル（JPEG, PNG, WEBP等）を選択してください。');
+    return;
+  }
+
+  const defaultClaimant = activeExpenseClaimant || '小林俊介';
+  multiReceiptSession.globalClaimant = defaultClaimant;
+  if (DOM.multiReceiptGlobalClaimant) {
+    DOM.multiReceiptGlobalClaimant.value = defaultClaimant;
+  }
+
+  populateMultiReceiptInventoryDropdown();
+
+  const newItems = validFiles.map((file, idx) => ({
+    id: 'mrcpt_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7) + '_' + idx,
+    file,
+    fileName: file.name || `レシート_${idx + 1}`,
+    rawImage: '',
+    rotation: 0,
+    status: 'analyzing',
+    parsed: null,
+    formData: null,
+    isSaved: false,
+    savedExpId: null
+  }));
+
+  if (multiReceiptSession.items && multiReceiptSession.items.length > 0) {
+    multiReceiptSession.items = multiReceiptSession.items.concat(newItems);
+  } else {
+    multiReceiptSession.items = newItems;
+    multiReceiptSession.currentIndex = 0;
+  }
+
+  if (DOM.multiReceiptModal) {
+    DOM.multiReceiptModal.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+  }
+
+  renderMultiReceiptTabs();
+  loadMultiReceiptItem(multiReceiptSession.currentIndex);
+  updateMultiReceiptProgress();
+
+  // バックグラウンドで順次画像圧縮＆Gemini AI解析
+  processMultiReceiptItemsQueue(newItems);
+}
+
+function populateMultiReceiptInventoryDropdown(selectedId = '') {
+  if (!DOM.multiReceiptSelectInventoryItem) return;
+  const products = (typeof getItemMasterList === 'function') ? getItemMasterList(true) : [];
+  const invList = (typeof getInventoryList === 'function') ? getInventoryList() : [];
+
+  let html = '<option value="">-- 商品マスタから選択 --</option>';
+  products.forEach(prod => {
+    const inv = invList.find(i => i.itemId === prod.id || (i.name && i.name.trim() === prod.name.trim()));
+    const stock = inv ? Number(inv.currentStock) || 0 : 0;
+    const unit = (inv && inv.unit) || prod.unit || '個';
+    const isSelected = selectedId && (prod.id === selectedId || (inv && inv.id === selectedId));
+    html += `<option value="${prod.id}" ${isSelected ? 'selected' : ''}>📦 ${escapeHtml(prod.name)} (現在庫: ${stock}${unit})</option>`;
+  });
+  DOM.multiReceiptSelectInventoryItem.innerHTML = html;
+}
+
+async function processMultiReceiptItemsQueue(itemsToProcess) {
+  const expenseHistory = typeof getExpenseList === 'function' ? getExpenseList() : [];
+
+  for (let i = 0; i < itemsToProcess.length; i++) {
+    const item = itemsToProcess[i];
+
+    try {
+      if (!item.rawImage && item.file) {
+        item.rawImage = await compressReceiptImage(item.file);
+      }
+    } catch (e) {
+      console.warn('Image compress error:', e);
+    }
+
+    const currentItem = multiReceiptSession.items[multiReceiptSession.currentIndex];
+    if (currentItem && currentItem.id === item.id) {
+      if (DOM.multiReceiptImagePreview && item.rawImage) {
+        DOM.multiReceiptImagePreview.src = item.rawImage;
+      }
+      if (DOM.multiReceiptOcrOverlay) {
+        DOM.multiReceiptOcrOverlay.style.display = 'flex';
+      }
+    }
+
+    try {
+      const parsed = await analyzeReceiptImage(item.file || item.rawImage, (msg) => {
+        const cur = multiReceiptSession.items[multiReceiptSession.currentIndex];
+        if (cur && cur.id === item.id && DOM.multiReceiptOcrOverlayText) {
+          DOM.multiReceiptOcrOverlayText.textContent = msg;
+        }
+      }, expenseHistory);
+
+      item.parsed = parsed || {};
+      item.status = 'ready';
+
+      if (!item.formData) {
+        item.formData = {
+          date: (parsed && parsed.date) || getTodayDateString(),
+          category: (parsed && parsed.category) || '消耗品費',
+          amount: (parsed && parsed.amount) || '',
+          taxRate: (parsed && parsed.taxRate !== undefined) ? String(parsed.taxRate) : '10',
+          payee: (parsed && parsed.payee) || (item.fileName ? item.fileName.replace(/\.[^/.]+$/, "") : ''),
+          invoiceNumber: (parsed && parsed.invoiceNumber) || '',
+          note: (parsed && parsed.note) || '',
+          claimant: multiReceiptSession.globalClaimant || activeExpenseClaimant || '小林俊介',
+          entryType: 'expense',
+          inventoryItemId: '',
+          inventoryQty: 1
+        };
+      }
+    } catch (err) {
+      console.error('OCR failed for item:', item.fileName, err);
+      item.status = 'ready';
+      if (!item.formData) {
+        item.formData = {
+          date: getTodayDateString(),
+          category: '消耗品費',
+          amount: '',
+          taxRate: '10',
+          payee: item.fileName ? item.fileName.replace(/\.[^/.]+$/, "") : '',
+          invoiceNumber: '',
+          note: '',
+          claimant: multiReceiptSession.globalClaimant || activeExpenseClaimant || '小林俊介',
+          entryType: 'expense',
+          inventoryItemId: '',
+          inventoryQty: 1
+        };
+      }
+    }
+
+    renderMultiReceiptTabs();
+
+    const cur = multiReceiptSession.items[multiReceiptSession.currentIndex];
+    if (cur && cur.id === item.id) {
+      loadMultiReceiptItem(multiReceiptSession.currentIndex);
+    }
+  }
+}
+
+function syncCurrentMultiReceiptFormData() {
+  const item = multiReceiptSession.items[multiReceiptSession.currentIndex];
+  if (!item) return;
+
+  const entryType = (DOM.radioMultiReceiptTypePurchase && DOM.radioMultiReceiptTypePurchase.checked) ? 'purchase' : 'expense';
+  item.formData = {
+    claimant: DOM.multiReceiptInputClaimant ? DOM.multiReceiptInputClaimant.value : (multiReceiptSession.globalClaimant || '小林俊介'),
+    date: DOM.multiReceiptInputDate ? DOM.multiReceiptInputDate.value : getTodayDateString(),
+    category: DOM.multiReceiptSelectCategory ? DOM.multiReceiptSelectCategory.value : '消耗品費',
+    amount: DOM.multiReceiptInputAmount ? DOM.multiReceiptInputAmount.value : '',
+    taxRate: DOM.multiReceiptSelectTax ? DOM.multiReceiptSelectTax.value : '10',
+    payee: DOM.multiReceiptInputPayee ? DOM.multiReceiptInputPayee.value.trim() : '',
+    invoiceNumber: DOM.multiReceiptInputInvoiceNum ? DOM.multiReceiptInputInvoiceNum.value.trim() : '',
+    note: DOM.multiReceiptInputNote ? DOM.multiReceiptInputNote.value.trim() : '',
+    entryType: entryType,
+    inventoryItemId: DOM.multiReceiptSelectInventoryItem ? DOM.multiReceiptSelectInventoryItem.value : '',
+    inventoryQty: DOM.multiReceiptInputInQty ? Number(DOM.multiReceiptInputInQty.value) || 1 : 1
+  };
+}
+
+function loadMultiReceiptItem(index) {
+  if (index < 0 || index >= multiReceiptSession.items.length) return;
+  multiReceiptSession.currentIndex = index;
+  const item = multiReceiptSession.items[index];
+  if (!item) return;
+
+  if (DOM.multiReceiptFileNameDisp) {
+    DOM.multiReceiptFileNameDisp.textContent = `[${index + 1}/${multiReceiptSession.items.length}] ${item.fileName || 'レシート'}`;
+    DOM.multiReceiptFileNameDisp.title = item.fileName || '';
+  }
+
+  if (DOM.multiReceiptImagePreview) {
+    DOM.multiReceiptImagePreview.src = item.rawImage || '';
+    DOM.multiReceiptImagePreview.style.transform = `rotate(${item.rotation || 0}deg)`;
+  }
+
+  if (DOM.multiReceiptOcrOverlay) {
+    if (item.status === 'analyzing') {
+      DOM.multiReceiptOcrOverlay.style.display = 'flex';
+      if (DOM.multiReceiptOcrOverlayText) DOM.multiReceiptOcrOverlayText.textContent = '✨ Gemini AI 解析中...';
+    } else {
+      DOM.multiReceiptOcrOverlay.style.display = 'none';
+    }
+  }
+
+  const data = item.formData || {
+    claimant: multiReceiptSession.globalClaimant || activeExpenseClaimant || '小林俊介',
+    date: (item.parsed && item.parsed.date) || getTodayDateString(),
+    category: (item.parsed && item.parsed.category) || '消耗品費',
+    amount: (item.parsed && item.parsed.amount) || '',
+    taxRate: (item.parsed && item.parsed.taxRate !== undefined) ? String(item.parsed.taxRate) : '10',
+    payee: (item.parsed && item.parsed.payee) || (item.fileName ? item.fileName.replace(/\.[^/.]+$/, "") : ''),
+    invoiceNumber: (item.parsed && item.parsed.invoiceNumber) || '',
+    note: (item.parsed && item.parsed.note) || '',
+    entryType: 'expense',
+    inventoryItemId: '',
+    inventoryQty: 1
+  };
+
+  if (DOM.multiReceiptInputClaimant) DOM.multiReceiptInputClaimant.value = data.claimant || multiReceiptSession.globalClaimant || '小林俊介';
+  if (DOM.multiReceiptInputDate) DOM.multiReceiptInputDate.value = data.date || getTodayDateString();
+  if (DOM.multiReceiptSelectCategory) DOM.multiReceiptSelectCategory.value = data.category || '消耗品費';
+  if (DOM.multiReceiptInputAmount) DOM.multiReceiptInputAmount.value = data.amount || '';
+  if (DOM.multiReceiptSelectTax) DOM.multiReceiptSelectTax.value = data.taxRate || '10';
+  if (DOM.multiReceiptInputPayee) DOM.multiReceiptInputPayee.value = data.payee || '';
+  if (DOM.multiReceiptInputInvoiceNum) DOM.multiReceiptInputInvoiceNum.value = data.invoiceNumber || '';
+  if (DOM.multiReceiptInputNote) DOM.multiReceiptInputNote.value = data.note || '';
+
+  setMultiReceiptEntryType(data.entryType || 'expense');
+  if (DOM.multiReceiptSelectInventoryItem) DOM.multiReceiptSelectInventoryItem.value = data.inventoryItemId || '';
+  if (DOM.multiReceiptInputInQty) DOM.multiReceiptInputInQty.value = data.inventoryQty || 1;
+
+  updateMultiReceiptStatusBanner(item);
+
+  if (DOM.btnMultiReceiptSaveSingle) {
+    if (item.isSaved) {
+      DOM.btnMultiReceiptSaveSingle.textContent = '🔄 修正して再保存（次へ ➔）';
+      DOM.btnMultiReceiptSaveSingle.style.background = '#059669';
+      DOM.btnMultiReceiptSaveSingle.style.borderColor = '#059669';
+    } else {
+      DOM.btnMultiReceiptSaveSingle.textContent = '💾 この内容で登録（次へ ➔）';
+      DOM.btnMultiReceiptSaveSingle.style.background = '#4f46e5';
+      DOM.btnMultiReceiptSaveSingle.style.borderColor = '#4f46e5';
+    }
+  }
+
+  renderMultiReceiptTabs();
+}
+
+function setMultiReceiptEntryType(type) {
+  const isPurchase = type === 'purchase';
+  if (DOM.radioMultiReceiptTypeExpense) DOM.radioMultiReceiptTypeExpense.checked = !isPurchase;
+  if (DOM.radioMultiReceiptTypePurchase) DOM.radioMultiReceiptTypePurchase.checked = isPurchase;
+
+  if (DOM.labelMultiReceiptTypeExpense) {
+    DOM.labelMultiReceiptTypeExpense.classList.toggle('active', !isPurchase);
+    DOM.labelMultiReceiptTypeExpense.style.color = !isPurchase ? '#4338ca' : '#64748b';
+  }
+  if (DOM.labelMultiReceiptTypePurchase) {
+    DOM.labelMultiReceiptTypePurchase.classList.toggle('active', isPurchase);
+    DOM.labelMultiReceiptTypePurchase.style.color = isPurchase ? '#065f46' : '#64748b';
+  }
+
+  if (DOM.multiReceiptInventoryPanel) {
+    DOM.multiReceiptInventoryPanel.style.display = isPurchase ? 'block' : 'none';
+  }
+  if (isPurchase && DOM.multiReceiptSelectCategory) {
+    DOM.multiReceiptSelectCategory.value = '仕入高';
+  }
+}
+
+function updateMultiReceiptStatusBanner(item) {
+  if (!DOM.multiReceiptStatusBanner || !DOM.multiReceiptStatusBannerText || !DOM.multiReceiptItemStatusBadge) return;
+
+  if (item.isSaved) {
+    DOM.multiReceiptStatusBanner.style.background = '#ecfdf5';
+    DOM.multiReceiptStatusBanner.style.border = '1px solid #a7f3d0';
+    DOM.multiReceiptStatusBanner.style.color = '#065f46';
+    DOM.multiReceiptStatusBannerText.textContent = '✅ このレシートは既に経費として登録済みです（修正して再保存も可能です）';
+    DOM.multiReceiptItemStatusBadge.textContent = '登録済み';
+    DOM.multiReceiptItemStatusBadge.style.background = '#d1fae5';
+    DOM.multiReceiptItemStatusBadge.style.color = '#047857';
+  } else if (item.status === 'analyzing') {
+    DOM.multiReceiptStatusBanner.style.background = '#eef2ff';
+    DOM.multiReceiptStatusBanner.style.border = '1px solid #c7d2fe';
+    DOM.multiReceiptStatusBanner.style.color = '#3730a3';
+    DOM.multiReceiptStatusBannerText.textContent = '⏳ Google Gemini AI がレシートの文字・金額を読み取り中...';
+    DOM.multiReceiptItemStatusBadge.textContent = '解析中';
+    DOM.multiReceiptItemStatusBadge.style.background = '#e0e7ff';
+    DOM.multiReceiptItemStatusBadge.style.color = '#4338ca';
+  } else if (item.parsed && (item.parsed.amount || item.parsed.payee)) {
+    DOM.multiReceiptStatusBanner.style.background = '#f0fdf4';
+    DOM.multiReceiptStatusBanner.style.border = '1px solid #bbf7d0';
+    DOM.multiReceiptStatusBanner.style.color = '#166534';
+    DOM.multiReceiptStatusBannerText.textContent = `✨ AI解析完了: ${item.parsed.payee || '店名不明'} / 金額: ¥${Number(item.parsed.amount || 0).toLocaleString()} (内容を確認してください)`;
+    DOM.multiReceiptItemStatusBadge.textContent = '未登録';
+    DOM.multiReceiptItemStatusBadge.style.background = '#fef3c7';
+    DOM.multiReceiptItemStatusBadge.style.color = '#92400e';
+  } else {
+    DOM.multiReceiptStatusBanner.style.background = '#fffbeb';
+    DOM.multiReceiptStatusBanner.style.border = '1px solid #fde68a';
+    DOM.multiReceiptStatusBanner.style.color = '#92400e';
+    DOM.multiReceiptStatusBannerText.textContent = '📝 画像を確認し、金額や勘定科目を入力して登録してください。';
+    DOM.multiReceiptItemStatusBadge.textContent = '未登録';
+    DOM.multiReceiptItemStatusBadge.style.background = '#fef3c7';
+    DOM.multiReceiptItemStatusBadge.style.color = '#92400e';
+  }
+}
+
+function renderMultiReceiptTabs() {
+  if (!DOM.multiReceiptTabBar) return;
+
+  const items = multiReceiptSession.items;
+  let html = '';
+
+  items.forEach((item, idx) => {
+    const isActive = idx === multiReceiptSession.currentIndex;
+    const isSaved = item.isSaved;
+    const isAnalyzing = item.status === 'analyzing';
+
+    let statusBadge = '';
+    let tabClass = 'multi-receipt-tab';
+    if (isActive) tabClass += ' active';
+    if (isSaved) tabClass += ' saved';
+
+    if (isSaved) {
+      statusBadge = '<span class="tab-badge-status" title="登録済み">✅</span>';
+    } else if (isAnalyzing) {
+      statusBadge = '<span class="tab-badge-status" title="AI解析中" style="animation: spin 1s linear infinite; display: inline-block;">⏳</span>';
+    } else {
+      statusBadge = '<span class="tab-badge-status" title="未登録">📝</span>';
+    }
+
+    const payee = (item.formData && item.formData.payee) || (item.parsed && item.parsed.payee) || item.fileName || `レシート${idx + 1}`;
+    const amountVal = (item.formData && item.formData.amount) || (item.parsed && item.parsed.amount) || '';
+    const amountDisp = amountVal ? `¥${Number(amountVal).toLocaleString()}` : (isAnalyzing ? '...' : '¥--');
+
+    html += `
+      <button type="button" class="${tabClass}" data-index="${idx}" title="${escapeHtml(item.fileName)}">
+        ${statusBadge}
+        <span class="tab-title">#${idx + 1} ${escapeHtml(payee)}</span>
+        <span class="tab-amount">${amountDisp}</span>
+      </button>
+    `;
+  });
+
+  html += `
+    <button type="button" id="btnMultiReceiptAddMore"
+      style="display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px; border-radius: 8px; background: #f8fafc; border: 1.5px dashed #cbd5e1; color: #475569; font-size: 0.8rem; font-weight: 700; cursor: pointer; white-space: nowrap;">
+      ➕ 画像追加
+    </button>
+    <input type="file" id="multiReceiptAddFileInput" accept="image/*" multiple style="display: none;">
+  `;
+
+  DOM.multiReceiptTabBar.innerHTML = html;
+
+  const tabButtons = DOM.multiReceiptTabBar.querySelectorAll('.multi-receipt-tab');
+  tabButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      syncCurrentMultiReceiptFormData();
+      const targetIdx = parseInt(btn.getAttribute('data-index'), 10);
+      loadMultiReceiptItem(targetIdx);
+    });
+  });
+
+  const btnAdd = document.getElementById('btnMultiReceiptAddMore');
+  const fileInputAdd = document.getElementById('multiReceiptAddFileInput');
+  if (btnAdd && fileInputAdd) {
+    btnAdd.addEventListener('click', () => fileInputAdd.click());
+    fileInputAdd.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files.length > 0) {
+        openMultiReceiptModal(e.target.files);
+      }
+    });
+  }
+}
+
+async function saveCurrentMultiReceiptItem(advanceNext = true) {
+  syncCurrentMultiReceiptFormData();
+  const item = multiReceiptSession.items[multiReceiptSession.currentIndex];
+  if (!item) return;
+
+  const data = item.formData;
+  if (!data.date) {
+    alert('出費日・仕入日を入力してください。');
+    if (DOM.multiReceiptInputDate) DOM.multiReceiptInputDate.focus();
+    return;
+  }
+  const amount = Number(data.amount);
+  if (!amount || amount <= 0) {
+    alert('有効な金額（1円以上）を入力してください。');
+    if (DOM.multiReceiptInputAmount) DOM.multiReceiptInputAmount.focus();
+    return;
+  }
+
+  const isPurchase = data.entryType === 'purchase';
+  let linkedInventoryId = '';
+  let linkedInventoryQty = 1;
+
+  if (isPurchase) {
+    linkedInventoryId = data.inventoryItemId;
+    linkedInventoryQty = Math.max(1, parseInt(data.inventoryQty, 10) || 1);
+    if (!linkedInventoryId) {
+      alert('仕入れ入庫を行う対象の在庫品目を選択してください。');
+      if (DOM.multiReceiptSelectInventoryItem) DOM.multiReceiptSelectInventoryItem.focus();
+      return;
+    }
+  }
+
+  const expenseId = item.savedExpId || ('exp_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6));
+  const receiptImg = item.rawImage || '';
+
+  const expenseItem = {
+    id: expenseId,
+    date: data.date,
+    category: isPurchase ? '仕入高' : data.category,
+    amount: amount,
+    taxRate: Number(data.taxRate) || 10,
+    payee: data.payee,
+    invoiceNumber: data.invoiceNumber,
+    note: data.note,
+    claimant: data.claimant || '小林俊介',
+    isSettled: false,
+    isCost: isPurchase,
+    isPurchase: isPurchase,
+    linkedInventoryId: isPurchase ? linkedInventoryId : undefined,
+    linkedInventoryQty: isPurchase ? linkedInventoryQty : undefined,
+    receiptImage: (receiptImg && receiptImg.startsWith('data:image/')) ? '' : receiptImg
+  };
+
+  const savedExp = saveExpense(expenseItem);
+  if (!savedExp) {
+    alert('経費の保存に失敗しました。');
+    return;
+  }
+
+  if (isPurchase && linkedInventoryId && linkedInventoryQty > 0) {
+    const unitCost = Math.round(amount / linkedInventoryQty);
+    if (typeof adjustStock === 'function') {
+      adjustStock(linkedInventoryId, linkedInventoryQty, `仕入入庫: ${data.payee || '仕入先未指定'}`, {
+        sourceRef: savedExp.id,
+        payee: data.payee,
+        unitCost: unitCost,
+        date: data.date
+      });
+    }
+    if (typeof renderInventoryTable === 'function') renderInventoryTable();
+  }
+
+  if (typeof fetch !== 'undefined' && receiptImg && receiptImg.startsWith('data:image/')) {
+    (window.apiFetch || fetch)('save-receipt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: savedExp.id, image: receiptImg })
+    }).then(res => res.json()).then(resData => {
+      if (resData && resData.url) {
+        savedExp.receiptImage = resData.url;
+        savedExp.receiptDataUrl = resData.url;
+        if (typeof updateExpense === 'function') updateExpense(savedExp);
+      }
+    }).catch(() => {});
+  }
+
+  item.isSaved = true;
+  item.savedExpId = savedExp.id;
+  item.status = 'saved';
+
+  if (typeof renderExpenseTable === 'function') renderExpenseTable();
+  if (typeof applyAccGlobalPeriod === 'function' && typeof currentAccGlobalPeriod !== 'undefined') {
+    applyAccGlobalPeriod(currentAccGlobalPeriod.preset);
+  }
+
+  showToast(`✅ [${multiReceiptSession.currentIndex + 1}/${multiReceiptSession.items.length}] 「${data.payee || 'レシート'}」を経費登録しました！`, 'success');
+
+  updateMultiReceiptProgress();
+  renderMultiReceiptTabs();
+
+  if (advanceNext) {
+    const nextUnsavedIdx = multiReceiptSession.items.findIndex((it, idx) => idx > multiReceiptSession.currentIndex && !it.isSaved);
+    if (nextUnsavedIdx >= 0) {
+      loadMultiReceiptItem(nextUnsavedIdx);
+    } else {
+      const anyUnsavedIdx = multiReceiptSession.items.findIndex(it => !it.isSaved);
+      if (anyUnsavedIdx >= 0) {
+        loadMultiReceiptItem(anyUnsavedIdx);
+      } else {
+        showToast('🎉 すべてのレシートの登録が完了しました！', 'success');
+        if (confirm('🎉 全てのレシートを経費登録しました！確認画面を閉じますか？')) {
+          closeMultiReceiptModal();
+        } else {
+          loadMultiReceiptItem(multiReceiptSession.currentIndex);
+        }
+      }
+    }
+  }
+}
+
+async function saveAllRemainingMultiReceiptItems() {
+  syncCurrentMultiReceiptFormData();
+  const unsavedItems = multiReceiptSession.items.filter(it => !it.isSaved);
+  if (unsavedItems.length === 0) {
+    alert('すべてのレシートは登録済みです。');
+    return;
+  }
+
+  if (!confirm(`残りの ${unsavedItems.length} 件のレシートを、現在の読み取り内容で一括登録しますか？`)) {
+    return;
+  }
+
+  let count = 0;
+  for (let i = 0; i < multiReceiptSession.items.length; i++) {
+    const item = multiReceiptSession.items[i];
+    if (item.isSaved) continue;
+
+    if (!item.formData) {
+      item.formData = {
+        date: (item.parsed && item.parsed.date) || getTodayDateString(),
+        category: (item.parsed && item.parsed.category) || '消耗品費',
+        amount: (item.parsed && item.parsed.amount) || 0,
+        taxRate: (item.parsed && item.parsed.taxRate !== undefined) ? String(item.parsed.taxRate) : '10',
+        payee: (item.parsed && item.parsed.payee) || (item.fileName ? item.fileName.replace(/\.[^/.]+$/, "") : ''),
+        invoiceNumber: (item.parsed && item.parsed.invoiceNumber) || '',
+        note: (item.parsed && item.parsed.note) || '',
+        claimant: multiReceiptSession.globalClaimant || activeExpenseClaimant || '小林俊介',
+        entryType: 'expense',
+        inventoryItemId: '',
+        inventoryQty: 1
+      };
+    }
+
+    const data = item.formData;
+    const amount = Number(data.amount) || 0;
+    const expenseId = item.savedExpId || ('exp_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6) + '_' + i);
+    const receiptImg = item.rawImage || '';
+
+    const expenseItem = {
+      id: expenseId,
+      date: data.date || getTodayDateString(),
+      category: data.category || '消耗品費',
+      amount: amount,
+      taxRate: Number(data.taxRate) || 10,
+      payee: data.payee,
+      invoiceNumber: data.invoiceNumber,
+      note: data.note,
+      claimant: data.claimant || '小林俊介',
+      isSettled: false,
+      isCost: false,
+      isPurchase: false,
+      receiptImage: (receiptImg && receiptImg.startsWith('data:image/')) ? '' : receiptImg
+    };
+
+    const savedExp = saveExpense(expenseItem);
+    if (savedExp) {
+      item.isSaved = true;
+      item.savedExpId = savedExp.id;
+      item.status = 'saved';
+      count++;
+
+      if (typeof fetch !== 'undefined' && receiptImg && receiptImg.startsWith('data:image/')) {
+        (window.apiFetch || fetch)('save-receipt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: savedExp.id, image: receiptImg })
+        }).then(res => res.json()).then(resData => {
+          if (resData && resData.url) {
+            savedExp.receiptImage = resData.url;
+            savedExp.receiptDataUrl = resData.url;
+            if (typeof updateExpense === 'function') updateExpense(savedExp);
+          }
+        }).catch(() => {});
+      }
+    }
+  }
+
+  if (typeof renderExpenseTable === 'function') renderExpenseTable();
+  if (typeof applyAccGlobalPeriod === 'function' && typeof currentAccGlobalPeriod !== 'undefined') {
+    applyAccGlobalPeriod(currentAccGlobalPeriod.preset);
+  }
+  if (typeof syncExpensesWithServer === 'function') {
+    await syncExpensesWithServer().catch(() => {});
+  }
+
+  updateMultiReceiptProgress();
+  renderMultiReceiptTabs();
+  showToast(`🎉 残り ${count} 件のレシートを一括登録しました！`, 'success');
+  closeMultiReceiptModal();
+}
+
+function skipCurrentMultiReceiptItem() {
+  const item = multiReceiptSession.items[multiReceiptSession.currentIndex];
+  if (!item) return;
+
+  if (!confirm(`レシート「${item.fileName}」をリストから除外しますか？（経費としては登録されません）`)) {
+    return;
+  }
+
+  multiReceiptSession.items.splice(multiReceiptSession.currentIndex, 1);
+  if (multiReceiptSession.items.length === 0) {
+    showToast('すべてのレシートが処理されました。', 'info');
+    closeMultiReceiptModal();
+    return;
+  }
+
+  if (multiReceiptSession.currentIndex >= multiReceiptSession.items.length) {
+    multiReceiptSession.currentIndex = multiReceiptSession.items.length - 1;
+  }
+
+  updateMultiReceiptProgress();
+  renderMultiReceiptTabs();
+  loadMultiReceiptItem(multiReceiptSession.currentIndex);
+}
+
+function rotateCurrentMultiReceiptImage() {
+  const item = multiReceiptSession.items[multiReceiptSession.currentIndex];
+  if (!item) return;
+  item.rotation = ((item.rotation || 0) + 90) % 360;
+  if (DOM.multiReceiptImagePreview) {
+    DOM.multiReceiptImagePreview.style.transform = `rotate(${item.rotation}deg)`;
+  }
+}
+
+function zoomCurrentMultiReceiptImage() {
+  const item = multiReceiptSession.items[multiReceiptSession.currentIndex];
+  if (!item || !item.rawImage) return;
+  if (typeof openReceiptZoom === 'function') {
+    openReceiptZoom(item.rawImage, {
+      date: (item.formData && item.formData.date) || (item.parsed && item.parsed.date) || '',
+      payee: (item.formData && item.formData.payee) || (item.parsed && item.parsed.payee) || item.fileName,
+      amount: (item.formData && Number(item.formData.amount)) || (item.parsed && Number(item.parsed.amount)) || 0,
+      invoiceNumber: (item.formData && item.formData.invoiceNumber) || (item.parsed && item.parsed.invoiceNumber) || ''
+    });
+  }
+}
+
+function updateMultiReceiptProgress() {
+  const total = multiReceiptSession.items.length;
+  const savedCount = multiReceiptSession.items.filter(it => it.isSaved).length;
+  const unsavedCount = total - savedCount;
+
+  if (DOM.multiReceiptProgressBadge) {
+    DOM.multiReceiptProgressBadge.textContent = `登録済み ${savedCount} / ${total} 件`;
+    if (savedCount === total && total > 0) {
+      DOM.multiReceiptProgressBadge.style.background = '#d1fae5';
+      DOM.multiReceiptProgressBadge.style.color = '#065f46';
+      DOM.multiReceiptProgressBadge.style.borderColor = '#6ee7b7';
+    } else {
+      DOM.multiReceiptProgressBadge.style.background = '#e0e7ff';
+      DOM.multiReceiptProgressBadge.style.color = '#4338ca';
+      DOM.multiReceiptProgressBadge.style.borderColor = '#c7d2fe';
+    }
+  }
+
+  if (DOM.multiReceiptResumeBanner) {
+    if (unsavedCount > 0) {
+      DOM.multiReceiptResumeBanner.style.display = 'flex';
+      if (DOM.multiReceiptResumeText) {
+        DOM.multiReceiptResumeText.textContent = `未登録のレシートが ${unsavedCount} 件あります (全${total}件)`;
+      }
+    } else {
+      DOM.multiReceiptResumeBanner.style.display = 'none';
+    }
+  }
+}
+
+function closeMultiReceiptModal() {
+  syncCurrentMultiReceiptFormData();
+  if (DOM.multiReceiptModal) {
+    DOM.multiReceiptModal.style.display = 'none';
+  }
+  document.body.style.overflow = '';
+  updateMultiReceiptProgress();
+
+  if (typeof syncExpensesWithServer === 'function') {
+    syncExpensesWithServer().catch(() => {});
+  }
+}
+
+function resumeMultiReceiptModal() {
+  if (!multiReceiptSession.items || multiReceiptSession.items.length === 0) return;
+  if (DOM.multiReceiptModal) {
+    DOM.multiReceiptModal.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+  }
+  const firstUnsaved = multiReceiptSession.items.findIndex(it => !it.isSaved);
+  if (firstUnsaved >= 0) {
+    loadMultiReceiptItem(firstUnsaved);
+  } else {
+    loadMultiReceiptItem(multiReceiptSession.currentIndex || 0);
+  }
+}
+
+window.openMultiReceiptModal = openMultiReceiptModal;
+window.closeMultiReceiptModal = closeMultiReceiptModal;
+window.resumeMultiReceiptModal = resumeMultiReceiptModal;
+
+/**
+ * 複数レシートファイルの受付
  * @param {FileList|Array<File>} fileList 
  */
 async function handleReceiptFiles(fileList) {
@@ -6045,77 +6863,8 @@ async function handleReceiptFiles(fileList) {
     return handleReceiptFile(files[0]);
   }
 
-  // 2ファイル以上の場合は、設定中の社員で一括読み込み・登録！
-  const currentClaimant = activeExpenseClaimant || '小林俊介';
-  if (!confirm(`選択された ${files.length} 件のレシート写真を、【${currentClaimant}】様の経費として一括自動読み込み・登録しますか？\n\n・選択された設定（立替者: ${currentClaimant}）のまま自動登録されます。\n・登録後、経費一覧から確認・修正・精算書発行が可能です。`)) {
-    return;
-  }
-
-  if (DOM.receiptOcrStatus) {
-    DOM.receiptOcrStatus.style.display = 'flex';
-  }
-
-  let successCount = 0;
-  const expenseHistory = typeof getExpenseList === 'function' ? getExpenseList() : [];
-
-  for (let i = 0; i < files.length; i++) {
-    const file = files[i];
-    if (DOM.receiptOcrStatusText) {
-      DOM.receiptOcrStatusText.textContent = `[${i + 1}/${files.length}] レシート「${file.name}」をAI解析中...`;
-    }
-
-    try {
-      const compressedDataUrl = await compressReceiptImage(file);
-      const parsed = await analyzeReceiptImage(file, (msg) => {
-        if (DOM.receiptOcrStatusText) DOM.receiptOcrStatusText.textContent = `[${i + 1}/${files.length}] ${msg}`;
-      }, expenseHistory);
-
-      const expItem = {
-        date: (parsed && parsed.date) || getTodayDateString(),
-        category: (parsed && parsed.category) || '消耗品費',
-        amount: (parsed && parsed.amount) || 0,
-        taxRate: (parsed && parsed.taxRate !== undefined) ? Number(parsed.taxRate) : 10,
-        payee: (parsed && parsed.payee) || file.name.replace(/\.[^/.]+$/, ""),
-        invoiceNumber: (parsed && parsed.invoiceNumber) || '',
-        note: (parsed && parsed.note) || `一括読み込み (${file.name})`,
-        claimant: currentClaimant,
-        isSettled: false,
-        receiptImage: compressedDataUrl,
-        receiptDataUrl: compressedDataUrl
-      };
-
-      const savedExp = saveExpense(expItem);
-      if (savedExp && typeof fetch !== 'undefined' && compressedDataUrl.startsWith('data:image/')) {
-        (window.apiFetch || fetch)('save-receipt', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: savedExp.id, image: compressedDataUrl })
-        }).then(res => res.json()).then(data => {
-          if (data && data.url) {
-            savedExp.receiptImage = data.url;
-            savedExp.receiptDataUrl = data.url;
-          }
-        }).catch(() => {});
-      }
-
-      successCount++;
-    } catch (err) {
-      console.warn(`Failed to process ${file.name}:`, err);
-    }
-  }
-
-  if (DOM.receiptOcrStatus) {
-    DOM.receiptOcrStatus.style.display = 'none';
-  }
-
-  // サーバーへ完全同期して他ユーザーの端末にも即時共有
-  if (typeof syncExpensesWithServer === 'function') {
-    await syncExpensesWithServer().catch(() => {});
-  }
-
-  clearReceiptImage();
-  applyAccGlobalPeriod(currentAccGlobalPeriod.preset);
-  showToast(`🎉 ${successCount} 件のレシートを【${currentClaimant}】様の経費として一括登録しました！`, 'success');
+  // 2ファイル以上の場合は個別確認モーダルを起動！
+  await openMultiReceiptModal(files);
 }
 
 async function handleReceiptFile(file) {
