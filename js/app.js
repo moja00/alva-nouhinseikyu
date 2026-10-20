@@ -3420,13 +3420,16 @@ function renderTrashList() {
 
   let html = `<div style="display: flex; flex-direction: column; gap: 10px;">`;
   list.forEach(item => {
-    const docTypeInfo = DOC_TYPES[item.type] || { label: '伝票', color: '#64748b' };
-    const docNum = item.docNumber || item.number || '(番号なし)';
-    const clientName = item.clientName || (item.client && item.client.name) || '(取引先未設定)';
-    const total = item.totalAmount || (item.totals && item.totals.total) || 0;
+    const full = item.fullDoc || item;
+    const docTypeKey = item.type || full.type || 'invoice';
+    const docTypeInfo = DOC_TYPES[docTypeKey] || { label: '伝票', color: '#64748b' };
+    const docNum = item.docNumber || item.number || full.docNumber || full.number || '(番号なし)';
+    const clientName = item.clientName || (item.client && item.client.name) || (full.client && full.client.name) || full.clientName || '(取引先未設定)';
+    const total = item.grandTotal ?? item.totalAmount ?? full.grandTotal ?? full.totalAmount ?? (item.totals && item.totals.total) ?? (full.totals && full.totals.total) ?? 0;
     const formattedTotal = typeof formatCurrency === 'function' ? formatCurrency(total) : `¥${Number(total).toLocaleString()}`;
-    const issueDate = item.issueDate || '(日付未設定)';
-    
+    const issueDate = item.issueDate || full.issueDate || '(日付未設定)';
+    const title = item.title || full.title || '';
+
     let deletedTimeStr = '';
     if (item.deletedAt) {
       try {
@@ -3450,7 +3453,7 @@ function renderTrashList() {
             ${deletedTimeStr ? `<span style="font-size: 0.725rem; color: #94a3b8;">(削除: ${escapeHtml(deletedTimeStr)})</span>` : ''}
           </div>
           <div style="font-size: 0.85rem; font-weight: 700; color: #334155; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-            🏢 ${escapeHtml(clientName)}
+            🏢 ${escapeHtml(clientName)} ${title ? `<span style="font-weight: 500; color: #64748b; font-size: 0.8rem; margin-left: 6px;">[${escapeHtml(title)}]</span>` : ''}
           </div>
           <div style="display: flex; gap: 14px; font-size: 0.75rem; color: #64748b;">
             <span>発行日: ${escapeHtml(issueDate)}</span>

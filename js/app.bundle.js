@@ -2528,7 +2528,17 @@ function removeDeletedDocId(id) {
 function getTrashList() {
   try {
     const raw = localStorage.getItem(KEYS.TRASH_HISTORY);
-    return raw ? JSON.parse(raw) : [];
+    const list = raw ? JSON.parse(raw) : [];
+    // 中身（書類番号、取引先、明細、または金額）が1つも存在しない空骨データを除外
+    return list.filter(item => {
+      if (!item || !item.id) return false;
+      const full = item.fullDoc || item;
+      const docNum = item.docNumber || item.number || full.docNumber || full.number;
+      const client = item.clientName || item.client?.name || full.clientName || full.client?.name;
+      const items = item.items || full.items;
+      const total = item.grandTotal ?? item.totalAmount ?? (item.totals && item.totals.total) ?? (full.totals && full.totals.total);
+      return !!(docNum || client || (items && items.length > 0) || (total && total > 0));
+    });
   } catch (e) {
     return [];
   }
@@ -2547,7 +2557,7 @@ function saveTrashList(list) {
 }
 
 /**
- * 削除された書類をごみ箱に追加
+ * 削除された書類をごみ箱に追加（完全な中身を保持・空骨データによる上書きを完全防止）
  * @param {any} docItem
  */
 function addDocToTrash(docItem) {
@@ -2555,15 +2565,53 @@ function addDocToTrash(docItem) {
   try {
     const trash = getTrashList();
     const cleanId = String(docItem.id).trim();
-    // 既存にあれば除外
+
+    // fullDoc または docItem 自体から詳細情報を抽出
+    const full = docItem.fullDoc || docItem;
+    const docNumber = docItem.docNumber || full.docNumber || docItem.number || full.number || '';
+    const clientName = docItem.clientName || (docItem.client && docItem.client.name) || (full.client && full.client.name) || '';
+    const items = (Array.isArray(docItem.items) && docItem.items.length > 0) ? docItem.items : (Array.isArray(full.items) ? full.items : []);
+    const grandTotal = docItem.grandTotal ?? docItem.totalAmount ?? full.grandTotal ?? full.totalAmount ?? (full.totals && full.totals.total) ?? 0;
+    const docType = docItem.type || full.type || 'invoice';
+    const issueDate = docItem.issueDate || full.issueDate || '';
+    const title = docItem.title || full.title || '';
+
+    // 書類の実体データ（中身）があるか判定
+    const hasSubstance = !!(docNumber || clientName || (items && items.length > 0) || grandTotal > 0);
+
+    const existingItem = trash.find(item => String(item.id).trim() === cleanId);
+    if (existingItem) {
+      // 既存データが既に詳細情報を持っており、新しいデータが中身のない骨組みデータなら上書きしない
+      if (!hasSubstance) {
+        console.log(`【ごみ箱】伝票(${cleanId})は既存の詳細情報を保持するため、骨組みデータでの上書きをスキップします`);
+        return;
+      }
+    } else {
+      // 既存にもなく、新規データにも中身が全くない空骨データならごみ箱に登録しない
+      if (!hasSubstance) {
+        console.log(`【ごみ箱】伝票(${cleanId})は詳細データ（番号・取引先等）が存在しない空骨データのため登録をスキップします`);
+        return;
+      }
+    }
+
     const filtered = trash.filter(item => String(item.id).trim() !== cleanId);
     const trashEntry = {
       ...docItem,
+      type: docType,
+      docNumber,
+      title,
+      clientName: clientName || '名称未設定',
+      client: docItem.client || full.client || { name: clientName || '名称未設定' },
+      issueDate,
+      grandTotal,
+      totalAmount: grandTotal,
+      items,
+      fullDoc: full,
       deletedAt: docItem.deletedAt || new Date().toISOString()
     };
     filtered.unshift(trashEntry);
     saveTrashList(filtered);
-    console.log(`【ごみ箱】伝票(${cleanId})をごみ箱に退避保管しました (現在${filtered.length}件)`);
+    console.log(`【ごみ箱】伝票(${cleanId}: ${docNumber || clientName})をごみ箱に退避保管しました (現在${filtered.length}件)`);
   } catch (e) {
     console.error('Failed to add doc to trash:', e);
   }
@@ -9722,13 +9770,16 @@ function renderTrashList() {
 
   let html = `<div style="display: flex; flex-direction: column; gap: 10px;">`;
   list.forEach(item => {
-    const docTypeInfo = DOC_TYPES[item.type] || { label: '伝票', color: '#64748b' };
-    const docNum = item.docNumber || item.number || '(番号なし)';
-    const clientName = item.clientName || (item.client && item.client.name) || '(取引先未設定)';
-    const total = item.totalAmount || (item.totals && item.totals.total) || 0;
+    const full = item.fullDoc || item;
+    const docTypeKey = item.type || full.type || 'invoice';
+    const docTypeInfo = DOC_TYPES[docTypeKey] || { label: '伝票', color: '#64748b' };
+    const docNum = item.docNumber || item.number || full.docNumber || full.number || '(番号なし)';
+    const clientName = item.clientName || (item.client && item.client.name) || (full.client && full.client.name) || full.clientName || '(取引先未設定)';
+    const total = item.grandTotal ?? item.totalAmount ?? full.grandTotal ?? full.totalAmount ?? (item.totals && item.totals.total) ?? (full.totals && full.totals.total) ?? 0;
     const formattedTotal = typeof formatCurrency === 'function' ? formatCurrency(total) : `¥${Number(total).toLocaleString()}`;
-    const issueDate = item.issueDate || '(日付未設定)';
-    
+    const issueDate = item.issueDate || full.issueDate || '(日付未設定)';
+    const title = item.title || full.title || '';
+
     let deletedTimeStr = '';
     if (item.deletedAt) {
       try {
@@ -9752,7 +9803,7 @@ function renderTrashList() {
             ${deletedTimeStr ? `<span style="font-size: 0.725rem; color: #94a3b8;">(削除: ${escapeHtml(deletedTimeStr)})</span>` : ''}
           </div>
           <div style="font-size: 0.85rem; font-weight: 700; color: #334155; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-            🏢 ${escapeHtml(clientName)}
+            🏢 ${escapeHtml(clientName)} ${title ? `<span style="font-weight: 500; color: #64748b; font-size: 0.8rem; margin-left: 6px;">[${escapeHtml(title)}]</span>` : ''}
           </div>
           <div style="display: flex; gap: 14px; font-size: 0.75rem; color: #64748b;">
             <span>発行日: ${escapeHtml(issueDate)}</span>

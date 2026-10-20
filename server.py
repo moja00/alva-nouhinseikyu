@@ -807,8 +807,10 @@ def save_fs_collection(col_name, data_list, id_field='id', deleted_ids=None):
                 if d_id:
                     clean_did = str(d_id).strip()
                     new_deleted_set.add(clean_did)
-                    doc_ref = db.collection(col_name).document(clean_did)
-                    batch.delete(doc_ref)
+                    if col_name == 'invoices':
+                        batch.set(doc_ref, {'_deleted': True}, merge=True)
+                    else:
+                        batch.delete(doc_ref)
                     count += 1
                     if count == 500:
                         batch.commit()
@@ -888,7 +890,13 @@ def delete_fs_item(col_name, item_id):
                     act_data = act_snap.to_dict() or {}
                     if act_data.get('id') == clean_id:
                         db.collection('settings').document('active_doc').delete()
-                        print(f"[Firestore] 削除対象の書類が編集中伝票だったためactive_docもクリアしました: {clean_id}")
+                # 書類本体を物理削除せず、_deleted: True で保存（ゴミ箱からの復元に対応）
+                doc_ref = db.collection('invoices').document(clean_id)
+                inv_snap = doc_ref.get()
+                if inv_snap.exists:
+                    doc_ref.set({'_deleted': True, 'deletedAt': datetime.now(timezone.utc).isoformat()}, merge=True)
+                    print(f"[Firestore 書類論理削除保持] ID: {clean_id}")
+                    return True, ""
             except Exception as e_del:
                 print(f"[Firestore 削除ID追跡エラー]: {e_del}")
 
@@ -1117,10 +1125,18 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
 
             # 削除済みでない有効伝票のみ抽出
             valid_invoices = [inv for inv in invoices if isinstance(inv, dict) and str(inv.get('id', '')).strip() not in deleted_ids and not inv.get('_deleted')]
-            # 他端末の古いローカルキャッシュを抹消（Purge）するため、削除マーカーを付与
+            
+            # 削除された伝票も、Firestoreにデータが残っていれば中身付きで _deleted: True を付与して返す（ゴミ箱での詳細表示・復元対応）
+            invoice_map_by_id = {str(inv.get('id', '')).strip(): inv for inv in invoices if isinstance(inv, dict) and inv.get('id')}
             for d_id in deleted_ids:
                 if d_id:
-                    valid_invoices.append({"id": str(d_id).strip(), "_deleted": True})
+                    d_clean = str(d_id).strip()
+                    if d_clean in invoice_map_by_id:
+                        del_item = dict(invoice_map_by_id[d_clean])
+                        del_item['_deleted'] = True
+                        valid_invoices.append(del_item)
+                    else:
+                        valid_invoices.append({"id": d_clean, "_deleted": True})
 
             self.send_response(200)
             self.send_header('Content-Type', 'application/json; charset=utf-8')
