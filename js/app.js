@@ -6622,7 +6622,7 @@ async function saveCurrentMultiReceiptItem(advanceNext = true) {
       if (resData && resData.url) {
         savedExp.receiptImage = resData.url;
         savedExp.receiptDataUrl = resData.url;
-        if (typeof updateExpense === 'function') updateExpense(savedExp);
+        if (typeof saveExpense === 'function') saveExpense(savedExp);
       }
     }).catch(() => {});
   }
@@ -6731,7 +6731,7 @@ async function saveAllRemainingMultiReceiptItems() {
           if (resData && resData.url) {
             savedExp.receiptImage = resData.url;
             savedExp.receiptDataUrl = resData.url;
-            if (typeof updateExpense === 'function') updateExpense(savedExp);
+            if (typeof saveExpense === 'function') saveExpense(savedExp);
           }
         }).catch(() => {});
       }

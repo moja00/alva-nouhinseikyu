@@ -865,7 +865,8 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
                 self.path = '/api/' + qs['endpoint'][0]
 
         # APIリクエストに対する Firebase Auth トークン認証
-        if self.path.startswith('/api/'):
+        # ※ /api/receipt/* は <img> タグや印刷画面から直接読み込めるよう認証検証をスキップ
+        if self.path.startswith('/api/') and not self.path.startswith('/api/receipt/'):
             user = verify_firebase_auth(self)
             if not user:
                 return
