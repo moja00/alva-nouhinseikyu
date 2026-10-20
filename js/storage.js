@@ -1063,6 +1063,7 @@ export async function saveServerInvoicesHistory(invoices) {
  */
 export async function syncInvoicesHistoryWithServer() {
   try {
+    console.log("【書類履歴同期】サーバーから履歴データ取得開始...");
     const serverInvoices = await fetchServerInvoicesHistory();
     const localInvoices = getHistoryList();
 
@@ -1077,7 +1078,7 @@ export async function syncInvoicesHistoryWithServer() {
       });
     }
 
-    // 2. サーバー履歴を取り込み（更新日時またはサーバー側データをスマートマージ）
+    // 2. サーバー履歴を取り込み（ステータス変更と更新日時を精緻にスマートマージ）
     if (Array.isArray(serverInvoices)) {
       serverInvoices.forEach(sinv => {
         if (sinv && sinv.id) {
@@ -1087,7 +1088,15 @@ export async function syncInvoicesHistoryWithServer() {
           } else {
             const serverDate = new Date(sinv.updatedAt || sinv.issuedAt || sinv.issueDate || 0).getTime();
             const localDate = new Date(existing.updatedAt || existing.issuedAt || existing.issueDate || 0).getTime();
-            if (serverDate >= localDate) {
+
+            const serverIsDraft = sinv.isCancelled === true || sinv.isIssued === false;
+            const localIsIssued = existing.isIssued === true && !existing.isCancelled;
+
+            // サーバー側で取消（下書き化）された場合、端末間の時計ズレでローカルが勝ってしまわないようサーバーの下書きを最優先
+            if (serverIsDraft && localIsIssued) {
+              console.log(`【書類履歴同期】端末間同期: 伝票(${sinv.id}) をサーバー最新の「下書き（確定取消）」状態にマージ`);
+              invoiceMap.set(sinv.id, sinv);
+            } else if (serverDate >= localDate) {
               invoiceMap.set(sinv.id, sinv);
             }
           }
@@ -1105,8 +1114,28 @@ export async function syncInvoicesHistoryWithServer() {
     // 4. ローカルストレージに保存
     localStorageSetItemAndSync(KEYS.HISTORY, JSON.stringify(mergedList));
 
-    // 5. サーバーへもマージ後全件を保存して同期整合性を担保
+    // 5. もし編集中アクティブ伝票(activeDoc)と同一の伝票がマージで更新された場合、アクティブ伝票も同期
+    const activeDoc = loadActiveDoc();
+    if (activeDoc && activeDoc.id) {
+      const mergedActive = invoiceMap.get(activeDoc.id);
+      if (mergedActive) {
+        if (mergedActive.isCancelled === true || mergedActive.isIssued === false) {
+          if (activeDoc.isIssued !== false || activeDoc.isCancelled !== true) {
+            activeDoc.isIssued = false;
+            activeDoc.issuedAt = null;
+            activeDoc.isCancelled = true;
+            activeDoc.updatedAt = mergedActive.updatedAt || new Date().toISOString();
+            localStorage.setItem(KEYS.ACTIVE_DOC, JSON.stringify(activeDoc));
+            saveServerActiveDoc(activeDoc).catch(() => {});
+            console.log("【書類履歴同期】編集中アクティブ伝票もサーバーに合わせて「下書き」に更新しました");
+          }
+        }
+      }
+    }
+
+    // 6. サーバーへもマージ後全件を保存して同期整合性を担保
     await saveServerInvoicesHistory(mergedList);
+    console.log(`【書類履歴同期】マージ完了: 全 ${mergedList.length} 件をローカル・サーバー間で完全一致化しました`);
 
     return mergedList;
   } catch (e) {
@@ -2268,28 +2297,52 @@ export function updateDocPaymentStatus(docId, status = 'paid', paidDate = '', no
 /**
  * 書類の確定発行を取り消し（未確定・下書き状態に戻す）
  * @param {string} docId 書類ID
- * @returns {boolean} 成功可否
+ * @returns {Promise<boolean>} 成功可否
  */
-export function cancelDocIssue(docId) {
+export async function cancelDocIssue(docId) {
   try {
+    console.log("【伝票確定取消】開始:", docId);
     const list = getHistoryList();
     const item = list.find(d => d.id === docId);
-    if (!item) return false;
+    if (!item) {
+      console.warn("【伝票確定取消】対象書類が見つかりません:", docId);
+      return false;
+    }
 
+    const nowIso = new Date().toISOString();
     item.isIssued = false;
     item.issuedAt = null;
     item.isCancelled = true;
-    item.updatedAt = new Date().toISOString();
+    item.updatedAt = nowIso;
 
     if (item.fullDoc) {
       item.fullDoc.isIssued = false;
       item.fullDoc.issuedAt = null;
       item.fullDoc.isCancelled = true;
-      item.fullDoc.updatedAt = item.updatedAt;
+      item.fullDoc.updatedAt = nowIso;
     }
 
+    // 1. ローカル履歴に反映
     localStorageSetItemAndSync(KEYS.HISTORY, JSON.stringify(list));
-    saveServerInvoicesHistory(list).catch(() => { });
+
+    // 2. 編集中アクティブ伝票が同一書類であればアクティブ伝票も即座に下書き化
+    const activeDoc = loadActiveDoc();
+    if (activeDoc && activeDoc.id === docId) {
+      activeDoc.isIssued = false;
+      activeDoc.issuedAt = null;
+      activeDoc.isCancelled = true;
+      activeDoc.updatedAt = nowIso;
+      localStorage.setItem(KEYS.ACTIVE_DOC, JSON.stringify(activeDoc));
+      saveServerActiveDoc(activeDoc).catch(() => {});
+    }
+
+    // 3. サーバーへ全件マージ保存を確実に即時実行
+    const saveRes = await saveServerInvoicesHistory(list);
+    if (saveRes) {
+      console.log("【伝票確定取消】サーバーへ即座に反映完了:", docId);
+    } else {
+      console.warn("【伝票確定取消】サーバー反映が保留または失敗しました（ローカルでは取消済み）:", docId);
+    }
     return true;
   } catch (e) {
     console.error('Failed to cancel doc issue:', e);

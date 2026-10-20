@@ -769,6 +769,19 @@ function initApp() {
       updatePortalInfo();
     }
 
+    // サーバーから同期された最新の編集中伝票（activeDoc）があれば反映
+    const syncedActiveDoc = loadActiveDoc();
+    if (syncedActiveDoc && currentDoc && syncedActiveDoc.id === currentDoc.id) {
+      if (syncedActiveDoc.isIssued !== currentDoc.isIssued || syncedActiveDoc.isCancelled !== currentDoc.isCancelled) {
+        currentDoc.isIssued = syncedActiveDoc.isIssued;
+        currentDoc.isCancelled = syncedActiveDoc.isCancelled;
+        currentDoc.issuedAt = syncedActiveDoc.issuedAt;
+        populateFormFromDoc();
+        renderAll();
+        console.log("【初期化同期】編集中伝票をサーバー同期後のステータスに更新しました");
+      }
+    }
+
     if (result && (result.rescuedItems > 0 || result.rescuedClients > 0)) {
       const msgs = [];
       if (result.rescuedItems > 0) msgs.push(`商品マスタ: ${result.rescuedItems}件`);
@@ -1333,7 +1346,7 @@ window.issueAndSyncAccountingDocument = issueAndSyncAccountingDocument;
 /**
  * 編集中書類の確定発行を取り消し（未確定・下書きに戻す）
  */
-function cancelCurrentDocIssue() {
+async function cancelCurrentDocIssue() {
   const typeLabel = (DOC_TYPES[currentDoc.docType] || DOC_TYPES.invoice).label;
   const docNo = currentDoc.docNumber || 'この書類';
 
@@ -1347,9 +1360,9 @@ function cancelCurrentDocIssue() {
   currentDoc.isCancelled = true;
   currentDoc.issuedAt = null;
 
-  // 書類履歴内の該当書類も取消状態に更新
+  // 書類履歴内の該当書類も取消状態に更新（サーバーへも確実に即時送信完了を待機）
   if (currentDoc.id) {
-    cancelDocIssue(currentDoc.id);
+    await cancelDocIssue(currentDoc.id);
   }
 
   // LocalStorageに保存
@@ -2948,14 +2961,14 @@ function setupEventListeners() {
     });
   }
   if (DOM.btnIqeCancelIssue) {
-    DOM.btnIqeCancelIssue.addEventListener('click', () => {
+    DOM.btnIqeCancelIssue.addEventListener('click', async () => {
       if (!currentIqeDoc) return;
       const docId = DOM.iqeDocId ? DOM.iqeDocId.value : currentIqeDoc.id;
       const docNo = currentIqeDoc.docNumber || 'この書類';
       if (!confirm(`伝票「${docNo}」の確定発行を取り消しますか？\n\n【取り消しの効果】\n・売上消込台帳・P/Lダッシュボード・仕訳帳から即座に除外されます。\n・書類データは削除されず、下書き状態に戻ります。`)) {
         return;
       }
-      cancelDocIssue(docId);
+      await cancelDocIssue(docId);
       if (currentDoc && currentDoc.id === docId) {
         currentDoc.isIssued = false;
         currentDoc.isCancelled = true;
@@ -3298,6 +3311,18 @@ function openHistoryModal() {
   // 6. サーバーから最新の書類履歴をバックグラウンド自動同期して他ユーザーの作成データを即座に反映
   if (typeof syncInvoicesHistoryWithServer === 'function') {
     syncInvoicesHistoryWithServer().then(synced => {
+      // もし現在編集中書類が履歴に含まれていてステータスが変わっていたら画面も同期
+      if (currentDoc && currentDoc.id && Array.isArray(synced)) {
+        const found = synced.find(d => d.id === currentDoc.id);
+        if (found) {
+          if (found.isIssued !== currentDoc.isIssued || found.isCancelled !== currentDoc.isCancelled) {
+            currentDoc.isIssued = found.isIssued;
+            currentDoc.isCancelled = found.isCancelled;
+            currentDoc.issuedAt = found.issuedAt;
+            renderAll();
+          }
+        }
+      }
       if (modal.classList.contains('active') || modal.style.display === 'flex') {
         const updatedList = getHistoryList();
         if (DOM.historyTotalCountBadge) {
@@ -3501,11 +3526,11 @@ function filterAndRenderHistoryList() {
     // 1. 確定取消ボタンのイベント
     const cancelBtn = card.querySelector('.btn-cancel-issue');
     if (cancelBtn) {
-      cancelBtn.addEventListener('click', (e) => {
+      cancelBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
         const docNo = item.docNumber || 'この書類';
         if (confirm(`「${typeMeta.label} (${docNo})」の確定発行を取り消しますか？\n\n【取り消しの効果】\n・財務会計（売上高・売掛金消込・仕訳帳）から即座に除外されます。\n・書類データは削除されず、下書き状態に戻ります。`)) {
-          cancelDocIssue(item.id);
+          await cancelDocIssue(item.id);
 
           // もし現在編集中書類が同一なら currentDoc も同期
           if (currentDoc && currentDoc.id === item.id) {
@@ -3524,7 +3549,7 @@ function filterAndRenderHistoryList() {
           if (typeof renderAccountingJournals === 'function') renderAccountingJournals();
 
           filterAndRenderHistoryList(); // 再描画
-          showToast(`「${typeMeta.label}」の確定発行を取り消しました（財務会計から除外されました）`, 'warning');
+          showToast(`「${typeMeta.label}」の確定発行を取り消しました（財務会計から除外され、下書きに戻りました）`, 'warning');
         }
       });
     }
@@ -5641,13 +5666,13 @@ window.__toggleInvoicePayment = function(id, newStatus) {
   }
 };
 
-window.__cancelInvoiceIssue = function(id, docNumber = '') {
+window.__cancelInvoiceIssue = async function(id, docNumber = '') {
   const label = docNumber ? `伝票「${docNumber}」` : 'この書類';
   if (!confirm(`${label}の確定発行を取り消しますか？\n\n【取り消しの効果】\n・売上消込台帳・P/Lダッシュボード・仕訳帳から即座に除外されます。\n・書類データは削除されず、下書き状態に戻ります。`)) {
     return;
   }
 
-  const success = cancelDocIssue(id);
+  const success = await cancelDocIssue(id);
   if (success) {
     if (currentDoc && currentDoc.id === id) {
       currentDoc.isIssued = false;
@@ -5660,7 +5685,7 @@ window.__cancelInvoiceIssue = function(id, docNumber = '') {
     renderAccountingSales(currentSalesFilter);
     renderAccountingDashboard(DOM.accSelectMonth ? DOM.accSelectMonth.value : '');
     renderAccountingJournals();
-    showToast(`${label}の確定発行を取り消しました（財務会計から除外されました）`, 'warning');
+    showToast(`${label}の確定発行を取り消しました（財務会計から除外され、下書きに戻りました）`, 'warning');
   } else {
     showToast('確定発行の取り消しに失敗しました', 'danger');
   }
@@ -9393,6 +9418,7 @@ function showToast(message, type = 'info') {
     }, 300);
   }, 3200);
 }
+window.showToast = showToast;
 
 // ==========================================================================
 // 全社共通モーダル・画面切替操作のグローバルエクスポート
