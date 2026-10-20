@@ -80,9 +80,6 @@ def get_genai_client():
 if _genai_imported:
     get_genai_client()
 
-def get_gemini_api_key():
-    return os.environ.get('GEMINI_API_KEY', '').strip()
-
 import firebase_admin
 from firebase_admin import credentials, firestore, storage
 
@@ -1533,8 +1530,9 @@ if __name__ == '__main__':
         threading.Timer(0.8, open_browser).start()
 
     try:
-        socketserver.TCPServer.allow_reuse_address = True
-        with socketserver.TCPServer(('', PORT), BillCraftHandler) as httpd:
+        socketserver.ThreadingTCPServer.allow_reuse_address = True
+        with socketserver.ThreadingTCPServer(('', PORT), BillCraftHandler) as httpd:
+            httpd.daemon_threads = True
             httpd.serve_forever()
     except OSError as e:
         if e.errno == 48:  # Address already in use

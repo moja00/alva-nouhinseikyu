@@ -29,6 +29,7 @@ tests/
 dist-wordpress/
 dist-flat/
 *.zip
+*.tar.gz
 
 # GCP Service Account
 service-account.json

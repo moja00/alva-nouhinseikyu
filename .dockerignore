@@ -1,10 +1,46 @@
+# 環境変数・機密情報
 .env
+.env.*
+service-account.json
+serviceAccountKey.json
+
+# 業務実データ・バックアップ
 data/
+バックアップ/
 backups/
-__pycache__/
-*.pyc
-.git
-.gitignore
+alva_erp_backup.json
+BillCraft_Backup_*.json
+BillCraft_ERP_Backup_*.json
+*.bak
+*.json.bak
+
+# 圧縮アーカイブ・インストーラー
 *.zip
 *.tar.gz
-*.bak
+google-cloud-cli-*.tar.gz
+
+# Git・開発環境・エディタ設定
+.git
+.gitignore
+.dockerignore
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
+.idea/
+.antigravity/
+
+# Python キャッシュ
+__pycache__/
+*.pyc
+*.pyo
+
+# 開発用スクリプト・テスト・別パッケージ成果物
+tests/
+scripts/
+dist-wordpress/
+dist-flat/
+scratch/
+start.bat
+start.command
+README.md
