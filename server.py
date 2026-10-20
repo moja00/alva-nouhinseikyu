@@ -857,21 +857,32 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header('Expires', '0')
         super().end_headers()
 
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Authorization, Content-Type')
+        self.end_headers()
+
     def do_GET(self):
         parsed_url = urllib.parse.urlparse(self.path)
         if 'api.php' in parsed_url.path:
             qs = urllib.parse.parse_qs(parsed_url.query)
             if 'endpoint' in qs:
                 self.path = '/api/' + qs['endpoint'][0]
+                parsed_url = urllib.parse.urlparse(self.path)
+
+        clean_path = parsed_url.path
 
         # APIリクエストに対する Firebase Auth トークン認証
-        # ※ /api/receipt/* は <img> タグや印刷画面から直接読み込めるよう認証検証をスキップ
-        if self.path.startswith('/api/') and not self.path.startswith('/api/receipt/'):
+        # ※ /api/status (システム稼働確認) および /api/receipt/* (レシート画像表示) は認証検証をスキップ
+        is_public_api = clean_path == '/api/status' or clean_path.startswith('/api/receipt/')
+        if clean_path.startswith('/api/') and not is_public_api:
             user = verify_firebase_auth(self)
             if not user:
                 return
 
-        if self.path == '/api/status':
+        if clean_path == '/api/status':
             ai_client = get_genai_client()
             has_client = ai_client is not None
             rate_info = get_rate_limit_status()
@@ -887,8 +898,8 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps(res_data, ensure_ascii=False).encode('utf-8'))
             return
 
-        if self.path.startswith('/api/receipt/'):
-            receipt_id = self.path[len('/api/receipt/'):].split('?')[0].strip()
+        if clean_path.startswith('/api/receipt/'):
+            receipt_id = clean_path[len('/api/receipt/'):].strip()
             clean_id = re.sub(r'[^a-zA-Z0-9_\-]', '', receipt_id)
             try:
                 blob = bucket.blob(f"receipts/{clean_id}.jpg")
@@ -1058,9 +1069,12 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
             qs = urllib.parse.parse_qs(parsed_url.query)
             if 'endpoint' in qs:
                 self.path = '/api/' + qs['endpoint'][0]
+                parsed_url = urllib.parse.urlparse(self.path)
+
+        clean_path = parsed_url.path
 
         # APIリクエストに対する Firebase Auth トークン認証
-        if self.path.startswith('/api/'):
+        if clean_path.startswith('/api/'):
             user = verify_firebase_auth(self)
             if not user:
                 return
@@ -1621,19 +1635,21 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
             qs = urllib.parse.parse_qs(parsed_url.query)
             if 'endpoint' in qs:
                 self.path = '/api/' + qs['endpoint'][0]
+                parsed_url = urllib.parse.urlparse(self.path)
+
+        clean_path = parsed_url.path
 
         # APIリクエストに対する Firebase Auth トークン認証
-        if self.path.startswith('/api/'):
+        if clean_path.startswith('/api/'):
             user = verify_firebase_auth(self)
             if not user:
                 return
 
         try:
-            parsed = urllib.parse.urlparse(self.path)
-            params = urllib.parse.parse_qs(parsed.query)
+            params = urllib.parse.parse_qs(parsed_url.query)
             target_id = params.get('id', [None])[0]
 
-            path_clean = parsed.path.rstrip('/')
+            path_clean = clean_path.rstrip('/')
             col_map = {
                 '/api/attendance': 'attendance',
                 '/api/expenses': 'expenses',

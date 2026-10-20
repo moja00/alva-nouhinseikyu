@@ -2491,21 +2491,17 @@ function localStorageSetItemAndSync(key, value) {
   syncTimeout = setTimeout(async () => {
     if (typeof window !== 'undefined' && window.pushAllLocalDataToServer) {
       // 未ログイン状態なら無駄な通信とエラーを避けてスキップ
-      if (typeof firebase !== 'undefined' && firebase.auth) {
-        const auth = firebase.auth();
-        const hasUser = !!auth.currentUser;
-        const cachedToken = (typeof getFirebaseAuthToken === 'function') ? await getFirebaseAuthToken(false) : null;
-        if (!hasUser && !cachedToken) {
-          return;
-        }
+      if (typeof getFirebaseAuthToken === 'function') {
+        const token = await getFirebaseAuthToken(false);
+        if (!token) return;
       }
       try {
         const res = await window.pushAllLocalDataToServer();
-        if (!res.success) {
+        if (res && !res.success) {
           console.warn('[自動保存] バックグラウンド保存保留:', res.error);
         }
       } catch (e) {
-        console.warn('[自動保存] 通信エラー (次回操作時に再試行):', e);
+        // 静かにローカルのみで維持
       }
     }
   }, 1200);
@@ -3107,6 +3103,7 @@ function getAppBaseDir() {
 // 直近のトークンキャッシュ（メモリおよびlocalStorage）
 let _memoryCachedToken = null;
 const CACHED_TOKEN_KEY = 'billcraft_cached_id_token';
+let _authRestorePromise = null;
 
 /**
  * 現在ログイン中の Firebase Auth ユーザーから ID トークンを取得
@@ -3128,42 +3125,47 @@ async function getFirebaseAuthToken(forceRefresh = false) {
           return token;
         }
       } catch (e) {
-        console.warn('[Auth] getIdToken error, falling back to cached token:', e);
+        // トークン取得エラー時はフォールバックへ進む
       }
     }
 
-    // 1-2. currentUser が null の場合、セッション復元を最大1.5秒待機
+    // 1-2. currentUser が null の場合、セッション復元を待機（インフライトPromiseで複数呼び出しを1本化）
     if (!forceRefresh) {
-      const restoredToken = await new Promise((resolve) => {
-        let resolved = false;
-        const timer = setTimeout(() => {
-          if (!resolved) {
+      if (!_authRestorePromise) {
+        _authRestorePromise = new Promise((resolve) => {
+          let resolved = false;
+          const timer = setTimeout(() => {
+            if (!resolved) {
+              resolved = true;
+              if (unsubscribe) unsubscribe();
+              _authRestorePromise = null;
+              resolve(null);
+            }
+          }, 1200);
+
+          const unsubscribe = auth.onAuthStateChanged(async (user) => {
+            if (resolved) return;
             resolved = true;
+            clearTimeout(timer);
             if (unsubscribe) unsubscribe();
+            _authRestorePromise = null;
+            if (user) {
+              try {
+                const token = await user.getIdToken();
+                if (token) {
+                  _memoryCachedToken = token;
+                  try { localStorage.setItem(CACHED_TOKEN_KEY, token); } catch (e) {}
+                  resolve(token);
+                  return;
+                }
+              } catch (e) {}
+            }
             resolve(null);
-          }
-        }, 1500);
-
-        const unsubscribe = auth.onAuthStateChanged(async (user) => {
-          if (resolved) return;
-          resolved = true;
-          clearTimeout(timer);
-          if (unsubscribe) unsubscribe();
-          if (user) {
-            try {
-              const token = await user.getIdToken();
-              if (token) {
-                _memoryCachedToken = token;
-                try { localStorage.setItem(CACHED_TOKEN_KEY, token); } catch (e) {}
-                resolve(token);
-                return;
-              }
-            } catch (e) {}
-          }
-          resolve(null);
+          });
         });
-      });
+      }
 
+      const restoredToken = await _authRestorePromise;
       if (restoredToken) return restoredToken;
     }
   }
@@ -3228,13 +3230,32 @@ async function deleteServerEntity(collection, id) {
 }
 async function apiFetch(path, options = {}) {
   const clean = path.replace(/^\/?api\/?/, '').replace(/^\//, '');
-  const dir = getAppBaseDir();
+  const cleanEndpoint = clean.split('?')[0];
+  const isPublic = cleanEndpoint === 'status' || cleanEndpoint.startsWith('receipt/');
 
-  // 候補URL順:
-  // 1. /epr/api.php?endpoint= (WordPress/サブディレクトリ/Nginx/Apache全てで確実に到達)
-  // 2. api.php?endpoint= (相対パス)
-  // 3. /epr/api/... (相対パス・Rewrite環境)
-  // 4. /api/... (ルート直下起動・Python環境)
+  // 認証トークンの自動取得
+  let token = null;
+  try {
+    token = await getFirebaseAuthToken(false);
+  } catch (authErr) {
+    // 静かに無視
+  }
+
+  // 公開API以外でトークンが存在しない場合（未ログインまたはセッション復元中）：
+  // サーバーへ無理にリクエストを投げて401エラーを連発させず、
+  // ローカルストレージのみで安全に動作継続するためのオフラインモック応答を返す
+  if (!isPublic && !token) {
+    return new Response(JSON.stringify({
+      offline: true,
+      unauthenticated: true,
+      message: '未ログインのためローカルストレージ優先モードで動作を継続します。'
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json; charset=utf-8' }
+    });
+  }
+
+  const dir = getAppBaseDir();
   const candidates = [
     `${dir}api.php?endpoint=${clean}`,
     `api.php?endpoint=${clean}`,
@@ -3242,15 +3263,9 @@ async function apiFetch(path, options = {}) {
     `/api/${clean}`
   ];
 
-  // 認証トークンの自動取得・ヘッダー付与
   const headers = new Headers(options.headers || {});
-  try {
-    const token = await getFirebaseAuthToken(false);
-    if (token && !headers.has('Authorization')) {
-      headers.set('Authorization', `Bearer ${token}`);
-    }
-  } catch (authErr) {
-    console.warn('[apiFetch] Auth token error:', authErr);
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`);
   }
 
   const fetchOpts = {
@@ -3288,7 +3303,23 @@ async function apiFetch(path, options = {}) {
         });
       }
     } catch (refreshErr) {
-      console.warn('[apiFetch] Token refresh retry failed:', refreshErr);
+      // リフレッシュ失敗
+    }
+
+    // リフレッシュ後も401の場合: キャッシュトークンをクリアし、再ログインを案内
+    _memoryCachedToken = null;
+    try { localStorage.removeItem(CACHED_TOKEN_KEY); } catch (e) {}
+
+    if (typeof document !== 'undefined') {
+      const overlay = document.getElementById('loginOverlay');
+      if (overlay) {
+        overlay.style.display = 'flex';
+      }
+      const msgArea = document.getElementById('loginMessageArea');
+      if (msgArea) {
+        msgArea.style.color = '#f59e0b';
+        msgArea.innerText = '認証セッションの有効期限が切れました。再度ログインしてください。';
+      }
     }
   }
 
@@ -5974,6 +6005,11 @@ function deletePayrollRecord(targetMonthOrId) {
  * ローカルストレージ内の全データ（マスタ・経費・伝票・自社設定）をサーバーへ一括アップロード
  */
 async function pushAllLocalDataToServer() {
+  const token = (typeof getFirebaseAuthToken === 'function') ? await getFirebaseAuthToken(false) : null;
+  if (!token) {
+    return { success: true, offline: true, message: '未ログインのためローカルストレージのみに保存しました（サーバー同期はログイン後に実行されます）' };
+  }
+
   const fetchFn = (typeof window !== 'undefined' && window.apiFetch) ? window.apiFetch : fetch;
   const payload = {
     masterItems: getItemMasterList(false),
@@ -5994,9 +6030,12 @@ async function pushAllLocalDataToServer() {
       throw new Error(`HTTP ${res.status}`);
     }
     const data = await res.json();
+    if (data.offline) {
+      return { success: true, offline: true, message: data.message || 'ローカルストレージに保存しました' };
+    }
     return { success: true, message: '全データをサーバーへ正常にバックアップ・同期しました！' };
   } catch (err) {
-    console.error('Failed to push all local data to server:', err);
+    console.warn('Failed to push all local data to server:', err);
     return { success: false, error: err.message || err };
   }
 }
@@ -6005,12 +6044,17 @@ async function pushAllLocalDataToServer() {
  * サーバーから全データを一括取得してローカルストレージへ即時反映
  */
 async function pullAllServerDataToLocal() {
+  const token = (typeof getFirebaseAuthToken === 'function') ? await getFirebaseAuthToken(false) : null;
+  if (!token) {
+    return { success: true, offline: true, message: '未ログインのためローカルデータを使用します' };
+  }
+
   const fetchFn = (typeof window !== 'undefined' && window.apiFetch) ? window.apiFetch : fetch;
   try {
     const res = await fetchFn('sync/pull-all', { cache: 'no-store' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    if (!data) throw new Error('Empty data from server');
+    if (!data || data.offline) return { success: true, offline: true, message: 'ローカルデータを優先して使用します' };
 
     if (data.masterItems && Array.isArray(data.masterItems) && data.masterItems.length > 0) {
       saveItemMasterList(data.masterItems);
