@@ -1684,6 +1684,40 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
                 self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
             return
 
+        # 削除書類 復元API
+        if self.path == '/api/invoices/restore':
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length).decode('utf-8')
+            try:
+                payload = json.loads(post_data)
+                doc_id = str(payload.get('id', '')).strip()
+                if not doc_id: raise ValueError("復元対象の書類IDがありません")
+
+                # 1. settings/deleted_invoices からIDを除去
+                del_doc = get_fs_document('settings', 'deleted_invoices', {'ids': []})
+                existing_ids = del_doc.get('ids', []) if isinstance(del_doc, dict) else []
+                if doc_id in existing_ids:
+                    existing_ids = [i for i in existing_ids if i != doc_id]
+                    save_fs_document('settings', 'deleted_invoices', {'ids': existing_ids})
+
+                # 2. 伝票データがあれば _deleted: False でFirestoreを復活更新
+                doc_data = payload.get('doc')
+                if doc_data and isinstance(doc_data, dict):
+                    doc_data['_deleted'] = False
+                    db.collection('invoices').document(doc_id).set(doc_data)
+
+                print(f"[Firestore 書類復元成功] ID: {doc_id}")
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": True, "id": doc_id}, ensure_ascii=False).encode('utf-8'))
+            except Exception as e:
+                self.send_response(500)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
+            return
+
         # アクティブ編集伝票 保存API
         if self.path == '/api/invoices/active':
             content_length = int(self.headers.get('Content-Length', 0))

@@ -20,7 +20,8 @@ const KEYS = {
   PAYROLL_RECORDS: 'billcraft_payroll_records',
   PAYROLL_SETTINGS: 'billcraft_payroll_settings',
   PREVIOUS_YEAR_INCOME: 'billcraft_previous_year_income',
-  DELETED_DOC_IDS: 'quickdoc_deleted_doc_ids'
+  DELETED_DOC_IDS: 'quickdoc_deleted_doc_ids',
+  TRASH_HISTORY: 'quickdoc_trash_history'
 };
 
 /**
@@ -47,6 +48,146 @@ export function recordDeletedDocId(id) {
     set.add(String(id).trim());
     localStorage.setItem(KEYS.DELETED_DOC_IDS, JSON.stringify(Array.from(set).slice(-500)));
   } catch (e) { }
+}
+
+/**
+ * 書類IDを削除済みリストから除外（書類復活時）
+ * @param {string} id
+ */
+export function removeDeletedDocId(id) {
+  if (!id) return;
+  try {
+    const set = getDeletedDocIds();
+    set.delete(String(id).trim());
+    localStorage.setItem(KEYS.DELETED_DOC_IDS, JSON.stringify(Array.from(set)));
+  } catch (e) { }
+}
+
+/**
+ * ごみ箱（削除済み書類一覧）を取得
+ * @returns {Array<any>}
+ */
+export function getTrashList() {
+  try {
+    const raw = localStorage.getItem(KEYS.TRASH_HISTORY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+/**
+ * ごみ箱を保存
+ * @param {Array<any>} list
+ */
+export function saveTrashList(list) {
+  try {
+    localStorage.setItem(KEYS.TRASH_HISTORY, JSON.stringify((list || []).slice(0, 100)));
+  } catch (e) {
+    console.error('Failed to save trash list:', e);
+  }
+}
+
+/**
+ * 削除された書類をごみ箱に追加
+ * @param {any} docItem
+ */
+export function addDocToTrash(docItem) {
+  if (!docItem || !docItem.id) return;
+  try {
+    const trash = getTrashList();
+    const cleanId = String(docItem.id).trim();
+    // 既存にあれば除外
+    const filtered = trash.filter(item => String(item.id).trim() !== cleanId);
+    const trashEntry = {
+      ...docItem,
+      deletedAt: docItem.deletedAt || new Date().toISOString()
+    };
+    filtered.unshift(trashEntry);
+    saveTrashList(filtered);
+    console.log(`【ごみ箱】伝票(${cleanId})をごみ箱に退避保管しました (現在${filtered.length}件)`);
+  } catch (e) {
+    console.error('Failed to add doc to trash:', e);
+  }
+}
+
+/**
+ * ごみ箱から特定の書類を完全に削除
+ * @param {string} id
+ */
+export function purgeTrashDoc(id) {
+  try {
+    const cleanId = String(id).trim();
+    const trash = getTrashList().filter(item => String(item.id).trim() !== cleanId);
+    saveTrashList(trash);
+  } catch (e) {
+    console.error('Failed to purge trash doc:', e);
+  }
+}
+
+/**
+ * ごみ箱を完全に空にする
+ */
+export function clearAllTrashDocs() {
+  try {
+    localStorage.removeItem(KEYS.TRASH_HISTORY);
+    return true;
+  } catch (e) {
+    console.error('Failed to clear trash:', e);
+    return false;
+  }
+}
+
+/**
+ * ごみ箱から書類を復元
+ * @param {string} id
+ */
+export async function restoreDocFromTrash(id) {
+  try {
+    const cleanId = String(id).trim();
+    const trash = getTrashList();
+    const target = trash.find(item => String(item.id).trim() === cleanId);
+    if (!target) return { success: false, error: '復元対象の書類が見つかりません' };
+
+    console.log(`【書類復元】ID: ${cleanId} の復元を開始します...`);
+
+    // 1. ローカル削除IDセットから除外（ゾンビ扱いを解除）
+    removeDeletedDocId(cleanId);
+
+    // 2. 履歴リストへ復帰
+    const history = getHistoryList();
+    const newHistory = history.filter(item => String(item.id).trim() !== cleanId);
+    const { deletedAt, _deleted, ...restoredDoc } = target;
+    restoredDoc.updatedAt = new Date().toISOString();
+    newHistory.unshift(restoredDoc);
+    localStorageSetItemAndSync(KEYS.HISTORY, JSON.stringify(newHistory));
+
+    // 3. ごみ箱から除外
+    purgeTrashDoc(cleanId);
+
+    // 4. サーバーAPI (/api/invoices/restore) へ通知して Firestore の deleted_invoices からも解除
+    try {
+      const fullDoc = restoredDoc.fullDoc || restoredDoc;
+      await apiFetch('/api/invoices/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: cleanId,
+          doc: fullDoc
+        })
+      });
+      console.log(`【書類復元】サーバー側の復元通知APIが成功しました`);
+      // サーバー履歴と即時同期
+      await syncInvoicesHistoryWithServer();
+    } catch (apiErr) {
+      console.warn('【書類復元】サーバー通知警告 (ローカル復元は完了):', apiErr);
+    }
+
+    return { success: true, doc: restoredDoc };
+  } catch (e) {
+    console.error('Failed to restore doc from trash:', e);
+    return { success: false, error: e.message || String(e) };
+  }
 }
 
 let syncTimeout = null;
@@ -611,11 +752,19 @@ export function saveDocToHistory(doc) {
 export function deleteDocFromHistory(id) {
   try {
     const cleanId = String(id).trim();
+
+    // 0. 誤削除対策：ごみ箱にバックアップ保管
+    const existingList = getHistoryList();
+    const targetItem = existingList.find(item => String(item.id).trim() === cleanId);
+    if (targetItem) {
+      addDocToTrash(targetItem);
+    }
+
     // 1. ローカル削除済みIDセットに記録
     recordDeletedDocId(cleanId);
 
     // 2. 履歴リストから削除
-    const list = getHistoryList().filter(item => String(item.id).trim() !== cleanId);
+    const list = existingList.filter(item => String(item.id).trim() !== cleanId);
     localStorageSetItemAndSync(KEYS.HISTORY, JSON.stringify(list));
 
     // 3. もし編集中アクティブ伝票(activeDoc)がこの書類ならアクティブ伝票もクリア
@@ -1133,6 +1282,8 @@ export async function syncInvoicesHistoryWithServer() {
           const cleanId = String(sinv.id).trim();
           recordDeletedDocId(cleanId);
           deletedSet.add(cleanId);
+          // 他端末で削除された書類もごみ箱に保管して復元可能にしておく
+          addDocToTrash(sinv);
         }
       });
     }
@@ -1146,6 +1297,7 @@ export async function syncInvoicesHistoryWithServer() {
             invoiceMap.set(cleanId, inv);
           } else {
             console.log(`【書類履歴同期】ローカルに残っていた削除済み伝票(${cleanId})を完全抹消しました`);
+            addDocToTrash(inv);
           }
         }
       });
@@ -3799,7 +3951,10 @@ export async function pullAllServerDataToLocal() {
 
 if (typeof window !== 'undefined') {
   window.pushAllLocalDataToServer = pushAllLocalDataToServer;
-  window.pullAllServerDataToLocal = pullAllServerDataToLocal;
+  window.getTrashList = getTrashList;
+  window.restoreDocFromTrash = restoreDocFromTrash;
+  window.purgeTrashDoc = purgeTrashDoc;
+  window.clearAllTrashDocs = clearAllTrashDocs;
   window.restoreAttendanceFromBackup = function() {
     const backup = localStorage.getItem(KEYS.ATTENDANCE + '_backup');
     if (backup && backup !== '[]') {

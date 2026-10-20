@@ -72,7 +72,11 @@ import {
   cancelDocIssue,
   getPreviousYearIncome,
   savePreviousYearIncome,
-  markExpensesSettled
+  markExpensesSettled,
+  getTrashList,
+  restoreDocFromTrash,
+  purgeTrashDoc,
+  clearAllTrashDocs
 } from './storage.js';
 
 import {
@@ -2357,6 +2361,22 @@ function setupEventListeners() {
     });
   }
 
+  // 削除書類復元（ごみ箱）モーダル制御
+  const trashModal = document.getElementById('trashModal');
+  const btnCloseTrash = document.getElementById('btnCloseTrashModal');
+  const btnCloseTrash2 = document.getElementById('btnCloseTrashModal2');
+  if (btnCloseTrash) {
+    btnCloseTrash.addEventListener('click', closeTrashModal);
+  }
+  if (btnCloseTrash2) {
+    btnCloseTrash2.addEventListener('click', closeTrashModal);
+  }
+  if (trashModal) {
+    trashModal.addEventListener('click', (e) => {
+      if (e.target === trashModal) closeTrashModal();
+    });
+  }
+
   // JSONエクスポート
   if (DOM.btnExportJSON) {
     DOM.btnExportJSON.addEventListener('click', () => {
@@ -3354,6 +3374,174 @@ function closeHistoryModal() {
 
 window.openHistoryModal = openHistoryModal;
 window.closeHistoryModal = closeHistoryModal;
+
+// ==========================================================================
+// 削除済み書類のごみ箱・復元モーダル処理
+// ==========================================================================
+
+function openTrashModal() {
+  const modal = document.getElementById('trashModal');
+  if (!modal) return;
+  modal.classList.add('active');
+  modal.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+  renderTrashList();
+}
+
+function closeTrashModal() {
+  const modal = document.getElementById('trashModal');
+  if (modal) {
+    modal.classList.remove('active');
+    modal.style.display = 'none';
+  }
+  document.body.style.overflow = '';
+}
+
+function renderTrashList() {
+  const container = document.getElementById('trashListContainer');
+  const countBadge = document.getElementById('trashTotalCountBadge');
+  if (!container) return;
+
+  const list = typeof getTrashList === 'function' ? getTrashList() : [];
+  if (countBadge) {
+    countBadge.textContent = `${list.length} 件`;
+  }
+
+  if (!list || list.length === 0) {
+    container.innerHTML = `
+      <div style="text-align: center; padding: 48px 20px; color: #94a3b8;">
+        <div style="font-size: 38px; margin-bottom: 10px;">🗑️</div>
+        <p style="font-size: 0.95rem; font-weight: 700; color: #64748b; margin: 0 0 6px 0;">ごみ箱は空です</p>
+        <p style="font-size: 0.8rem; margin: 0; color: #94a3b8;">削除された書類データはありません。</p>
+      </div>
+    `;
+    return;
+  }
+
+  let html = `<div style="display: flex; flex-direction: column; gap: 10px;">`;
+  list.forEach(item => {
+    const docTypeInfo = DOC_TYPES[item.type] || { label: '伝票', color: '#64748b' };
+    const docNum = item.docNumber || item.number || '(番号なし)';
+    const clientName = item.clientName || (item.client && item.client.name) || '(取引先未設定)';
+    const total = item.totalAmount || (item.totals && item.totals.total) || 0;
+    const formattedTotal = typeof formatCurrency === 'function' ? formatCurrency(total) : `¥${Number(total).toLocaleString()}`;
+    const issueDate = item.issueDate || '(日付未設定)';
+    
+    let deletedTimeStr = '';
+    if (item.deletedAt) {
+      try {
+        const d = new Date(item.deletedAt);
+        deletedTimeStr = `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+      } catch (e) {
+        deletedTimeStr = item.deletedAt;
+      }
+    }
+
+    html += `
+      <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; gap: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); transition: all 0.2s;">
+        <div style="flex: 1; min-width: 0;">
+          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px; flex-wrap: wrap;">
+            <span style="font-size: 0.725rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; background: #fee2e2; color: #b91c1c;">
+              ${escapeHtml(docTypeInfo.label)}
+            </span>
+            <span style="font-weight: 800; font-size: 0.95rem; color: #0f172a;">
+              ${escapeHtml(docNum)}
+            </span>
+            ${deletedTimeStr ? `<span style="font-size: 0.725rem; color: #94a3b8;">(削除: ${escapeHtml(deletedTimeStr)})</span>` : ''}
+          </div>
+          <div style="font-size: 0.85rem; font-weight: 700; color: #334155; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+            🏢 ${escapeHtml(clientName)}
+          </div>
+          <div style="display: flex; gap: 14px; font-size: 0.75rem; color: #64748b;">
+            <span>発行日: ${escapeHtml(issueDate)}</span>
+            <span>合計金額: <strong style="color: #0f172a; font-size: 0.825rem;">${escapeHtml(formattedTotal)}</strong></span>
+          </div>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+          <button type="button" class="btn btn-sm"
+            onclick="window.handleRestoreDoc && window.handleRestoreDoc('${escapeHtml(item.id)}')"
+            style="padding: 6px 14px; font-size: 0.825rem; font-weight: 700; background: linear-gradient(135deg, #10b981, #059669); color: #ffffff; border: none; border-radius: 6px; cursor: pointer; box-shadow: 0 2px 4px rgba(16,185,129,0.3); display: inline-flex; align-items: center; gap: 4px;"
+            title="この書類を復活させて履歴一覧に戻します">
+            ↩️ 復活させる
+          </button>
+          <button type="button" class="btn btn-secondary btn-xs"
+            onclick="window.handlePurgeDoc && window.handlePurgeDoc('${escapeHtml(item.id)}')"
+            style="padding: 6px 8px; font-size: 0.725rem; color: #94a3b8; border-color: #e2e8f0; background: #ffffff; cursor: pointer;"
+            title="この書類をごみ箱からも完全に消去します">
+            ✕ 完全消去
+          </button>
+        </div>
+      </div>
+    `;
+  });
+  html += `</div>`;
+  container.innerHTML = html;
+}
+
+async function handleRestoreDoc(id) {
+  if (!id) return;
+  const list = typeof getTrashList === 'function' ? getTrashList() : [];
+  const target = list.find(item => String(item.id).trim() === String(id).trim());
+  const docNum = target ? (target.docNumber || target.id) : id;
+  const client = target ? (target.clientName || '') : '';
+  
+  const ok = confirm(`【書類の復活】\n\n書類番号: ${docNum}\n取引先: ${client}\n\nこの書類を元通り復活させて、書類履歴に戻しますか？`);
+  if (!ok) return;
+
+  try {
+    const res = await restoreDocFromTrash(id);
+    if (res && res.success) {
+      if (typeof showToast === 'function') {
+        showToast(`書類「${docNum}」を復元・復活させました！`, 'success');
+      } else {
+        alert(`書類「${docNum}」を復元・復活させました！`);
+      }
+      renderTrashList();
+      if (typeof filterAndRenderHistoryList === 'function') {
+        filterAndRenderHistoryList();
+      }
+      const histList = getHistoryList();
+      const histBadge = document.getElementById('historyTotalCountBadge');
+      if (histBadge) histBadge.textContent = `全 ${histList.length} 件`;
+    } else {
+      alert(`書類の復元に失敗しました: ${res?.error || '不明なエラー'}`);
+    }
+  } catch (err) {
+    console.error('Restore error:', err);
+    alert(`書類の復元中にエラーが発生しました: ${err.message || err}`);
+  }
+}
+
+function handlePurgeDoc(id) {
+  if (!id) return;
+  const ok = confirm('この書類をごみ箱から完全に消去しますか？\n消去後は二度と復活できなくなります。');
+  if (!ok) return;
+  purgeTrashDoc(id);
+  renderTrashList();
+}
+
+function clearAllTrash() {
+  const list = typeof getTrashList === 'function' ? getTrashList() : [];
+  if (!list || list.length === 0) {
+    alert('ごみ箱には書類がありません。');
+    return;
+  }
+  const ok = confirm(`ごみ箱内の全 ${list.length} 件の書類を完全に消去しますか？\nこの操作は取り消せません。`);
+  if (!ok) return;
+  clearAllTrashDocs();
+  renderTrashList();
+  if (typeof showToast === 'function') {
+    showToast('ごみ箱を空にしました', 'info');
+  }
+}
+
+window.openTrashModal = openTrashModal;
+window.closeTrashModal = closeTrashModal;
+window.renderTrashList = renderTrashList;
+window.handleRestoreDoc = handleRestoreDoc;
+window.handlePurgeDoc = handlePurgeDoc;
+window.clearAllTrash = clearAllTrash;
 
 /**
  * 複合検索フィルター実行 ＆ 履歴カードレンダリング
@@ -9455,6 +9643,8 @@ window.openBackupModal = typeof openBackupModal !== 'undefined' ? openBackupModa
 window.closeBackupModal = typeof closeBackupModal !== 'undefined' ? closeBackupModal : null;
 window.openHistoryModal = typeof openHistoryModal !== 'undefined' ? openHistoryModal : null;
 window.closeHistoryModal = typeof closeHistoryModal !== 'undefined' ? closeHistoryModal : null;
+window.openTrashModal = typeof openTrashModal !== 'undefined' ? openTrashModal : null;
+window.closeTrashModal = typeof closeTrashModal !== 'undefined' ? closeTrashModal : null;
 window.openDiscountModal = typeof openDiscountModal !== 'undefined' ? openDiscountModal : null;
 window.closeDiscountModal = typeof closeDiscountModal !== 'undefined' ? closeDiscountModal : null;
 window.openAttendanceSheetModal = typeof openAttendanceSheetModal !== 'undefined' ? openAttendanceSheetModal : null;

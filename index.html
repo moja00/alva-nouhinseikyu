@@ -51,9 +51,9 @@
           <span class="brand-subtitle">統合業務スイート</span>
           <span id="systemDeployBadge"
             style="font-size: 0.65rem; background: #ecfdf5; color: #047857; border: 1px solid #6ee7b7; padding: 2px 8px; border-radius: 9999px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; letter-spacing: 0.3px;"
-            title="最新デプロイバージョン: 2026/10/20 削除データゾンビ復活防止・プレビュークリア対応 (v10)">
+            title="最新デプロイバージョン: 2026/10/20 削除データごみ箱・伝票復元選択機能 (v11)">
             <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #10b981; box-shadow: 0 0 4px #10b981;"></span>
-            v2026.10.20-sync-v10
+            v2026.10.20-sync-v11
           </span>
         </h1>
       </div>
@@ -169,9 +169,9 @@
             Alva-works 業務ポータル
             <span class="portal-version-badge"
               style="font-size: 0.75rem; background: #ecfdf5; color: #047857; border: 1px solid #6ee7b7; padding: 3px 10px; border-radius: 9999px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; letter-spacing: 0.3px;"
-              title="最新デプロイバージョン: 2026/10/20 削除データゾンビ復活防止・プレビュークリア対応 (v10)">
+              title="最新デプロイバージョン: 2026/10/20 削除データごみ箱・伝票復元選択機能 (v11)">
               <span style="display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #10b981; box-shadow: 0 0 6px #10b981;"></span>
-              v2026.10.20-sync-v10
+              v2026.10.20-sync-v11
             </span>
           </h2>
           <p class="portal-sub-heading" style="color: #475569; font-weight: 500;">
@@ -293,7 +293,7 @@
         </button>
         <div style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
-          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.20-sync-v10</span>
+          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.20-sync-v11</span>
         </div>
       </div>
 
@@ -1110,11 +1110,72 @@
 
       <!-- モーダルフッター -->
       <div class="modal-footer"
-        style="padding: 10px 22px; background: #ffffff; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
-        <span
-          style="font-size: 0.75rem; color: #64748b;">※「この書類を開く」をクリックすると現在のエディタに読み込み、「複製して新規」で明細を引き継いで新規作成できます。</span>
+        style="padding: 10px 22px; background: #ffffff; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <button type="button" id="btnOpenTrashModal" class="btn btn-link btn-xs"
+            onclick="window.openTrashModal && window.openTrashModal()"
+            style="color: #64748b; font-size: 0.75rem; text-decoration: none; padding: 4px 10px; border: 1px dashed #cbd5e1; border-radius: 6px; background: #f8fafc; cursor: pointer; transition: all 0.2s; display: inline-flex; align-items: center; gap: 4px;"
+            onmouseover="this.style.color='#ef4444'; this.style.borderColor='#fca5a5'; this.style.background='#fff1f2';"
+            onmouseout="this.style.color='#64748b'; this.style.borderColor='#cbd5e1'; this.style.background='#f8fafc';"
+            title="誤って削除した書類を一覧から選んで復活させる">
+            🗑️ 削除した書類の復元...
+          </button>
+          <span
+            style="font-size: 0.725rem; color: #64748b;">※「この書類を開く」でエディタに読込、「複製して新規」で明細を引き継いで新規作成できます。</span>
+        </div>
         <button type="button" class="btn btn-secondary btn-sm" id="btnCloseHistoryModal2"
           onclick="closeHistoryModal()">閉じる</button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 削除書類・ごみ箱復元モーダル -->
+  <div class="modal-overlay" id="trashModal">
+    <div class="modal-card"
+      style="max-width: 820px; width: 95%; max-height: 85vh; display: flex; flex-direction: column; padding: 0; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35);">
+      
+      <!-- モーダルヘッダー -->
+      <div class="modal-header"
+        style="padding: 14px 22px; border-bottom: 1px solid #fee2e2; display: flex; justify-content: space-between; align-items: center; background: #fef2f2;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <h3 class="modal-title"
+            style="font-size: 1.15rem; font-weight: 800; color: #991b1b; margin: 0; display: flex; align-items: center; gap: 8px;">
+            🗑️ 削除した書類の復元（ごみ箱）
+          </h3>
+          <span class="badge" id="trashTotalCountBadge"
+            style="background: #fee2e2; color: #dc2626; font-size: 0.75rem; font-weight: 700; padding: 3px 8px; border-radius: 12px;">
+            0 件
+          </span>
+        </div>
+        <button type="button" class="modal-close" id="btnCloseTrashModal"
+          style="font-size: 1.25rem; border: none; background: none; cursor: pointer; color: #64748b;"
+          onclick="window.closeTrashModal && window.closeTrashModal()">✕</button>
+      </div>
+
+      <!-- 説明ガイドバナー -->
+      <div style="padding: 10px 22px; background: #fff5f5; border-bottom: 1px solid #fecaca; font-size: 0.8rem; color: #7f1d1d; display: flex; align-items: center; gap: 8px;">
+        <span>💡</span>
+        <span>間違えて削除してしまった書類を一覧から選択して復活できます。「復元する」ボタンを押すと、書類履歴リストへ元通り復帰し、他端末とも自動同期されます。</span>
+      </div>
+
+      <!-- 削除済み書類リスト表示領域 -->
+      <div class="modal-body" id="trashListContainer"
+        style="padding: 16px 22px; overflow-y: auto; flex: 1; min-height: 200px; background: #f8fafc;">
+        <!-- JSでレンダリング -->
+      </div>
+
+      <!-- モーダルフッター -->
+      <div class="modal-footer"
+        style="padding: 12px 22px; background: #ffffff; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+        <button type="button" class="btn btn-outline btn-xs" id="btnClearAllTrash"
+          onclick="window.clearAllTrash && window.clearAllTrash()"
+          style="color: #94a3b8; border-color: #cbd5e1; font-size: 0.725rem; background: #ffffff; cursor: pointer;"
+          title="ごみ箱内の全削除書類を完全に消去します">
+          ごみ箱を空にする
+        </button>
+        <button type="button" class="btn btn-secondary btn-sm" id="btnCloseTrashModal2"
+          onclick="window.closeTrashModal && window.closeTrashModal()">閉じる</button>
       </div>
 
     </div>
@@ -1153,6 +1214,22 @@
             JSONファイルを選択して復元
             <input type="file" id="fileImportJSON" accept="application/json" style="display: none;">
           </label>
+        </div>
+
+        <!-- 誤削除書類の復元セクション -->
+        <div
+          style="border: 1px dashed #cbd5e1; border-radius: 8px; padding: 14px; background: #f8fafc; margin-top: 16px;">
+          <h4 style="font-size: 0.9rem; margin-bottom: 6px; color: #475569; display: flex; align-items: center; gap: 6px;">
+            🗑️ 誤って削除した書類の復元
+          </h4>
+          <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 10px;">
+            間違えて削除した伝票をごみ箱から選び直して復元・復活させることができます。
+          </p>
+          <button type="button" class="btn btn-secondary btn-sm"
+            onclick="window.openTrashModal && window.openTrashModal(); window.closeBackupModal && window.closeBackupModal();"
+            style="display: inline-flex; align-items: center; gap: 4px;">
+            🗑️ 削除書類一覧・復元画面を開く
+          </button>
         </div>
       </div>
       <div class="modal-footer">
@@ -4694,7 +4771,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261020_sync_v10"></script>
+  <script src="js/app.bundle.js?v=20261020_sync_v11"></script>
 </body>
 
 </html>
