@@ -769,16 +769,23 @@ function initApp() {
       updatePortalInfo();
     }
 
-    // サーバーから同期された最新の編集中伝票（activeDoc）があれば反映
-    const syncedActiveDoc = loadActiveDoc();
-    if (syncedActiveDoc && currentDoc && syncedActiveDoc.id === currentDoc.id) {
-      if (syncedActiveDoc.isIssued !== currentDoc.isIssued || syncedActiveDoc.isCancelled !== currentDoc.isCancelled) {
-        currentDoc.isIssued = syncedActiveDoc.isIssued;
-        currentDoc.isCancelled = syncedActiveDoc.isCancelled;
-        currentDoc.issuedAt = syncedActiveDoc.issuedAt;
-        populateFormFromDoc();
-        renderAll();
-        console.log("【初期化同期】編集中伝票をサーバー同期後のステータスに更新しました");
+    // 削除済み伝票をプレビューしていた場合は即座に白紙化（プレビュー引きずり防止）
+    const deletedDocIds = typeof getDeletedDocIds === 'function' ? getDeletedDocIds() : new Set();
+    if (currentDoc && currentDoc.id && deletedDocIds.has(String(currentDoc.id).trim())) {
+      console.log("【初期化同期】現在プレビュー中の伝票が削除済みのため白紙化します:", currentDoc.id);
+      resetActiveDocToNew(currentDoc.docType);
+    } else {
+      // サーバーから同期された最新の編集中伝票（activeDoc）があれば反映
+      const syncedActiveDoc = loadActiveDoc();
+      if (syncedActiveDoc && currentDoc && syncedActiveDoc.id === currentDoc.id) {
+        if (syncedActiveDoc.isIssued !== currentDoc.isIssued || syncedActiveDoc.isCancelled !== currentDoc.isCancelled) {
+          currentDoc.isIssued = syncedActiveDoc.isIssued;
+          currentDoc.isCancelled = syncedActiveDoc.isCancelled;
+          currentDoc.issuedAt = syncedActiveDoc.issuedAt;
+          populateFormFromDoc();
+          renderAll();
+          console.log("【初期化同期】編集中伝票をサーバー同期後のステータスに更新しました");
+        }
       }
     }
 
@@ -3576,6 +3583,13 @@ function filterAndRenderHistoryList() {
     card.querySelector('.btn-delete-doc').addEventListener('click', () => {
       if (confirm(`「${item.docNumber || '書類'}」の履歴を削除しますか？`)) {
         deleteDocFromHistory(item.id);
+
+        // もし編集中・プレビュー中の書類が同一なら、白紙の新規書類へ即座にリセット（プレビュー引きずり防止）
+        if (currentDoc && String(currentDoc.id).trim() === String(item.id).trim()) {
+          console.log("【書類削除】プレビュー・編集中書類が削除されたため白紙に初期化します:", item.id);
+          resetActiveDocToNew(currentDoc.docType);
+        }
+
         // 財務会計も再同期
         if (typeof initAccountingMonthSelector === 'function') initAccountingMonthSelector();
         const currentMonth = DOM.accSelectMonth ? DOM.accSelectMonth.value : '';
@@ -3584,7 +3598,7 @@ function filterAndRenderHistoryList() {
         if (typeof renderAccountingJournals === 'function') renderAccountingJournals();
 
         filterAndRenderHistoryList(); // 再描画
-        showToast('履歴から削除しました', 'info');
+        showToast('履歴から削除しました（プレビューもクリアされました）', 'info');
       }
     });
 
@@ -9492,6 +9506,18 @@ async function triggerServerSyncAll() {
 }
 window.triggerServerSyncAll = triggerServerSyncAll;
 
+function resetActiveDocToNew(targetType = 'invoice') {
+  const profile = loadIssuerProfile() || (currentDoc ? currentDoc.issuer : null);
+  currentDoc = createEmptyInvoice(targetType || (currentDoc?.docType || 'invoice'));
+  if (profile) {
+    currentDoc.issuer = { ...profile };
+  }
+  saveActiveDoc(currentDoc);
+  populateFormFromDoc();
+  renderAll();
+}
+window.resetActiveDocToNew = resetActiveDocToNew;
+
 async function triggerManualSyncInvoices(btnEl) {
   const btn = btnEl || document.getElementById('btnSyncHistoryToolbar') || document.getElementById('btnSyncHistoryManual');
   const origHtml = btn ? btn.innerHTML : '';
@@ -9502,15 +9528,24 @@ async function triggerManualSyncInvoices(btnEl) {
   try {
     if (typeof syncInvoicesHistoryWithServer === 'function') {
       const synced = await syncInvoicesHistoryWithServer();
-      // 編集中書類が更新されたかチェックしてUI反映
-      const activeDoc = typeof loadActiveDoc === 'function' ? loadActiveDoc() : null;
-      if (activeDoc && currentDoc && activeDoc.id === currentDoc.id) {
-        currentDoc.isIssued = activeDoc.isIssued;
-        currentDoc.isCancelled = activeDoc.isCancelled;
-        currentDoc.issuedAt = activeDoc.issuedAt;
-        if (typeof populateFormFromDoc === 'function') populateFormFromDoc();
-        if (typeof renderAll === 'function') renderAll();
+      const deletedDocIds = typeof getDeletedDocIds === 'function' ? getDeletedDocIds() : new Set();
+
+      // 現在編集中・プレビュー中の書類が他端末等で削除されていた場合、白紙化してゾンビ復活を完全遮断
+      if (currentDoc && currentDoc.id && deletedDocIds.has(String(currentDoc.id).trim())) {
+        console.log("【手動同期】プレビュー中の書類がサーバー側で削除されていたため白紙化します:", currentDoc.id);
+        resetActiveDocToNew(currentDoc.docType);
+      } else {
+        // 編集中書類が更新されていたらUI反映
+        const activeDoc = typeof loadActiveDoc === 'function' ? loadActiveDoc() : null;
+        if (activeDoc && currentDoc && activeDoc.id === currentDoc.id) {
+          currentDoc.isIssued = activeDoc.isIssued;
+          currentDoc.isCancelled = activeDoc.isCancelled;
+          currentDoc.issuedAt = activeDoc.issuedAt;
+          if (typeof populateFormFromDoc === 'function') populateFormFromDoc();
+          if (typeof renderAll === 'function') renderAll();
+        }
       }
+
       if (typeof filterAndRenderHistoryList === 'function') {
         filterAndRenderHistoryList();
       }

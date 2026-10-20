@@ -790,17 +790,36 @@ def save_fs_collection(col_name, data_list, id_field='id', deleted_ids=None):
         batch = db.batch()
         count = 0
 
-        # 明示的に削除指定されたIDがあれば削除
+        # 書類履歴の場合、永続化された削除済みIDリストを考慮してゾンビ復活を完全防止
+        persistent_deleted_ids = set()
+        if col_name == 'invoices':
+            try:
+                del_snap = db.collection('settings').document('deleted_invoices').get()
+                if del_snap.exists:
+                    persistent_deleted_ids = set(del_snap.to_dict().get('ids', []))
+            except Exception as e_del:
+                print(f"[Firestore 削除ID読込エラー]: {e_del}")
+
+        # 明示的に削除指定されたIDがあれば削除＆永続削除リストへ登録
         if deleted_ids:
+            new_deleted_set = set(persistent_deleted_ids)
             for d_id in deleted_ids:
                 if d_id:
-                    doc_ref = db.collection(col_name).document(str(d_id))
+                    clean_did = str(d_id).strip()
+                    new_deleted_set.add(clean_did)
+                    doc_ref = db.collection(col_name).document(clean_did)
                     batch.delete(doc_ref)
                     count += 1
                     if count == 500:
                         batch.commit()
                         batch = db.batch()
                         count = 0
+            if col_name == 'invoices' and new_deleted_set != persistent_deleted_ids:
+                try:
+                    db.collection('settings').document('deleted_invoices').set({'ids': list(new_deleted_set)[-500:]})
+                    persistent_deleted_ids = new_deleted_set
+                except Exception as e_save_del:
+                    print(f"[Firestore 削除ID永続化エラー]: {e_save_del}")
 
         # 送信されたアイテムのUpsert（追加・更新）のみ実行
         for item in data_list:
@@ -808,7 +827,12 @@ def save_fs_collection(col_name, data_list, id_field='id', deleted_ids=None):
                 continue
             doc_id = item.get(id_field)
             if doc_id:
-                doc_ref = db.collection(col_name).document(str(doc_id))
+                clean_id = str(doc_id).strip()
+                # 削除済みIDまたは _deleted フラグ付きのアイテムは絶対に復活保存しない
+                if col_name == 'invoices':
+                    if clean_id in persistent_deleted_ids or item.get('_deleted'):
+                        continue
+                doc_ref = db.collection(col_name).document(clean_id)
                 batch.set(doc_ref, item)
                 count += 1
                 if count == 500:
@@ -828,6 +852,7 @@ def delete_fs_item(col_name, item_id):
     """
     指定コレクションから指定IDのドキュメントを個別削除する。
     経費の場合は関連レシート画像も自動クリーンアップ。
+    書類の場合は削除済みリスト（settings/deleted_invoices）へ記録し他端末へのゾンビ復活を防止。
     """
     try:
         clean_id = str(item_id).strip()
@@ -847,6 +872,25 @@ def delete_fs_item(col_name, item_id):
                         blob = bucket.blob(f"receipts/{target_id}.jpg")
                         if blob.exists():
                             blob.delete()
+
+        # 書類の場合、削除IDを永続化し、編集中伝票とも連動クリア
+        if col_name == 'invoices':
+            try:
+                del_snap = db.collection('settings').document('deleted_invoices').get()
+                existing_ids = del_snap.to_dict().get('ids', []) if del_snap.exists else []
+                if clean_id not in existing_ids:
+                    existing_ids.append(clean_id)
+                    db.collection('settings').document('deleted_invoices').set({'ids': existing_ids[-500:]})
+
+                # 編集中伝票が同一書類であればアクティブ伝票もクリア
+                act_snap = db.collection('settings').document('active_doc').get()
+                if act_snap.exists:
+                    act_data = act_snap.to_dict() or {}
+                    if act_data.get('id') == clean_id:
+                        db.collection('settings').document('active_doc').delete()
+                        print(f"[Firestore] 削除対象の書類が編集中伝票だったためactive_docもクリアしました: {clean_id}")
+            except Exception as e_del:
+                print(f"[Firestore 削除ID追跡エラー]: {e_del}")
 
         db.collection(col_name).document(clean_id).delete()
         print(f"[Firestore 個別削除成功] コレクション: {col_name}, ID: {clean_id}")
@@ -1068,15 +1112,32 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
         # 請求書履歴一覧取得API
         if self.path == '/api/invoices/history':
             invoices = get_fs_collection('invoices', [])
+            del_doc = get_fs_document('settings', 'deleted_invoices', {'ids': []})
+            deleted_ids = set(del_doc.get('ids', [])) if isinstance(del_doc, dict) else set()
+
+            # 削除済みでない有効伝票のみ抽出
+            valid_invoices = [inv for inv in invoices if isinstance(inv, dict) and str(inv.get('id', '')).strip() not in deleted_ids and not inv.get('_deleted')]
+            # 他端末の古いローカルキャッシュを抹消（Purge）するため、削除マーカーを付与
+            for d_id in deleted_ids:
+                if d_id:
+                    valid_invoices.append({"id": str(d_id).strip(), "_deleted": True})
+
             self.send_response(200)
             self.send_header('Content-Type', 'application/json; charset=utf-8')
             self.end_headers()
-            self.wfile.write(json.dumps(invoices, ensure_ascii=False).encode('utf-8'))
+            self.wfile.write(json.dumps(valid_invoices, ensure_ascii=False).encode('utf-8'))
             return
 
         # アクティブ編集伝票取得API
         if self.path == '/api/invoices/active':
             active_doc = get_fs_document('settings', 'active_doc', None)
+            # もし編集中伝票が既に削除された書類なら、プレビュー引きずりを防ぐためNoneとして扱う
+            if active_doc and isinstance(active_doc, dict):
+                act_id = str(active_doc.get('id', '')).strip()
+                del_doc = get_fs_document('settings', 'deleted_invoices', {'ids': []})
+                deleted_ids = set(del_doc.get('ids', [])) if isinstance(del_doc, dict) else set()
+                if act_id in deleted_ids or active_doc.get('_deleted'):
+                    active_doc = None
             self.send_response(200)
             self.send_header('Content-Type', 'application/json; charset=utf-8')
             self.end_headers()

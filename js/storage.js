@@ -19,8 +19,35 @@ const KEYS = {
   PURCHASE_MAPPINGS: 'billcraft_purchase_mappings',
   PAYROLL_RECORDS: 'billcraft_payroll_records',
   PAYROLL_SETTINGS: 'billcraft_payroll_settings',
-  PREVIOUS_YEAR_INCOME: 'billcraft_previous_year_income'
+  PREVIOUS_YEAR_INCOME: 'billcraft_previous_year_income',
+  DELETED_DOC_IDS: 'quickdoc_deleted_doc_ids'
 };
+
+/**
+ * 削除済み書類IDセットを取得（他端末へのゾンビ復活防止用）
+ * @returns {Set<string>}
+ */
+export function getDeletedDocIds() {
+  try {
+    const raw = localStorage.getItem(KEYS.DELETED_DOC_IDS);
+    return new Set(raw ? JSON.parse(raw) : []);
+  } catch (e) {
+    return new Set();
+  }
+}
+
+/**
+ * 書類IDを削除済みリストに永続記録
+ * @param {string} id
+ */
+export function recordDeletedDocId(id) {
+  if (!id) return;
+  try {
+    const set = getDeletedDocIds();
+    set.add(String(id).trim());
+    localStorage.setItem(KEYS.DELETED_DOC_IDS, JSON.stringify(Array.from(set).slice(-500)));
+  } catch (e) { }
+}
 
 let syncTimeout = null;
 function localStorageSetItemAndSync(key, value) {
@@ -579,18 +606,33 @@ export function saveDocToHistory(doc) {
 }
 
 /**
- * 履歴から書類を削除
+ * 履歴から書類を削除（プレビュー画面の引きずりおよび他端末ゾンビ復活を完全防止）
  */
 export function deleteDocFromHistory(id) {
   try {
-    const list = getHistoryList().filter(item => item.id !== id);
+    const cleanId = String(id).trim();
+    // 1. ローカル削除済みIDセットに記録
+    recordDeletedDocId(cleanId);
+
+    // 2. 履歴リストから削除
+    const list = getHistoryList().filter(item => String(item.id).trim() !== cleanId);
     localStorageSetItemAndSync(KEYS.HISTORY, JSON.stringify(list));
-    // サーバーのFirestoreから個別削除
-    deleteServerEntity('invoices', id).catch(e => {
+
+    // 3. もし編集中アクティブ伝票(activeDoc)がこの書類ならアクティブ伝票もクリア
+    const activeDoc = loadActiveDoc();
+    if (activeDoc && String(activeDoc.id).trim() === cleanId) {
+      console.log("【書類削除】編集中アクティブ伝票も削除対象のためクリアします:", cleanId);
+      localStorage.removeItem(KEYS.ACTIVE_DOC);
+      saveServerActiveDoc({}).catch(() => {});
+    }
+
+    // 4. サーバーのFirestoreから個別削除
+    deleteServerEntity('invoices', cleanId).catch(e => {
       console.warn('Server invoices history delete failed:', e);
     });
-    // 互換性のため履歴全体も保存
-    saveServerInvoicesHistory(list).catch(e => {
+
+    // 5. 削除IDも含めて履歴全体を即時同期保存
+    saveServerInvoicesHistory(list, [cleanId]).catch(e => {
       console.warn('Server invoices history save failed:', e);
     });
     return true;
@@ -1044,12 +1086,26 @@ export async function fetchServerInvoicesHistory() {
   return null;
 }
 
-export async function saveServerInvoicesHistory(invoices) {
+export async function saveServerInvoicesHistory(invoices, deletedIds = []) {
   try {
+    const deletedSet = getDeletedDocIds();
+    (deletedIds || []).forEach(id => { if (id) deletedSet.add(String(id).trim()); });
+
+    const validList = (Array.isArray(invoices) ? invoices : []).filter(inv => {
+      if (!inv || !inv.id) return false;
+      const cleanId = String(inv.id).trim();
+      return !deletedSet.has(cleanId) && !inv._deleted;
+    });
+
+    const payload = {
+      invoices: validList,
+      deletedIds: Array.from(deletedSet)
+    };
+
     const res = await apiFetch('invoices/history', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(invoices)
+      body: JSON.stringify(payload)
     });
     return res.ok;
   } catch (e) {
@@ -1066,25 +1122,49 @@ export async function syncInvoicesHistoryWithServer() {
     console.log("【書類履歴同期】サーバーから履歴データ取得開始...");
     const serverInvoices = await fetchServerInvoicesHistory();
     const localInvoices = getHistoryList();
+    const deletedSet = getDeletedDocIds();
 
     const invoiceMap = new Map();
 
-    // 1. ローカル履歴を取り込み
-    if (Array.isArray(localInvoices)) {
-      localInvoices.forEach(inv => {
-        if (inv && inv.id) {
-          invoiceMap.set(inv.id, inv);
+    // 1. サーバーから取得したデータから削除マーカー(_deleted: true)を検知してローカル削除セットへ反映
+    if (Array.isArray(serverInvoices)) {
+      serverInvoices.forEach(sinv => {
+        if (sinv && sinv.id && sinv._deleted) {
+          const cleanId = String(sinv.id).trim();
+          recordDeletedDocId(cleanId);
+          deletedSet.add(cleanId);
         }
       });
     }
 
-    // 2. サーバー履歴を取り込み（ステータス変更と更新日時を精緻にスマートマージ）
+    // 2. ローカル履歴を取り込み（削除済みIDに含まれているものは完全破棄・抹消）
+    if (Array.isArray(localInvoices)) {
+      localInvoices.forEach(inv => {
+        if (inv && inv.id) {
+          const cleanId = String(inv.id).trim();
+          if (!deletedSet.has(cleanId) && !inv._deleted) {
+            invoiceMap.set(cleanId, inv);
+          } else {
+            console.log(`【書類履歴同期】ローカルに残っていた削除済み伝票(${cleanId})を完全抹消しました`);
+          }
+        }
+      });
+    }
+
+    // 3. サーバー履歴を取り込み（削除済みでなく、_deleted でない有効データのみスマートマージ）
     if (Array.isArray(serverInvoices)) {
       serverInvoices.forEach(sinv => {
         if (sinv && sinv.id) {
-          const existing = invoiceMap.get(sinv.id);
+          const cleanId = String(sinv.id).trim();
+          if (sinv._deleted || deletedSet.has(cleanId)) {
+            // サーバー側またはローカルで削除済みの場合は確実にマップから除去
+            invoiceMap.delete(cleanId);
+            return;
+          }
+
+          const existing = invoiceMap.get(cleanId);
           if (!existing) {
-            invoiceMap.set(sinv.id, sinv);
+            invoiceMap.set(cleanId, sinv);
           } else {
             const serverDate = new Date(sinv.updatedAt || sinv.issuedAt || sinv.issueDate || 0).getTime();
             const localDate = new Date(existing.updatedAt || existing.issuedAt || existing.issueDate || 0).getTime();
@@ -1094,32 +1174,42 @@ export async function syncInvoicesHistoryWithServer() {
 
             // サーバー側で取消（下書き化）された場合、端末間の時計ズレでローカルが勝ってしまわないようサーバーの下書きを最優先
             if (serverIsDraft && localIsIssued) {
-              console.log(`【書類履歴同期】端末間同期: 伝票(${sinv.id}) をサーバー最新の「下書き（確定取消）」状態にマージ`);
-              invoiceMap.set(sinv.id, sinv);
+              console.log(`【書類履歴同期】端末間同期: 伝票(${cleanId}) をサーバー最新の「下書き（確定取消）」状態にマージ`);
+              invoiceMap.set(cleanId, sinv);
             } else if (serverDate >= localDate) {
-              invoiceMap.set(sinv.id, sinv);
+              invoiceMap.set(cleanId, sinv);
             }
           }
         }
       });
     }
 
-    // 3. 発行日降順にソート
+    // 4. 発行日降順にソート
     const mergedList = Array.from(invoiceMap.values()).sort((a, b) => {
       const dateA = a.issueDate || a.updatedAt || '';
       const dateB = b.issueDate || b.updatedAt || '';
       return dateB.localeCompare(dateA);
     });
 
-    // 4. ローカルストレージに保存
+    // 5. ローカルストレージに保存
     localStorageSetItemAndSync(KEYS.HISTORY, JSON.stringify(mergedList));
 
-    // 5. もし編集中アクティブ伝票(activeDoc)と同一の伝票がマージで更新された場合、アクティブ伝票も同期
+    // 6. 編集中アクティブ伝票(activeDoc)のゾンビ引きずりチェック
     const activeDoc = loadActiveDoc();
     if (activeDoc && activeDoc.id) {
-      const mergedActive = invoiceMap.get(activeDoc.id);
-      if (mergedActive) {
-        if (mergedActive.isCancelled === true || mergedActive.isIssued === false) {
+      const cleanActiveId = String(activeDoc.id).trim();
+      if (deletedSet.has(cleanActiveId)) {
+        console.log("【書類履歴同期】編集中プレビュー伝票が削除済みだったためクリア:", cleanActiveId);
+        localStorage.removeItem(KEYS.ACTIVE_DOC);
+        saveServerActiveDoc({}).catch(() => {});
+        if (typeof window !== 'undefined' && window.currentDoc && String(window.currentDoc.id).trim() === cleanActiveId) {
+          if (typeof window.resetActiveDocToNew === 'function') {
+            window.resetActiveDocToNew();
+          }
+        }
+      } else {
+        const mergedActive = invoiceMap.get(cleanActiveId);
+        if (mergedActive && (mergedActive.isCancelled === true || mergedActive.isIssued === false)) {
           if (activeDoc.isIssued !== false || activeDoc.isCancelled !== true) {
             activeDoc.isIssued = false;
             activeDoc.issuedAt = null;
@@ -1133,9 +1223,9 @@ export async function syncInvoicesHistoryWithServer() {
       }
     }
 
-    // 6. サーバーへもマージ後全件を保存して同期整合性を担保
-    await saveServerInvoicesHistory(mergedList);
-    console.log(`【書類履歴同期】マージ完了: 全 ${mergedList.length} 件をローカル・サーバー間で完全一致化しました`);
+    // 7. サーバーへもマージ後全件と削除済みIDを送信
+    await saveServerInvoicesHistory(mergedList, Array.from(deletedSet));
+    console.log(`【書類履歴同期】マージ完了: 有効 ${mergedList.length} 件 (削除済み除外: ${deletedSet.size}件)`);
 
     return mergedList;
   } catch (e) {
