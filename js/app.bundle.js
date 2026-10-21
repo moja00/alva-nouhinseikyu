@@ -7879,13 +7879,34 @@ function saveLockedMonths(months) {
 }
 
 /**
+ * 指定された日付または年月がロック済み（月次締め完了）かどうか判定
+ * @param {string} dateOrMonth 例: '2026-10-21' または '2026-10'
+ * @returns {boolean}
+ */
+function isMonthLocked(dateOrMonth) {
+  if (!dateOrMonth) return false;
+  try {
+    const ym = String(dateOrMonth).trim().slice(0, 7).replace(/\//g, '-');
+    if (!/^\d{4}-\d{2}$/.test(ym)) return false;
+    const lockedList = getLockedMonths();
+    return Array.isArray(lockedList) && lockedList.includes(ym);
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
  * セット品（BOM）の現在庫可能数および標準原価を構成品から自動計算
  * @param {object} bundleItem - セット品オブジェクト
  * @param {Array} allItems - 全在庫品目リスト
  * @returns {{ availableStock: number, unitCost: number }}
  */
 function calculateBundleStockAndCost(bundleItem, allItems = []) {
-  if (!bundleItem || bundleItem.type !== 'bundle' || !Array.isArray(bundleItem.bundleItems) || bundleItem.bundleItems.length === 0) {
+  const parts = Array.isArray(bundleItem?.bundleItems) && bundleItem.bundleItems.length > 0
+    ? bundleItem.bundleItems
+    : (Array.isArray(bundleItem?.bom) && bundleItem.bom.length > 0 ? bundleItem.bom : []);
+
+  if (!bundleItem || bundleItem.type !== 'bundle' || parts.length === 0) {
     return {
       availableStock: Number(bundleItem?.currentStock) || 0,
       unitCost: Number(bundleItem?.unitCost) || 0
@@ -7895,9 +7916,10 @@ function calculateBundleStockAndCost(bundleItem, allItems = []) {
   let minStock = Infinity;
   let totalCost = 0;
 
-  bundleItem.bundleItems.forEach(bPart => {
-    const part = allItems.find(p => p.id === bPart.inventoryId || p.name === bPart.name);
-    const reqQty = Number(bPart.qty) || 1;
+  parts.forEach(bPart => {
+    const compId = bPart.inventoryId || bPart.componentId;
+    const part = allItems.find(p => p.id === compId || (bPart.name && p.name === bPart.name));
+    const reqQty = Number(bPart.qty || bPart.quantity) || 1;
     if (part) {
       const partStock = Number(part.currentStock) || 0;
       const partCost = Number(part.unitCost) || 0;

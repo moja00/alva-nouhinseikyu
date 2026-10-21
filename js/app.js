@@ -76,7 +76,18 @@ import {
   getTrashList,
   restoreDocFromTrash,
   purgeTrashDoc,
-  clearAllTrashDocs
+  clearAllTrashDocs,
+  getLockedMonths,
+  saveLockedMonths,
+  isMonthLocked,
+  getInventoryLotList,
+  saveInventoryLot,
+  getInventorySerialList,
+  saveInventorySerial,
+  saveBatchInventorySerials,
+  updateSerialStatus,
+  getAvailableSerialsByItem,
+  calculateBundleStockAndCost
 } from './storage.js';
 
 import {
