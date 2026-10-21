@@ -87,6 +87,14 @@ export function getDeletedDocIds() {
 }
 
 /**
+ * 削除済み請求書/書類IDセットを取得（エイリアス）
+ * @returns {Set<string>}
+ */
+export function getDeletedInvoiceIds() {
+  return getDeletedDocIds();
+}
+
+/**
  * 書類IDを削除済みリストに永続記録
  * @param {string} id
  */
@@ -4561,7 +4569,7 @@ export async function pullAllServerDataToLocal() {
       localStorageSetItemAndSync(KEYS.EXPENSES, JSON.stringify(cleanExpenses));
     }
     if (data.invoicesHistory && Array.isArray(data.invoicesHistory)) {
-      const deletedInvoicesSet = getDeletedInvoiceIds();
+      const deletedInvoicesSet = typeof getDeletedInvoiceIds === 'function' ? getDeletedInvoiceIds() : (typeof getDeletedDocIds === 'function' ? getDeletedDocIds() : new Set());
       const cleanInvoices = data.invoicesHistory.filter(inv => inv && inv.id && !deletedInvoicesSet.has(String(inv.id).trim()) && !inv.isDeleted && !inv._deleted);
       localStorageSetItemAndSync(KEYS.HISTORY, JSON.stringify(cleanInvoices));
     }
@@ -4871,6 +4879,10 @@ if (typeof window !== 'undefined') {
   window.getLockedMonths = getLockedMonths;
   window.saveLockedMonths = saveLockedMonths;
   window.isMonthLocked = isMonthLocked;
+  window.getDeletedDocIds = getDeletedDocIds;
+  window.getDeletedInvoiceIds = getDeletedInvoiceIds;
+  window.getDeletedExpenseIds = getDeletedExpenseIds;
+  window.recordDeletedExpenseId = recordDeletedExpenseId;
   window.getInventoryLotList = getInventoryLotList;
   window.saveInventoryLot = saveInventoryLot;
   window.getInventorySerialList = getInventorySerialList;
