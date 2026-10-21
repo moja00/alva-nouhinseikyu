@@ -596,40 +596,134 @@ function formatJapaneseDate(dateStr) {
   // ==========================================================================
 /**
  * accounting-state.js
- * 財務会計・損益計算・自動仕訳・税理士用CSV出力エンジン
+ * BillCraft ERP - 財務会計・複式簿記コアエンジン
+ * 
+ * 5大区分勘定科目マスタ、複合仕訳（振替伝票）、期首残高、
+ * 統合仕訳エンジン（二重計上防止）、総勘定元帳（諸口対応）、
+ * 残高試算表（T/B）、貸借対照表（B/S）、損益計算書（P/L）、CSVエクスポート
  */
 
-// 標準的な日本の青色申告・法人勘定科目リスト
-const ACCOUNT_CATEGORIES = [
-  { code: '501', name: '仕入高', group: 'cost', taxType: 'taxable', description: '商品・原材料の仕入れ' },
-  { code: '502', name: '外注加工費', group: 'cost', taxType: 'taxable', description: '外部委託・加工・業務委託費' },
-  { code: '601', name: '旅費交通費', group: 'expense', taxType: 'taxable', description: '電車、タクシー、ガソリン、宿泊費' },
-  { code: '602', name: '通信費', group: 'expense', taxType: 'taxable', description: '携帯電話、インターネット、切手・郵送' },
-  { code: '603', name: '消耗品費', group: 'expense', taxType: 'taxable', description: '文具、事務用品、10万円未満の備品' },
-  { code: '604', name: '接待交際費', group: 'expense', taxType: 'taxable', description: '取引先との飲食、慶弔見舞金、贈答品' },
-  { code: '605', name: '地代家賃', group: 'expense', taxType: 'exempt', description: '事務所・店舗・駐車場代' },
-  { code: '606', name: '水道光熱費', group: 'expense', taxType: 'taxable', description: '電気、ガス、水道料金' },
-  { code: '607', name: '支払手数料', group: 'expense', taxType: 'taxable', description: '振込手数料、各種決済・仲介手数料' },
-  { code: '608', name: '車両費', group: 'expense', taxType: 'taxable', description: '社用車の車検、保険、整備、高速代' },
-  { code: '609', name: '広告宣伝費', group: 'expense', taxType: 'taxable', description: 'WEB広告、チラシ、看板、名刺作成' },
-  { code: '610', name: '新聞図書費', group: 'expense', taxType: 'taxable', description: '書籍、新聞、専門誌、情報サービス' },
-  { code: '611', name: '福利厚生費', group: 'expense', taxType: 'taxable', description: '従業員の健康診断、慶弔費、飲料・軽食' },
-  { code: '612', name: '租税公課', group: 'expense', taxType: 'exempt', description: '印紙税、固定資産税、自動車税、登録免許税' },
-  { code: '613', name: '保険料', group: 'expense', taxType: 'exempt', description: '損害保険、火災保険、賠償責任保険' },
-  { code: '614', name: '修繕費', group: 'expense', taxType: 'taxable', description: '建物・設備・PC等の修理・メンテナンス' },
-  { code: '615', name: '給料賃金', group: 'expense', taxType: 'exempt', description: '役員報酬、従業員給与' },
-  { code: '616', name: '法定福利費', group: 'expense', taxType: 'exempt', description: '社会保険料、労働保険料（会社負担分）' },
-  { code: '617', name: '減価償却費', group: 'expense', taxType: 'exempt', description: '固定資産の減価償却費' },
-  { code: '618', name: '荷造運賃', group: 'expense', taxType: 'taxable', description: '商品の梱包・発送費、運送費' },
-  { code: '619', name: '外注費', group: 'cost', taxType: 'taxable', description: '外部委託費（デザイン、システム開発等）' },
-  { code: '699', name: '雑費', group: 'expense', taxType: 'taxable', description: '他の科目に当てはまらない少額出費' }
+// ==========================================================================
+// 1. 税区分・インボイス区分定数
+// ==========================================================================
+const TAX_TYPES = {
+  taxable_10: { code: 'taxable_10', label: '課税 10%', rate: 0.10, isTaxable: true },
+  taxable_8: { code: 'taxable_8', label: '軽減税率 8%', rate: 0.08, isTaxable: true },
+  exempt: { code: 'exempt', label: '非課税', rate: 0, isTaxable: false },
+  non_taxable: { code: 'non_taxable', label: '不課税', rate: 0, isTaxable: false },
+  out_of_scope: { code: 'out_of_scope', label: '対象外', rate: 0, isTaxable: false }
+};
+const INVOICE_TYPES = {
+  qualified: { code: 'qualified', label: '適格請求書（100%控除）', deductionRate: 1.0 },
+  transitional: { code: 'transitional', label: '経過措置（80%控除）', deductionRate: 0.8 },
+  none: { code: 'none', label: '非該当（免税等）', deductionRate: 0.0 }
+};
+
+// ==========================================================================
+// 2. 5大区分 標準勘定科目マスタ（B/S・P/L完全対応体系）
+// ==========================================================================
+const DEFAULT_ACCOUNT_MASTER = [
+  // --- 【資産の部: 100番台】 (type: 'asset', dcType: 'debit') ---
+  // 流動資産 (current_asset)
+  { code: '101', name: '現金', type: 'asset', subType: 'current_asset', dcType: 'debit', defaultTaxType: 'out_of_scope', subAccounts: ['小口現金'], isSystem: true },
+  { code: '102', name: '普通預金', type: 'asset', subType: 'current_asset', dcType: 'debit', defaultTaxType: 'out_of_scope', subAccounts: ['高崎信用金庫', '群馬銀行'], isSystem: true },
+  { code: '103', name: '当座預金', type: 'asset', subType: 'current_asset', dcType: 'debit', defaultTaxType: 'out_of_scope', subAccounts: [], isSystem: true },
+  { code: '111', name: '売掛金', type: 'asset', subType: 'current_asset', dcType: 'debit', defaultTaxType: 'out_of_scope', subAccounts: [], isSystem: true },
+  { code: '112', name: '未収入金', type: 'asset', subType: 'current_asset', dcType: 'debit', defaultTaxType: 'out_of_scope', subAccounts: [], isSystem: true },
+  { code: '113', name: '前払金', type: 'asset', subType: 'current_asset', dcType: 'debit', defaultTaxType: 'out_of_scope', subAccounts: [], isSystem: true },
+  { code: '114', name: '立替金', type: 'asset', subType: 'current_asset', dcType: 'debit', defaultTaxType: 'out_of_scope', subAccounts: ['役員立替', '従業員立替'], isSystem: true },
+  { code: '115', name: '仮払金', type: 'asset', subType: 'current_asset', dcType: 'debit', defaultTaxType: 'out_of_scope', subAccounts: [], isSystem: true },
+  { code: '116', name: '仮払消費税', type: 'asset', subType: 'current_asset', dcType: 'debit', defaultTaxType: 'out_of_scope', subAccounts: [], isSystem: true },
+  { code: '131', name: '商品・棚卸資産', type: 'asset', subType: 'current_asset', dcType: 'debit', defaultTaxType: 'out_of_scope', subAccounts: [], isSystem: true },
+  // 固定資産 (fixed_asset)
+  { code: '141', name: '工具器具備品', type: 'asset', subType: 'fixed_asset', dcType: 'debit', defaultTaxType: 'taxable_10', subAccounts: [], isSystem: true },
+  { code: '142', name: '車両運搬具', type: 'asset', subType: 'fixed_asset', dcType: 'debit', defaultTaxType: 'taxable_10', subAccounts: [], isSystem: true },
+  { code: '143', name: '建物・設備', type: 'asset', subType: 'fixed_asset', dcType: 'debit', defaultTaxType: 'taxable_10', subAccounts: [], isSystem: true },
+  { code: '149', name: '減価償却累計額', type: 'asset', subType: 'fixed_asset', dcType: 'credit', defaultTaxType: 'out_of_scope', subAccounts: [], isSystem: true },
+  { code: '151', name: '敷金・保証金', type: 'asset', subType: 'fixed_asset', dcType: 'debit', defaultTaxType: 'out_of_scope', subAccounts: [], isSystem: true },
+
+  // --- 【負債の部: 200番台】 (type: 'liability', dcType: 'credit') ---
+  // 流動負債 (current_liability)
+  { code: '201', name: '買掛金', type: 'liability', subType: 'current_liability', dcType: 'credit', defaultTaxType: 'out_of_scope', subAccounts: [], isSystem: true },
+  { code: '211', name: '短期借入金', type: 'liability', subType: 'current_liability', dcType: 'credit', defaultTaxType: 'out_of_scope', subAccounts: [], isSystem: true },
+  { code: '212', name: '未払金', type: 'liability', subType: 'current_liability', dcType: 'credit', defaultTaxType: 'out_of_scope', subAccounts: ['クレジットカード', '役員未払金'], isSystem: true },
+  { code: '213', name: '未払費用', type: 'liability', subType: 'current_liability', dcType: 'credit', defaultTaxType: 'out_of_scope', subAccounts: ['給与未払', '社保未払'], isSystem: true },
+  { code: '214', name: '預り金', type: 'liability', subType: 'current_liability', dcType: 'credit', defaultTaxType: 'out_of_scope', subAccounts: ['源泉所得税', '住民税', '社会保険料'], isSystem: true },
+  { code: '215', name: '前受金', type: 'liability', subType: 'current_liability', dcType: 'credit', defaultTaxType: 'out_of_scope', subAccounts: [], isSystem: true },
+  { code: '216', name: '仮受消費税', type: 'liability', subType: 'current_liability', dcType: 'credit', defaultTaxType: 'out_of_scope', subAccounts: [], isSystem: true },
+  { code: '217', name: '未払消費税等', type: 'liability', subType: 'current_liability', dcType: 'credit', defaultTaxType: 'out_of_scope', subAccounts: [], isSystem: true },
+  // 固定負債 (fixed_liability)
+  { code: '221', name: '長期借入金', type: 'liability', subType: 'fixed_liability', dcType: 'credit', defaultTaxType: 'out_of_scope', subAccounts: [], isSystem: true },
+
+  // --- 【純資産の部: 300番台】 (type: 'equity', dcType: 'credit') ---
+  { code: '301', name: '資本金', type: 'equity', subType: 'equity', dcType: 'credit', defaultTaxType: 'out_of_scope', subAccounts: [], isSystem: true },
+  { code: '302', name: '繰越利益剰余金', type: 'equity', subType: 'equity', dcType: 'credit', defaultTaxType: 'out_of_scope', subAccounts: [], isSystem: true },
+  { code: '303', name: '元入金', type: 'equity', subType: 'equity', dcType: 'credit', defaultTaxType: 'out_of_scope', subAccounts: [], isSystem: true },
+
+  // --- 【収益の部: 400番台】 (type: 'revenue', dcType: 'credit') ---
+  { code: '401', name: '売上高', type: 'revenue', subType: 'operating_revenue', dcType: 'credit', defaultTaxType: 'taxable_10', subAccounts: [], isSystem: true },
+  { code: '411', name: '雑収入', type: 'revenue', subType: 'non_operating_revenue', dcType: 'credit', defaultTaxType: 'non_taxable', subAccounts: ['助成金・補助金'], isSystem: true },
+  { code: '412', name: '受取利息', type: 'revenue', subType: 'non_operating_revenue', dcType: 'credit', defaultTaxType: 'non_taxable', subAccounts: [], isSystem: true },
+
+  // --- 【費用の部: 500〜600番台】 (type: 'expense', dcType: 'debit') ---
+  // 売上原価 (cost_of_sales) - 粗利益計算用
+  { code: '501', name: '仕入高', type: 'expense', subType: 'cost_of_sales', dcType: 'debit', defaultTaxType: 'taxable_10', subAccounts: [], isSystem: true },
+  { code: '502', name: '外注加工費', type: 'expense', subType: 'cost_of_sales', dcType: 'debit', defaultTaxType: 'taxable_10', subAccounts: [], isSystem: true },
+  { code: '503', name: '荷造運賃', type: 'expense', subType: 'cost_of_sales', dcType: 'debit', defaultTaxType: 'taxable_10', subAccounts: [], isSystem: true },
+
+  // 販売費及び一般管理費 (sga) - 営業利益計算用
+  { code: '601', name: '役員報酬', type: 'expense', subType: 'sga', dcType: 'debit', defaultTaxType: 'non_taxable', subAccounts: [], isSystem: true },
+  { code: '602', name: '給料手当', type: 'expense', subType: 'sga', dcType: 'debit', defaultTaxType: 'non_taxable', subAccounts: [], isSystem: true },
+  { code: '603', name: '法定福利費', type: 'expense', subType: 'sga', dcType: 'debit', defaultTaxType: 'non_taxable', subAccounts: [], isSystem: true },
+  { code: '604', name: '福利厚生費', type: 'expense', subType: 'sga', dcType: 'debit', defaultTaxType: 'taxable_10', subAccounts: [], isSystem: true },
+  { code: '605', name: '旅費交通費', type: 'expense', subType: 'sga', dcType: 'debit', defaultTaxType: 'taxable_10', subAccounts: ['電車・バス', 'タクシー', '高速代'], isSystem: true },
+  { code: '606', name: '通信費', type: 'expense', subType: 'sga', dcType: 'debit', defaultTaxType: 'taxable_10', subAccounts: ['携帯電話', 'インターネット', '郵送・切手'], isSystem: true },
+  { code: '607', name: '消耗品費', type: 'expense', subType: 'sga', dcType: 'debit', defaultTaxType: 'taxable_10', subAccounts: ['事務用品', '工具消耗品'], isSystem: true },
+  { code: '608', name: '接待交際費', type: 'expense', subType: 'sga', dcType: 'debit', defaultTaxType: 'taxable_10', subAccounts: ['飲食代', '贈答品'], isSystem: true },
+  { code: '609', name: '地代家賃', type: 'expense', subType: 'sga', dcType: 'debit', defaultTaxType: 'exempt', subAccounts: ['事務所家賃', '駐車場代'], isSystem: true },
+  { code: '610', name: '水道光熱費', type: 'expense', subType: 'sga', dcType: 'debit', defaultTaxType: 'taxable_10', subAccounts: ['電気代', 'ガス代', '水道代'], isSystem: true },
+  { code: '611', name: '支払手数料', type: 'expense', subType: 'sga', dcType: 'debit', defaultTaxType: 'taxable_10', subAccounts: ['振込手数料', 'カード決済手数料'], isSystem: true },
+  { code: '612', name: '車両費', type: 'expense', subType: 'sga', dcType: 'debit', defaultTaxType: 'taxable_10', subAccounts: ['ガソリン代', '車検・修理', '自動車保険'], isSystem: true },
+  { code: '613', name: '広告宣伝費', type: 'expense', subType: 'sga', dcType: 'debit', defaultTaxType: 'taxable_10', subAccounts: ['WEB広告', '印刷代'], isSystem: true },
+  { code: '614', name: '新聞図書費', type: 'expense', subType: 'sga', dcType: 'debit', defaultTaxType: 'taxable_10', subAccounts: [], isSystem: true },
+  { code: '615', name: '租税公課', type: 'expense', subType: 'sga', dcType: 'debit', defaultTaxType: 'exempt', subAccounts: ['印紙税', '自動車税', '固定資産税'], isSystem: true },
+  { code: '616', name: '保険料', type: 'expense', subType: 'sga', dcType: 'debit', defaultTaxType: 'exempt', subAccounts: ['火災保険', '賠償責任保険'], isSystem: true },
+  { code: '617', name: '修繕費', type: 'expense', subType: 'sga', dcType: 'debit', defaultTaxType: 'taxable_10', subAccounts: [], isSystem: true },
+  { code: '618', name: '減価償却費', type: 'expense', subType: 'sga', dcType: 'debit', defaultTaxType: 'out_of_scope', subAccounts: [], isSystem: true },
+  { code: '619', name: '外注費', type: 'expense', subType: 'sga', dcType: 'debit', defaultTaxType: 'taxable_10', subAccounts: [], isSystem: true },
+  { code: '699', name: '雑費', type: 'expense', subType: 'sga', dcType: 'debit', defaultTaxType: 'taxable_10', subAccounts: [], isSystem: true },
+
+  // 営業外費用 (non_operating_expense)
+  { code: '701', name: '支払利息', type: 'expense', subType: 'non_operating_expense', dcType: 'debit', defaultTaxType: 'non_taxable', subAccounts: [], isSystem: true }
 ];
 
+// 従来のコードとの後方互換性配列（既存UI・経費カテゴリ選択がそのまま動くよう維持）
+const ACCOUNT_CATEGORIES = DEFAULT_ACCOUNT_MASTER
+  .filter(a => a.type === 'expense')
+  .map(a => ({
+    code: a.code,
+    name: a.name,
+    group: a.subType === 'cost_of_sales' ? 'cost' : 'expense',
+    taxType: a.defaultTaxType === 'taxable_10' ? 'taxable' : 'exempt',
+    description: a.name
+  }));
+
 /**
- * 伝票データ（summaryItemまたはfullDoc）から正確な明細と情報を正規化抽出
- * @param {object} raw 伝票データ
- * @returns {object} 正規化された伝票情報
+ * 勘定科目名またはコードから科目定義を検索
+ * @param {string} codeOrName 
+ * @param {Array} masterList 
+ * @returns {object|null}
  */
+function findAccountDef(codeOrName, masterList = DEFAULT_ACCOUNT_MASTER) {
+  if (!codeOrName) return null;
+  const target = String(codeOrName).trim();
+  const list = Array.isArray(masterList) && masterList.length > 0 ? masterList : DEFAULT_ACCOUNT_MASTER;
+  return list.find(a => a.code === target || a.name === target) || null;
+}
+
+// ==========================================================================
+// 3. 伝票正規化 & 日付フィルター
+// ==========================================================================
 function normalizeInvoiceDoc(raw) {
   if (!raw) return null;
   const doc = raw.fullDoc || raw;
@@ -644,10 +738,8 @@ function normalizeInvoiceDoc(raw) {
   const taxFractionRule = doc.taxFractionRule || raw.taxFractionRule || 'floor';
   const id = doc.id || raw.id || `doc_${Date.now()}`;
   const isCancelled = !!(doc.isCancelled || raw.isCancelled);
-  // 明示的に false または取消済の場合は false。未指定の古い履歴データは互換性維持
   const isIssued = isCancelled ? false : (doc.isIssued !== undefined ? !!doc.isIssued : (raw.isIssued !== undefined ? !!raw.isIssued : true));
 
-  // 金額・税金の計算
   let subtotal = 0;
   let tax10 = 0;
   let tax8 = 0;
@@ -697,26 +789,17 @@ function normalizeInvoiceDoc(raw) {
     rawDoc: doc
   };
 }
-
-/**
- * 指定日付が期間フィルター（'all', 'YYYY-MM', または {start, end}）に合致するか判定
- * @param {string} dateStr 'YYYY-MM-DD' などの日付文字列
- * @param {string|object} periodFilter 期間設定
- * @returns {boolean}
- */
 function isDateInPeriod(dateStr, periodFilter = 'all') {
   if (!periodFilter || periodFilter === 'all') return true;
   if (!dateStr) return false;
   const d = String(dateStr).trim().slice(0, 10);
   if (!d) return false;
 
-  // 'YYYY-MM' または文字列
   if (typeof periodFilter === 'string') {
     if (periodFilter === 'all') return true;
     return d.startsWith(periodFilter);
   }
 
-  // { start, end } オブジェクト
   if (typeof periodFilter === 'object') {
     const { start, end } = periodFilter;
     if (start && d < start) return false;
@@ -727,15 +810,268 @@ function isDateInPeriod(dateStr, periodFilter = 'all') {
   return true;
 }
 
+// ==========================================================================
+// 4. 複合仕訳（振替伝票）バリデーション & ヘルパー
+// ==========================================================================
+
 /**
- * 期間内の損益計算書（P/L）および経営KPIを集計
- * @param {Array} invoices 請求書リスト (fullDocまたはsummaryItem)
- * @param {Array} expenses 経費リスト
- * @param {string|object} periodFilter 'YYYY-MM' または 'all' または { start, end }
- * @returns {object} P/L詳細・粗利益・純利益・未回収残高
+ * 複合仕訳の貸借バランス・データ整合性バリデーション
+ * @param {object} entry 
+ * @returns {{ isValid: boolean, error?: string }}
  */
-function calculateProfitAndLoss(invoices = [], expenses = [], periodFilter = 'all') {
-  // 引数が文字列1つの場合（periodFilterのみ渡された場合）のフォールバック
+function validateManualJournal(entry) {
+  if (!entry) return { isValid: false, error: '仕訳データが存在しません' };
+  if (!entry.date) return { isValid: false, error: '取引日付を入力してください' };
+
+  const debitLines = Array.isArray(entry.debitLines) ? entry.debitLines : [];
+  const creditLines = Array.isArray(entry.creditLines) ? entry.creditLines : [];
+
+  if (debitLines.length === 0 || creditLines.length === 0) {
+    return { isValid: false, error: '借方および貸方の明細行をそれぞれ1行以上入力してください' };
+  }
+
+  const totalDebit = debitLines.reduce((sum, line) => sum + (Number(line.amount) || 0), 0);
+  const totalCredit = creditLines.reduce((sum, line) => sum + (Number(line.amount) || 0), 0);
+
+  if (totalDebit <= 0 || totalCredit <= 0) {
+    return { isValid: false, error: '金額は0より大きい数値を入力してください' };
+  }
+
+  if (totalDebit !== totalCredit) {
+    return {
+      isValid: false,
+      error: `借方合計 (¥${totalDebit.toLocaleString()}) と 貸方合計 (¥${totalCredit.toLocaleString()}) が一致していません（差額: ¥${Math.abs(totalDebit - totalCredit).toLocaleString()}）`
+    };
+  }
+
+  return { isValid: true, totalDebit, totalCredit };
+}
+
+// ==========================================================================
+// 5. 統合仕訳エンジン（Unified Journal Engine）
+//    【要件1: 売掛金消込・給与仕訳の二重計上防止排他制御】
+//    【要件4: インボイス区分 invoiceType 保持】
+// ==========================================================================
+
+/**
+ * 請求書、経費、手動・複合仕訳を1つの統合仕訳ストリームとして生成
+ * @param {object} params
+ * @returns {Array<object>} 統合仕訳リスト
+ */
+function buildUnifiedJournals({
+  invoices = [],
+  expenses = [],
+  manualJournals = [],
+  periodFilter = 'all'
+} = {}) {
+  const unified = [];
+
+  // 手動・複合仕訳側の sourceId セットを構築（二重計上防止用）
+  const manualReconciliationSourceIds = new Set();
+  const manualPayrollSourceIds = new Set();
+
+  (manualJournals || []).forEach(jnl => {
+    if (!jnl) return;
+    if (jnl.sourceType === 'reconciliation' && jnl.sourceId) {
+      manualReconciliationSourceIds.add(String(jnl.sourceId).trim());
+    }
+    if (jnl.sourceType === 'payroll' && jnl.sourceId) {
+      manualPayrollSourceIds.add(String(jnl.sourceId).trim());
+    }
+  });
+
+  // 1. 伝票発行（売上計上）および入金消込仕訳
+  (invoices || []).forEach(rawInv => {
+    const inv = normalizeInvoiceDoc(rawInv);
+    if (!inv || inv.docType === 'estimate') return;
+    if (!inv.isIssued || inv.isCancelled) return;
+
+    const date = inv.issueDate || new Date().toISOString().split('T')[0];
+    const client = inv.clientName || '取引先';
+    const docNo = inv.docNumber || '';
+    const totalInc = inv.grandTotal;
+    if (totalInc <= 0) return;
+
+    // ① 売上計上仕訳
+    if (isDateInPeriod(date, periodFilter)) {
+      if (inv.docType === 'receipt') {
+        // 領収書は即時現金売上
+        unified.push({
+          id: `jnl_rcpt_${inv.id}`,
+          date,
+          entryNumber: docNo || `RC-${inv.id.slice(-6)}`,
+          description: `領収書売上（現金回収）: ${client} (${docNo})`,
+          sourceType: 'invoice_sales',
+          sourceId: inv.id,
+          debitLines: [{ accountCode: '101', accountName: '現金', subAccount: '', amount: totalInc, taxType: 'taxable_10', invoiceType: 'qualified' }],
+          creditLines: [{ accountCode: '401', accountName: '売上高', subAccount: client, amount: totalInc, taxType: 'taxable_10', invoiceType: 'qualified' }],
+          totalDebit: totalInc,
+          totalCredit: totalInc
+        });
+      } else {
+        // 請求書・納品書の売上計上: （借）売掛金 / （貸）売上高
+        unified.push({
+          id: `jnl_inv_${inv.id}`,
+          date,
+          entryNumber: docNo || `INV-${inv.id.slice(-6)}`,
+          description: `売上計上: ${client} (${docNo})`,
+          sourceType: 'invoice_sales',
+          sourceId: inv.id,
+          debitLines: [{ accountCode: '111', accountName: '売掛金', subAccount: client, amount: totalInc, taxType: 'out_of_scope', invoiceType: 'qualified' }],
+          creditLines: [{ accountCode: '401', accountName: '売上高', subAccount: client, amount: totalInc, taxType: 'taxable_10', invoiceType: 'qualified' }],
+          totalDebit: totalInc,
+          totalCredit: totalInc
+        });
+      }
+    }
+
+    // ② 売掛金回収仕訳（要件1: 手動・差額振替仕訳がある場合は二重計上を確実に防止）
+    if (inv.docType !== 'receipt' && inv.isPaid) {
+      const cleanInvId = String(inv.id).trim();
+      // もし手動仕訳側でこの伝票に対する消込仕訳が登録されていれば自動生成をスキップ
+      if (!manualReconciliationSourceIds.has(cleanInvId)) {
+        const paidDate = inv.paidDate || inv.dueDate || date;
+        if (isDateInPeriod(paidDate, periodFilter)) {
+          unified.push({
+            id: `jnl_pay_${inv.id}`,
+            date: paidDate,
+            entryNumber: docNo ? `REC-${docNo}` : `REC-${inv.id.slice(-6)}`,
+            description: `売掛金回収（自動消込）: ${client} (${docNo})`,
+            sourceType: 'invoice_receipt',
+            sourceId: inv.id,
+            debitLines: [{ accountCode: '102', accountName: '普通預金', subAccount: '', amount: totalInc, taxType: 'out_of_scope', invoiceType: 'none' }],
+            creditLines: [{ accountCode: '111', accountName: '売掛金', subAccount: client, amount: totalInc, taxType: 'out_of_scope', invoiceType: 'none' }],
+            totalDebit: totalInc,
+            totalCredit: totalInc
+          });
+        }
+      }
+    }
+  });
+
+  // 2. 経費明細仕訳（要件1: 給与複合仕訳がある場合は二重計上を確実に防止）
+  (expenses || []).forEach(exp => {
+    if (!exp) return;
+    const cleanExpId = String(exp.id).trim();
+    if (manualPayrollSourceIds.has(cleanExpId)) {
+      return; // 複合仕訳側で計上済みのためスキップ
+    }
+
+    const date = exp.date || new Date().toISOString().split('T')[0];
+    if (!isDateInPeriod(date, periodFilter)) return;
+
+    const amount = Number(exp.amount) || 0;
+    const taxRate = Number(exp.taxRate !== undefined ? exp.taxRate : 10);
+    const amountInc = Math.round(amount * (1 + taxRate / 100));
+    const payee = exp.payee ? ` (${exp.payee})` : '';
+    const expenseCat = exp.category || '雑費';
+    const accDef = findAccountDef(expenseCat);
+    const accCode = accDef ? accDef.code : '699';
+    const taxType = taxRate === 8 ? 'taxable_8' : (taxRate === 10 ? 'taxable_10' : 'exempt');
+    const invoiceType = exp.invoiceNumber ? 'qualified' : (exp.invoiceType || 'none');
+
+    // 貸方支払方法の勘定科目判定
+    let creditCode = '102';
+    let creditName = '普通預金';
+    const method = String(exp.paymentMethod || '').trim();
+    if (method === '現金') {
+      creditCode = '101'; creditName = '現金';
+    } else if (method === '未払金' || method === 'クレジットカード') {
+      creditCode = '212'; creditName = '未払金';
+    } else if (method === '立替金' || method === '役員立替') {
+      creditCode = '114'; creditName = '立替金';
+    }
+
+    unified.push({
+      id: `jnl_exp_${exp.id}`,
+      date,
+      entryNumber: `EXP-${exp.id.slice(-6)}`,
+      description: `${expenseCat}: ${exp.note || ''}${payee}`.trim(),
+      sourceType: 'expense',
+      sourceId: exp.id,
+      debitLines: [{ accountCode: accCode, accountName: expenseCat, subAccount: '', amount: amountInc, taxType, invoiceType }],
+      creditLines: [{ accountCode: creditCode, accountName: creditName, subAccount: method, amount: amountInc, taxType: 'out_of_scope', invoiceType: 'none' }],
+      totalDebit: amountInc,
+      totalCredit: amountInc
+    });
+  });
+
+  // 3. 手動・複合仕訳（振替伝票・消込差額・給与複合仕訳）
+  (manualJournals || []).forEach(jnl => {
+    if (!jnl) return;
+    const date = jnl.date || '';
+    if (!isDateInPeriod(date, periodFilter)) return;
+
+    const val = validateManualJournal(jnl);
+    if (!val.isValid) return;
+
+    unified.push({
+      id: jnl.id,
+      date,
+      entryNumber: jnl.entryNumber || `TR-${String(jnl.id).slice(-6)}`,
+      description: jnl.description || '振替伝票',
+      sourceType: jnl.sourceType || 'manual',
+      sourceId: jnl.sourceId || '',
+      debitLines: jnl.debitLines || [],
+      creditLines: jnl.creditLines || [],
+      totalDebit: val.totalDebit,
+      totalCredit: val.totalCredit
+    });
+  });
+
+  // 日付順（昇順）にソート
+  unified.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+  return unified;
+}
+
+// 既存の generateJournalEntries との完全互換ラッパー関数
+function generateJournalEntries(invoices = [], expenses = [], periodFilter = 'all', manualJournals = []) {
+  const unified = buildUnifiedJournals({ invoices, expenses, manualJournals, periodFilter });
+
+  // 従来のシンプルなフラット仕訳形式（1借方・1貸方行）への変換互換
+  const flatJournals = [];
+  unified.forEach(u => {
+    // 借方1行・貸方1行の単一仕訳
+    if (u.debitLines.length === 1 && u.creditLines.length === 1) {
+      flatJournals.push({
+        id: u.id,
+        date: u.date,
+        debitAccount: u.debitLines[0].accountName,
+        debitAmount: u.debitLines[0].amount,
+        creditAccount: u.creditLines[0].accountName,
+        creditAmount: u.creditLines[0].amount,
+        description: u.description,
+        docId: u.sourceId,
+        type: u.sourceType
+      });
+    } else {
+      // 複合仕訳の場合：元帳互換用フラット展開
+      flatJournals.push({
+        id: u.id,
+        date: u.date,
+        debitAccount: u.debitLines.length === 1 ? u.debitLines[0].accountName : '諸口',
+        debitAmount: u.totalDebit,
+        creditAccount: u.creditLines.length === 1 ? u.creditLines[0].accountName : '諸口',
+        creditAmount: u.totalCredit,
+        description: u.description,
+        docId: u.sourceId,
+        type: u.sourceType,
+        isComplex: true,
+        debitLines: u.debitLines,
+        creditLines: u.creditLines
+      });
+    }
+  });
+
+  return flatJournals;
+}
+
+// ==========================================================================
+// 6. 損益計算書（P/L）集計
+//    【要件3: 売上原価 cost_of_sales と 販管費 sga の段階利益集計】
+// ==========================================================================
+function calculateProfitAndLoss(invoices = [], expenses = [], periodFilter = 'all', manualJournals = []) {
   if (typeof invoices === 'string' || (invoices && typeof invoices === 'object' && !Array.isArray(invoices) && invoices.start !== undefined)) {
     periodFilter = invoices || 'all';
     invoices = [];
@@ -745,35 +1081,70 @@ function calculateProfitAndLoss(invoices = [], expenses = [], periodFilter = 'al
   if (!Array.isArray(expenses)) expenses = [];
   if (!periodFilter) periodFilter = 'all';
 
-  let totalSales = 0; // 総売上高（税抜）
-  let totalSalesTax = 0; // 売上消費税
-  let totalSalesInc = 0; // 総売上高（税込）
-  let totalWholesaleCost = 0; // 請求書ベースの原価（仕切り原価）
-  let unpaidSalesInc = 0; // 未回収売掛金（税込）
-  let paidSalesInc = 0; // 回収済み売上（税込）
+  const unified = buildUnifiedJournals({ invoices, expenses, manualJournals, periodFilter });
 
-  // 1. 伝票（請求書・納品書・領収書）からの売上集計
+  let totalSales = 0;             // 総売上高（401）
+  let totalNonOperatingRevenue = 0; // 営業外収益（411, 412）
+  let totalCostOfSales = 0;       // 売上原価（500番台）
+  let totalSga = 0;               // 販管費（600番台）
+  let totalNonOperatingExpense = 0; // 営業外費用（700番台）
+
+  const expenseByCategory = {};
+  const revenueByCategory = {};
+
+  // 統合仕訳からP/L科目（収益・費用）を抽出集計
+  unified.forEach(u => {
+    // 貸方の収益行を集計
+    u.creditLines.forEach(c => {
+      const acc = findAccountDef(c.accountCode || c.accountName);
+      if (acc && acc.type === 'revenue') {
+        const amt = Number(c.amount) || 0;
+        if (acc.subType === 'operating_revenue') {
+          totalSales += amt;
+        } else {
+          totalNonOperatingRevenue += amt;
+        }
+        revenueByCategory[acc.name] = (revenueByCategory[acc.name] || 0) + amt;
+      }
+    });
+
+    // 借方の費用行を集計
+    u.debitLines.forEach(d => {
+      const acc = findAccountDef(d.accountCode || d.accountName);
+      if (acc && acc.type === 'expense') {
+        const amt = Number(d.amount) || 0;
+        if (acc.subType === 'cost_of_sales') {
+          totalCostOfSales += amt;
+        } else if (acc.subType === 'non_operating_expense') {
+          totalNonOperatingExpense += amt;
+        } else {
+          totalSga += amt;
+        }
+        expenseByCategory[acc.name] = (expenseByCategory[acc.name] || 0) + amt;
+      }
+    });
+  });
+
+  // 段階利益の計算
+  const grossProfit = totalSales - totalCostOfSales; // 売上総利益（粗利）
+  const grossProfitMargin = totalSales > 0 ? (grossProfit / totalSales) * 100 : 0;
+  const operatingProfit = grossProfit - totalSga; // 営業利益
+  const operatingProfitMargin = totalSales > 0 ? (operatingProfit / totalSales) * 100 : 0;
+  const ordinaryProfit = operatingProfit + totalNonOperatingRevenue - totalNonOperatingExpense; // 経常利益
+  const netIncome = ordinaryProfit; // 当期純利益（税引前・税引後同額計算）
+
+  // 売掛金回収状況の集計
+  let totalSalesInc = 0;
+  let paidSalesInc = 0;
+  let unpaidSalesInc = 0;
+
   invoices.forEach(rawInv => {
     const inv = normalizeInvoiceDoc(rawInv);
-    if (!inv) return;
-
-    // 見積書（estimate）は確定売上ではないため除外
-    if (inv.docType === 'estimate') return;
-
-    // 確定発行されていない伝票・確定取消された伝票は除外
+    if (!inv || inv.docType === 'estimate') return;
     if (!inv.isIssued || inv.isCancelled) return;
+    if (!isDateInPeriod(inv.issueDate, periodFilter)) return;
 
-    const issueDate = inv.issueDate || '';
-    if (!isDateInPeriod(issueDate, periodFilter)) {
-      return;
-    }
-
-    totalSales += inv.subtotal;
-    totalSalesTax += inv.taxTotal;
     totalSalesInc += inv.grandTotal;
-    totalWholesaleCost += inv.costTotal;
-
-    // 入金ステータス（未入金／入金済）
     if (inv.isPaid) {
       paidSalesInc += inv.grandTotal;
     } else {
@@ -781,199 +1152,459 @@ function calculateProfitAndLoss(invoices = [], expenses = [], periodFilter = 'al
     }
   });
 
-  // 2. 経費・仕入の集計
-  let totalPurchaseCost = 0; // 仕入高（原価）
-  let totalOperatingExpenses = 0; // 販管費（経費計）
-  let totalExpenseTax = 0; // 経費消費税
-  const expenseByCategory = {};
-
-  expenses.forEach(exp => {
-    if (!exp) return;
-    const date = exp.date || '';
-    if (!isDateInPeriod(date, periodFilter)) {
-      return;
-    }
-
-    const amount = Number(exp.amount) || 0;
-    const taxRate = Number(exp.taxRate !== undefined ? exp.taxRate : 10);
-    const taxAmount = Math.round(amount * (taxRate / 100));
-    const isCost = exp.category === '仕入高' || exp.category === '外注加工費' || exp.isCost;
-
-    if (isCost) {
-      totalPurchaseCost += amount;
-    } else {
-      totalOperatingExpenses += amount;
-    }
-
-    totalExpenseTax += taxAmount;
-
-    // 科目別集計
-    const cat = exp.category || '雑費';
-    expenseByCategory[cat] = (expenseByCategory[cat] || 0) + amount;
-  });
-
-  // 3. 利益計算
-  const totalCostOfGoodsSold = totalPurchaseCost + totalWholesaleCost; // 売上原価計
-  const grossProfit = totalSales - totalCostOfGoodsSold; // 売上総利益（粗利）
-  const grossProfitMargin = totalSales > 0 ? (grossProfit / totalSales) * 100 : 0; // 粗利率
-  const operatingProfit = grossProfit - totalOperatingExpenses; // 営業利益（純利益）
-  const operatingProfitMargin = totalSales > 0 ? (operatingProfit / totalSales) * 100 : 0; // 営業利益率
-
   return {
     periodFilter,
-    targetMonth: typeof periodFilter === 'string' ? periodFilter : 'custom',
     totalSales,
-    totalSalesTax,
-    totalSalesInc,
-    unpaidSalesInc,
+    totalSalesTax: Math.round(totalSales * 0.10), // 目安
+    totalSalesInc: totalSalesInc || totalSales,
     paidSalesInc,
+    unpaidSalesInc,
     collectionRate: totalSalesInc > 0 ? (paidSalesInc / totalSalesInc) * 100 : 100,
-    totalCostOfGoodsSold,
-    totalPurchaseCost,
+    totalCostOfGoodsSold: totalCostOfSales,
     grossProfit,
     grossProfitMargin,
-    totalOperatingExpenses,
-    totalExpenseTax,
+    totalOperatingExpenses: totalSga,
     operatingProfit,
     operatingProfitMargin,
+    totalNonOperatingRevenue,
+    totalNonOperatingExpense,
+    ordinaryProfit,
+    netIncome, // ★当期純利益（B/S純資産連動用）
+    revenueByCategory,
     expenseByCategory
   };
 }
 
+// ==========================================================================
+// 7. 総勘定元帳（General Ledger）
+//    【要件2: 相手側が複数行ある場合の「諸口」表示対応】
+// ==========================================================================
+
 /**
- * 請求書や経費から複式簿記の仕訳リストを自動生成
- * @param {Array} invoices 請求書リスト
- * @param {Array} expenses 経費リスト
- * @param {string|object} periodFilter 期間フィルター
- * @returns {Array<object>} 仕訳帳データ
+ * 特定の勘定科目（および補助科目）の総勘定元帳データを計算
+ * @param {string} targetAccountCodeOrName 
+ * @param {object} options 
+ * @returns {object} 元帳明細および残高推移
  */
-function generateJournalEntries(invoices = [], expenses = [], periodFilter = 'all') {
-  if (typeof invoices === 'string' || (invoices && typeof invoices === 'object' && !Array.isArray(invoices) && invoices.start !== undefined)) {
-    periodFilter = invoices || 'all';
-    invoices = [];
-    expenses = [];
+function calculateGeneralLedger(targetAccountCodeOrName, {
+  accountMaster = DEFAULT_ACCOUNT_MASTER,
+  openingBalances = {},
+  unifiedJournals = [],
+  periodFilter = 'all',
+  subAccount = ''
+} = {}) {
+  const accDef = findAccountDef(targetAccountCodeOrName, accountMaster);
+  if (!accDef) {
+    return { account: null, openingBalance: 0, entries: [], closingBalance: 0, totalDebit: 0, totalCredit: 0 };
   }
-  if (!Array.isArray(invoices)) invoices = [];
-  if (!Array.isArray(expenses)) expenses = [];
 
-  const journals = [];
+  // 期首残高の取得
+  const openBalRaw = Number(openingBalances[accDef.code] || openingBalances[accDef.name] || 0);
+  let currentBalance = openBalRaw;
+  const isDebitAccount = accDef.dcType === 'debit'; // 借方が増加ポジション（資産・費用）
 
-  // 1. 伝票発行（売上計上）
-  invoices.forEach(rawInv => {
-    const inv = normalizeInvoiceDoc(rawInv);
-    if (!inv || inv.docType === 'estimate') return; // 見積書は除外
-    if (!inv.isIssued || inv.isCancelled) return; // 確定発行されていない伝票・確定取消された伝票は仕訳から除外
+  const entries = [];
+  let totalDebit = 0;
+  let totalCredit = 0;
 
-    const date = inv.issueDate || new Date().toISOString().split('T')[0];
-    if (!isDateInPeriod(date, periodFilter)) return;
-    const client = inv.clientName || '取引先';
-    const docNo = inv.docNumber || '';
-    const totalInc = inv.grandTotal;
-    if (totalInc <= 0) return;
+  unifiedJournals.forEach(jnl => {
+    if (!isDateInPeriod(jnl.date, periodFilter)) return;
 
-    // 領収書の場合は即時現金回収: （借）現金 / （貸）売上高
-    if (inv.docType === 'receipt') {
-      journals.push({
-        id: `jnl_rcpt_${inv.id}`,
-        date,
-        debitAccount: '現金',
-        debitAmount: totalInc,
-        creditAccount: '売上高',
-        creditAmount: totalInc,
-        description: `領収書売上（現金回収）: ${client} (${docNo})`,
-        docId: inv.id,
-        type: 'receipt'
-      });
-      return;
-    }
-
-    // 請求書・納品書の売上計上仕訳: （借）売掛金 / （貸）売上高
-    journals.push({
-      id: `jnl_inv_${inv.id}`,
-      date,
-      debitAccount: '売掛金',
-      debitAmount: totalInc,
-      creditAccount: '売上高',
-      creditAmount: totalInc,
-      description: `売上計上: ${client} (${docNo})`,
-      docId: inv.id,
-      type: 'sales'
+    // 当該仕訳の中で、対象科目が借方または貸方に登場するか判定
+    const matchingDebits = (jnl.debitLines || []).filter(line => {
+      const match = (line.accountCode === accDef.code || line.accountName === accDef.name);
+      if (!match) return false;
+      if (subAccount && line.subAccount && line.subAccount !== subAccount) return false;
+      return true;
     });
 
-    // 入金済みの場合の仕訳: （借）普通預金 / （貸）売掛金
-    if (inv.isPaid) {
-      journals.push({
-        id: `jnl_pay_${inv.id}`,
-        date: inv.paidDate || inv.dueDate || date,
-        debitAccount: '普通預金',
-        debitAmount: totalInc,
-        creditAccount: '売掛金',
-        creditAmount: totalInc,
-        description: `売掛金回収（消込済）: ${client} (${docNo})`,
-        docId: inv.id,
-        type: 'receipt'
+    const matchingCredits = (jnl.creditLines || []).filter(line => {
+      const match = (line.accountCode === accDef.code || line.accountName === accDef.name);
+      if (!match) return false;
+      if (subAccount && line.subAccount && line.subAccount !== subAccount) return false;
+      return true;
+    });
+
+    // ① 対象科目が借方に存在する場合（借方発生）
+    matchingDebits.forEach(debLine => {
+      const amt = Number(debLine.amount) || 0;
+      totalDebit += amt;
+
+      if (isDebitAccount) {
+        currentBalance += amt;
+      } else {
+        currentBalance -= amt;
+      }
+
+      // 【要件2: 相手勘定の判定】貸方行が複数ある場合は「諸口」、1行ならその科目名
+      let counterpart = '諸口';
+      if (jnl.creditLines.length === 1) {
+        counterpart = jnl.creditLines[0].accountName;
+        if (jnl.creditLines[0].subAccount) counterpart += ` (${jnl.creditLines[0].subAccount})`;
+      }
+
+      entries.push({
+        id: `${jnl.id}_deb`,
+        journalId: jnl.id,
+        date: jnl.date,
+        entryNumber: jnl.entryNumber,
+        counterpart,
+        description: jnl.description,
+        debitAmount: amt,
+        creditAmount: 0,
+        balance: currentBalance,
+        subAccount: debLine.subAccount || '',
+        sourceType: jnl.sourceType,
+        sourceId: jnl.sourceId
       });
-    }
-  });
+    });
 
-  // 2. 経費・仕入の仕訳
-  expenses.forEach(exp => {
-    if (!exp) return;
-    const date = exp.date || new Date().toISOString().split('T')[0];
-    if (!isDateInPeriod(date, periodFilter)) return;
-    const amount = Number(exp.amount) || 0;
-    const taxRate = Number(exp.taxRate !== undefined ? exp.taxRate : 10);
-    const amountInc = Math.round(amount * (1 + taxRate / 100));
-    const payee = exp.payee ? ` (${exp.payee})` : '';
+    // ② 対象科目が貸方に存在する場合（貸方発生）
+    matchingCredits.forEach(credLine => {
+      const amt = Number(credLine.amount) || 0;
+      totalCredit += amt;
 
-    journals.push({
-      id: `jnl_exp_${exp.id}`,
-      date,
-      debitAccount: exp.category || '雑費',
-      debitAmount: amountInc,
-      creditAccount: exp.paymentMethod || '普通預金',
-      creditAmount: amountInc,
-      description: `${exp.category}: ${exp.note || ''}${payee}`.trim(),
-      expenseId: exp.id,
-      type: 'expense'
+      if (isDebitAccount) {
+        currentBalance -= amt;
+      } else {
+        currentBalance += amt;
+      }
+
+      // 【要件2: 相手勘定の判定】借方行が複数ある場合は「諸口」、1行ならその科目名
+      let counterpart = '諸口';
+      if (jnl.debitLines.length === 1) {
+        counterpart = jnl.debitLines[0].accountName;
+        if (jnl.debitLines[0].subAccount) counterpart += ` (${jnl.debitLines[0].subAccount})`;
+      }
+
+      entries.push({
+        id: `${jnl.id}_cred`,
+        journalId: jnl.id,
+        date: jnl.date,
+        entryNumber: jnl.entryNumber,
+        counterpart,
+        description: jnl.description,
+        debitAmount: 0,
+        creditAmount: amt,
+        balance: currentBalance,
+        subAccount: credLine.subAccount || '',
+        sourceType: jnl.sourceType,
+        sourceId: jnl.sourceId
+      });
     });
   });
 
-  // 日付順（昇順）にソート
-  journals.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
-
-  return journals;
+  return {
+    account: accDef,
+    openingBalance: openBalRaw,
+    entries,
+    closingBalance: currentBalance,
+    totalDebit,
+    totalCredit
+  };
 }
 
+// ==========================================================================
+// 8. 残高試算表（Trial Balance）
+// ==========================================================================
+
 /**
- * 税理士・主要会計ソフト（弥生会計、freee、マネーフォワード）対応の汎用仕訳CSVを出力
- * @param {Array} journals 仕訳リスト
- * @returns {string} CSV文字列 (Shift_JIS互換ヘッダー付き)
+ * 残高試算表（合計残高試算表）の計算
+ * @param {object} params
+ * @returns {object} 全科目の期首・借方計・貸方計・期末残高および合計バランス
  */
+function calculateTrialBalance({
+  accountMaster = DEFAULT_ACCOUNT_MASTER,
+  openingBalances = {},
+  unifiedJournals = [],
+  periodFilter = 'all'
+} = {}) {
+  const master = Array.isArray(accountMaster) && accountMaster.length > 0 ? accountMaster : DEFAULT_ACCOUNT_MASTER;
+
+  let totalOpeningDebit = 0;
+  let totalOpeningCredit = 0;
+  let totalPeriodDebit = 0;
+  let totalPeriodCredit = 0;
+  let totalClosingDebit = 0;
+  let totalClosingCredit = 0;
+
+  // 1. 各科目の期間中借方・貸方合計を集計
+  const periodDebits = {};
+  const periodCredits = {};
+
+  unifiedJournals.forEach(jnl => {
+    if (!isDateInPeriod(jnl.date, periodFilter)) return;
+
+    (jnl.debitLines || []).forEach(line => {
+      const code = line.accountCode || findAccountDef(line.accountName, master)?.code;
+      if (code) {
+        periodDebits[code] = (periodDebits[code] || 0) + (Number(line.amount) || 0);
+      }
+    });
+
+    (jnl.creditLines || []).forEach(line => {
+      const code = line.accountCode || findAccountDef(line.accountName, master)?.code;
+      if (code) {
+        periodCredits[code] = (periodCredits[code] || 0) + (Number(line.amount) || 0);
+      }
+    });
+  });
+
+  // 2. 全科目の行データを生成
+  const rows = master.map(acc => {
+    const rawOpen = Number(openingBalances[acc.code] || openingBalances[acc.name] || 0);
+    const pDeb = periodDebits[acc.code] || 0;
+    const pCred = periodCredits[acc.code] || 0;
+
+    let openingDebit = 0;
+    let openingCredit = 0;
+
+    if (acc.dcType === 'debit') {
+      openingDebit = rawOpen;
+      totalOpeningDebit += openingDebit;
+    } else {
+      openingCredit = rawOpen;
+      totalOpeningCredit += openingCredit;
+    }
+
+    totalPeriodDebit += pDeb;
+    totalPeriodCredit += pCred;
+
+    // 期末残高の算出
+    let closingDebit = 0;
+    let closingCredit = 0;
+
+    if (acc.dcType === 'debit') {
+      const bal = openingDebit + pDeb - pCred;
+      if (bal >= 0) {
+        closingDebit = bal;
+      } else {
+        closingCredit = Math.abs(bal);
+      }
+    } else {
+      const bal = openingCredit + pCred - pDeb;
+      if (bal >= 0) {
+        closingCredit = bal;
+      } else {
+        closingDebit = Math.abs(bal);
+      }
+    }
+
+    totalClosingDebit += closingDebit;
+    totalClosingCredit += closingCredit;
+
+    return {
+      code: acc.code,
+      name: acc.name,
+      type: acc.type,
+      subType: acc.subType,
+      dcType: acc.dcType,
+      openingDebit,
+      openingCredit,
+      periodDebit: pDeb,
+      periodCredit: pCred,
+      closingDebit,
+      closingCredit
+    };
+  });
+
+  return {
+    rows,
+    totals: {
+      totalOpeningDebit,
+      totalOpeningCredit,
+      totalPeriodDebit,
+      totalPeriodCredit,
+      totalClosingDebit,
+      totalClosingCredit,
+      isBalanced: totalClosingDebit === totalClosingCredit
+    }
+  };
+}
+
+// ==========================================================================
+// 9. 貸借対照表（Balance Sheet: B/S）
+//    【要件5: P/L当期純利益の繰越利益剰余金への自動合算と貸借完全一致】
+// ==========================================================================
+
+/**
+ * 貸借対照表（B/S）の計算
+ * @param {object} params
+ * @returns {object} 資産・負債・純資産の部および完全一致バランス検証
+ */
+function calculateBalanceSheet({
+  accountMaster = DEFAULT_ACCOUNT_MASTER,
+  openingBalances = {},
+  unifiedJournals = [],
+  periodFilter = 'all',
+  profitAndLoss = null
+} = {}) {
+  // 試算表をベースに残高を算出
+  const tb = calculateTrialBalance({ accountMaster, openingBalances, unifiedJournals, periodFilter });
+  const bsRows = tb.rows.filter(r => r.type === 'asset' || r.type === 'liability' || r.type === 'equity');
+
+  // 当期純利益（P/Lから取得、未指定なら自動算出）
+  const pl = profitAndLoss || calculateProfitAndLoss([], [], periodFilter);
+  const netIncome = pl.netIncome || 0; // 当期純利益
+
+  // 1. 資産の部 (Assets)
+  const currentAssets = [];
+  const fixedAssets = [];
+  let totalCurrentAssets = 0;
+  let totalFixedAssets = 0;
+
+  // 2. 負債の部 (Liabilities)
+  const currentLiabilities = [];
+  const fixedLiabilities = [];
+  let totalCurrentLiabilities = 0;
+  let totalFixedLiabilities = 0;
+
+  // 3. 純資産の部 (Equity)
+  const equityItems = [];
+  let totalEquityBase = 0;
+
+  bsRows.forEach(r => {
+    // 資産科目
+    if (r.type === 'asset') {
+      const amount = r.closingDebit - r.closingCredit;
+      if (r.subType === 'fixed_asset') {
+        fixedAssets.push({ code: r.code, name: r.name, amount });
+        totalFixedAssets += amount;
+      } else {
+        currentAssets.push({ code: r.code, name: r.name, amount });
+        totalCurrentAssets += amount;
+      }
+    }
+    // 負債科目
+    else if (r.type === 'liability') {
+      const amount = r.closingCredit - r.closingDebit;
+      if (r.subType === 'fixed_liability') {
+        fixedLiabilities.push({ code: r.code, name: r.name, amount });
+        totalFixedLiabilities += amount;
+      } else {
+        currentLiabilities.push({ code: r.code, name: r.name, amount });
+        totalCurrentLiabilities += amount;
+      }
+    }
+    // 純資産科目
+    else if (r.type === 'equity') {
+      const amount = r.closingCredit - r.closingDebit;
+      equityItems.push({ code: r.code, name: r.name, amount });
+      totalEquityBase += amount;
+    }
+  });
+
+  const totalAssets = totalCurrentAssets + totalFixedAssets;
+  const totalLiabilities = totalCurrentLiabilities + totalFixedLiabilities;
+
+  // 【要件5: 当期純利益を純資産に自動合算し完全貸借バランス】
+  const totalEquity = totalEquityBase + netIncome;
+  const totalLiabilitiesAndEquity = totalLiabilities + totalEquity;
+  const balanceDiff = totalAssets - totalLiabilitiesAndEquity;
+
+  return {
+    assets: {
+      current: currentAssets,
+      totalCurrent: totalCurrentAssets,
+      fixed: fixedAssets,
+      totalFixed: totalFixedAssets,
+      total: totalAssets
+    },
+    liabilities: {
+      current: currentLiabilities,
+      totalCurrent: totalCurrentLiabilities,
+      fixed: fixedLiabilities,
+      totalFixed: totalFixedLiabilities,
+      total: totalLiabilities
+    },
+    equity: {
+      items: equityItems,
+      netIncome, // P/Lからの当期純利益
+      total: totalEquity
+    },
+    totalLiabilitiesAndEquity,
+    balanceDiff,
+    isBalanced: Math.abs(balanceDiff) === 0
+  };
+}
+
+// ==========================================================================
+// 10. 期首残高 貸借バランスバリデーション
+//     【要件5: 資産＝負債＋純資産の一致チェック】
+// ==========================================================================
+function validateOpeningBalances(openingBalances = {}, accountMaster = DEFAULT_ACCOUNT_MASTER) {
+  const master = Array.isArray(accountMaster) && accountMaster.length > 0 ? accountMaster : DEFAULT_ACCOUNT_MASTER;
+  let debitTotal = 0; // 資産合計
+  let creditTotal = 0; // 負債＋純資産合計
+
+  Object.entries(openingBalances || {}).forEach(([codeOrName, val]) => {
+    const amt = Number(val) || 0;
+    if (amt === 0) return;
+
+    const acc = findAccountDef(codeOrName, master);
+    if (!acc) return;
+
+    if (acc.dcType === 'debit') {
+      debitTotal += amt;
+    } else {
+      creditTotal += amt;
+    }
+  });
+
+  const diff = debitTotal - creditTotal;
+  return {
+    debitTotal,
+    creditTotal,
+    diff,
+    isBalanced: diff === 0
+  };
+}
+
+// ==========================================================================
+// 11. CSVエクスポート
+// ==========================================================================
 function exportJournalsToCSV(journals = []) {
   const headers = [
     '取引No',
     '取引日',
     '借方勘定科目',
+    '借方補助科目',
     '借方金額(税込)',
     '貸方勘定科目',
+    '貸方補助科目',
     '貸方金額(税込)',
     '摘要',
     '税区分',
-    '種別'
+    'インボイス区分',
+    '仕訳種別'
   ];
 
-  const rows = journals.map((j, idx) => [
-    idx + 1,
-    j.date,
-    `"${j.debitAccount}"`,
-    j.debitAmount,
-    `"${j.creditAccount}"`,
-    j.creditAmount,
-    `"${(j.description || '').replace(/"/g, '""')}"`,
-    '課税仕入・売上10%',
-    j.type
-  ]);
+  const rows = [];
+  journals.forEach((j, idx) => {
+    // 複合仕訳の行展開
+    const debLines = j.debitLines || [{ accountName: j.debitAccount, subAccount: '', amount: j.debitAmount, taxType: 'taxable_10', invoiceType: 'qualified' }];
+    const credLines = j.creditLines || [{ accountName: j.creditAccount, subAccount: '', amount: j.creditAmount, taxType: 'taxable_10', invoiceType: 'qualified' }];
+    const maxLines = Math.max(debLines.length, credLines.length);
+
+    for (let i = 0; i < maxLines; i++) {
+      const deb = debLines[i] || { accountName: '', subAccount: '', amount: '' };
+      const cred = credLines[i] || { accountName: '', subAccount: '', amount: '' };
+      rows.push([
+        j.entryNumber || (idx + 1),
+        j.date,
+        `"${deb.accountName || ''}"`,
+        `"${deb.subAccount || ''}"`,
+        deb.amount !== '' ? deb.amount : '',
+        `"${cred.accountName || ''}"`,
+        `"${cred.subAccount || ''}"`,
+        cred.amount !== '' ? cred.amount : '',
+        `"${(j.description || '').replace(/"/g, '""')}"`,
+        deb.taxType || cred.taxType || 'taxable_10',
+        deb.invoiceType || cred.invoiceType || 'qualified',
+        j.sourceType || j.type || 'journal'
+      ]);
+    }
+  });
 
   const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\r\n');
   return csvContent;
@@ -2478,6 +3109,9 @@ const KEYS = {
   PAYROLL_RECORDS: 'billcraft_payroll_records',
   PAYROLL_SETTINGS: 'billcraft_payroll_settings',
   PREVIOUS_YEAR_INCOME: 'billcraft_previous_year_income',
+  ACCOUNT_MASTER: 'billcraft_account_master',
+  MANUAL_JOURNALS: 'billcraft_manual_journals',
+  FISCAL_SETTINGS: 'billcraft_fiscal_settings',
   DELETED_DOC_IDS: 'quickdoc_deleted_doc_ids',
   TRASH_HISTORY: 'quickdoc_trash_history'
 };
@@ -6371,8 +7005,195 @@ function deletePayrollRecord(targetMonthOrId) {
   }
 }
 
+// ==========================================================================
+// 財務会計（複式簿記・振替伝票・期首残高）データ永続化
+// ==========================================================================
+async function saveServerAccountMaster(items) {
+  try {
+    const res = await apiFetch('account_master', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(items)
+    });
+    return res.ok;
+  } catch (e) {
+    return false;
+  }
+}
+async function saveServerManualJournals(journals) {
+  try {
+    const res = await apiFetch('manual_journals', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(journals)
+    });
+    return res.ok;
+  } catch (e) {
+    return false;
+  }
+}
+async function saveServerFiscalSettings(settings) {
+  try {
+    const res = await apiFetch('fiscal_settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings)
+    });
+    return res.ok;
+  } catch (e) {
+    return false;
+  }
+}
+
 /**
- * ローカルストレージ内の全データ（マスタ・経費・伝票・自社設定）をサーバーへ一括アップロード
+ * 勘定科目マスタ一覧を取得（未設定時は DEFAULT_ACCOUNT_MASTER を返す）
+ * @returns {Array<any>}
+ */
+function getAccountMasterList() {
+  try {
+    const raw = localStorage.getItem(KEYS.ACCOUNT_MASTER);
+    if (!raw) {
+      if (typeof DEFAULT_ACCOUNT_MASTER !== 'undefined' && Array.isArray(DEFAULT_ACCOUNT_MASTER)) {
+        return JSON.parse(JSON.stringify(DEFAULT_ACCOUNT_MASTER));
+      }
+      return [];
+    }
+    const list = JSON.parse(raw);
+    return Array.isArray(list) ? list : [];
+  } catch (e) {
+    console.warn('Failed to load account master:', e);
+    return (typeof DEFAULT_ACCOUNT_MASTER !== 'undefined') ? JSON.parse(JSON.stringify(DEFAULT_ACCOUNT_MASTER)) : [];
+  }
+}
+
+/**
+ * 勘定科目マスタ一覧を保存
+ * @param {Array<any>} list
+ */
+function saveAccountMasterList(list) {
+  try {
+    const safeList = Array.isArray(list) ? list : [];
+    localStorageSetItemAndSync(KEYS.ACCOUNT_MASTER, JSON.stringify(safeList));
+    saveServerAccountMaster(safeList).catch(() => {});
+    return true;
+  } catch (e) {
+    console.error('Failed to save account master:', e);
+    return false;
+  }
+}
+
+/**
+ * 手動振替伝票（複合仕訳）一覧を取得
+ * @returns {Array<any>}
+ */
+function getManualJournals() {
+  try {
+    const raw = localStorage.getItem(KEYS.MANUAL_JOURNALS);
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list : [];
+  } catch (e) {
+    console.warn('Failed to load manual journals:', e);
+    return [];
+  }
+}
+
+/**
+ * 振替伝票を保存（新規追加または更新）
+ * @param {Object} journal
+ * @returns {string|boolean} 生成または更新されたID
+ */
+function saveManualJournal(journal) {
+  try {
+    if (!journal) return false;
+    const list = getManualJournals();
+    const entryId = journal.id || `mj_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+    const nowIso = new Date().toISOString();
+    const newEntry = {
+      ...journal,
+      id: entryId,
+      updatedAt: nowIso
+    };
+    if (!newEntry.createdAt) newEntry.createdAt = nowIso;
+
+    const existingIndex = list.findIndex(j => j.id === entryId);
+    if (existingIndex >= 0) {
+      list[existingIndex] = newEntry;
+    } else {
+      list.push(newEntry);
+    }
+
+    localStorageSetItemAndSync(KEYS.MANUAL_JOURNALS, JSON.stringify(list));
+    saveServerManualJournals(list).catch(() => {});
+    return entryId;
+  } catch (e) {
+    console.error('Failed to save manual journal:', e);
+    return false;
+  }
+}
+
+/**
+ * 振替伝票を削除
+ * @param {string} id
+ */
+function deleteManualJournal(id) {
+  try {
+    let list = getManualJournals();
+    list = list.filter(j => j.id !== id);
+    localStorageSetItemAndSync(KEYS.MANUAL_JOURNALS, JSON.stringify(list));
+    deleteServerEntity('manual_journals', id).catch(() => {});
+    saveServerManualJournals(list).catch(() => {});
+    return true;
+  } catch (e) {
+    console.error('Failed to delete manual journal:', e);
+    return false;
+  }
+}
+
+/**
+ * 会計年度・期首残高設定を取得
+ * @returns {Object}
+ */
+function getFiscalSettings() {
+  try {
+    const raw = localStorage.getItem(KEYS.FISCAL_SETTINGS);
+    const currentYear = new Date().getFullYear();
+    const defaultSettings = {
+      fiscalYearStart: `${currentYear}-01-01`,
+      fiscalYearEnd: `${currentYear}-12-31`,
+      openingBalances: {}
+    };
+    if (!raw) return defaultSettings;
+    const parsed = JSON.parse(raw);
+    return { ...defaultSettings, ...parsed };
+  } catch (e) {
+    console.warn('Failed to load fiscal settings:', e);
+    return {
+      fiscalYearStart: '2026-01-01',
+      fiscalYearEnd: '2026-12-31',
+      openingBalances: {}
+    };
+  }
+}
+
+/**
+ * 会計年度・期首残高設定を保存
+ * @param {Object} settings
+ */
+function saveFiscalSettings(settings) {
+  try {
+    const current = getFiscalSettings();
+    const updated = { ...current, ...settings, updatedAt: new Date().toISOString() };
+    localStorageSetItemAndSync(KEYS.FISCAL_SETTINGS, JSON.stringify(updated));
+    saveServerFiscalSettings(updated).catch(() => {});
+    return true;
+  } catch (e) {
+    console.error('Failed to save fiscal settings:', e);
+    return false;
+  }
+}
+
+/**
+ * ローカルストレージ内の全データ（マスタ・経費・伝票・自社設定・会計）をサーバーへ一括アップロード
  */
 async function pushAllLocalDataToServer() {
   const token = (typeof getFirebaseAuthToken === 'function') ? await getFirebaseAuthToken(false) : null;
@@ -6387,7 +7208,10 @@ async function pushAllLocalDataToServer() {
     issuerProfile: loadIssuerProfile(),
     expenses: getExpenseList(),
     invoicesHistory: getHistoryList(),
-    attendance: (typeof getAttendanceList === 'function') ? getAttendanceList() : []
+    attendance: (typeof getAttendanceList === 'function') ? getAttendanceList() : [],
+    accountMaster: getAccountMasterList(),
+    manualJournals: getManualJournals(),
+    fiscalSettings: getFiscalSettings()
   };
 
   try {
@@ -6444,6 +7268,15 @@ async function pullAllServerDataToLocal() {
     if (data.attendance && Array.isArray(data.attendance) && data.attendance.length > 0) {
       localStorageSetItemAndSync(KEYS.ATTENDANCE, JSON.stringify(data.attendance));
     }
+    if (data.accountMaster && Array.isArray(data.accountMaster) && data.accountMaster.length > 0) {
+      localStorageSetItemAndSync(KEYS.ACCOUNT_MASTER, JSON.stringify(data.accountMaster));
+    }
+    if (data.manualJournals && Array.isArray(data.manualJournals)) {
+      localStorageSetItemAndSync(KEYS.MANUAL_JOURNALS, JSON.stringify(data.manualJournals));
+    }
+    if (data.fiscalSettings && typeof data.fiscalSettings === 'object') {
+      localStorageSetItemAndSync(KEYS.FISCAL_SETTINGS, JSON.stringify(data.fiscalSettings));
+    }
     return { success: true, message: 'サーバーから最新データを同期しました！' };
   } catch (err) {
     console.error('Failed to pull all data from server:', err);
@@ -6453,10 +7286,18 @@ async function pullAllServerDataToLocal() {
 
 if (typeof window !== 'undefined') {
   window.pushAllLocalDataToServer = pushAllLocalDataToServer;
+  window.pullAllServerDataToLocal = pullAllServerDataToLocal;
   window.getTrashList = getTrashList;
   window.restoreDocFromTrash = restoreDocFromTrash;
   window.purgeTrashDoc = purgeTrashDoc;
   window.clearAllTrashDocs = clearAllTrashDocs;
+  window.getAccountMasterList = getAccountMasterList;
+  window.saveAccountMasterList = saveAccountMasterList;
+  window.getManualJournals = getManualJournals;
+  window.saveManualJournal = saveManualJournal;
+  window.deleteManualJournal = deleteManualJournal;
+  window.getFiscalSettings = getFiscalSettings;
+  window.saveFiscalSettings = saveFiscalSettings;
   window.restoreAttendanceFromBackup = function() {
     const backup = localStorage.getItem(KEYS.ATTENDANCE + '_backup');
     if (backup && backup !== '[]') {
@@ -11653,12 +12494,20 @@ function switchAccountingTab(tabKey) {
 
   if (fullId === 'acc-tab-dashboard') {
     renderAccountingDashboard(currentAccGlobalPeriod);
+  } else if (fullId === 'acc-tab-bs') {
+    renderBalanceSheet(currentAccGlobalPeriod);
+  } else if (fullId === 'acc-tab-trial-balance') {
+    renderTrialBalance(currentAccGlobalPeriod);
+  } else if (fullId === 'acc-tab-ledger') {
+    renderGeneralLedger(currentAccGlobalPeriod);
   } else if (fullId === 'acc-tab-sales') {
     renderAccountingSales(currentSalesFilter, currentAccGlobalPeriod);
   } else if (fullId === 'acc-tab-expenses') {
     renderAccountingExpenses(currentAccGlobalPeriod);
   } else if (fullId === 'acc-tab-journals') {
     renderAccountingJournals(currentAccGlobalPeriod);
+  } else if (fullId === 'acc-tab-settings') {
+    renderAccountingSettings();
   }
 }
 
@@ -11915,11 +12764,14 @@ function applyAccGlobalPeriod(preset = 'thisMonth', customStart = null, customEn
     }
   }
 
-  // 下の全4画面（損益計算書・売上消込・経費・仕訳帳）を一斉再描画！
+  // 会計ペイン（損益計算書・貸借対照表・試算表・元帳・売上消込・経費・仕訳帳）を一斉再描画！
   renderAccountingDashboard(currentAccGlobalPeriod);
   renderAccountingSales(currentSalesFilter, currentAccGlobalPeriod);
   renderAccountingExpenses(currentAccGlobalPeriod);
   renderAccountingJournals(currentAccGlobalPeriod);
+  if (typeof renderBalanceSheet === 'function') renderBalanceSheet(currentAccGlobalPeriod);
+  if (typeof renderTrialBalance === 'function') renderTrialBalance(currentAccGlobalPeriod);
+  if (typeof renderGeneralLedger === 'function') renderGeneralLedger(currentAccGlobalPeriod);
 }
 
 // グローバルスコープへの公開（HTMLインラインonclick等からの呼び出し対応）
@@ -12206,7 +13058,10 @@ function renderAccountingSales(filter = 'all', periodFilter = currentAccGlobalPe
 
     const toggleBtn = isPaid
       ? `<button type="button" class="btn btn-outline btn-xs" style="color: #64748b; font-size: 11px; padding: 3px 8px;" onclick="window.__toggleInvoicePayment('${doc.id}', false)">未入金に戻す</button>`
-      : `<button type="button" class="btn btn-success btn-xs" style="background: #10b981; color: white; font-weight: 700; font-size: 11px; padding: 4px 10px; border-radius: 4px; box-shadow: 0 1px 3px rgba(16,185,129,0.3);" onclick="window.__toggleInvoicePayment('${doc.id}', true)">✓ 消込（入金済）</button>`;
+      : `<div style="display: inline-flex; gap: 4px;">
+           <button type="button" class="btn btn-success btn-xs" style="background: #10b981; color: white; font-weight: 700; font-size: 11px; padding: 4px 8px; border-radius: 4px; box-shadow: 0 1px 3px rgba(16,185,129,0.3);" onclick="window.__toggleInvoicePayment('${doc.id}', true)">✓ 全額消込</button>
+           <button type="button" class="btn btn-outline btn-xs" style="color: #4f46e5; border-color: #c7d2fe; background: #eef2ff; font-weight: 700; font-size: 11px; padding: 3px 7px;" title="振込手数料を差し引いて消込（複合仕訳自動作成）" onclick="window.__openReconcileFeeModal('${doc.id}')">手数料差引</button>
+         </div>`;
 
     html += `
       <tr>
@@ -14120,49 +14975,101 @@ window.__previewExpenseReceipt = function(id) {
 };
 
 // ==========================================================================
-// 複式簿記仕訳帳 コントローラー
+// 複式簿記仕訳帳・財務諸表・総勘定元帳 コントローラー
 // ==========================================================================
+
 function renderAccountingJournals(periodFilter = currentAccGlobalPeriod) {
-  if (!DOM.accJournalTableBody) return;
+  const tbody = document.getElementById('accJournalTableBody');
+  if (!tbody) return;
+
   const invoices = getHistoryList();
   const expenses = getExpenseList();
-  const entries = generateJournalEntries(invoices, expenses, periodFilter);
+  const manualJournals = (typeof getManualJournals === 'function') ? getManualJournals() : [];
+  const payrollRecords = (typeof getPayrollRecords === 'function') ? getPayrollRecords() : [];
+  const accountMaster = (typeof getAccountMasterList === 'function') ? getAccountMasterList() : [];
 
-  if (entries.length === 0) {
-    DOM.accJournalTableBody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--slate-400); padding: 32px;">仕訳データはありません</td></tr>`;
+  const unifiedJournals = buildUnifiedJournals(invoices, expenses, manualJournals, payrollRecords, periodFilter);
+
+  if (unifiedJournals.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--slate-400); padding: 32px;">対象期間の仕訳データはありません</td></tr>`;
     return;
   }
 
   let html = '';
-  entries.forEach(e => {
-    let typeBadge = '<span class="badge" style="background:#e0e7ff; color:#3730a3;">売上</span>';
-    if (e.type === 'receipt') {
-      typeBadge = '<span class="badge" style="background:#dcfce7; color:#166534;">入金</span>';
-    } else if (e.type === 'expense') {
-      typeBadge = '<span class="badge" style="background:#fef3c7; color:#92400e;">経費</span>';
+  unifiedJournals.forEach((j, jIdx) => {
+    const isManual = (j.sourceType === 'manual' || j.sourceType === 'reconcile');
+    const debLines = j.debitLines || [{ accountName: j.debitAccount, subAccount: '', amount: j.debitAmount, taxType: 'taxable_10', invoiceType: 'qualified' }];
+    const credLines = j.creditLines || [{ accountName: j.creditAccount, subAccount: '', amount: j.creditAmount, taxType: 'taxable_10', invoiceType: 'qualified' }];
+    const maxLines = Math.max(debLines.length, credLines.length);
+
+    let typeBadge = '<span class="badge" style="background:#e0e7ff; color:#3730a3; font-size:10px;">売上</span>';
+    if (j.sourceType === 'receipt') {
+      typeBadge = '<span class="badge" style="background:#dcfce7; color:#166534; font-size:10px;">入金</span>';
+    } else if (j.sourceType === 'expense') {
+      typeBadge = '<span class="badge" style="background:#fef3c7; color:#92400e; font-size:10px;">経費</span>';
+    } else if (j.sourceType === 'payroll') {
+      typeBadge = '<span class="badge" style="background:#e0f2fe; color:#0369a1; font-size:10px;">給与</span>';
+    } else if (j.sourceType === 'reconcile') {
+      typeBadge = '<span class="badge" style="background:#fae8ff; color:#86198f; font-size:10px;">消込複合</span>';
+    } else if (j.sourceType === 'manual') {
+      typeBadge = '<span class="badge" style="background:#f1f5f9; color:#334155; font-size:10px;">振替伝票</span>';
     }
 
-    html += `
-      <tr>
-        <td>${escapeHtml(e.date)}</td>
-        <td style="font-weight: 600; color: var(--slate-800);">${escapeHtml(e.debitAccount)}</td>
-        <td style="text-align: right; font-family: monospace; font-weight: 700;">${formatCurrency(e.debitAmount)}</td>
-        <td style="font-weight: 600; color: var(--slate-800);">${escapeHtml(e.creditAccount)}</td>
-        <td style="text-align: right; font-family: monospace; font-weight: 700;">${formatCurrency(e.creditAmount)}</td>
-        <td style="color: var(--slate-600); font-size: 12px;">${escapeHtml(e.description)}</td>
-        <td style="text-align: center;">${typeBadge}</td>
-      </tr>
-    `;
+    const deleteBtn = isManual
+      ? `<button type="button" class="btn btn-outline-danger btn-xs" style="padding: 1px 6px; font-size: 10px;" onclick="window.deleteManualJournalFromUI('${j.id}')">削除</button>`
+      : '-';
+
+    for (let i = 0; i < maxLines; i++) {
+      const deb = debLines[i] || { accountName: '', subAccount: '', amount: '' };
+      const cred = credLines[i] || { accountName: '', subAccount: '', amount: '' };
+
+      const taxLabel = deb.taxType ? (TAX_TYPES[deb.taxType]?.label || deb.taxType) : (cred.taxType ? (TAX_TYPES[cred.taxType]?.label || cred.taxType) : '-');
+      const invoiceLabel = deb.invoiceType === 'qualified' ? '適格' : (deb.invoiceType === 'transitional' ? '経過80%' : (deb.invoiceType === 'none' ? '対象外' : '-'));
+
+      const isFirst = (i === 0);
+      const rowBg = jIdx % 2 === 0 ? '#ffffff' : '#fcfcfd';
+      const borderTop = isFirst ? '1px solid #e2e8f0' : 'none';
+
+      html += `
+        <tr style="background: ${rowBg}; border-top: ${borderTop};">
+          <td style="color: #64748b; font-size: 11px;">${isFirst ? escapeHtml(j.date) : ''}</td>
+          <td style="font-weight: 600; color: #1e293b;">
+            ${escapeHtml(deb.accountName || '')}
+            ${deb.subAccount ? `<span style="font-size: 10px; color: #6366f1; display: block;">(${escapeHtml(deb.subAccount)})</span>` : ''}
+          </td>
+          <td style="text-align: right; font-family: monospace; font-weight: 700; color: #1e40af;">
+            ${deb.amount !== '' ? formatCurrency(deb.amount) : ''}
+          </td>
+          <td style="font-weight: 600; color: #1e293b;">
+            ${escapeHtml(cred.accountName || '')}
+            ${cred.subAccount ? `<span style="font-size: 10px; color: #16a34a; display: block;">(${escapeHtml(cred.subAccount)})</span>` : ''}
+          </td>
+          <td style="text-align: right; font-family: monospace; font-weight: 700; color: #166534;">
+            ${cred.amount !== '' ? formatCurrency(cred.amount) : ''}
+          </td>
+          <td style="color: #475569; font-size: 12px;">${isFirst ? escapeHtml(j.description) : ''}</td>
+          <td style="text-align: center; font-size: 10px; color: #64748b;">
+            ${isFirst ? `<span title="${taxLabel}">${invoiceLabel}</span>` : ''}
+          </td>
+          <td style="text-align: center;">${isFirst ? typeBadge : ''}</td>
+          <td style="text-align: center;">${isFirst ? deleteBtn : ''}</td>
+        </tr>
+      `;
+    }
   });
-  DOM.accJournalTableBody.innerHTML = html;
+
+  tbody.innerHTML = html;
 }
 
 function handleExportJournalCSV() {
   const invoices = getHistoryList();
   const expenses = getExpenseList();
-  const entries = generateJournalEntries(invoices, expenses, currentAccGlobalPeriod);
+  const manualJournals = (typeof getManualJournals === 'function') ? getManualJournals() : [];
+  const payrollRecords = (typeof getPayrollRecords === 'function') ? getPayrollRecords() : [];
 
-  if (entries.length === 0) {
+  const unifiedJournals = buildUnifiedJournals(invoices, expenses, manualJournals, payrollRecords, currentAccGlobalPeriod);
+
+  if (unifiedJournals.length === 0) {
     alert('出力対象の仕訳データがありません。');
     return;
   }
@@ -14173,18 +15080,963 @@ function handleExportJournalCSV() {
         ? `${currentAccGlobalPeriod.start}_${currentAccGlobalPeriod.end}`
         : currentAccGlobalPeriod.preset);
 
-  const csvContent = exportJournalsToCSV(entries);
+  const csvContent = exportJournalsToCSV(unifiedJournals);
   const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `仕訳帳_${periodLabel}_${new Date().toISOString().split('T')[0]}.csv`;
+  a.download = `統合仕訳帳_${periodLabel}_${new Date().toISOString().split('T')[0]}.csv`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-  showToast('仕訳帳CSVをダウンロードしました！', 'success');
+  showToast('統合仕訳帳CSV（複合仕訳・税理士提出対応）をダウンロードしました！', 'success');
 }
+
+// ==========================================================================
+// 貸借対照表 (B/S) レンダラー
+// ==========================================================================
+function renderBalanceSheet(periodFilter = currentAccGlobalPeriod) {
+  const invoices = getHistoryList();
+  const expenses = getExpenseList();
+  const fiscalSettings = (typeof getFiscalSettings === 'function') ? getFiscalSettings() : {};
+  const accountMaster = (typeof getAccountMasterList === 'function') ? getAccountMasterList() : [];
+  const manualJournals = (typeof getManualJournals === 'function') ? getManualJournals() : [];
+
+  const bs = calculateBalanceSheet(invoices, expenses, fiscalSettings, accountMaster, manualJournals, periodFilter);
+
+  // 流動資産テーブル
+  const curAstBody = document.getElementById('bsCurrentAssetsBody');
+  if (curAstBody) {
+    let html = '';
+    bs.assets.current.forEach(item => {
+      html += `<tr><td style="padding: 4px 6px; color: #334155;">${escapeHtml(item.name)}</td><td style="padding: 4px 6px; text-align: right; font-family: monospace; font-weight: 600;">${formatCurrency(item.balance)}</td></tr>`;
+    });
+    curAstBody.innerHTML = html || '<tr><td colspan="2" style="color:#94a3b8; text-align:center;">該当なし</td></tr>';
+  }
+  const curAstTot = document.getElementById('bsCurrentAssetsTotal');
+  if (curAstTot) curAstTot.textContent = formatCurrency(bs.assets.currentTotal);
+
+  // 固定資産テーブル
+  const fixAstBody = document.getElementById('bsFixedAssetsBody');
+  if (fixAstBody) {
+    let html = '';
+    bs.assets.fixed.forEach(item => {
+      html += `<tr><td style="padding: 4px 6px; color: #334155;">${escapeHtml(item.name)}</td><td style="padding: 4px 6px; text-align: right; font-family: monospace; font-weight: 600;">${formatCurrency(item.balance)}</td></tr>`;
+    });
+    fixAstBody.innerHTML = html || '<tr><td colspan="2" style="color:#94a3b8; text-align:center;">該当なし</td></tr>';
+  }
+  const fixAstTot = document.getElementById('bsFixedAssetsTotal');
+  if (fixAstTot) fixAstTot.textContent = formatCurrency(bs.assets.fixedTotal);
+
+  // 資産合計
+  const totAst = document.getElementById('bsTotalAssets');
+  if (totAst) totAst.textContent = formatCurrency(bs.assets.total);
+
+  // 流動負債テーブル
+  const curLiabBody = document.getElementById('bsCurrentLiabilitiesBody');
+  if (curLiabBody) {
+    let html = '';
+    bs.liabilities.current.forEach(item => {
+      html += `<tr><td style="padding: 4px 6px; color: #334155;">${escapeHtml(item.name)}</td><td style="padding: 4px 6px; text-align: right; font-family: monospace; font-weight: 600;">${formatCurrency(item.balance)}</td></tr>`;
+    });
+    curLiabBody.innerHTML = html || '<tr><td colspan="2" style="color:#94a3b8; text-align:center;">該当なし</td></tr>';
+  }
+  const curLiabTot = document.getElementById('bsCurrentLiabilitiesTotal');
+  if (curLiabTot) curLiabTot.textContent = formatCurrency(bs.liabilities.currentTotal);
+
+  // 固定負債テーブル
+  const fixLiabBody = document.getElementById('bsFixedLiabilitiesBody');
+  if (fixLiabBody) {
+    let html = '';
+    bs.liabilities.fixed.forEach(item => {
+      html += `<tr><td style="padding: 4px 6px; color: #334155;">${escapeHtml(item.name)}</td><td style="padding: 4px 6px; text-align: right; font-family: monospace; font-weight: 600;">${formatCurrency(item.balance)}</td></tr>`;
+    });
+    fixLiabBody.innerHTML = html || '<tr><td colspan="2" style="color:#94a3b8; text-align:center;">該当なし</td></tr>';
+  }
+  const fixLiabTot = document.getElementById('bsFixedLiabilitiesTotal');
+  if (fixLiabTot) fixLiabTot.textContent = formatCurrency(bs.liabilities.fixedTotal);
+
+  // 負債合計
+  const totLiab = document.getElementById('bsTotalLiabilities');
+  if (totLiab) totLiab.textContent = formatCurrency(bs.liabilities.total);
+
+  // 純資産の部テーブル（資本金、繰越利益剰余金、当期純利益自動合算）
+  const eqBody = document.getElementById('bsEquityBody');
+  if (eqBody) {
+    let html = '';
+    bs.equity.items.forEach(item => {
+      const isNetProfit = (item.name === '当期純利益');
+      const textStyle = isNetProfit ? 'color: #059669; font-weight: 700;' : 'color: #334155;';
+      html += `
+        <tr>
+          <td style="padding: 4px 6px; ${textStyle}">
+            ${escapeHtml(item.name)}
+            ${isNetProfit ? '<span style="font-size:10px; color:#10b981; display:block;">(期間P/L損益より自動算入)</span>' : ''}
+          </td>
+          <td style="padding: 4px 6px; text-align: right; font-family: monospace; font-weight: 700; ${textStyle}">
+            ${formatCurrency(item.balance)}
+          </td>
+        </tr>
+      `;
+    });
+    eqBody.innerHTML = html;
+  }
+  const totEq = document.getElementById('bsTotalEquity');
+  if (totEq) totEq.textContent = formatCurrency(bs.equity.total);
+
+  // 負債・純資産合計
+  const totLiabEq = document.getElementById('bsTotalLiabilitiesAndEquity');
+  if (totLiabEq) totLiabEq.textContent = formatCurrency(bs.totalLiabilitiesAndEquity);
+
+  // 貸借完全一致バッジ
+  const badge = document.getElementById('bsBalanceBadge');
+  if (badge) {
+    if (bs.isBalanced) {
+      badge.style.background = '#ecfdf5';
+      badge.style.color = '#047857';
+      badge.style.borderColor = '#a7f3d0';
+      badge.innerHTML = `<span>✅ 貸借完全一致 (差額 0円)</span>`;
+    } else {
+      badge.style.background = '#fef2f2';
+      badge.style.color = '#b91c1c';
+      badge.style.borderColor = '#fca5a5';
+      badge.innerHTML = `<span>⚠️ 貸借差額あり (${formatCurrency(bs.diff)}円)</span>`;
+    }
+  }
+}
+
+// ==========================================================================
+// 合計残高試算表 (Trial Balance) レンダラー
+// ==========================================================================
+function renderTrialBalance(periodFilter = currentAccGlobalPeriod) {
+  const invoices = getHistoryList();
+  const expenses = getExpenseList();
+  const fiscalSettings = (typeof getFiscalSettings === 'function') ? getFiscalSettings() : {};
+  const accountMaster = (typeof getAccountMasterList === 'function') ? getAccountMasterList() : [];
+  const manualJournals = (typeof getManualJournals === 'function') ? getManualJournals() : [];
+
+  const tb = calculateTrialBalance(invoices, expenses, fiscalSettings, accountMaster, manualJournals, periodFilter);
+
+  const tbody = document.getElementById('tbTableBody');
+  if (tbody) {
+    let html = '';
+    const groups = [
+      { key: 'asset', label: '【資産】' },
+      { key: 'liability', label: '【負債】' },
+      { key: 'equity', label: '【純資産】' },
+      { key: 'revenue', label: '【売上・収益】' },
+      { key: 'cost_of_sales', label: '【売上原価】' },
+      { key: 'sga', label: '【販売費及び一般管理費】' },
+      { key: 'non_operating', label: '【営業外損益】' }
+    ];
+
+    groups.forEach(g => {
+      let filteredRows = [];
+      if (g.key === 'cost_of_sales') {
+        filteredRows = tb.rows.filter(r => r.subType === 'cost_of_sales');
+      } else if (g.key === 'sga') {
+        filteredRows = tb.rows.filter(r => r.subType === 'sga');
+      } else if (g.key === 'non_operating') {
+        filteredRows = tb.rows.filter(r => r.subType === 'non_operating_revenue' || r.subType === 'non_operating_expense');
+      } else {
+        filteredRows = tb.rows.filter(r => r.type === g.key && r.subType !== 'cost_of_sales' && r.subType !== 'sga' && r.subType !== 'non_operating_revenue' && r.subType !== 'non_operating_expense');
+      }
+
+      if (filteredRows.length > 0) {
+        html += `
+          <tr style="background: #f8fafc; font-weight: 700; color: #475569; font-size: 0.775rem;">
+            <td colspan="6" style="padding: 6px 10px;">${g.label}</td>
+          </tr>
+        `;
+        filteredRows.forEach(r => {
+          html += `
+            <tr style="border-bottom: 1px solid #f1f5f9;">
+              <td style="padding: 6px 8px; text-align: right; font-family: monospace; font-weight: 600; color: #1e40af; background: #fafcff;">
+                ${r.debitBalance > 0 ? formatCurrency(r.debitBalance) : '-'}
+              </td>
+              <td style="padding: 6px 8px; text-align: right; font-family: monospace; color: #475569;">
+                ${r.debitTotal > 0 ? formatCurrency(r.debitTotal) : '-'}
+              </td>
+              <td style="padding: 6px 8px; text-align: center; font-family: monospace; font-size: 11px; color: #64748b;">
+                ${escapeHtml(r.code)}
+              </td>
+              <td style="padding: 6px 8px; font-weight: 600; color: #1e293b;">
+                ${escapeHtml(r.name)}
+              </td>
+              <td style="padding: 6px 8px; text-align: right; font-family: monospace; color: #475569;">
+                ${r.creditTotal > 0 ? formatCurrency(r.creditTotal) : '-'}
+              </td>
+              <td style="padding: 6px 8px; text-align: right; font-family: monospace; font-weight: 600; color: #166534; background: #fafffb;">
+                ${r.creditBalance > 0 ? formatCurrency(r.creditBalance) : '-'}
+              </td>
+            </tr>
+          `;
+        });
+      }
+    });
+
+    tbody.innerHTML = html;
+  }
+
+  // フッター合計
+  const fDebBal = document.getElementById('tbFootDebitBalance');
+  if (fDebBal) fDebBal.textContent = formatCurrency(tb.totals.debitBalanceTotal);
+  const fDebTot = document.getElementById('tbFootDebitTotal');
+  if (fDebTot) fDebTot.textContent = formatCurrency(tb.totals.debitTotal);
+  const fCredTot = document.getElementById('tbFootCreditTotal');
+  if (fCredTot) fCredTot.textContent = formatCurrency(tb.totals.creditTotal);
+  const fCredBal = document.getElementById('tbFootCreditBalance');
+  if (fCredBal) fCredBal.textContent = formatCurrency(tb.totals.creditBalanceTotal);
+
+  // 試算表貸借判定バッジ
+  const badge = document.getElementById('tbBalanceBadge');
+  if (badge) {
+    if (tb.isBalanced) {
+      badge.style.background = '#ecfdf5';
+      badge.style.color = '#047857';
+      badge.style.borderColor = '#a7f3d0';
+      badge.innerHTML = `<span>✅ 試算表貸借一致 (完全バランス)</span>`;
+    } else {
+      badge.style.background = '#fef2f2';
+      badge.style.color = '#b91c1c';
+      badge.style.borderColor = '#fca5a5';
+      badge.innerHTML = `<span>⚠️ 試算表貸借不一致</span>`;
+    }
+  }
+}
+
+// ==========================================================================
+// 総勘定元帳 (General Ledger) レンダラー（諸口対応）
+// ==========================================================================
+function renderGeneralLedger(periodFilter = currentAccGlobalPeriod) {
+  const select = document.getElementById('glAccountSelect');
+  if (!select) return;
+
+  const invoices = getHistoryList();
+  const expenses = getExpenseList();
+  const fiscalSettings = (typeof getFiscalSettings === 'function') ? getFiscalSettings() : {};
+  const accountMaster = (typeof getAccountMasterList === 'function') ? getAccountMasterList() : [];
+  const manualJournals = (typeof getManualJournals === 'function') ? getManualJournals() : [];
+
+  // 科目セレクタの初期化（未設定時のみ構築）
+  if (select.children.length <= 1) {
+    select.innerHTML = '';
+    accountMaster.forEach(acc => {
+      const opt = document.createElement('option');
+      opt.value = acc.name;
+      opt.textContent = `${acc.code} ${acc.name}`;
+      select.appendChild(opt);
+    });
+    // デフォルトで普通預金または最初の科目
+    const defaultAcc = accountMaster.find(a => a.name === '普通預金') || accountMaster[0];
+    if (defaultAcc) select.value = defaultAcc.name;
+  }
+
+  const selectedAccount = select.value || '普通預金';
+  const gl = calculateGeneralLedger(selectedAccount, invoices, expenses, fiscalSettings, accountMaster, manualJournals, periodFilter);
+
+  // サマリー表示
+  const obElem = document.getElementById('glOpeningBalance');
+  if (obElem) obElem.textContent = formatCurrency(gl.openingBalance);
+  const debElem = document.getElementById('glPeriodDebit');
+  if (debElem) debElem.textContent = formatCurrency(gl.periodDebit);
+  const credElem = document.getElementById('glPeriodCredit');
+  if (credElem) credElem.textContent = formatCurrency(gl.periodCredit);
+  const cbElem = document.getElementById('glClosingBalance');
+  if (cbElem) cbElem.textContent = formatCurrency(gl.closingBalance);
+
+  // 取引明細テーブル
+  const tbody = document.getElementById('glTableBody');
+  if (tbody) {
+    if (gl.entries.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--slate-400); padding: 32px;">この科目の取引データはありません</td></tr>`;
+      return;
+    }
+
+    let html = '';
+    gl.entries.forEach(e => {
+      // 相手科目が複数の場合は「諸口」表示
+      const counterAccountText = e.counterAccount === '諸口'
+        ? `<strong style="color: #6366f1; background: #eef2ff; padding: 1px 6px; border-radius: 4px;">諸口</strong>`
+        : `<span style="font-weight: 600; color: #334155;">${escapeHtml(e.counterAccount)}</span>`;
+
+      html += `
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="color: #64748b; font-size: 11px;">${escapeHtml(e.date)}</td>
+          <td>${counterAccountText}</td>
+          <td style="color: #475569; font-size: 12px;">${escapeHtml(e.description || '')}</td>
+          <td style="text-align: right; font-family: monospace; font-weight: 700; color: #2563eb;">
+            ${e.debit > 0 ? formatCurrency(e.debit) : '-'}
+          </td>
+          <td style="text-align: right; font-family: monospace; font-weight: 700; color: #16a34a;">
+            ${e.credit > 0 ? formatCurrency(e.credit) : '-'}
+          </td>
+          <td style="text-align: right; font-family: monospace; font-weight: 700; color: #1e293b; background: #f8fafc;">
+            ${formatCurrency(e.balance)}
+          </td>
+        </tr>
+      `;
+    });
+    tbody.innerHTML = html;
+  }
+}
+
+// ==========================================================================
+// 勘定科目マスタ・期首残高設定 レンダラー
+// ==========================================================================
+function renderAccountingSettings() {
+  const accountMaster = (typeof getAccountMasterList === 'function') ? getAccountMasterList() : [];
+  const fiscalSettings = (typeof getFiscalSettings === 'function') ? getFiscalSettings() : { openingBalances: {} };
+  const openingBalances = fiscalSettings.openingBalances || {};
+
+  // 1. 期首残高入力テーブル
+  const obTbody = document.getElementById('openingBalancesTableBody');
+  if (obTbody) {
+    let html = '';
+    accountMaster.forEach(acc => {
+      // B/S科目（資産・負債・純資産）のみ期首残高を設定可能
+      if (acc.type !== 'asset' && acc.type !== 'liability' && acc.type !== 'equity') return;
+
+      const currentVal = openingBalances[acc.code] ?? openingBalances[acc.name] ?? '';
+      const typeLabel = acc.type === 'asset' ? '資産' : (acc.type === 'liability' ? '負債' : '純資産');
+      const dcLabel = acc.dcType === 'debit' ? '借方' : '貸方';
+
+      html += `
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="padding: 6px 8px; font-size: 11px; color: #64748b;">${typeLabel}</td>
+          <td style="padding: 6px 8px; font-weight: 600; color: #1e293b;">
+            ${acc.code} ${escapeHtml(acc.name)}
+          </td>
+          <td style="padding: 6px 8px; text-align: center; font-size: 11px; font-weight: 700; color: ${acc.dcType === 'debit' ? '#2563eb' : '#16a34a'};">
+            ${dcLabel}
+          </td>
+          <td style="padding: 4px 8px; text-align: right;">
+            <input type="number" class="form-control form-control-sm ob-input" data-code="${acc.code}" value="${currentVal}"
+              placeholder="0" oninput="window.updateOpeningBalanceCheck && window.updateOpeningBalanceCheck()"
+              style="font-family: monospace; font-weight: 700; text-align: right; padding: 3px 6px; font-size: 0.85rem;">
+          </td>
+        </tr>
+      `;
+    });
+    obTbody.innerHTML = html;
+  }
+
+  // リアルタイム検証の実行
+  updateOpeningBalanceCheck();
+
+  // 2. 勘定科目マスタ一覧
+  const masterTbody = document.getElementById('accountMasterTableBody');
+  if (masterTbody) {
+    let html = '';
+    accountMaster.forEach(acc => {
+      const typeLabel = acc.type === 'asset' ? '資産' : (acc.type === 'liability' ? '負債' : (acc.type === 'equity' ? '純資産' : (acc.type === 'revenue' ? '収益' : '費用')));
+      let subLabel = '-';
+      if (acc.subType === 'cost_of_sales') subLabel = '<span style="color:#b91c1c; font-weight:700;">売上原価</span>';
+      else if (acc.subType === 'sga') subLabel = '販管費';
+      else if (acc.subType === 'current_asset') subLabel = '流動資産';
+      else if (acc.subType === 'fixed_asset') subLabel = '固定資産';
+      else if (acc.subType === 'current_liability') subLabel = '流動負債';
+      else if (acc.subType === 'fixed_liability') subLabel = '固定負債';
+
+      const taxLabel = TAX_TYPES[acc.defaultTaxType]?.label || acc.defaultTaxType || '-';
+
+      html += `
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="padding: 6px 8px; font-family: monospace; font-weight: 600; color: #475569;">${acc.code}</td>
+          <td style="padding: 6px 8px; font-weight: 600; color: #1e293b;">${escapeHtml(acc.name)}</td>
+          <td style="padding: 6px 8px; font-size: 11px; color: #64748b;">${typeLabel}</td>
+          <td style="padding: 6px 8px; font-size: 11px; color: #64748b;">${subLabel}</td>
+          <td style="padding: 6px 8px; font-size: 11px; color: #475569;">${taxLabel}</td>
+        </tr>
+      `;
+    });
+    masterTbody.innerHTML = html;
+  }
+}
+
+// 期首残高のリアルタイム貸借チェック
+function updateOpeningBalanceCheck() {
+  const inputs = document.querySelectorAll('.ob-input');
+  const tempBalances = {};
+  inputs.forEach(inp => {
+    const code = inp.dataset.code;
+    const val = Number(inp.value);
+    if (!isNaN(val) && val !== 0) {
+      tempBalances[code] = val;
+    }
+  });
+
+  const accountMaster = (typeof getAccountMasterList === 'function') ? getAccountMasterList() : [];
+  const check = validateOpeningBalances(tempBalances, accountMaster);
+
+  const debText = document.getElementById('openingDebitTotalText');
+  if (debText) debText.textContent = formatCurrency(check.debitTotal);
+
+  const credText = document.getElementById('openingCreditTotalText');
+  if (credText) credText.textContent = formatCurrency(check.creditTotal);
+
+  const diffText = document.getElementById('openingDiffText');
+  if (diffText) {
+    diffText.textContent = `${formatCurrency(Math.abs(check.diff))}円`;
+    diffText.style.color = check.isBalanced ? '#047857' : '#dc2626';
+  }
+
+  const badge = document.getElementById('openingBalanceBadge');
+  if (badge) {
+    if (check.isBalanced) {
+      badge.style.background = '#ecfdf5';
+      badge.style.color = '#047857';
+      badge.style.borderColor = '#a7f3d0';
+      badge.textContent = '✅ 貸借一致 (差額 0円)';
+    } else {
+      badge.style.background = '#fef2f2';
+      badge.style.color = '#b91c1c';
+      badge.style.borderColor = '#fca5a5';
+      badge.textContent = `⚠️ 差額あり (${formatCurrency(check.diff)}円)`;
+    }
+  }
+}
+
+function saveOpeningBalancesFromUI() {
+  const inputs = document.querySelectorAll('.ob-input');
+  const newBalances = {};
+  inputs.forEach(inp => {
+    const code = inp.dataset.code;
+    const val = Number(inp.value);
+    if (!isNaN(val) && val !== 0) {
+      newBalances[code] = val;
+    }
+  });
+
+  const accountMaster = (typeof getAccountMasterList === 'function') ? getAccountMasterList() : [];
+  const check = validateOpeningBalances(newBalances, accountMaster);
+
+  if (!check.isBalanced) {
+    if (!confirm(`【警告: 貸借不一致】\n借方合計と貸方合計に ${formatCurrency(Math.abs(check.diff))}円 の差額があります。\n\nこのまま期首残高として保存しますか？（後から修正可能です）`)) {
+      return;
+    }
+  }
+
+  const currentSettings = (typeof getFiscalSettings === 'function') ? getFiscalSettings() : {};
+  const updatedSettings = {
+    ...currentSettings,
+    openingBalances: newBalances
+  };
+
+  if (typeof saveFiscalSettings === 'function') {
+    saveFiscalSettings(updatedSettings);
+    showToast('期首残高を保存しました！貸借対照表および試算表に即時反映されます。', 'success');
+    renderBalanceSheet(currentAccGlobalPeriod);
+    renderTrialBalance(currentAccGlobalPeriod);
+    renderGeneralLedger(currentAccGlobalPeriod);
+  }
+}
+
+// ==========================================================================
+// 振替伝票（複合仕訳）モーダル コントローラー
+// ==========================================================================
+let currentMjDebitLines = [];
+let currentMjCreditLines = [];
+
+function openManualJournalModal(editId = null) {
+  const modal = document.getElementById('manualJournalModal');
+  if (!modal) return;
+
+  const dateInput = document.getElementById('mjDate');
+  const entryNumInput = document.getElementById('mjEntryNumber');
+  const descInput = document.getElementById('mjDescription');
+
+  if (dateInput) dateInput.value = getTodayDateString();
+  if (entryNumInput) entryNumInput.value = '';
+  if (descInput) descInput.value = '';
+
+  currentMjDebitLines = [];
+  currentMjCreditLines = [];
+
+  // 初期明細行
+  addDebitLine({ accountName: '普通預金', amount: '', taxType: 'out_of_scope', invoiceType: 'qualified' });
+  addCreditLine({ accountName: '売掛金', amount: '', taxType: 'out_of_scope', invoiceType: 'qualified' });
+
+  updateMjLinesUI();
+  modal.style.display = 'flex';
+  modal.classList.add('active');
+}
+
+function closeManualJournalModal() {
+  const modal = document.getElementById('manualJournalModal');
+  if (!modal) return;
+  modal.style.display = 'none';
+  modal.classList.remove('active');
+}
+
+function addDebitLine(initialData = null) {
+  currentMjDebitLines.push(initialData || {
+    accountName: '普通預金',
+    subAccount: '',
+    amount: '',
+    taxType: 'taxable_10',
+    invoiceType: 'qualified'
+  });
+  updateMjLinesUI();
+}
+
+function removeDebitLine(idx) {
+  if (currentMjDebitLines.length <= 1) {
+    showToast('借方は最低1行必要です', 'info');
+    return;
+  }
+  currentMjDebitLines.splice(idx, 1);
+  updateMjLinesUI();
+}
+
+function addCreditLine(initialData = null) {
+  currentMjCreditLines.push(initialData || {
+    accountName: '売上高',
+    subAccount: '',
+    amount: '',
+    taxType: 'taxable_10',
+    invoiceType: 'qualified'
+  });
+  updateMjLinesUI();
+}
+
+function removeCreditLine(idx) {
+  if (currentMjCreditLines.length <= 1) {
+    showToast('貸方は最低1行必要です', 'info');
+    return;
+  }
+  currentMjCreditLines.splice(idx, 1);
+  updateMjLinesUI();
+}
+
+function updateMjLinesUI() {
+  const master = (typeof getAccountMasterList === 'function') ? getAccountMasterList() : [];
+
+  function buildAccountOptions(selected) {
+    return master.map(acc => `<option value="${escapeHtml(acc.name)}" ${acc.name === selected ? 'selected' : ''}>${acc.code} ${escapeHtml(acc.name)}</option>`).join('');
+  }
+
+  // 借方描画
+  const debBody = document.getElementById('mjDebitLinesBody');
+  if (debBody) {
+    let debHtml = '';
+    currentMjDebitLines.forEach((line, idx) => {
+      debHtml += `
+        <tr>
+          <td style="padding: 2px;">
+            <select class="form-select form-select-sm" style="font-size: 11px; padding: 2px 4px;" onchange="currentMjDebitLines[${idx}].accountName=this.value; window.updateMjTotals && window.updateMjTotals();">
+              ${buildAccountOptions(line.accountName)}
+            </select>
+          </td>
+          <td style="padding: 2px;">
+            <input type="text" class="form-control form-control-sm" style="font-size: 11px; padding: 2px 4px;" placeholder="補助" value="${escapeHtml(line.subAccount || '')}" oninput="currentMjDebitLines[${idx}].subAccount=this.value;">
+          </td>
+          <td style="padding: 2px;">
+            <input type="number" class="form-control form-control-sm" style="font-size: 11px; font-weight: 700; text-align: right; padding: 2px 4px; font-family: monospace;" placeholder="0" value="${line.amount}" oninput="currentMjDebitLines[${idx}].amount=this.value; window.updateMjTotals && window.updateMjTotals();">
+          </td>
+          <td style="padding: 2px;">
+            <select class="form-select form-select-sm" style="font-size: 10px; padding: 2px 2px;" onchange="currentMjDebitLines[${idx}].taxType=this.value;">
+              <option value="taxable_10" ${line.taxType === 'taxable_10' ? 'selected' : ''}>10%</option>
+              <option value="taxable_8" ${line.taxType === 'taxable_8' ? 'selected' : ''}>8%</option>
+              <option value="exempt" ${line.taxType === 'exempt' ? 'selected' : ''}>非課税</option>
+              <option value="out_of_scope" ${line.taxType === 'out_of_scope' ? 'selected' : ''}>対象外</option>
+            </select>
+          </td>
+          <td style="padding: 2px; text-align: center;">
+            <button type="button" style="border: none; background: transparent; color: #ef4444; font-weight: 700; cursor: pointer;" onclick="window.removeDebitLine && window.removeDebitLine(${idx})">✕</button>
+          </td>
+        </tr>
+      `;
+    });
+    debBody.innerHTML = debHtml;
+  }
+
+  // 貸方描画
+  const credBody = document.getElementById('mjCreditLinesBody');
+  if (credBody) {
+    let credHtml = '';
+    currentMjCreditLines.forEach((line, idx) => {
+      credHtml += `
+        <tr>
+          <td style="padding: 2px;">
+            <select class="form-select form-select-sm" style="font-size: 11px; padding: 2px 4px;" onchange="currentMjCreditLines[${idx}].accountName=this.value; window.updateMjTotals && window.updateMjTotals();">
+              ${buildAccountOptions(line.accountName)}
+            </select>
+          </td>
+          <td style="padding: 2px;">
+            <input type="text" class="form-control form-control-sm" style="font-size: 11px; padding: 2px 4px;" placeholder="補助" value="${escapeHtml(line.subAccount || '')}" oninput="currentMjCreditLines[${idx}].subAccount=this.value;">
+          </td>
+          <td style="padding: 2px;">
+            <input type="number" class="form-control form-control-sm" style="font-size: 11px; font-weight: 700; text-align: right; padding: 2px 4px; font-family: monospace;" placeholder="0" value="${line.amount}" oninput="currentMjCreditLines[${idx}].amount=this.value; window.updateMjTotals && window.updateMjTotals();">
+          </td>
+          <td style="padding: 2px;">
+            <select class="form-select form-select-sm" style="font-size: 10px; padding: 2px 2px;" onchange="currentMjCreditLines[${idx}].taxType=this.value;">
+              <option value="taxable_10" ${line.taxType === 'taxable_10' ? 'selected' : ''}>10%</option>
+              <option value="taxable_8" ${line.taxType === 'taxable_8' ? 'selected' : ''}>8%</option>
+              <option value="exempt" ${line.taxType === 'exempt' ? 'selected' : ''}>非課税</option>
+              <option value="out_of_scope" ${line.taxType === 'out_of_scope' ? 'selected' : ''}>対象外</option>
+            </select>
+          </td>
+          <td style="padding: 2px; text-align: center;">
+            <button type="button" style="border: none; background: transparent; color: #ef4444; font-weight: 700; cursor: pointer;" onclick="window.removeCreditLine && window.removeCreditLine(${idx})">✕</button>
+          </td>
+        </tr>
+      `;
+    });
+    credBody.innerHTML = credHtml;
+  }
+
+  updateMjTotals();
+}
+
+function updateMjTotals() {
+  const debTotal = currentMjDebitLines.reduce((sum, l) => sum + (Number(l.amount) || 0), 0);
+  const credTotal = currentMjCreditLines.reduce((sum, l) => sum + (Number(l.amount) || 0), 0);
+  const diff = debTotal - credTotal;
+
+  const debElem = document.getElementById('mjDebitTotalText');
+  if (debElem) debElem.textContent = formatCurrency(debTotal);
+
+  const credElem = document.getElementById('mjCreditTotalText');
+  if (credElem) credElem.textContent = formatCurrency(credTotal);
+
+  const diffElem = document.getElementById('mjDiffText');
+  if (diffElem) diffElem.textContent = `差額: ${formatCurrency(Math.abs(diff))}円`;
+
+  const alertBox = document.getElementById('mjBalanceAlert');
+  const msgElem = document.getElementById('mjBalanceMessage');
+  const saveBtn = document.getElementById('btnSaveManualJournal');
+
+  if (diff === 0 && debTotal > 0) {
+    if (alertBox) {
+      alertBox.style.background = '#ecfdf5';
+      alertBox.style.color = '#047857';
+      alertBox.style.borderColor = '#a7f3d0';
+    }
+    if (msgElem) msgElem.textContent = '✅ 借方・貸方の金額が一致しています';
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.style.opacity = '1';
+    }
+  } else {
+    if (alertBox) {
+      alertBox.style.background = '#fef2f2';
+      alertBox.style.color = '#b91c1c';
+      alertBox.style.borderColor = '#fca5a5';
+    }
+    if (msgElem) msgElem.textContent = debTotal === 0 ? '⚠️ 金額を入力してください' : '⚠️ 借方と貸方の金額が一致していません';
+    if (saveBtn) {
+      saveBtn.disabled = (debTotal === 0);
+      saveBtn.style.opacity = (debTotal === 0) ? '0.6' : '1';
+    }
+  }
+}
+
+function saveManualJournalFromUI() {
+  const dateInput = document.getElementById('mjDate');
+  const entryNumInput = document.getElementById('mjEntryNumber');
+  const descInput = document.getElementById('mjDescription');
+
+  const journalData = {
+    date: dateInput?.value || getTodayDateString(),
+    entryNumber: entryNumInput?.value || '',
+    description: descInput?.value || '振替伝票',
+    debitLines: currentMjDebitLines.map(l => ({
+      accountName: l.accountName,
+      subAccount: l.subAccount || '',
+      amount: Number(l.amount) || 0,
+      taxType: l.taxType || 'taxable_10',
+      invoiceType: l.invoiceType || 'qualified'
+    })),
+    creditLines: currentMjCreditLines.map(l => ({
+      accountName: l.accountName,
+      subAccount: l.subAccount || '',
+      amount: Number(l.amount) || 0,
+      taxType: l.taxType || 'taxable_10',
+      invoiceType: l.invoiceType || 'qualified'
+    })),
+    sourceType: 'manual'
+  };
+
+  const validation = validateManualJournal(journalData);
+  if (!validation.isValid) {
+    alert(`【登録できません】\n${validation.errors.join('\n')}`);
+    return;
+  }
+
+  if (typeof saveManualJournal === 'function') {
+    saveManualJournal(journalData);
+    showToast('振替伝票（複合仕訳）を登録しました！仕訳帳・試算表・元帳・B/Sへ即時反映されます。', 'success');
+    closeManualJournalModal();
+    renderAccountingJournals(currentAccGlobalPeriod);
+    renderBalanceSheet(currentAccGlobalPeriod);
+    renderTrialBalance(currentAccGlobalPeriod);
+    renderGeneralLedger(currentAccGlobalPeriod);
+  }
+}
+
+function deleteManualJournalFromUI(id) {
+  if (!confirm('この手動仕訳（振替伝票）を削除しますか？\n元帳や財務諸表の数値も再計算されます。')) return;
+  if (typeof deleteManualJournal === 'function') {
+    deleteManualJournal(id);
+    showToast('仕訳を削除しました。', 'info');
+    renderAccountingJournals(currentAccGlobalPeriod);
+    renderBalanceSheet(currentAccGlobalPeriod);
+    renderTrialBalance(currentAccGlobalPeriod);
+    renderGeneralLedger(currentAccGlobalPeriod);
+  }
+}
+
+// ==========================================================================
+// 売掛金 振込手数料差引消込モーダル コントローラー
+// ==========================================================================
+let currentReconcileDoc = null;
+
+function openReconcileFeeModal(invoiceId) {
+  const modal = document.getElementById('reconcileFeeModal');
+  if (!modal) return;
+
+  const full = getDocFromHistory(invoiceId);
+  const list = getHistoryList();
+  const summary = list.find(d => d.id === invoiceId);
+  const doc = full || summary?.fullDoc || summary;
+
+  if (!doc) {
+    showToast('請求書データが見つかりません', 'danger');
+    return;
+  }
+
+  currentReconcileDoc = doc;
+  const grandTotal = doc.grandTotal || (doc.totals && doc.totals.total) || 0;
+
+  const idInp = document.getElementById('rfInvoiceId');
+  if (idInp) idInp.value = invoiceId;
+
+  const docNoElem = document.getElementById('rfDocNumber');
+  if (docNoElem) docNoElem.textContent = doc.docNumber || '-';
+
+  const clientElem = document.getElementById('rfClientName');
+  if (clientElem) clientElem.textContent = doc.clientName || doc.client?.name || '-';
+
+  const totElem = document.getElementById('rfInvoiceTotal');
+  if (totElem) totElem.textContent = formatCurrency(grandTotal);
+
+  const dateInp = document.getElementById('rfDate');
+  if (dateInp) dateInp.value = getTodayDateString();
+
+  // デフォルト: 手数料 440円、差引入金額
+  const defaultFee = grandTotal >= 30000 ? 440 : 220;
+  const actInp = document.getElementById('rfActualAmount');
+  const feeInp = document.getElementById('rfFeeAmount');
+
+  if (feeInp) feeInp.value = defaultFee;
+  if (actInp) actInp.value = Math.max(0, grandTotal - defaultFee);
+
+  modal.style.display = 'flex';
+  modal.classList.add('active');
+}
+
+function closeReconcileFeeModal() {
+  const modal = document.getElementById('reconcileFeeModal');
+  if (!modal) return;
+  modal.style.display = 'none';
+  modal.classList.remove('active');
+}
+
+function calcReconcileFee() {
+  if (!currentReconcileDoc) return;
+  const grandTotal = currentReconcileDoc.grandTotal || (currentReconcileDoc.totals && currentReconcileDoc.totals.total) || 0;
+  const actInp = document.getElementById('rfActualAmount');
+  const feeInp = document.getElementById('rfFeeAmount');
+  const actVal = Number(actInp?.value) || 0;
+  const feeVal = Math.max(0, grandTotal - actVal);
+  if (feeInp) feeInp.value = feeVal;
+}
+
+function calcActualFromFee() {
+  if (!currentReconcileDoc) return;
+  const grandTotal = currentReconcileDoc.grandTotal || (currentReconcileDoc.totals && currentReconcileDoc.totals.total) || 0;
+  const actInp = document.getElementById('rfActualAmount');
+  const feeInp = document.getElementById('rfFeeAmount');
+  const feeVal = Number(feeInp?.value) || 0;
+  const actVal = Math.max(0, grandTotal - feeVal);
+  if (actInp) actInp.value = actVal;
+}
+
+function submitReconcileFee() {
+  if (!currentReconcileDoc) return;
+  const invoiceId = currentReconcileDoc.id;
+  const grandTotal = currentReconcileDoc.grandTotal || (currentReconcileDoc.totals && currentReconcileDoc.totals.total) || 0;
+  const dateVal = document.getElementById('rfDate')?.value || getTodayDateString();
+  const accVal = document.getElementById('rfAccount')?.value || '普通預金';
+  const actVal = Number(document.getElementById('rfActualAmount')?.value) || 0;
+  const feeVal = Number(document.getElementById('rfFeeAmount')?.value) || 0;
+
+  if (actVal + feeVal !== grandTotal) {
+    alert(`入金額(${formatCurrency(actVal)}) ＋ 振込手数料(${formatCurrency(feeVal)}) の合計が請求総額(${formatCurrency(grandTotal)}) と一致していません。`);
+    return;
+  }
+
+  // 1. 請求書を入金済みに更新
+  updateDocPaymentStatus(invoiceId, true);
+
+  // 2. 複合仕訳を作成して MANUAL_JOURNALS に保存（sourceId に請求書IDをセット）
+  const journalData = {
+    date: dateVal,
+    entryNumber: `REC-${currentReconcileDoc.docNumber || invoiceId.substr(0, 6)}`,
+    description: `[消込] ${currentReconcileDoc.clientName || currentReconcileDoc.client?.name || ''} 請求書「${currentReconcileDoc.docNumber || ''}」入金(振込手数料差引)`,
+    sourceType: 'reconcile',
+    sourceId: invoiceId, // ★ 二重計上防止排他制御のキー
+    debitLines: [
+      {
+        accountName: accVal,
+        subAccount: '',
+        amount: actVal,
+        taxType: 'out_of_scope',
+        invoiceType: 'qualified'
+      },
+      {
+        accountName: '支払手数料',
+        subAccount: '振込手数料',
+        amount: feeVal,
+        taxType: 'taxable_10',
+        invoiceType: 'qualified'
+      }
+    ],
+    creditLines: [
+      {
+        accountName: '売掛金',
+        subAccount: currentReconcileDoc.clientName || '',
+        amount: grandTotal,
+        taxType: 'out_of_scope',
+        invoiceType: 'qualified'
+      }
+    ]
+  };
+
+  if (typeof saveManualJournal === 'function') {
+    saveManualJournal(journalData);
+  }
+
+  showToast(`振込手数料(${formatCurrency(feeVal)}円)を計上し、入金消込を完了しました！仕訳帳にも二重計上なく反映されます。`, 'success');
+  closeReconcileFeeModal();
+  applyAccGlobalPeriod(currentAccGlobalPeriod.preset);
+}
+
+// 勘定科目新規登録モーダル
+function openNewAccountModal() {
+  const modal = document.getElementById('newAccountModal');
+  if (!modal) return;
+  document.getElementById('naCode').value = '';
+  document.getElementById('naName').value = '';
+  document.getElementById('naSubAccounts').value = '';
+  modal.style.display = 'flex';
+  modal.classList.add('active');
+}
+
+function closeNewAccountModal() {
+  const modal = document.getElementById('newAccountModal');
+  if (!modal) return;
+  modal.style.display = 'none';
+  modal.classList.remove('active');
+}
+
+function updateNaSubTypeOptions() {
+  const type = document.getElementById('naType')?.value;
+  const subSelect = document.getElementById('naSubType');
+  if (!subSelect) return;
+
+  if (type === 'expense') {
+    subSelect.innerHTML = `
+      <option value="cost_of_sales">売上原価 (粗利計算)</option>
+      <option value="sga" selected>販売費及び一般管理費</option>
+      <option value="non_operating_expense">営業外費用</option>
+    `;
+  } else if (type === 'revenue') {
+    subSelect.innerHTML = `
+      <option value="operating_revenue" selected>営業収益 (売上高)</option>
+      <option value="non_operating_revenue">営業外収益</option>
+    `;
+  } else if (type === 'asset') {
+    subSelect.innerHTML = `
+      <option value="current_asset" selected>流動資産</option>
+      <option value="fixed_asset">固定資産</option>
+    `;
+  } else if (type === 'liability') {
+    subSelect.innerHTML = `
+      <option value="current_liability" selected>流動負債</option>
+      <option value="fixed_liability">固定負債</option>
+    `;
+  } else {
+    subSelect.innerHTML = `<option value="equity" selected>純資産</option>`;
+  }
+}
+
+function submitNewAccount() {
+  const code = (document.getElementById('naCode')?.value || '').trim();
+  const name = (document.getElementById('naName')?.value || '').trim();
+  const type = document.getElementById('naType')?.value || 'expense';
+  const subType = document.getElementById('naSubType')?.value || 'sga';
+  const taxType = document.getElementById('naTaxType')?.value || 'taxable_10';
+  const subs = (document.getElementById('naSubAccounts')?.value || '').split(',').map(s => s.trim()).filter(Boolean);
+
+  if (!name) {
+    alert('勘定科目名を入力してください');
+    return;
+  }
+
+  const dcType = (type === 'asset' || type === 'expense') ? 'debit' : 'credit';
+  const newAccount = {
+    code: code || String(Date.now()).slice(-3),
+    name,
+    type,
+    subType,
+    dcType,
+    defaultTaxType: taxType,
+    subAccounts: subs,
+    isSystem: false
+  };
+
+  const list = (typeof getAccountMasterList === 'function') ? getAccountMasterList() : [];
+  list.push(newAccount);
+  if (typeof saveAccountMasterList === 'function') {
+    saveAccountMasterList(list);
+    showToast(`勘定科目「${name}」を追加しました！`, 'success');
+    closeNewAccountModal();
+    renderAccountingSettings();
+  }
+}
+
+// グローバルスコープ公開
+window.renderAccountingJournals = renderAccountingJournals;
+window.renderBalanceSheet = renderBalanceSheet;
+window.renderTrialBalance = renderTrialBalance;
+window.renderGeneralLedger = renderGeneralLedger;
+window.renderAccountingSettings = renderAccountingSettings;
+window.updateOpeningBalanceCheck = updateOpeningBalanceCheck;
+window.saveOpeningBalancesFromUI = saveOpeningBalancesFromUI;
+window.openManualJournalModal = openManualJournalModal;
+window.closeManualJournalModal = closeManualJournalModal;
+window.addDebitLine = addDebitLine;
+window.removeDebitLine = removeDebitLine;
+window.addCreditLine = addCreditLine;
+window.removeCreditLine = removeCreditLine;
+window.updateMjTotals = updateMjTotals;
+window.saveManualJournalFromUI = saveManualJournalFromUI;
+window.deleteManualJournalFromUI = deleteManualJournalFromUI;
+window.openReconcileFeeModal = openReconcileFeeModal;
+window.closeReconcileFeeModal = closeReconcileFeeModal;
+window.calcReconcileFee = calcReconcileFee;
+window.calcActualFromFee = calcActualFromFee;
+window.submitReconcileFee = submitReconcileFee;
+window.openNewAccountModal = openNewAccountModal;
+window.closeNewAccountModal = closeNewAccountModal;
+window.updateNaSubTypeOptions = updateNaSubTypeOptions;
+window.submitNewAccount = submitNewAccount;
+window.exportJournalCSV = handleExportJournalCSV;
+window.__openReconcileFeeModal = openReconcileFeeModal;
+
 
 // ==========================================================================
 // 経費立替精算書（A4帳票）発行コントローラー

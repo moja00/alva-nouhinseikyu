@@ -20,6 +20,9 @@ const KEYS = {
   PAYROLL_RECORDS: 'billcraft_payroll_records',
   PAYROLL_SETTINGS: 'billcraft_payroll_settings',
   PREVIOUS_YEAR_INCOME: 'billcraft_previous_year_income',
+  ACCOUNT_MASTER: 'billcraft_account_master',
+  MANUAL_JOURNALS: 'billcraft_manual_journals',
+  FISCAL_SETTINGS: 'billcraft_fiscal_settings',
   DELETED_DOC_IDS: 'quickdoc_deleted_doc_ids',
   TRASH_HISTORY: 'quickdoc_trash_history'
 };
@@ -3940,8 +3943,198 @@ export function deletePayrollRecord(targetMonthOrId) {
   }
 }
 
+// ==========================================================================
+// 財務会計（複式簿記・振替伝票・期首残高）データ永続化
+// ==========================================================================
+
+export async function saveServerAccountMaster(items) {
+  try {
+    const res = await apiFetch('account_master', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(items)
+    });
+    return res.ok;
+  } catch (e) {
+    return false;
+  }
+}
+
+export async function saveServerManualJournals(journals) {
+  try {
+    const res = await apiFetch('manual_journals', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(journals)
+    });
+    return res.ok;
+  } catch (e) {
+    return false;
+  }
+}
+
+export async function saveServerFiscalSettings(settings) {
+  try {
+    const res = await apiFetch('fiscal_settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings)
+    });
+    return res.ok;
+  } catch (e) {
+    return false;
+  }
+}
+
 /**
- * ローカルストレージ内の全データ（マスタ・経費・伝票・自社設定）をサーバーへ一括アップロード
+ * 勘定科目マスタ一覧を取得（未設定時は DEFAULT_ACCOUNT_MASTER を返す）
+ * @returns {Array<any>}
+ */
+export function getAccountMasterList() {
+  try {
+    const raw = localStorage.getItem(KEYS.ACCOUNT_MASTER);
+    if (!raw) {
+      if (typeof DEFAULT_ACCOUNT_MASTER !== 'undefined' && Array.isArray(DEFAULT_ACCOUNT_MASTER)) {
+        return JSON.parse(JSON.stringify(DEFAULT_ACCOUNT_MASTER));
+      }
+      return [];
+    }
+    const list = JSON.parse(raw);
+    return Array.isArray(list) ? list : [];
+  } catch (e) {
+    console.warn('Failed to load account master:', e);
+    return (typeof DEFAULT_ACCOUNT_MASTER !== 'undefined') ? JSON.parse(JSON.stringify(DEFAULT_ACCOUNT_MASTER)) : [];
+  }
+}
+
+/**
+ * 勘定科目マスタ一覧を保存
+ * @param {Array<any>} list
+ */
+export function saveAccountMasterList(list) {
+  try {
+    const safeList = Array.isArray(list) ? list : [];
+    localStorageSetItemAndSync(KEYS.ACCOUNT_MASTER, JSON.stringify(safeList));
+    saveServerAccountMaster(safeList).catch(() => {});
+    return true;
+  } catch (e) {
+    console.error('Failed to save account master:', e);
+    return false;
+  }
+}
+
+/**
+ * 手動振替伝票（複合仕訳）一覧を取得
+ * @returns {Array<any>}
+ */
+export function getManualJournals() {
+  try {
+    const raw = localStorage.getItem(KEYS.MANUAL_JOURNALS);
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list : [];
+  } catch (e) {
+    console.warn('Failed to load manual journals:', e);
+    return [];
+  }
+}
+
+/**
+ * 振替伝票を保存（新規追加または更新）
+ * @param {Object} journal
+ * @returns {string|boolean} 生成または更新されたID
+ */
+export function saveManualJournal(journal) {
+  try {
+    if (!journal) return false;
+    const list = getManualJournals();
+    const entryId = journal.id || `mj_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+    const nowIso = new Date().toISOString();
+    const newEntry = {
+      ...journal,
+      id: entryId,
+      updatedAt: nowIso
+    };
+    if (!newEntry.createdAt) newEntry.createdAt = nowIso;
+
+    const existingIndex = list.findIndex(j => j.id === entryId);
+    if (existingIndex >= 0) {
+      list[existingIndex] = newEntry;
+    } else {
+      list.push(newEntry);
+    }
+
+    localStorageSetItemAndSync(KEYS.MANUAL_JOURNALS, JSON.stringify(list));
+    saveServerManualJournals(list).catch(() => {});
+    return entryId;
+  } catch (e) {
+    console.error('Failed to save manual journal:', e);
+    return false;
+  }
+}
+
+/**
+ * 振替伝票を削除
+ * @param {string} id
+ */
+export function deleteManualJournal(id) {
+  try {
+    let list = getManualJournals();
+    list = list.filter(j => j.id !== id);
+    localStorageSetItemAndSync(KEYS.MANUAL_JOURNALS, JSON.stringify(list));
+    deleteServerEntity('manual_journals', id).catch(() => {});
+    saveServerManualJournals(list).catch(() => {});
+    return true;
+  } catch (e) {
+    console.error('Failed to delete manual journal:', e);
+    return false;
+  }
+}
+
+/**
+ * 会計年度・期首残高設定を取得
+ * @returns {Object}
+ */
+export function getFiscalSettings() {
+  try {
+    const raw = localStorage.getItem(KEYS.FISCAL_SETTINGS);
+    const currentYear = new Date().getFullYear();
+    const defaultSettings = {
+      fiscalYearStart: `${currentYear}-01-01`,
+      fiscalYearEnd: `${currentYear}-12-31`,
+      openingBalances: {}
+    };
+    if (!raw) return defaultSettings;
+    const parsed = JSON.parse(raw);
+    return { ...defaultSettings, ...parsed };
+  } catch (e) {
+    console.warn('Failed to load fiscal settings:', e);
+    return {
+      fiscalYearStart: '2026-01-01',
+      fiscalYearEnd: '2026-12-31',
+      openingBalances: {}
+    };
+  }
+}
+
+/**
+ * 会計年度・期首残高設定を保存
+ * @param {Object} settings
+ */
+export function saveFiscalSettings(settings) {
+  try {
+    const current = getFiscalSettings();
+    const updated = { ...current, ...settings, updatedAt: new Date().toISOString() };
+    localStorageSetItemAndSync(KEYS.FISCAL_SETTINGS, JSON.stringify(updated));
+    saveServerFiscalSettings(updated).catch(() => {});
+    return true;
+  } catch (e) {
+    console.error('Failed to save fiscal settings:', e);
+    return false;
+  }
+}
+
+/**
+ * ローカルストレージ内の全データ（マスタ・経費・伝票・自社設定・会計）をサーバーへ一括アップロード
  */
 export async function pushAllLocalDataToServer() {
   const token = (typeof getFirebaseAuthToken === 'function') ? await getFirebaseAuthToken(false) : null;
@@ -3956,7 +4149,10 @@ export async function pushAllLocalDataToServer() {
     issuerProfile: loadIssuerProfile(),
     expenses: getExpenseList(),
     invoicesHistory: getHistoryList(),
-    attendance: (typeof getAttendanceList === 'function') ? getAttendanceList() : []
+    attendance: (typeof getAttendanceList === 'function') ? getAttendanceList() : [],
+    accountMaster: getAccountMasterList(),
+    manualJournals: getManualJournals(),
+    fiscalSettings: getFiscalSettings()
   };
 
   try {
@@ -4013,6 +4209,15 @@ export async function pullAllServerDataToLocal() {
     if (data.attendance && Array.isArray(data.attendance) && data.attendance.length > 0) {
       localStorageSetItemAndSync(KEYS.ATTENDANCE, JSON.stringify(data.attendance));
     }
+    if (data.accountMaster && Array.isArray(data.accountMaster) && data.accountMaster.length > 0) {
+      localStorageSetItemAndSync(KEYS.ACCOUNT_MASTER, JSON.stringify(data.accountMaster));
+    }
+    if (data.manualJournals && Array.isArray(data.manualJournals)) {
+      localStorageSetItemAndSync(KEYS.MANUAL_JOURNALS, JSON.stringify(data.manualJournals));
+    }
+    if (data.fiscalSettings && typeof data.fiscalSettings === 'object') {
+      localStorageSetItemAndSync(KEYS.FISCAL_SETTINGS, JSON.stringify(data.fiscalSettings));
+    }
     return { success: true, message: 'サーバーから最新データを同期しました！' };
   } catch (err) {
     console.error('Failed to pull all data from server:', err);
@@ -4022,10 +4227,18 @@ export async function pullAllServerDataToLocal() {
 
 if (typeof window !== 'undefined') {
   window.pushAllLocalDataToServer = pushAllLocalDataToServer;
+  window.pullAllServerDataToLocal = pullAllServerDataToLocal;
   window.getTrashList = getTrashList;
   window.restoreDocFromTrash = restoreDocFromTrash;
   window.purgeTrashDoc = purgeTrashDoc;
   window.clearAllTrashDocs = clearAllTrashDocs;
+  window.getAccountMasterList = getAccountMasterList;
+  window.saveAccountMasterList = saveAccountMasterList;
+  window.getManualJournals = getManualJournals;
+  window.saveManualJournal = saveManualJournal;
+  window.deleteManualJournal = deleteManualJournal;
+  window.getFiscalSettings = getFiscalSettings;
+  window.saveFiscalSettings = saveFiscalSettings;
   window.restoreAttendanceFromBackup = function() {
     const backup = localStorage.getItem(KEYS.ATTENDANCE + '_backup');
     if (backup && backup !== '[]') {
@@ -4037,3 +4250,4 @@ if (typeof window !== 'undefined') {
     }
   };
 }
+

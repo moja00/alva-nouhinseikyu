@@ -281,7 +281,7 @@
         </button>
         <div style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
-          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.20-sync-v16</span>
+          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.20-sync-v17</span>
         </div>
       </div>
 
@@ -2172,17 +2172,43 @@
     <div class="accounting-tabs-bar"
       style="display: flex; gap: 4px; padding: 10px 24px 0 24px; background: #ffffff; border-bottom: 1px solid var(--border-color); overflow-x: auto;">
       <button type="button" class="acc-tab-btn active" data-tab="acc-tab-dashboard"
-        onclick="window.switchAccountingTab &amp;&amp; window.switchAccountingTab('acc-tab-dashboard')">
+        onclick="window.switchAccountingTab && window.switchAccountingTab('acc-tab-dashboard')">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="3" y="3" width="7" height="7" />
           <rect x="14" y="3" width="7" height="7" />
           <rect x="14" y="14" width="7" height="7" />
           <rect x="3" y="14" width="7" height="7" />
         </svg>
-        損益ダッシュボード
+        損益計算書 (P/L)
+      </button>
+      <button type="button" class="acc-tab-btn" data-tab="acc-tab-bs"
+        onclick="window.switchAccountingTab && window.switchAccountingTab('acc-tab-bs')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="2" y="3" width="20" height="14" rx="2" />
+          <line x1="8" y1="21" x2="16" y2="21" />
+          <line x1="12" y1="17" x2="12" y2="21" />
+        </svg>
+        貸借対照表 (B/S)
+      </button>
+      <button type="button" class="acc-tab-btn" data-tab="acc-tab-trial-balance"
+        onclick="window.switchAccountingTab && window.switchAccountingTab('acc-tab-trial-balance')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="20" x2="18" y2="10" />
+          <line x1="12" y1="20" x2="12" y2="4" />
+          <line x1="6" y1="20" x2="6" y2="14" />
+        </svg>
+        残高試算表 (T/B)
+      </button>
+      <button type="button" class="acc-tab-btn" data-tab="acc-tab-ledger"
+        onclick="window.switchAccountingTab && window.switchAccountingTab('acc-tab-ledger')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+          <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+        </svg>
+        総勘定元帳
       </button>
       <button type="button" class="acc-tab-btn" data-tab="acc-tab-sales"
-        onclick="window.switchAccountingTab &amp;&amp; window.switchAccountingTab('acc-tab-sales')">
+        onclick="window.switchAccountingTab && window.switchAccountingTab('acc-tab-sales')">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="12" y1="1" x2="12" y2="23" />
           <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
@@ -2190,7 +2216,7 @@
         売上・入金消込
       </button>
       <button type="button" class="acc-tab-btn" data-tab="acc-tab-expenses"
-        onclick="window.switchAccountingTab &amp;&amp; window.switchAccountingTab('acc-tab-expenses')">
+        onclick="window.switchAccountingTab && window.switchAccountingTab('acc-tab-expenses')">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
           <circle cx="12" cy="13" r="4" />
@@ -2198,12 +2224,20 @@
         経費
       </button>
       <button type="button" class="acc-tab-btn" data-tab="acc-tab-journals"
-        onclick="window.switchAccountingTab &amp;&amp; window.switchAccountingTab('acc-tab-journals')">
+        onclick="window.switchAccountingTab && window.switchAccountingTab('acc-tab-journals')">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
           <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
         </svg>
-        仕訳帳・税理士用CSV
+        仕訳帳・振替伝票
+      </button>
+      <button type="button" class="acc-tab-btn" data-tab="acc-tab-settings"
+        onclick="window.switchAccountingTab && window.switchAccountingTab('acc-tab-settings')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+        勘定科目・期首設定
       </button>
     </div>
 
@@ -2374,23 +2408,35 @@
           </div>
         </div>
 
-        <!-- 4. 仕訳帳・税理士用CSVペイン -->
+        <!-- 4. 仕訳帳・振替伝票・税理士用CSVペイン -->
         <div class="acc-pane" id="acc-tab-journals">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 8px;">
             <div>
-              <span style="font-size: 0.875rem; font-weight: 700; color: #1e293b;">複式簿記 仕訳帳（自動生成）</span>
+              <span style="font-size: 0.875rem; font-weight: 700; color: #1e293b;">複式簿記 仕訳帳（複合仕訳・振替伝票統合）</span>
               <p style="font-size: 0.75rem; color: #64748b; margin: 2px 0 0 0;">
-                請求書と経費から自動生成された仕訳データを税理士提出用CSVとして一括出力できます</p>
+                請求書・経費・給与・手動振替伝票を二重計上なく完全統合した仕訳帳です</p>
             </div>
-            <button type="button" class="btn btn-primary btn-sm" id="btnExportJournalCSV"
-              style="display: flex; align-items: center; gap: 6px;">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                <polyline points="7 10 12 15 17 10" />
-                <line x1="12" y1="15" x2="12" y2="3" />
-              </svg>
-              仕訳データCSVダウンロード
-            </button>
+            <div style="display: flex; gap: 8px;">
+              <button type="button" class="btn btn-outline btn-sm" id="btnOpenManualJournalModal"
+                onclick="window.openManualJournalModal && window.openManualJournalModal()"
+                style="display: flex; align-items: center; gap: 6px; background: #eef2ff; border-color: #c7d2fe; color: #4338ca; font-weight: 700;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+                ＋ 振替伝票作成（複合仕訳）
+              </button>
+              <button type="button" class="btn btn-primary btn-sm" id="btnExportJournalCSV"
+                onclick="window.exportJournalCSV && window.exportJournalCSV()"
+                style="display: flex; align-items: center; gap: 6px;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+                仕訳データCSVダウンロード
+              </button>
+            </div>
           </div>
 
           <div
@@ -2399,18 +2445,308 @@
               <thead>
                 <tr style="background: #f1f5f9; color: #475569; text-align: left;">
                   <th style="padding: 8px 10px; width: 90px;">取引日</th>
-                  <th style="padding: 8px 10px; width: 120px;">借方科目</th>
+                  <th style="padding: 8px 10px; width: 140px;">借方科目</th>
                   <th style="padding: 8px 10px; text-align: right; width: 110px;">借方金額</th>
-                  <th style="padding: 8px 10px; width: 120px;">貸方科目</th>
+                  <th style="padding: 8px 10px; width: 140px;">貸方科目</th>
                   <th style="padding: 8px 10px; text-align: right; width: 110px;">貸方金額</th>
                   <th style="padding: 8px 10px;">摘要・取引先</th>
+                  <th style="padding: 8px 10px; text-align: center; width: 90px;">税/インボイス</th>
                   <th style="padding: 8px 10px; text-align: center; width: 80px;">種別</th>
+                  <th style="padding: 8px 10px; text-align: center; width: 60px;">操作</th>
                 </tr>
               </thead>
               <tbody id="accJournalTableBody">
                 <!-- JSでレンダリング -->
               </tbody>
             </table>
+          </div>
+        </div>
+
+        <!-- 5. 貸借対照表 (B/S) ペイン -->
+        <div class="acc-pane" id="acc-tab-bs">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 8px;">
+            <div>
+              <span style="font-size: 0.875rem; font-weight: 700; color: #1e293b;">貸借対照表 (Balance Sheet)</span>
+              <p style="font-size: 0.75rem; color: #64748b; margin: 2px 0 0 0;">
+                期首残高＋当期発生仕訳から算出した財政状態です。当期純利益が純資産の部に自動算入され、貸借が完全一致します。</p>
+            </div>
+            <div id="bsBalanceBadge" style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 9999px; font-size: 0.8rem; font-weight: 700; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0;">
+              <span>✅ 貸借完全一致 (差額 0円)</span>
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <!-- 左側: 資産の部 -->
+            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px;">
+              <h3 style="margin: 0 0 12px 0; font-size: 0.95rem; font-weight: 700; color: #1e293b; border-bottom: 2px solid #3b82f6; padding-bottom: 6px;">
+                資産の部 (Assets)
+              </h3>
+              
+              <!-- 流動資産 -->
+              <div style="margin-bottom: 14px;">
+                <div style="font-size: 0.85rem; font-weight: 700; color: #475569; margin-bottom: 6px; display: flex; justify-content: space-between;">
+                  <span>【流動資産】</span>
+                  <span id="bsCurrentAssetsTotal" style="font-family: monospace;">¥0</span>
+                </div>
+                <table class="acc-table" style="width: 100%; border-collapse: collapse; font-size: 0.8rem;">
+                  <tbody id="bsCurrentAssetsBody"></tbody>
+                </table>
+              </div>
+
+              <!-- 固定資産 -->
+              <div style="margin-bottom: 16px;">
+                <div style="font-size: 0.85rem; font-weight: 700; color: #475569; margin-bottom: 6px; display: flex; justify-content: space-between;">
+                  <span>【固定資産】</span>
+                  <span id="bsFixedAssetsTotal" style="font-family: monospace;">¥0</span>
+                </div>
+                <table class="acc-table" style="width: 100%; border-collapse: collapse; font-size: 0.8rem;">
+                  <tbody id="bsFixedAssetsBody"></tbody>
+                </table>
+              </div>
+
+              <!-- 資産合計 -->
+              <div style="background: #eff6ff; border: 1.5px solid #bfdbfe; border-radius: 6px; padding: 10px 12px; display: flex; justify-content: space-between; align-items: center; font-weight: 700; font-size: 0.95rem; color: #1e40af;">
+                <span>資産合計 (Total Assets)</span>
+                <span id="bsTotalAssets" style="font-family: monospace; font-size: 1.1rem;">¥0</span>
+              </div>
+            </div>
+
+            <!-- 右側: 負債及び純資産の部 -->
+            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px;">
+              <h3 style="margin: 0 0 12px 0; font-size: 0.95rem; font-weight: 700; color: #1e293b; border-bottom: 2px solid #10b981; padding-bottom: 6px;">
+                負債及び純資産の部 (Liabilities &amp; Equity)
+              </h3>
+
+              <!-- 流動負債 -->
+              <div style="margin-bottom: 12px;">
+                <div style="font-size: 0.85rem; font-weight: 700; color: #475569; margin-bottom: 6px; display: flex; justify-content: space-between;">
+                  <span>【流動負債】</span>
+                  <span id="bsCurrentLiabilitiesTotal" style="font-family: monospace;">¥0</span>
+                </div>
+                <table class="acc-table" style="width: 100%; border-collapse: collapse; font-size: 0.8rem;">
+                  <tbody id="bsCurrentLiabilitiesBody"></tbody>
+                </table>
+              </div>
+
+              <!-- 固定負債 -->
+              <div style="margin-bottom: 12px;">
+                <div style="font-size: 0.85rem; font-weight: 700; color: #475569; margin-bottom: 6px; display: flex; justify-content: space-between;">
+                  <span>【固定負債】</span>
+                  <span id="bsFixedLiabilitiesTotal" style="font-family: monospace;">¥0</span>
+                </div>
+                <table class="acc-table" style="width: 100%; border-collapse: collapse; font-size: 0.8rem;">
+                  <tbody id="bsFixedLiabilitiesBody"></tbody>
+                </table>
+              </div>
+
+              <!-- 負債合計小計 -->
+              <div style="background: #f8fafc; border-top: 1px dashed #cbd5e1; border-bottom: 1px dashed #cbd5e1; padding: 6px 8px; margin-bottom: 14px; display: flex; justify-content: space-between; font-weight: 700; font-size: 0.85rem; color: #334155;">
+                <span>負債合計</span>
+                <span id="bsTotalLiabilities" style="font-family: monospace;">¥0</span>
+              </div>
+
+              <!-- 純資産の部 -->
+              <div style="margin-bottom: 16px;">
+                <div style="font-size: 0.85rem; font-weight: 700; color: #475569; margin-bottom: 6px; display: flex; justify-content: space-between;">
+                  <span>【純資産の部】</span>
+                  <span id="bsTotalEquity" style="font-family: monospace;">¥0</span>
+                </div>
+                <table class="acc-table" style="width: 100%; border-collapse: collapse; font-size: 0.8rem;">
+                  <tbody id="bsEquityBody"></tbody>
+                </table>
+              </div>
+
+              <!-- 負債及び純資産合計 -->
+              <div style="background: #f0fdf4; border: 1.5px solid #bbf7d0; border-radius: 6px; padding: 10px 12px; display: flex; justify-content: space-between; align-items: center; font-weight: 700; font-size: 0.95rem; color: #166534;">
+                <span>負債・純資産合計</span>
+                <span id="bsTotalLiabilitiesAndEquity" style="font-family: monospace; font-size: 1.1rem;">¥0</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 6. 残高試算表 (T/B) ペイン -->
+        <div class="acc-pane" id="acc-tab-trial-balance">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 8px;">
+            <div>
+              <span style="font-size: 0.875rem; font-weight: 700; color: #1e293b;">合計残高試算表 (Trial Balance)</span>
+              <p style="font-size: 0.75rem; color: #64748b; margin: 2px 0 0 0;">
+                全勘定科目の借方・貸方の合計金額と残高を一覧集計し、貸借一致を網羅検証します</p>
+            </div>
+            <div id="tbBalanceBadge" style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 9999px; font-size: 0.8rem; font-weight: 700; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0;">
+              <span>✅ 試算表貸借一致</span>
+            </div>
+          </div>
+
+          <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; max-height: 60vh; overflow-y: auto;">
+            <table class="acc-table" style="width: 100%; border-collapse: collapse; font-size: 0.8rem;">
+              <thead style="position: sticky; top: 0; background: #f8fafc; z-index: 2;">
+                <tr style="border-bottom: 2px solid #cbd5e1; text-align: right; color: #475569;">
+                  <th style="padding: 10px 8px; text-align: right; width: 130px; background: #eff6ff;">借方残高</th>
+                  <th style="padding: 10px 8px; text-align: right; width: 130px;">借方合計</th>
+                  <th style="padding: 10px 8px; text-align: center; width: 70px;">コード</th>
+                  <th style="padding: 10px 8px; text-align: left;">勘定科目名</th>
+                  <th style="padding: 10px 8px; text-align: right; width: 130px;">貸方合計</th>
+                  <th style="padding: 10px 8px; text-align: right; width: 130px; background: #f0fdf4;">貸方残高</th>
+                </tr>
+              </thead>
+              <tbody id="tbTableBody">
+                <!-- JSでレンダリング -->
+              </tbody>
+              <tfoot style="position: sticky; bottom: 0; background: #f1f5f9; font-weight: 700; border-top: 2px solid #cbd5e1;">
+                <tr style="text-align: right;">
+                  <td id="tbFootDebitBalance" style="padding: 10px 8px; font-family: monospace; color: #1e40af; background: #dbeafe;">¥0</td>
+                  <td id="tbFootDebitTotal" style="padding: 10px 8px; font-family: monospace;">¥0</td>
+                  <td colspan="2" style="padding: 10px 8px; text-align: center; color: #334155;">総合計 (Total)</td>
+                  <td id="tbFootCreditTotal" style="padding: 10px 8px; font-family: monospace;">¥0</td>
+                  <td id="tbFootCreditBalance" style="padding: 10px 8px; font-family: monospace; color: #166534; background: #dcfce7;">¥0</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+
+        <!-- 7. 総勘定元帳 (General Ledger) ペイン -->
+        <div class="acc-pane" id="acc-tab-ledger">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 12px; background: #ffffff; padding: 12px 16px; border: 1px solid #e2e8f0; border-radius: 8px;">
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+              <label for="glAccountSelect" style="font-size: 0.85rem; font-weight: 700; color: #334155;">勘定科目選択:</label>
+              <select id="glAccountSelect" class="form-select" onchange="window.renderGeneralLedger && window.renderGeneralLedger()"
+                style="padding: 6px 12px; font-size: 0.85rem; font-weight: 700; border: 1.5px solid #6366f1; border-radius: 6px; color: #1e293b; min-width: 220px; background: #faf5ff;">
+                <!-- JSで科目一覧を動的生成 -->
+              </select>
+            </div>
+            <div style="display: flex; gap: 16px; align-items: center;">
+              <div style="font-size: 0.8rem; color: #64748b;">
+                期首残高: <strong id="glOpeningBalance" style="color: #1e293b; font-family: monospace;">¥0</strong>
+              </div>
+              <div style="font-size: 0.8rem; color: #64748b;">
+                期間借方: <strong id="glPeriodDebit" style="color: #2563eb; font-family: monospace;">¥0</strong>
+              </div>
+              <div style="font-size: 0.8rem; color: #64748b;">
+                期間貸方: <strong id="glPeriodCredit" style="color: #16a34a; font-family: monospace;">¥0</strong>
+              </div>
+              <div style="font-size: 0.85rem; font-weight: 700; background: #f1f5f9; padding: 4px 10px; border-radius: 6px;">
+                差引期末残高: <span id="glClosingBalance" style="color: #4f46e5; font-family: monospace; font-size: 1rem;">¥0</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; max-height: 56vh; overflow-y: auto;">
+            <table class="acc-table" style="width: 100%; border-collapse: collapse; font-size: 0.8rem;">
+              <thead style="position: sticky; top: 0; background: #f8fafc; z-index: 2;">
+                <tr style="border-bottom: 2px solid #cbd5e1; text-align: left; color: #475569;">
+                  <th style="padding: 8px 10px; width: 95px;">取引日</th>
+                  <th style="padding: 8px 10px; width: 140px;">相手勘定科目</th>
+                  <th style="padding: 8px 10px;">摘要・取引先</th>
+                  <th style="padding: 8px 10px; text-align: right; width: 120px;">借方金額</th>
+                  <th style="padding: 8px 10px; text-align: right; width: 120px;">貸方金額</th>
+                  <th style="padding: 8px 10px; text-align: right; width: 130px; background: #f8fafc;">差引残高</th>
+                </tr>
+              </thead>
+              <tbody id="glTableBody">
+                <!-- JSでレンダリング（相手科目複数時は「諸口」表示） -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 8. 勘定科目マスタ・期首残高設定ペイン -->
+        <div class="acc-pane" id="acc-tab-settings">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <!-- 左カラム: 期首残高設定（リアルタイム貸借差額チェック付き） -->
+            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <div>
+                  <h3 style="margin: 0; font-size: 0.95rem; font-weight: 700; color: #1e293b;">
+                    期首残高設定（貸借バランス）
+                  </h3>
+                  <p style="font-size: 0.75rem; color: #64748b; margin: 2px 0 0 0;">
+                    期首（期初）時点の各科目の残高を設定します。借方と貸方が一致している必要があります。</p>
+                </div>
+                <button type="button" class="btn btn-primary btn-sm" id="btnSaveOpeningBalances"
+                  onclick="window.saveOpeningBalancesFromUI && window.saveOpeningBalancesFromUI()">
+                  期首残高を保存
+                </button>
+              </div>
+
+              <!-- 貸借バランスリアルタイム検証インジケーター -->
+              <div id="openingBalanceStatusCard"
+                style="margin-bottom: 14px; padding: 12px; border-radius: 8px; background: #f8fafc; border: 1.5px solid #cbd5e1;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                  <span style="font-size: 0.8rem; font-weight: 700; color: #475569;">貸借バランス判定:</span>
+                  <span id="openingBalanceBadge" style="font-size: 0.8rem; font-weight: 700; padding: 2px 10px; border-radius: 9999px; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0;">
+                    ✅ 貸借一致 (差額 0円)
+                  </span>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; font-size: 0.75rem; text-align: center;">
+                  <div style="background: #eff6ff; padding: 6px; border-radius: 4px;">
+                    <div style="color: #1e40af;">借方（資産）合計</div>
+                    <div id="openingDebitTotalText" style="font-weight: 700; font-family: monospace; font-size: 0.9rem; color: #1e40af;">¥0</div>
+                  </div>
+                  <div style="background: #f0fdf4; padding: 6px; border-radius: 4px;">
+                    <div style="color: #166534;">貸方（負債+純資産）合計</div>
+                    <div id="openingCreditTotalText" style="font-weight: 700; font-family: monospace; font-size: 0.9rem; color: #166534;">¥0</div>
+                  </div>
+                  <div id="openingDiffContainer" style="background: #f8fafc; padding: 6px; border-radius: 4px;">
+                    <div style="color: #475569;">差額 (借方 - 貸方)</div>
+                    <div id="openingDiffText" style="font-weight: 700; font-family: monospace; font-size: 0.9rem; color: #475569;">¥0</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 期首残高入力リスト -->
+              <div style="max-height: 44vh; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 6px;">
+                <table class="acc-table" style="width: 100%; border-collapse: collapse; font-size: 0.8rem;">
+                  <thead style="position: sticky; top: 0; background: #f8fafc;">
+                    <tr style="text-align: left; color: #475569; border-bottom: 1px solid #cbd5e1;">
+                      <th style="padding: 6px 8px; width: 60px;">区分</th>
+                      <th style="padding: 6px 8px;">科目名</th>
+                      <th style="padding: 6px 8px; width: 60px; text-align: center;">貸借</th>
+                      <th style="padding: 6px 8px; width: 140px; text-align: right;">期首残高(円)</th>
+                    </tr>
+                  </thead>
+                  <tbody id="openingBalancesTableBody">
+                    <!-- JSで動的入力行を展開 -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- 右カラム: 勘定科目マスタ一覧 -->
+            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <div>
+                  <h3 style="margin: 0; font-size: 0.95rem; font-weight: 700; color: #1e293b;">
+                    勘定科目マスタ一覧（体系）
+                  </h3>
+                  <p style="font-size: 0.75rem; color: #64748b; margin: 2px 0 0 0;">
+                    5大区分（資産・負債・純資産・収益・費用）および原価・販管費体系</p>
+                </div>
+                <button type="button" class="btn btn-outline btn-sm"
+                  onclick="window.openNewAccountModal && window.openNewAccountModal()"
+                  style="border-color: #cbd5e1; font-weight: 700; font-size: 0.75rem;">
+                  ＋ 科目追加
+                </button>
+              </div>
+
+              <div style="max-height: 52vh; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 6px;">
+                <table class="acc-table" style="width: 100%; border-collapse: collapse; font-size: 0.8rem;">
+                  <thead style="position: sticky; top: 0; background: #f8fafc;">
+                    <tr style="text-align: left; color: #475569; border-bottom: 1px solid #cbd5e1;">
+                      <th style="padding: 6px 8px; width: 60px;">コード</th>
+                      <th style="padding: 6px 8px;">勘定科目名</th>
+                      <th style="padding: 6px 8px; width: 80px;">大区分</th>
+                      <th style="padding: 6px 8px; width: 90px;">中区分(分類)</th>
+                      <th style="padding: 6px 8px; width: 80px;">標準税区分</th>
+                    </tr>
+                  </thead>
+                  <tbody id="accountMasterTableBody">
+                    <!-- JSで動的レンダリング -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -4755,11 +5091,254 @@
     </div>
   </div>
 
+  <!-- ==========================================================================
+       振替伝票（複合仕訳）作成・編集モーダル
+       ========================================================================== -->
+  <div class="modal" id="manualJournalModal" style="display: none; z-index: 10000;">
+    <div class="modal-overlay" onclick="window.closeManualJournalModal && window.closeManualJournalModal()"></div>
+    <div class="modal-content" style="max-width: 960px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; padding: 0; border-radius: 12px;">
+      
+      <!-- モーダルヘッダー -->
+      <div class="modal-header" style="padding: 14px 20px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 1.1rem;">📑</span>
+          <h3 class="modal-title" style="margin: 0; font-size: 1rem; font-weight: 700; color: #1e293b;">振替伝票（複合仕訳入力）</h3>
+        </div>
+        <button type="button" class="btn-close" onclick="window.closeManualJournalModal && window.closeManualJournalModal()" style="border: none; background: transparent; font-size: 1.2rem; cursor: pointer; color: #64748b;">✕</button>
+      </div>
+
+      <!-- モーダルボディ -->
+      <div class="modal-body" style="padding: 20px; overflow-y: auto; flex: 1;">
+        <!-- 基本情報（日付・伝票番号・全体摘要） -->
+        <div style="display: grid; grid-template-columns: 140px 140px 1fr; gap: 12px; margin-bottom: 16px;">
+          <div>
+            <label class="form-label" style="font-size: 0.75rem; font-weight: 700; color: #475569;">取引日付 <span style="color: #ef4444;">*</span></label>
+            <input type="date" id="mjDate" class="form-control" style="font-size: 0.825rem; padding: 6px 8px;">
+          </div>
+          <div>
+            <label class="form-label" style="font-size: 0.75rem; font-weight: 700; color: #475569;">伝票番号</label>
+            <input type="text" id="mjEntryNumber" class="form-control" placeholder="自動採番" style="font-size: 0.825rem; padding: 6px 8px;">
+          </div>
+          <div>
+            <label class="form-label" style="font-size: 0.75rem; font-weight: 700; color: #475569;">取引摘要（共通）</label>
+            <input type="text" id="mjDescription" class="form-control" placeholder="例: 9月分役員報酬・社保控除、売掛金一部入金など" style="font-size: 0.825rem; padding: 6px 8px;">
+          </div>
+        </div>
+
+        <!-- 2カラム仕訳明細入力（左: 借方 / 右: 貸方） -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+          <!-- 借方テーブル -->
+          <div style="border: 1.5px solid #bfdbfe; border-radius: 8px; overflow: hidden; background: #ffffff;">
+            <div style="background: #eff6ff; padding: 8px 12px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #bfdbfe;">
+              <span style="font-size: 0.85rem; font-weight: 700; color: #1e40af;">【借方】(Debit)</span>
+              <button type="button" class="btn btn-outline btn-xs" onclick="window.addDebitLine && window.addDebitLine()" style="color: #1e40af; border-color: #93c5fd; background: #fff; font-size: 11px; padding: 2px 8px; font-weight: 700;">＋ 行追加</button>
+            </div>
+            <div style="max-height: 240px; overflow-y: auto; padding: 8px;">
+              <table style="width: 100%; border-collapse: collapse; font-size: 0.75rem;">
+                <thead>
+                  <tr style="color: #64748b; text-align: left; border-bottom: 1px solid #e2e8f0;">
+                    <th style="padding: 4px;">勘定科目</th>
+                    <th style="padding: 4px; width: 85px;">補助</th>
+                    <th style="padding: 4px; width: 95px; text-align: right;">金額(円)</th>
+                    <th style="padding: 4px; width: 80px;">税/インボイス</th>
+                    <th style="padding: 4px; width: 24px;"></th>
+                  </tr>
+                </thead>
+                <tbody id="mjDebitLinesBody"></tbody>
+              </table>
+            </div>
+            <div style="background: #f8fafc; padding: 6px 12px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; font-weight: 700; font-size: 0.85rem;">
+              <span style="color: #1e40af;">借方合計:</span>
+              <span id="mjDebitTotalText" style="font-family: monospace; color: #1e40af; font-size: 1rem;">¥0</span>
+            </div>
+          </div>
+
+          <!-- 貸方テーブル -->
+          <div style="border: 1.5px solid #bbf7d0; border-radius: 8px; overflow: hidden; background: #ffffff;">
+            <div style="background: #f0fdf4; padding: 8px 12px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #bbf7d0;">
+              <span style="font-size: 0.85rem; font-weight: 700; color: #166534;">【貸方】(Credit)</span>
+              <button type="button" class="btn btn-outline btn-xs" onclick="window.addCreditLine && window.addCreditLine()" style="color: #166534; border-color: #86efac; background: #fff; font-size: 11px; padding: 2px 8px; font-weight: 700;">＋ 行追加</button>
+            </div>
+            <div style="max-height: 240px; overflow-y: auto; padding: 8px;">
+              <table style="width: 100%; border-collapse: collapse; font-size: 0.75rem;">
+                <thead>
+                  <tr style="color: #64748b; text-align: left; border-bottom: 1px solid #e2e8f0;">
+                    <th style="padding: 4px;">勘定科目</th>
+                    <th style="padding: 4px; width: 85px;">補助</th>
+                    <th style="padding: 4px; width: 95px; text-align: right;">金額(円)</th>
+                    <th style="padding: 4px; width: 80px;">税/インボイス</th>
+                    <th style="padding: 4px; width: 24px;"></th>
+                  </tr>
+                </thead>
+                <tbody id="mjCreditLinesBody"></tbody>
+              </table>
+            </div>
+            <div style="background: #f8fafc; padding: 6px 12px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; font-weight: 700; font-size: 0.85rem;">
+              <span style="color: #166534;">貸方合計:</span>
+              <span id="mjCreditTotalText" style="font-family: monospace; color: #166534; font-size: 1rem;">¥0</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 貸借バランス判定＆差額アラート -->
+        <div id="mjBalanceAlert" style="padding: 8px 14px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; font-size: 0.825rem; font-weight: 700; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0;">
+          <span id="mjBalanceMessage">✅ 借方・貸方の金額が一致しています</span>
+          <span id="mjDiffText" style="font-family: monospace;">差額: ¥0</span>
+        </div>
+      </div>
+
+      <!-- モーダルフッター -->
+      <div class="modal-footer" style="padding: 12px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="window.closeManualJournalModal && window.closeManualJournalModal()">キャンセル</button>
+        <button type="button" class="btn btn-primary btn-sm" id="btnSaveManualJournal" onclick="window.saveManualJournalFromUI && window.saveManualJournalFromUI()" style="font-weight: 700; padding: 6px 20px;">
+          振替伝票を登録
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ==========================================================================
+       売掛金 振込手数料差引消込モーダル
+       ========================================================================== -->
+  <div class="modal" id="reconcileFeeModal" style="display: none; z-index: 10000;">
+    <div class="modal-overlay" onclick="window.closeReconcileFeeModal && window.closeReconcileFeeModal()"></div>
+    <div class="modal-content" style="max-width: 520px; border-radius: 12px; overflow: hidden; padding: 0;">
+      
+      <div class="modal-header" style="padding: 14px 20px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+        <h3 class="modal-title" style="margin: 0; font-size: 1rem; font-weight: 700; color: #1e293b;">💰 振込手数料を差引いて入金消込</h3>
+        <button type="button" class="btn-close" onclick="window.closeReconcileFeeModal && window.closeReconcileFeeModal()" style="border: none; background: transparent; font-size: 1.2rem; cursor: pointer; color: #64748b;">✕</button>
+      </div>
+
+      <div class="modal-body" style="padding: 20px;">
+        <input type="hidden" id="rfInvoiceId" value="">
+        <div style="background: #f1f5f9; padding: 12px; border-radius: 6px; margin-bottom: 16px; font-size: 0.825rem;">
+          <div style="color: #475569; margin-bottom: 4px;">対象請求書: <strong id="rfDocNumber" style="color: #1e293b;">-</strong></div>
+          <div style="color: #475569; margin-bottom: 4px;">取引先: <strong id="rfClientName" style="color: #1e293b;">-</strong></div>
+          <div style="color: #475569;">請求総額（消込対象売掛金）: <strong id="rfInvoiceTotal" style="color: #4338ca; font-size: 1rem; font-family: monospace;">¥0</strong></div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px;">
+          <div>
+            <label class="form-label" style="font-size: 0.75rem; font-weight: 700;">入金日</label>
+            <input type="date" id="rfDate" class="form-control" style="font-size: 0.85rem; padding: 6px 8px;">
+          </div>
+          <div>
+            <label class="form-label" style="font-size: 0.75rem; font-weight: 700;">入金先口座</label>
+            <select id="rfAccount" class="form-select" style="font-size: 0.85rem; padding: 6px 8px;">
+              <option value="普通預金">普通預金</option>
+              <option value="当座預金">当座預金</option>
+              <option value="現金">現金</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+          <div>
+            <label class="form-label" style="font-size: 0.75rem; font-weight: 700; color: #1e40af;">実際入金額 (普通預金)</label>
+            <input type="number" id="rfActualAmount" class="form-control" oninput="window.calcReconcileFee && window.calcReconcileFee()" style="font-size: 0.95rem; font-weight: 700; color: #1e40af; font-family: monospace; padding: 6px 8px;">
+          </div>
+          <div>
+            <label class="form-label" style="font-size: 0.75rem; font-weight: 700; color: #dc2626;">振込手数料差額 (支払手数料)</label>
+            <input type="number" id="rfFeeAmount" class="form-control" oninput="window.calcActualFromFee && window.calcActualFromFee()" style="font-size: 0.95rem; font-weight: 700; color: #dc2626; font-family: monospace; padding: 6px 8px;">
+          </div>
+        </div>
+
+        <div style="background: #eff6ff; border: 1px dashed #93c5fd; padding: 10px 12px; border-radius: 6px; font-size: 0.75rem; color: #1e40af; line-height: 1.4;">
+          💡 <strong>自動生成される仕訳（振替伝票）:</strong><br>
+          【借方】普通預金（入金額） ＋ 支払手数料（手数料）<br>
+          【貸方】売掛金（請求総額）<br>
+          ※既存の単一自動仕訳とは重複せず、排他制御により当複合仕訳のみが計上されます。
+        </div>
+      </div>
+
+      <div class="modal-footer" style="padding: 12px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between;">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="window.closeReconcileFeeModal && window.closeReconcileFeeModal()">キャンセル</button>
+        <button type="button" class="btn btn-primary btn-sm" id="btnSubmitReconcileFee" onclick="window.submitReconcileFee && window.submitReconcileFee()" style="font-weight: 700; padding: 6px 20px; background: #4f46e5; border-color: #4f46e5;">
+          手数料を差引いて消込実行
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ==========================================================================
+       勘定科目 新規追加モーダル
+       ========================================================================== -->
+  <div class="modal" id="newAccountModal" style="display: none; z-index: 10000;">
+    <div class="modal-overlay" onclick="window.closeNewAccountModal && window.closeNewAccountModal()"></div>
+    <div class="modal-content" style="max-width: 480px; border-radius: 12px; overflow: hidden; padding: 0;">
+      
+      <div class="modal-header" style="padding: 14px 20px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+        <h3 class="modal-title" style="margin: 0; font-size: 1rem; font-weight: 700; color: #1e293b;">＋ 勘定科目 新規追加</h3>
+        <button type="button" class="btn-close" onclick="window.closeNewAccountModal && window.closeNewAccountModal()" style="border: none; background: transparent; font-size: 1.2rem; cursor: pointer; color: #64748b;">✕</button>
+      </div>
+
+      <div class="modal-body" style="padding: 20px;">
+        <div style="display: grid; grid-template-columns: 100px 1fr; gap: 12px; margin-bottom: 12px;">
+          <div>
+            <label class="form-label" style="font-size: 0.75rem; font-weight: 700;">科目コード</label>
+            <input type="text" id="naCode" class="form-control" placeholder="例: 620" style="font-size: 0.85rem; padding: 6px 8px;">
+          </div>
+          <div>
+            <label class="form-label" style="font-size: 0.75rem; font-weight: 700;">勘定科目名 <span style="color: #ef4444;">*</span></label>
+            <input type="text" id="naName" class="form-control" placeholder="例: 研究開発費" style="font-size: 0.85rem; padding: 6px 8px;">
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+          <div>
+            <label class="form-label" style="font-size: 0.75rem; font-weight: 700;">大区分 (5大要素)</label>
+            <select id="naType" class="form-select" onchange="window.updateNaSubTypeOptions && window.updateNaSubTypeOptions()" style="font-size: 0.85rem; padding: 6px 8px;">
+              <option value="asset">資産 (Asset)</option>
+              <option value="liability">負債 (Liability)</option>
+              <option value="equity">純資産 (Equity)</option>
+              <option value="revenue">収益 (Revenue)</option>
+              <option value="expense" selected>費用 (Expense)</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label" style="font-size: 0.75rem; font-weight: 700;">中区分 (サブ分類)</label>
+            <select id="naSubType" class="form-select" style="font-size: 0.85rem; padding: 6px 8px;">
+              <option value="cost_of_sales">売上原価 (粗利計算)</option>
+              <option value="sga" selected>販売費及び一般管理費</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+          <div>
+            <label class="form-label" style="font-size: 0.75rem; font-weight: 700;">標準税区分</label>
+            <select id="naTaxType" class="form-select" style="font-size: 0.85rem; padding: 6px 8px;">
+              <option value="taxable_10">課税 10%</option>
+              <option value="taxable_8">軽減税率 8%</option>
+              <option value="exempt">非課税</option>
+              <option value="non_taxable">不課税</option>
+              <option value="out_of_scope">対象外</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label" style="font-size: 0.75rem; font-weight: 700;">補助科目 (カンマ区切り)</label>
+            <input type="text" id="naSubAccounts" class="form-control" placeholder="例: 試作材料, 外部試験" style="font-size: 0.85rem; padding: 6px 8px;">
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="padding: 12px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between;">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="window.closeNewAccountModal && window.closeNewAccountModal()">キャンセル</button>
+        <button type="button" class="btn btn-primary btn-sm" id="btnSubmitNewAccount" onclick="window.submitNewAccount && window.submitNewAccount()" style="font-weight: 700; padding: 6px 20px;">
+          登録する
+        </button>
+      </div>
+
+    </div>
+  </div>
+
   <!-- トースト通知コンテナ -->
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261020_sync_v16"></script>
+  <script src="js/app.bundle.js?v=20261020_sync_v17"></script>
 </body>
 
 </html>

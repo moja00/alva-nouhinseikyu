@@ -1236,6 +1236,33 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps(expenses, ensure_ascii=False).encode('utf-8'))
             return
 
+        # 勘定科目マスタ取得API
+        if self.path == '/api/account_master':
+            items = get_fs_collection('account_master', [])
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.end_headers()
+            self.wfile.write(json.dumps(items, ensure_ascii=False).encode('utf-8'))
+            return
+
+        # 振替伝票（手動仕訳）取得API
+        if self.path == '/api/manual_journals':
+            journals = get_fs_collection('manual_journals', [])
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.end_headers()
+            self.wfile.write(json.dumps(journals, ensure_ascii=False).encode('utf-8'))
+            return
+
+        # 会計年度・期首残高設定取得API
+        if self.path == '/api/fiscal_settings':
+            settings = get_fs_document('settings', 'fiscal_settings', {})
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.end_headers()
+            self.wfile.write(json.dumps(settings, ensure_ascii=False).encode('utf-8'))
+            return
+
         # 一括同期 (Pull)
         if self.path == '/api/sync/pull-all':
             data = {
@@ -1244,7 +1271,10 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
                 'issuerProfile': get_fs_document('settings', 'issuer', {}),
                 'expenses': get_fs_collection('expenses', []),
                 'invoicesHistory': get_fs_collection('invoices', []),
-                'attendance': get_fs_collection('attendance', [])
+                'attendance': get_fs_collection('attendance', []),
+                'accountMaster': get_fs_collection('account_master', []),
+                'manualJournals': get_fs_collection('manual_journals', []),
+                'fiscalSettings': get_fs_document('settings', 'fiscal_settings', {})
             }
             self.send_response(200)
             self.send_header('Content-Type', 'application/json; charset=utf-8')
@@ -1319,7 +1349,73 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
                     save_fs_collection('invoices', payload['invoicesHistory'])
                 if 'attendance' in payload:
                     save_fs_collection('attendance', payload['attendance'])
+                if 'accountMaster' in payload:
+                    save_fs_collection('account_master', payload['accountMaster'])
+                if 'manualJournals' in payload:
+                    save_fs_collection('manual_journals', payload['manualJournals'])
+                if 'fiscalSettings' in payload:
+                    save_fs_document('settings', 'fiscal_settings', payload['fiscalSettings'])
                     
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": True}).encode('utf-8'))
+            except Exception as e:
+                self.send_response(500)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
+            return
+
+        # 勘定科目マスタ保存API
+        if self.path == '/api/account_master':
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length).decode('utf-8')
+            try:
+                items = json.loads(post_data)
+                if not isinstance(items, list):
+                    raise ValueError("データ形式が配列ではありません")
+                save_fs_collection('account_master', items)
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": True}).encode('utf-8'))
+            except Exception as e:
+                self.send_response(500)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
+            return
+
+        # 振替伝票（手動仕訳）保存API
+        if self.path == '/api/manual_journals':
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length).decode('utf-8')
+            try:
+                journals = json.loads(post_data)
+                if not isinstance(journals, list):
+                    raise ValueError("データ形式が配列ではありません")
+                save_fs_collection('manual_journals', journals)
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": True}).encode('utf-8'))
+            except Exception as e:
+                self.send_response(500)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
+            return
+
+        # 会計年度・期首残高設定保存API
+        if self.path == '/api/fiscal_settings':
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length).decode('utf-8')
+            try:
+                settings = json.loads(post_data)
+                if not isinstance(settings, dict):
+                    raise ValueError("データ形式がオブジェクトではありません")
+                save_fs_document('settings', 'fiscal_settings', settings)
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json; charset=utf-8')
                 self.end_headers()
