@@ -25,8 +25,48 @@ const KEYS = {
   FISCAL_SETTINGS: 'billcraft_fiscal_settings',
   LOCKED_MONTHS: 'billcraft_locked_months',
   DELETED_DOC_IDS: 'quickdoc_deleted_doc_ids',
+  DELETED_EXPENSE_IDS: 'billcraft_deleted_expense_ids',
   TRASH_HISTORY: 'quickdoc_trash_history'
 };
+
+/**
+ * 削除済み経費IDセットを取得（他端末・同期時のゾンビ復活防止用）
+ * @returns {Set<string>}
+ */
+export function getDeletedExpenseIds() {
+  try {
+    const raw = localStorage.getItem(KEYS.DELETED_EXPENSE_IDS);
+    return new Set(raw ? JSON.parse(raw) : []);
+  } catch (e) {
+    return new Set();
+  }
+}
+
+/**
+ * 経費IDを削除済みリストに永続記録
+ * @param {string} id
+ */
+export function recordDeletedExpenseId(id) {
+  if (!id) return;
+  try {
+    const set = getDeletedExpenseIds();
+    set.add(String(id).trim());
+    localStorage.setItem(KEYS.DELETED_EXPENSE_IDS, JSON.stringify(Array.from(set).slice(-500)));
+  } catch (e) { }
+}
+
+/**
+ * 経費IDを削除済みリストから除外
+ * @param {string} id
+ */
+export function removeDeletedExpenseId(id) {
+  if (!id) return;
+  try {
+    const set = getDeletedExpenseIds();
+    set.delete(String(id).trim());
+    localStorage.setItem(KEYS.DELETED_EXPENSE_IDS, JSON.stringify(Array.from(set)));
+  } catch (e) { }
+}
 
 /**
  * 削除済み書類IDセットを取得（他端末へのゾンビ復活防止用）
@@ -1495,12 +1535,64 @@ export async function fetchServerExpenses() {
   return null;
 }
 
-export async function saveServerExpenses(expenses) {
+/**
+ * 経費オブジェクトをサーバー送信用に完全サニタイズ（undefinedの排除、型保証）
+ */
+export function sanitizeExpenseForServer(exp) {
+  if (!exp || typeof exp !== 'object') return null;
+  const id = String(exp.id || '').trim();
+  if (!id) return null;
+
+  return {
+    id,
+    date: exp.date || new Date().toISOString().split('T')[0],
+    category: exp.category || '雑費',
+    amount: Number(exp.amount) || 0,
+    taxRate: exp.taxRate !== undefined && exp.taxRate !== null ? Number(exp.taxRate) : 10,
+    payee: exp.payee || '',
+    invoiceNumber: exp.invoiceNumber ? String(exp.invoiceNumber).trim().toUpperCase() : '',
+    note: exp.note || '',
+    receiptImage: exp.receiptImage || '',
+    receiptDataUrl: exp.receiptDataUrl || '',
+    isCost: !!exp.isCost,
+    isPurchase: !!exp.isPurchase,
+    claimant: exp.claimant || '小林俊介',
+    isSettled: !!exp.isSettled,
+    settledDate: exp.settledDate || '',
+    paymentMethod: exp.paymentMethod || '普通預金',
+    paymentAccount: exp.paymentAccount || exp.paymentMethod || '普通預金',
+    taxType: exp.taxType || 'taxable_10',
+    invoiceType: exp.invoiceType || (exp.invoiceNumber ? 'qualified' : 'none'),
+    linkedInventoryId: exp.linkedInventoryId || '',
+    linkedInventoryQty: Number(exp.linkedInventoryQty) || 0,
+    updatedAt: exp.updatedAt || new Date().toISOString()
+  };
+}
+
+export async function saveServerExpenses(expenses, deletedIds = []) {
   try {
+    const deletedSet = getDeletedExpenseIds();
+    (deletedIds || []).forEach(id => { if (id) deletedSet.add(String(id).trim()); });
+
+    const rawList = Array.isArray(expenses) ? expenses : [];
+    const validList = rawList
+      .filter(item => {
+        if (!item || !item.id) return false;
+        const cleanId = String(item.id).trim();
+        return !deletedSet.has(cleanId) && !item.isDeleted && !item._deleted;
+      })
+      .map(item => sanitizeExpenseForServer(item))
+      .filter(Boolean);
+
+    const payload = {
+      expenses: validList,
+      deletedIds: Array.from(deletedSet)
+    };
+
     const res = await apiFetch('expenses', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(expenses)
+      body: JSON.stringify(payload)
     });
     return res.ok;
   } catch (e) {
@@ -1510,43 +1602,64 @@ export async function saveServerExpenses(expenses) {
 
 /**
  * 経費データのサーバー双方向同期（全端末・他ユーザー間での完全共有）
+ * 削除済みID（Tombstone）を最優先で除外し、ゾンビ復活を完全防止
  * @returns {Promise<Array>} 最新マージ済み経費リスト
  */
 export async function syncExpensesWithServer() {
   try {
     const serverList = await fetchServerExpenses();
     const localList = getAllExpenseList();
+    const deletedSet = getDeletedExpenseIds();
 
-    if (!serverList || !Array.isArray(serverList)) {
-      return localList;
+    // 1. サーバーから取得したデータから削除マーカー(_deleted または isDeleted)を検知して削除セットへ反映
+    if (Array.isArray(serverList)) {
+      serverList.forEach(sItem => {
+        if (sItem && sItem.id && (sItem.isDeleted || sItem._deleted)) {
+          const cleanId = String(sItem.id).trim();
+          recordDeletedExpenseId(cleanId);
+          deletedSet.add(cleanId);
+        }
+      });
     }
 
     const mergedMap = new Map();
 
-    // 1. サーバー側のデータを追加
-    serverList.forEach(item => {
-      if (item && item.id) {
-        mergedMap.set(item.id, item);
-      }
-    });
+    // 2. サーバー側のデータを追加（削除済みIDに含まれているものは完全破棄）
+    if (Array.isArray(serverList)) {
+      serverList.forEach(item => {
+        if (!item || !item.id) return;
+        const cleanId = String(item.id).trim();
+        if (deletedSet.has(cleanId) || item.isDeleted || item._deleted) return;
+        const sanitized = sanitizeExpenseForServer(item);
+        if (sanitized) mergedMap.set(cleanId, sanitized);
+      });
+    }
 
-    // 2. ローカル側のデータをスマートマージ
+    // 3. ローカル側のデータをスマートマージ（削除済みIDに含まれているものは完全破棄）
     let hasLocalChanges = false;
-    localList.forEach(item => {
-      if (!item || !item.id) return;
-      if (!mergedMap.has(item.id)) {
-        mergedMap.set(item.id, item);
-        hasLocalChanges = true;
-      } else {
-        const serverItem = mergedMap.get(item.id);
-        const localTime = new Date(item.updatedAt || item.date || 0).getTime();
-        const serverTime = new Date(serverItem.updatedAt || serverItem.date || 0).getTime();
-        if (localTime > serverTime) {
-          mergedMap.set(item.id, item);
+    if (Array.isArray(localList)) {
+      localList.forEach(item => {
+        if (!item || !item.id) return;
+        const cleanId = String(item.id).trim();
+        if (deletedSet.has(cleanId) || item.isDeleted || item._deleted) return;
+
+        const cleanItem = sanitizeExpenseForServer(item);
+        if (!cleanItem) return;
+
+        if (!mergedMap.has(cleanId)) {
+          mergedMap.set(cleanId, cleanItem);
           hasLocalChanges = true;
+        } else {
+          const serverItem = mergedMap.get(cleanId);
+          const localTime = new Date(item.updatedAt || item.date || 0).getTime();
+          const serverTime = new Date(serverItem.updatedAt || serverItem.date || 0).getTime();
+          if (localTime > serverTime) {
+            mergedMap.set(cleanId, cleanItem);
+            hasLocalChanges = true;
+          }
         }
-      }
-    });
+      });
+    }
 
     const mergedList = Array.from(mergedMap.values()).sort((a, b) => {
       return (b.date || '').localeCompare(a.date || '') || (b.updatedAt || '').localeCompare(a.updatedAt || '');
@@ -1555,9 +1668,9 @@ export async function syncExpensesWithServer() {
     // ローカルストレージに最新一覧を保存
     localStorageSetItemAndSync(KEYS.EXPENSES, JSON.stringify(mergedList));
 
-    // サーバーに未反映のデータがある場合は保存
-    if (hasLocalChanges || mergedList.length !== serverList.length) {
-      saveServerExpenses(mergedList).catch(e => {
+    // サーバーに未反映のデータまたは削除IDがある場合は同期
+    if (hasLocalChanges || deletedSet.size > 0 || (Array.isArray(serverList) && mergedList.length !== serverList.length)) {
+      saveServerExpenses(mergedList, Array.from(deletedSet)).catch(e => {
         console.warn('Failed to push merged expenses to server:', e);
       });
     }
@@ -1565,7 +1678,7 @@ export async function syncExpensesWithServer() {
     return mergedList;
   } catch (err) {
     console.warn('syncExpensesWithServer error:', err);
-    return getAllExpenseList();
+    return getExpenseList();
   }
 }
 
@@ -2678,9 +2791,23 @@ export function getAllExpenseList() {
   try {
     const raw = localStorage.getItem(KEYS.EXPENSES);
     if (!raw) return [];
-    const list = JSON.parse(raw);
+    let list = JSON.parse(raw);
+    if (!Array.isArray(list)) return [];
+
+    const deletedSet = getDeletedExpenseIds();
     let modified = false;
+
+    // 削除済みIDセット（Tombstone）に含まれるアイテムは完全パージ
+    if (deletedSet.size > 0) {
+      const originalLen = list.length;
+      list = list.filter(e => e && e.id && !deletedSet.has(String(e.id).trim()) && !e.isDeleted && !e._deleted);
+      if (list.length !== originalLen) {
+        modified = true;
+      }
+    }
+
     list.forEach(e => {
+      if (!e) return;
       // 過去の巨大なBase64データがlocalStorageに残ってQuotaExceededErrorを引き起こすのを防ぐ
       const isBase64Image = e.receiptImage && e.receiptImage.startsWith('data:image/');
       const isBase64DataUrl = e.receiptDataUrl && e.receiptDataUrl.startsWith('data:image/');
@@ -2703,7 +2830,7 @@ export function getAllExpenseList() {
         modified = true;
       }
 
-      // それでも巨大なBase64(約1MB以上)がlocalStorageに残っている場合は、泣く泣く破棄する(パンク防止優先)
+      // それでも巨大なBase64(約1MB以上)がlocalStorageに残っている場合は、破棄する(パンク防止優先)
       if (e.receiptImage && e.receiptImage.startsWith('data:image/') && e.receiptImage.length > 1500000) {
         e.receiptImage = '';
         if (e.receiptDataUrl === 'same' || e.receiptDataUrl.startsWith('data:image/')) e.receiptDataUrl = '';
@@ -2733,34 +2860,46 @@ export function getAllExpenseList() {
  * 経費・仕入一覧を取得（削除済みを除外）
  */
 export function getExpenseList() {
-  return getAllExpenseList().filter(e => !e.isDeleted);
+  const deletedSet = getDeletedExpenseIds();
+  return getAllExpenseList().filter(e => e && !e.isDeleted && !e._deleted && !deletedSet.has(String(e.id).trim()));
 }
 
 /**
  * 経費・仕入データを保存（新規追加または更新）
- * @param {object} expense { id, date, category, amount, taxRate, payee, invoiceNumber, note, receiptImage, receiptDataUrl, isCost }
+ * @param {object} expense
  */
 export function saveExpense(expense) {
   try {
     const list = getAllExpenseList();
     const id = expense.id || ('exp_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6));
     const receiptImg = expense.receiptImage || expense.receiptDataUrl || '';
+
+    // 再保存の場合は削除済みリストから解除
+    removeDeletedExpenseId(id);
+
     const newExp = {
       id,
       date: expense.date || new Date().toISOString().split('T')[0],
       category: expense.category || '雑費',
       amount: Number(expense.amount) || 0,
-      taxRate: expense.taxRate !== undefined ? Number(expense.taxRate) : 10,
+      taxRate: expense.taxRate !== undefined && expense.taxRate !== null ? Number(expense.taxRate) : 10,
       payee: expense.payee || '',
       invoiceNumber: expense.invoiceNumber ? String(expense.invoiceNumber).trim().toUpperCase() : '',
       note: expense.note || '',
       receiptImage: receiptImg,
       receiptDataUrl: receiptImg ? "same" : "", // サイズ削減のため同じデータを持たせない
       isCost: !!expense.isCost,
+      isPurchase: !!expense.isPurchase,
       claimant: expense.claimant || '小林俊介',
       isSettled: !!expense.isSettled,
-      settledDate: expense.settledDate || null,
+      settledDate: expense.settledDate || '',
       paymentMethod: expense.paymentMethod || '普通預金',
+      // Phase 1〜4 で追加された新フィールド
+      paymentAccount: expense.paymentAccount || expense.paymentMethod || '普通預金',
+      taxType: expense.taxType || 'taxable_10',
+      invoiceType: expense.invoiceType || (expense.invoiceNumber ? 'qualified' : 'none'),
+      linkedInventoryId: expense.linkedInventoryId || '',
+      linkedInventoryQty: Number(expense.linkedInventoryQty) || 0,
       updatedAt: new Date().toISOString()
     };
 
@@ -2772,7 +2911,7 @@ export function saveExpense(expense) {
     }
 
     localStorageSetItemAndSync(KEYS.EXPENSES, JSON.stringify(list));
-    // サーバーファイル（data/expenses/expenses.json）にも即時保存
+    // サーバーファイル / Firestore にも即時保存
     saveServerExpenses(list).catch(e => {
       console.warn('Server expenses save failed:', e);
     });
@@ -2818,26 +2957,32 @@ export function markExpensesSettled(expenseIds = [], settledDate = '') {
 }
 
 /**
- * 経費・仕入データを削除
+ * 経費・仕入データを削除（Tombstone記録・ローカル即時除外・Firestore完全反映）
  */
 export function deleteExpense(id) {
   try {
+    if (!id) return false;
+    const cleanId = String(id).trim();
+
+    // 1. ゾンビ復活防止のため削除済みIDセット（Tombstone）に永続記録
+    recordDeletedExpenseId(cleanId);
+
+    // 2. ローカルリストから該当アイテムを即座に完全除外
     const list = getAllExpenseList();
-    const existingIndex = list.findIndex(e => e.id === id);
-    if (existingIndex >= 0) {
-      list[existingIndex].isDeleted = true;
-      list[existingIndex].updatedAt = new Date().toISOString();
-      localStorageSetItemAndSync(KEYS.EXPENSES, JSON.stringify(list));
-      // サーバーのFirestoreから個別削除（関連レシート画像も自動クリーンアップ）
-      deleteServerEntity('expenses', id).catch(e => {
-        console.warn('Server expenses delete failed:', e);
-      });
-      saveServerExpenses(list).catch(e => {
-        console.warn('Server expenses save failed:', e);
-      });
-      return true;
-    }
-    return false;
+    const updatedList = list.filter(e => e && e.id !== cleanId);
+    localStorageSetItemAndSync(KEYS.EXPENSES, JSON.stringify(updatedList));
+
+    // 3. サーバーFirestoreから個別削除（関連レシート画像も自動クリーンアップ）
+    deleteServerEntity('expenses', cleanId).catch(e => {
+      console.warn('Server expenses delete failed:', e);
+    });
+
+    // 4. サーバーへ最新リストと deletedIds を送信してFirestoreからも完全削除
+    saveServerExpenses(updatedList, [cleanId]).catch(e => {
+      console.warn('Server expenses save failed:', e);
+    });
+
+    return true;
   } catch (e) {
     console.error('Failed to delete expense:', e);
     return false;

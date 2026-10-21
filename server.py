@@ -80,6 +80,9 @@ def get_genai_client():
 if _genai_imported:
     get_genai_client()
 
+db = None
+bucket = None
+
 import firebase_admin
 from firebase_admin import credentials, firestore, storage, auth
 
@@ -89,7 +92,11 @@ try:
         'projectId': os.environ.get("GOOGLE_CLOUD_PROJECT", "alva-epr-510301")
     })
     db = firestore.client()
-    bucket = storage.bucket()
+    try:
+        bucket = storage.bucket()
+    except Exception as e_b:
+        print(f"[Firebase Storage] bucket init error: {e_b}")
+        bucket = None
     print("[Firebase] Initialized with ADC")
 except Exception as e:
     print(f"[Firebase] Initialization error: {e}")
@@ -762,17 +769,107 @@ DEFAULT_PURCHASE_MAPPINGS = {
 }
 
 
+def sanitize_fs_data(val):
+    """
+    Firestoreに安全に保存できるよう、再帰的にデータをサニタイズする。
+    - None や "undefined" 文字列を空文字 "" または適切な値に変換
+    - 辞書のキーが空文字列のものを除去
+    - 配列内の各要素も再帰的にサニタイズ
+    """
+    if val is None or val == "undefined":
+        return ""
+    if isinstance(val, dict):
+        clean_dict = {}
+        for k, v in val.items():
+            k_str = str(k).strip()
+            if not k_str:
+                continue
+            clean_dict[k_str] = sanitize_fs_data(v)
+        return clean_dict
+    if isinstance(val, list):
+        return [sanitize_fs_data(x) for x in val]
+    return val
+
+def sanitize_expense_item(item):
+    """
+    経費アイテムの各フィールド（Phase 1〜4の新設フィールド含む）をサニタイズし、
+    Firestoreで500エラーやundefinedクラッシュが起きないように完全防御する。
+    """
+    if not isinstance(item, dict):
+        return None
+    item_id = item.get('id')
+    if not item_id:
+        return None
+
+    # isDeleted や _deleted フラグがついているものは除外
+    if item.get('isDeleted') or item.get('_deleted'):
+        return None
+
+    clean = sanitize_fs_data(item)
+    clean['id'] = str(item_id).strip()
+    clean['date'] = str(clean.get('date', '') or '')
+    clean['category'] = str(clean.get('category', '雑費') or '雑費')
+    try:
+        clean['amount'] = float(clean.get('amount', 0) or 0)
+    except (ValueError, TypeError):
+        clean['amount'] = 0.0
+    try:
+        clean['taxRate'] = float(clean.get('taxRate', 10) or 10)
+    except (ValueError, TypeError):
+        clean['taxRate'] = 10.0
+    clean['payee'] = str(clean.get('payee', '') or '')
+    clean['invoiceNumber'] = str(clean.get('invoiceNumber', '') or '').strip().upper()
+    clean['note'] = str(clean.get('note', '') or '')
+    clean['claimant'] = str(clean.get('claimant', '小林俊介') or '小林俊介')
+    clean['paymentMethod'] = str(clean.get('paymentMethod', '普通預金') or '普通預金')
+    # Phase 1〜4で追加された新フィールド
+    clean['paymentAccount'] = str(clean.get('paymentAccount', clean.get('paymentMethod', '普通預金')) or '普通預金')
+    clean['taxType'] = str(clean.get('taxType', 'taxable_10') or 'taxable_10')
+    clean['invoiceType'] = str(clean.get('invoiceType', 'qualified' if clean.get('invoiceNumber') else 'none') or 'none')
+    clean['isCost'] = bool(clean.get('isCost', False))
+    clean['isPurchase'] = bool(clean.get('isPurchase', False))
+    clean['isSettled'] = bool(clean.get('isSettled', False))
+    clean['settledDate'] = str(clean.get('settledDate', '') or '')
+    clean['linkedInventoryId'] = str(clean.get('linkedInventoryId', '') or '')
+    try:
+        clean['linkedInventoryQty'] = float(clean.get('linkedInventoryQty', 0) or 0)
+    except (ValueError, TypeError):
+        clean['linkedInventoryQty'] = 0.0
+    clean['receiptImage'] = str(clean.get('receiptImage', '') or '')
+    clean['receiptDataUrl'] = str(clean.get('receiptDataUrl', '') or '')
+    clean['updatedAt'] = str(clean.get('updatedAt', '') or datetime.now(timezone.utc).isoformat())
+    return clean
+
 def get_fs_collection(col_name, default_data=None):
     if default_data is None: default_data = []
+    if not db: return default_data
     try:
         docs = db.collection(col_name).get()
-        data = [doc.to_dict() for doc in docs]
+        data = [doc.to_dict() for doc in docs if doc.to_dict()]
+        
+        # 削除済みIDの永続化除外フィルタ
+        settings_doc = None
+        if col_name == 'invoices':
+            settings_doc = 'deleted_invoices'
+        elif col_name == 'expenses':
+            settings_doc = 'deleted_expenses'
+
+        if settings_doc and data:
+            try:
+                del_snap = db.collection('settings').document(settings_doc).get()
+                if del_snap.exists:
+                    del_ids = set(del_snap.to_dict().get('ids', []))
+                    data = [d for d in data if d.get('id') not in del_ids and not d.get('isDeleted') and not d.get('_deleted')]
+            except Exception as e_del:
+                print(f"[Firestore {settings_doc} フィルタ警告]: {e_del}")
+
         return data if data else default_data
     except Exception as e:
         print(f"[Firestore] GET {col_name} error: {e}")
         return default_data
 
 def get_fs_document(col_name, doc_id, default_data=None):
+    if not db: return default_data
     try:
         doc = db.collection(col_name).document(doc_id).get()
         return doc.to_dict() if doc.exists else default_data
@@ -786,21 +883,29 @@ def save_fs_collection(col_name, data_list, id_field='id', deleted_ids=None):
     他端末で追加された最新データを消さないよう、送られてこなかったIDの自動一括削除（洗い替え）は行わない。
     明示的に deleted_ids が渡された場合のみ、そのIDを削除する。
     """
+    if not db:
+        return False, "Firestore DB is not initialized"
     doc_ref = None
     del_doc_ref = None
     try:
         batch = db.batch()
         count = 0
 
-        # 書類履歴の場合、永続化された削除済みIDリストを考慮してゾンビ復活を完全防止
+        # 書類・経費の場合、永続化された削除済みIDリストを考慮してゾンビ復活を完全防止
         persistent_deleted_ids = set()
+        settings_doc_name = None
         if col_name == 'invoices':
+            settings_doc_name = 'deleted_invoices'
+        elif col_name == 'expenses':
+            settings_doc_name = 'deleted_expenses'
+
+        if settings_doc_name:
             try:
-                del_snap = db.collection('settings').document('deleted_invoices').get()
+                del_snap = db.collection('settings').document(settings_doc_name).get()
                 if del_snap.exists:
                     persistent_deleted_ids = set(del_snap.to_dict().get('ids', []))
             except Exception as e_del:
-                print(f"[Firestore 削除ID読込エラー]: {e_del}")
+                print(f"[Firestore {settings_doc_name} 読込エラー]: {e_del}")
 
         # 明示的に削除指定されたIDがあれば削除＆永続削除リストへ登録
         if deleted_ids:
@@ -815,32 +920,41 @@ def save_fs_collection(col_name, data_list, id_field='id', deleted_ids=None):
                     else:
                         batch.delete(del_doc_ref)
                     count += 1
-                    if count == 500:
+                    if count >= 450:
                         batch.commit()
                         batch = db.batch()
                         count = 0
-            if col_name == 'invoices' and new_deleted_set != persistent_deleted_ids:
+            if settings_doc_name and new_deleted_set != persistent_deleted_ids:
                 try:
-                    db.collection('settings').document('deleted_invoices').set({'ids': list(new_deleted_set)[-500:]})
+                    db.collection('settings').document(settings_doc_name).set({'ids': list(new_deleted_set)[-500:]})
                     persistent_deleted_ids = new_deleted_set
                 except Exception as e_save_del:
-                    print(f"[Firestore 削除ID永続化エラー]: {e_save_del}")
+                    print(f"[Firestore {settings_doc_name} 永続化エラー]: {e_save_del}")
 
         # 送信されたアイテムのUpsert（追加・更新）のみ実行
         for item in data_list:
             if not isinstance(item, dict):
                 continue
+
+            # 経費の場合は専用サニタイズ（undefinedのnull/空文字化、isDeletedアイテムの除外）
+            if col_name == 'expenses':
+                item = sanitize_expense_item(item)
+                if not item:
+                    continue
+            else:
+                item = sanitize_fs_data(item)
+
             doc_id = item.get(id_field)
             if doc_id:
                 clean_id = str(doc_id).strip()
-                # 削除済みIDまたは _deleted フラグ付きのアイテムは絶対に復活保存しない
-                if col_name == 'invoices':
-                    if clean_id in persistent_deleted_ids or item.get('_deleted'):
-                        continue
+                # 削除済みIDまたは _deleted / isDeleted フラグ付きのアイテムは絶対に復活保存しない
+                if clean_id in persistent_deleted_ids or item.get('_deleted') or item.get('isDeleted'):
+                    continue
+
                 doc_ref = db.collection(col_name).document(clean_id)
                 batch.set(doc_ref, item)
                 count += 1
-                if count == 500:
+                if count >= 450:
                     batch.commit()
                     batch = db.batch()
                     count = 0
@@ -856,27 +970,41 @@ def save_fs_collection(col_name, data_list, id_field='id', deleted_ids=None):
 def delete_fs_item(col_name, item_id):
     """
     指定コレクションから指定IDのドキュメントを個別削除する。
-    経費の場合は関連レシート画像も自動クリーンアップ。
+    経費の場合は削除IDを settings/deleted_expenses に永続化し、関連レシート画像も自動クリーンアップ。
     書類の場合は削除済みリスト（settings/deleted_invoices）へ記録し他端末へのゾンビ復活を防止。
     """
+    if not db:
+        return False, "Firestore DB is not initialized"
     try:
         clean_id = str(item_id).strip()
         if not clean_id:
             return False, "IDが空です"
 
-        # 経費の場合、紐づくレシート画像があればStorageから削除
+        # 経費の場合、削除IDを永続化し、関連レシート画像もクリーンアップ
         if col_name == 'expenses':
-            doc_snap = db.collection('expenses').document(clean_id).get()
-            if doc_snap.exists:
-                e_data = doc_snap.to_dict() or {}
-                receipt_url = e_data.get('receiptUrl', '') or e_data.get('receiptImage', '')
-                if receipt_url and '/api/receipt/' in receipt_url:
-                    url_id = receipt_url.split('/api/receipt/')[-1].split('?')[0]
-                    target_id = re.sub(r'[^a-zA-Z0-9_\-]', '', url_id)
-                    if target_id:
-                        blob = bucket.blob(f"receipts/{target_id}.jpg")
-                        if blob.exists():
-                            blob.delete()
+            try:
+                del_snap = db.collection('settings').document('deleted_expenses').get()
+                existing_ids = del_snap.to_dict().get('ids', []) if del_snap.exists else []
+                if clean_id not in existing_ids:
+                    existing_ids.append(clean_id)
+                    db.collection('settings').document('deleted_expenses').set({'ids': existing_ids[-500:]})
+            except Exception as e_del:
+                print(f"[Firestore 経費削除ID永続化エラー (継続)]: {e_del}")
+
+            try:
+                doc_snap = db.collection('expenses').document(clean_id).get()
+                if doc_snap.exists:
+                    e_data = doc_snap.to_dict() or {}
+                    receipt_url = e_data.get('receiptUrl', '') or e_data.get('receiptImage', '')
+                    if receipt_url and '/api/receipt/' in receipt_url:
+                        url_id = receipt_url.split('/api/receipt/')[-1].split('?')[0]
+                        target_id = re.sub(r'[^a-zA-Z0-9_\-]', '', url_id)
+                        if target_id and bucket:
+                            blob = bucket.blob(f"receipts/{target_id}.jpg")
+                            if blob.exists():
+                                blob.delete()
+            except Exception as e_rec:
+                print(f"[GCS 経費レシート削除警告 (無視して継続)]: {e_rec}")
 
         # 書類の場合、削除IDを永続化し、編集中伝票とも連動クリア
         if col_name == 'invoices':
@@ -1522,21 +1650,26 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
                     target_ids.append(re.sub(r'[^a-zA-Z0-9_\-]', '', receipt_url.split('/api/receipt/')[-1].split('?')[0]))
 
                 deleted = []
-                for cid in target_ids:
-                    blob = bucket.blob(f"receipts/{cid}.jpg")
-                    if blob.exists():
-                        blob.delete()
-                        deleted.append(cid)
+                if bucket:
+                    for cid in target_ids:
+                        try:
+                            blob = bucket.blob(f"receipts/{cid}.jpg")
+                            if blob.exists():
+                                blob.delete()
+                                deleted.append(cid)
+                        except Exception as e_blob:
+                            print(f"[Storage 写真削除警告 (cid: {cid})]: {e_blob}")
 
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json; charset=utf-8')
                 self.end_headers()
                 self.wfile.write(json.dumps({"success": True, "deleted": deleted}).encode('utf-8'))
             except Exception as e:
-                self.send_response(500)
+                print(f"[delete-receipt ハンドリング警告]: {e}")
+                self.send_response(200)
                 self.send_header('Content-Type', 'application/json; charset=utf-8')
                 self.end_headers()
-                self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
+                self.wfile.write(json.dumps({"success": False, "error": str(e), "deleted": []}).encode('utf-8'))
             return
 
         # 登録済み経費と写真の1対1整合性同期API（孤立した不要写真の一括自動掃除）

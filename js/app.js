@@ -7194,8 +7194,8 @@ async function saveCurrentMultiReceiptItem(advanceNext = true) {
     isSettled: false,
     isCost: isPurchase,
     isPurchase: isPurchase,
-    linkedInventoryId: isPurchase ? linkedInventoryId : undefined,
-    linkedInventoryQty: isPurchase ? linkedInventoryQty : undefined,
+    linkedInventoryId: isPurchase ? (linkedInventoryId || '') : '',
+    linkedInventoryQty: isPurchase ? (Number(linkedInventoryQty) || 0) : 0,
     receiptImage: (receiptImg && receiptImg.startsWith('data:image/')) ? '' : receiptImg
   };
 
@@ -7823,8 +7823,8 @@ function handleSaveExpense() {
       isSettled: false,
       isCost: isPurchase,
       isPurchase: isPurchase,
-      linkedInventoryId: isPurchase ? linkedInventoryId : undefined,
-      linkedInventoryQty: isPurchase ? linkedInventoryQty : undefined,
+      linkedInventoryId: isPurchase ? (linkedInventoryId || '') : '',
+      linkedInventoryQty: isPurchase ? (Number(linkedInventoryQty) || 0) : 0,
       // ⚠️ localStorageの容量オーバー(QuotaExceededError)を防ぐため、Base64の巨大文字列は初回保存時には空にする
       receiptImage: (tempReceiptDataUrl && tempReceiptDataUrl.startsWith('data:image/')) ? '' : tempReceiptDataUrl
     };
