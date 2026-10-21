@@ -1412,11 +1412,15 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
 
         # 一括同期 (Pull)
         if self.path == '/api/sync/pull-all':
+            del_expenses_snap = db.collection('settings').document('deleted_expenses').get() if db else None
+            del_expense_ids = del_expenses_snap.to_dict().get('ids', []) if (del_expenses_snap and del_expenses_snap.exists) else []
+
             data = {
                 'masterItems': get_fs_collection('items', []),
                 'masterClients': get_fs_collection('clients', []),
                 'issuerProfile': get_fs_document('settings', 'issuer', {}),
                 'expenses': get_fs_collection('expenses', []),
+                'deletedExpenseIds': del_expense_ids,
                 'invoicesHistory': get_fs_collection('invoices', []),
                 'attendance': get_fs_collection('attendance', []),
                 'accountMaster': get_fs_collection('account_master', []),

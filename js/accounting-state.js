@@ -164,7 +164,9 @@ export function normalizeInvoiceDoc(raw) {
       tax8 += Math.floor(lineTotal * 0.08);
     }
 
-    if (it.costPrice) {
+    if (it.assignedCogs) {
+      costTotal += Number(it.assignedCogs);
+    } else if (it.costPrice) {
       costTotal += qty * Number(it.costPrice);
     }
   });
@@ -182,6 +184,9 @@ export function normalizeInvoiceDoc(raw) {
       }
     }
   }
+
+  const explicitCogs = Number(doc.assignedCogs || raw.assignedCogs || doc.cogsTotal || raw.cogsTotal || 0);
+  const finalCogs = explicitCogs > 0 ? explicitCogs : costTotal;
 
   return {
     id,
@@ -202,8 +207,8 @@ export function normalizeInvoiceDoc(raw) {
     tax8,
     taxTotal,
     grandTotal,
-    costTotal,
-    assignedCogs: Number(doc.assignedCogs || raw.assignedCogs || doc.cogsTotal || raw.cogsTotal || 0),
+    costTotal: finalCogs,
+    assignedCogs: finalCogs,
     rawDoc: doc
   };
 }
@@ -1255,4 +1260,14 @@ export function exportJournalsToCSV(journals = []) {
 
   const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\r\n');
   return csvContent;
+}
+
+if (typeof window !== 'undefined') {
+  window.buildUnifiedJournals = buildUnifiedJournals;
+  window.normalizeInvoiceDoc = normalizeInvoiceDoc;
+  window.isDateInPeriod = isDateInPeriod;
+  window.calculateProfitAndLoss = calculateProfitAndLoss;
+  window.calculateBalanceSheet = calculateBalanceSheet;
+  window.calculateTrialBalance = calculateTrialBalance;
+  window.exportJournalsToCSV = exportJournalsToCSV;
 }

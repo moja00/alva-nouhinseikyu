@@ -38,9 +38,12 @@ const KEYS = {
 export function getDeletedExpenseIds() {
   try {
     const raw = localStorage.getItem(KEYS.DELETED_EXPENSE_IDS);
-    return new Set(raw ? JSON.parse(raw) : []);
+    const set = new Set(raw ? JSON.parse(raw) : []);
+    // 既知の重複データ（2026-10-07 ENEOS重複分）のゾンビ復活を恒久防止
+    set.add('exp_1791374792331_42ih');
+    return set;
   } catch (e) {
-    return new Set();
+    return new Set(['exp_1791374792331_42ih']);
   }
 }
 
@@ -3072,7 +3075,7 @@ export function markExpensesSettled(expenseIds = [], settledDate = '', settlemen
 /**
  * 経費・仕入データを削除（Tombstone記録・ローカル即時除外・Firestore完全反映）
  */
-export function deleteExpense(id) {
+export async function deleteExpense(id) {
   try {
     if (!id) return false;
     const cleanId = String(id).trim();
@@ -3085,15 +3088,15 @@ export function deleteExpense(id) {
     const updatedList = list.filter(e => e && e.id !== cleanId);
     localStorageSetItemAndSync(KEYS.EXPENSES, JSON.stringify(updatedList));
 
-    // 3. サーバーFirestoreから個別削除（関連レシート画像も自動クリーンアップ）
-    deleteServerEntity('expenses', cleanId).catch(e => {
-      console.warn('Server expenses delete failed:', e);
-    });
-
-    // 4. サーバーへ最新リストと deletedIds を送信してFirestoreからも完全削除
-    saveServerExpenses(updatedList, [cleanId]).catch(e => {
-      console.warn('Server expenses save failed:', e);
-    });
+    // 3. サーバーFirestoreから個別削除 & 最新リストとdeletedIds送信による完全上書き
+    try {
+      await Promise.allSettled([
+        deleteServerEntity('expenses', cleanId),
+        saveServerExpenses(updatedList, [cleanId])
+      ]);
+    } catch (netErr) {
+      console.warn('Server delete/save error:', netErr);
+    }
 
     return true;
   } catch (e) {
@@ -3727,6 +3730,24 @@ export function saveInventoryItem(item) {
   } catch (e) {
     console.error('Failed to save inventory item:', e);
     return null;
+  }
+}
+
+/**
+ * 在庫リスト全体を一括保存
+ * @param {Array} list
+ * @returns {boolean}
+ */
+export function saveInventoryList(list) {
+  try {
+    if (!Array.isArray(list)) return false;
+    const clean = deduplicateInventoryList(list);
+    localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(clean));
+    saveServerInventory(clean).catch(() => { });
+    return true;
+  } catch (e) {
+    console.error('Failed to save inventory list:', e);
+    return false;
   }
 }
 
@@ -4525,11 +4546,24 @@ export async function pullAllServerDataToLocal() {
     if (data.issuerProfile && typeof data.issuerProfile === 'object') {
       saveIssuerProfile(data.issuerProfile);
     }
-    if (data.expenses && Array.isArray(data.expenses) && data.expenses.length > 0) {
-      localStorageSetItemAndSync(KEYS.EXPENSES, JSON.stringify(data.expenses));
+    if (data.expenses && Array.isArray(data.expenses)) {
+      const deletedSet = getDeletedExpenseIds();
+      if (Array.isArray(data.deletedExpenseIds)) {
+        data.deletedExpenseIds.forEach(id => {
+          if (id) {
+            const cleanId = String(id).trim();
+            recordDeletedExpenseId(cleanId);
+            deletedSet.add(cleanId);
+          }
+        });
+      }
+      const cleanExpenses = data.expenses.filter(e => e && e.id && !deletedSet.has(String(e.id).trim()) && !e.isDeleted && !e._deleted);
+      localStorageSetItemAndSync(KEYS.EXPENSES, JSON.stringify(cleanExpenses));
     }
-    if (data.invoicesHistory && Array.isArray(data.invoicesHistory) && data.invoicesHistory.length > 0) {
-      localStorageSetItemAndSync(KEYS.HISTORY, JSON.stringify(data.invoicesHistory));
+    if (data.invoicesHistory && Array.isArray(data.invoicesHistory)) {
+      const deletedInvoicesSet = getDeletedInvoiceIds();
+      const cleanInvoices = data.invoicesHistory.filter(inv => inv && inv.id && !deletedInvoicesSet.has(String(inv.id).trim()) && !inv.isDeleted && !inv._deleted);
+      localStorageSetItemAndSync(KEYS.HISTORY, JSON.stringify(cleanInvoices));
     }
     if (data.attendance && Array.isArray(data.attendance) && data.attendance.length > 0) {
       localStorageSetItemAndSync(KEYS.ATTENDANCE, JSON.stringify(data.attendance));
@@ -4843,8 +4877,14 @@ if (typeof window !== 'undefined') {
   window.saveInventorySerial = saveInventorySerial;
   window.saveBatchInventorySerials = saveBatchInventorySerials;
   window.updateSerialStatus = updateSerialStatus;
-  window.getAvailableSerialsByItem = getAvailableSerialsByItem;
   window.calculateBundleStockAndCost = calculateBundleStockAndCost;
+  window.getInventoryList = getInventoryList;
+  window.saveInventoryList = saveInventoryList;
+  window.saveInventoryItem = saveInventoryItem;
+  window.getHistoryList = getHistoryList;
+  window.getExpenseList = getExpenseList;
+  window.loadActiveDoc = loadActiveDoc;
+  window.saveActiveDoc = saveActiveDoc;
   window.restoreAttendanceFromBackup = function() {
     const backup = localStorage.getItem(KEYS.ATTENDANCE + '_backup');
     if (backup && backup !== '[]') {

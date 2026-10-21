@@ -1427,9 +1427,10 @@ function issueAndSyncAccountingDocument(options = {}) {
       try {
         const invList = getInventoryList();
         const bundleItem = invList.find(x => x.type === 'bundle' && (x.id === it.bundleItemId || x.name === it.name));
-        if (bundleItem && Array.isArray(bundleItem.bom)) {
-          bundleItem.bom.forEach(b => {
-            const comp = invList.find(x => x.id === b.componentId);
+        const bundleParts = (typeof getBundlePartsList === 'function') ? getBundlePartsList(bundleItem) : [];
+        if (bundleItem && bundleParts.length > 0) {
+          bundleParts.forEach(b => {
+            const comp = invList.find(c => c.id === b.componentId || (b.name && c.name === b.name));
             if (comp && !comp.hasSerial) {
               const usedQty = (Number(b.quantity) || 1) * (Number(it.quantity) || 1);
               updateInventoryStock(comp.id, -usedQty, 'out', `確定出荷引当: ${docNo} (${bundleItem.name})`);
@@ -1512,9 +1513,10 @@ async function cancelCurrentDocIssue() {
       try {
         const invList = getInventoryList();
         const bundleItem = invList.find(x => x.type === 'bundle' && (x.id === it.bundleItemId || x.name === it.name));
-        if (bundleItem && Array.isArray(bundleItem.bom)) {
-          bundleItem.bom.forEach(b => {
-            const comp = invList.find(x => x.id === b.componentId);
+        const bundleParts = (typeof getBundlePartsList === 'function') ? getBundlePartsList(bundleItem) : [];
+        if (bundleItem && bundleParts.length > 0) {
+          bundleParts.forEach(b => {
+            const comp = invList.find(x => x.id === b.componentId || (b.name && x.name === b.name));
             if (comp && !comp.hasSerial) {
               const usedQty = (Number(b.quantity) || 1) * (Number(it.quantity) || 1);
               updateInventoryStock(comp.id, usedQty, 'in', `確定発行取消による在庫復元: ${docNo} (${bundleItem.name})`);
@@ -5648,9 +5650,21 @@ function submitInventoryLotStockIn() {
 
 window.submitInventoryLotStockIn = submitInventoryLotStockIn;
 
-// ==========================================================================
-// 納品書・請求書作成時のセット品シリアル引当モーダル
-// ==========================================================================
+function getBundlePartsList(bundleItem) {
+  if (!bundleItem) return [];
+  const rawParts = Array.isArray(bundleItem.bundleItems) && bundleItem.bundleItems.length > 0
+    ? bundleItem.bundleItems
+    : (Array.isArray(bundleItem.bom) && bundleItem.bom.length > 0 ? bundleItem.bom : []);
+  return rawParts.map(p => ({
+    componentId: p.componentId || p.inventoryId || '',
+    quantity: Number(p.quantity !== undefined ? p.quantity : p.qty) || 1,
+    name: p.name || '',
+    role: p.role || ''
+  }));
+}
+
+window.getBundlePartsList = getBundlePartsList;
+
 function openSerialAssignModal(itemIndex) {
   if (!DOM.serialAssignModal) return;
   const item = currentDoc.items[itemIndex];
@@ -5672,13 +5686,14 @@ function openSerialAssignModal(itemIndex) {
   container.innerHTML = '';
 
   const currentlyAssigned = Array.isArray(item.assignedSerials) ? item.assignedSerials : [];
+  const parts = getBundlePartsList(bundleItem);
 
-  if (bundleItem && Array.isArray(bundleItem.bom)) {
+  if (bundleItem && parts.length > 0) {
     // セット品（BOM）の場合
-    bundleItem.bom.forEach((bomRow, bomIdx) => {
-      const comp = invList.find(c => c.id === bomRow.componentId);
-      const compName = comp ? comp.name : bomRow.componentId;
-      const needQty = (Number(bomRow.quantity) || 1) * qty;
+    parts.forEach((bomRow, bomIdx) => {
+      const comp = invList.find(c => c.id === bomRow.componentId || (bomRow.name && c.name === bomRow.name));
+      const compName = comp ? comp.name : (bomRow.name || bomRow.componentId);
+      const needQty = bomRow.quantity * qty;
 
       const card = document.createElement('div');
       card.style.cssText = 'background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px 12px;';
@@ -5832,10 +5847,11 @@ function updateSerialAssignPreview() {
     if (!bundleItem && (item.name || '').includes('DP-5000')) {
       bundleItem = invList.find(x => x.id === 'inv_1' || x.type === 'bundle');
     }
-    if (bundleItem && Array.isArray(bundleItem.bom)) {
+    const bundleParts = getBundlePartsList(bundleItem);
+    if (bundleItem && bundleParts.length > 0) {
       const qty = Number(item.quantity) || 1;
-      bundleItem.bom.forEach(b => {
-        const comp = invList.find(c => c.id === b.componentId);
+      bundleParts.forEach(b => {
+        const comp = invList.find(c => c.id === b.componentId || (b.name && c.name === b.name));
         if (comp && !comp.hasSerial) {
           totalCost += (Number(comp.unitCost) || 0) * (Number(b.quantity) || 1) * qty;
         }
@@ -5906,10 +5922,11 @@ function confirmSerialAssign() {
   }
   if (bundleItem) {
     item.bundleItemId = bundleItem.id;
-    if (Array.isArray(bundleItem.bom)) {
+    const bundleParts = getBundlePartsList(bundleItem);
+    if (bundleParts.length > 0) {
       const qty = Number(item.quantity) || 1;
-      bundleItem.bom.forEach(b => {
-        const comp = invList.find(c => c.id === b.componentId);
+      bundleParts.forEach(b => {
+        const comp = invList.find(c => c.id === b.componentId || (b.name && c.name === b.name));
         if (comp && !comp.hasSerial) {
           totalCost += (Number(comp.unitCost) || 0) * (Number(b.quantity) || 1) * qty;
         }
@@ -5946,6 +5963,8 @@ function confirmSerialAssign() {
 }
 
 window.confirmSerialAssign = confirmSerialAssign;
+window.getCurrentDoc = function() { return currentDoc; };
+window.setCurrentDoc = function(doc) { currentDoc = doc; };
 
 window.invOpenAdjust = function(id, defaultType = 'in') {
   const list = getInventoryList();
@@ -9479,7 +9498,7 @@ window.__editExpense = function(id) {
   DOM.formExpenseInput.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 };
 
-window.__deleteExpense = function(id) {
+window.__deleteExpense = async function(id) {
   const expenses = getExpenseList();
   const target = expenses.find(e => e.id === id);
   if (target && typeof isMonthLocked === 'function' && isMonthLocked(target.date)) {
@@ -9490,22 +9509,31 @@ window.__deleteExpense = function(id) {
   if (confirm('この経費データを削除しますか？\n※ 保存されている領収書写真もデータフォルダから完全に削除されます。')) {
     const receiptUrl = target ? (target.receiptImage || target.receiptDataUrl || '') : '';
 
-    deleteExpense(id);
+    await deleteExpense(id);
 
     // サーバー上の写真ファイルも連動削除して1対1対応を完全に維持
     if (typeof fetch !== 'undefined') {
-      (window.apiFetch || fetch)('delete-receipt', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: id, receiptUrl: receiptUrl })
-      }).then(() => {
+      try {
+        await (window.apiFetch || fetch)('delete-receipt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: id, receiptUrl: receiptUrl })
+        });
         syncReceiptStorageWithExpenses();
-      }).catch(e => console.warn('Failed to delete receipt photo from server:', e));
+      } catch (e) {
+        console.warn('Failed to delete receipt photo from server:', e);
+      }
     }
 
-    applyAccGlobalPeriod(currentAccGlobalPeriod.preset);
+    if (typeof applyAccGlobalPeriod === 'function' && typeof currentAccGlobalPeriod !== 'undefined') {
+      applyAccGlobalPeriod(currentAccGlobalPeriod.preset);
+    }
+    if (typeof renderAccountingExpenses === 'function') {
+      const p = (typeof currentAccGlobalPeriod !== 'undefined') ? currentAccGlobalPeriod : { preset: 'all' };
+      renderAccountingExpenses(p);
+    }
     if (typeof renderTaxSummaryCard === 'function') renderTaxSummaryCard(currentAccGlobalPeriod);
-    showToast('経費データと領収書写真を削除しました');
+    showToast('経費データを削除しました');
   }
 };
 
@@ -10179,6 +10207,27 @@ function removeCreditLine(idx) {
   updateMjLinesUI();
 }
 
+function setMjDebitField(idx, field, val) {
+  if (currentMjDebitLines[idx]) {
+    currentMjDebitLines[idx][field] = (field === 'amount') ? (Number(val) || 0) : val;
+    if (field === 'amount' || field === 'accountName') {
+      updateMjTotals();
+    }
+  }
+}
+
+function setMjCreditField(idx, field, val) {
+  if (currentMjCreditLines[idx]) {
+    currentMjCreditLines[idx][field] = (field === 'amount') ? (Number(val) || 0) : val;
+    if (field === 'amount' || field === 'accountName') {
+      updateMjTotals();
+    }
+  }
+}
+
+window.setMjDebitField = setMjDebitField;
+window.setMjCreditField = setMjCreditField;
+
 function updateMjLinesUI() {
   const master = (typeof getAccountMasterList === 'function') ? getAccountMasterList() : [];
 
@@ -10194,18 +10243,18 @@ function updateMjLinesUI() {
       debHtml += `
         <tr>
           <td style="padding: 2px;">
-            <select class="form-select form-select-sm" style="font-size: 11px; padding: 2px 4px;" onchange="currentMjDebitLines[${idx}].accountName=this.value; window.updateMjTotals && window.updateMjTotals();">
+            <select class="form-select form-select-sm" style="font-size: 11px; padding: 2px 4px;" onchange="window.setMjDebitField && window.setMjDebitField(${idx}, 'accountName', this.value);">
               ${buildAccountOptions(line.accountName)}
             </select>
           </td>
           <td style="padding: 2px;">
-            <input type="text" class="form-control form-control-sm" style="font-size: 11px; padding: 2px 4px;" placeholder="補助" value="${escapeHtml(line.subAccount || '')}" oninput="currentMjDebitLines[${idx}].subAccount=this.value;">
+            <input type="text" class="form-control form-control-sm" style="font-size: 11px; padding: 2px 4px;" placeholder="補助" value="${escapeHtml(line.subAccount || '')}" oninput="window.setMjDebitField && window.setMjDebitField(${idx}, 'subAccount', this.value);">
           </td>
           <td style="padding: 2px;">
-            <input type="number" class="form-control form-control-sm" style="font-size: 11px; font-weight: 700; text-align: right; padding: 2px 4px; font-family: monospace;" placeholder="0" value="${line.amount}" oninput="currentMjDebitLines[${idx}].amount=this.value; window.updateMjTotals && window.updateMjTotals();">
+            <input type="number" class="form-control form-control-sm" style="font-size: 11px; font-weight: 700; text-align: right; padding: 2px 4px; font-family: monospace;" placeholder="0" value="${line.amount}" oninput="window.setMjDebitField && window.setMjDebitField(${idx}, 'amount', this.value);">
           </td>
           <td style="padding: 2px;">
-            <select class="form-select form-select-sm" style="font-size: 10px; padding: 2px 2px;" onchange="currentMjDebitLines[${idx}].taxType=this.value;">
+            <select class="form-select form-select-sm" style="font-size: 10px; padding: 2px 2px;" onchange="window.setMjDebitField && window.setMjDebitField(${idx}, 'taxType', this.value);">
               <option value="taxable_10" ${line.taxType === 'taxable_10' ? 'selected' : ''}>10%</option>
               <option value="taxable_8" ${line.taxType === 'taxable_8' ? 'selected' : ''}>8%</option>
               <option value="exempt" ${line.taxType === 'exempt' ? 'selected' : ''}>非課税</option>
@@ -10229,18 +10278,18 @@ function updateMjLinesUI() {
       credHtml += `
         <tr>
           <td style="padding: 2px;">
-            <select class="form-select form-select-sm" style="font-size: 11px; padding: 2px 4px;" onchange="currentMjCreditLines[${idx}].accountName=this.value; window.updateMjTotals && window.updateMjTotals();">
+            <select class="form-select form-select-sm" style="font-size: 11px; padding: 2px 4px;" onchange="window.setMjCreditField && window.setMjCreditField(${idx}, 'accountName', this.value);">
               ${buildAccountOptions(line.accountName)}
             </select>
           </td>
           <td style="padding: 2px;">
-            <input type="text" class="form-control form-control-sm" style="font-size: 11px; padding: 2px 4px;" placeholder="補助" value="${escapeHtml(line.subAccount || '')}" oninput="currentMjCreditLines[${idx}].subAccount=this.value;">
+            <input type="text" class="form-control form-control-sm" style="font-size: 11px; padding: 2px 4px;" placeholder="補助" value="${escapeHtml(line.subAccount || '')}" oninput="window.setMjCreditField && window.setMjCreditField(${idx}, 'subAccount', this.value);">
           </td>
           <td style="padding: 2px;">
-            <input type="number" class="form-control form-control-sm" style="font-size: 11px; font-weight: 700; text-align: right; padding: 2px 4px; font-family: monospace;" placeholder="0" value="${line.amount}" oninput="currentMjCreditLines[${idx}].amount=this.value; window.updateMjTotals && window.updateMjTotals();">
+            <input type="number" class="form-control form-control-sm" style="font-size: 11px; font-weight: 700; text-align: right; padding: 2px 4px; font-family: monospace;" placeholder="0" value="${line.amount}" oninput="window.setMjCreditField && window.setMjCreditField(${idx}, 'amount', this.value);">
           </td>
           <td style="padding: 2px;">
-            <select class="form-select form-select-sm" style="font-size: 10px; padding: 2px 2px;" onchange="currentMjCreditLines[${idx}].taxType=this.value;">
+            <select class="form-select form-select-sm" style="font-size: 10px; padding: 2px 2px;" onchange="window.setMjCreditField && window.setMjCreditField(${idx}, 'taxType', this.value);">
               <option value="taxable_10" ${line.taxType === 'taxable_10' ? 'selected' : ''}>10%</option>
               <option value="taxable_8" ${line.taxType === 'taxable_8' ? 'selected' : ''}>8%</option>
               <option value="exempt" ${line.taxType === 'exempt' ? 'selected' : ''}>非課税</option>
@@ -10393,15 +10442,25 @@ function openReconcileFeeModal(invoiceId) {
   const full = getDocFromHistory(invoiceId);
   const list = getHistoryList();
   const summary = list.find(d => d.id === invoiceId);
-  const doc = full || summary?.fullDoc || summary;
+  const baseDoc = full || summary?.fullDoc || summary;
 
-  if (!doc) {
+  if (!baseDoc && !summary) {
     showToast('請求書データが見つかりません', 'danger');
     return;
   }
 
+  const rawDoc = Object.assign({}, summary, baseDoc);
+  const normalized = (typeof normalizeInvoiceDoc === 'function') ? normalizeInvoiceDoc(rawDoc) : null;
+  const grandTotal = summary?.grandTotal || normalized?.grandTotal || rawDoc.grandTotal || (rawDoc.totals && rawDoc.totals.total) || 0;
+  const clientName = summary?.clientName || rawDoc.clientName || rawDoc.client?.name || summary?.client?.name || '-';
+
+  const doc = Object.assign({}, rawDoc, {
+    id: invoiceId,
+    grandTotal: grandTotal,
+    clientName: clientName
+  });
+
   currentReconcileDoc = doc;
-  const grandTotal = doc.grandTotal || (doc.totals && doc.totals.total) || 0;
 
   const idInp = document.getElementById('rfInvoiceId');
   if (idInp) idInp.value = invoiceId;
