@@ -5643,8 +5643,169 @@ function renderAccountingDashboard(periodFilter = currentAccGlobalPeriod) {
   // 科目別経費内訳の描画
   renderExpenseCategoryBreakdown(pnl);
 
+  // 財務諸表形式 損益計算書テーブルの描画
+  renderFormalProfitAndLossTable(pnl);
+
   // 月別推移グラフの描画
   renderMonthlyBarChart();
+}
+
+function renderFormalProfitAndLossTable(pnl) {
+  const tbody = document.getElementById('plFormalTableBody');
+  const badge = document.getElementById('plNetProfitBadge');
+  if (!tbody) return;
+
+  const totalSales = pnl.totalSales || 0;
+  const costOfSales = pnl.totalCostOfGoodsSold || 0;
+  const grossProfit = pnl.grossProfit || (totalSales - costOfSales);
+  const totalSga = pnl.totalOperatingExpenses || 0;
+  const operatingProfit = pnl.operatingProfit || (grossProfit - totalSga);
+  const nonOpRev = pnl.totalNonOperatingRevenue || 0;
+  const nonOpExp = pnl.totalNonOperatingExpense || 0;
+  const ordinaryProfit = pnl.ordinaryProfit || (operatingProfit + nonOpRev - nonOpExp);
+  const netIncome = pnl.netIncome !== undefined ? pnl.netIncome : ordinaryProfit;
+
+  if (badge) {
+    badge.textContent = `当期純利益: ${formatCurrency(netIncome)}円`;
+    if (netIncome >= 0) {
+      badge.style.background = '#ecfdf5';
+      badge.style.color = '#047857';
+      badge.style.borderColor = '#a7f3d0';
+    } else {
+      badge.style.background = '#fef2f2';
+      badge.style.color = '#b91c1c';
+      badge.style.borderColor = '#fca5a5';
+    }
+  }
+
+  const sgaItems = Object.entries(pnl.expenseByCategory || {})
+    .filter(([_, amt]) => amt > 0)
+    .sort((a, b) => b[1] - a[1]);
+
+  let html = '';
+
+  // 1. 売上高
+  html += `
+    <tr style="background: #f8fafc; font-weight: 700; color: #1e293b; border-top: 1px solid #cbd5e1;">
+      <td style="padding: 8px 12px; font-family: monospace; color: #64748b;">401</td>
+      <td style="padding: 8px 12px;">Ⅰ 売上高</td>
+      <td style="padding: 8px 12px; text-align: right; font-family: monospace;"></td>
+      <td style="padding: 8px 12px; text-align: right; font-family: monospace; font-size: 0.95rem; color: #1e40af;">${formatCurrency(totalSales)}</td>
+      <td style="padding: 8px 12px; text-align: right; font-size: 11px; color: #64748b;">100.0%</td>
+    </tr>
+  `;
+
+  // 2. 売上原価
+  const costRatio = totalSales > 0 ? ((costOfSales / totalSales) * 100).toFixed(1) : '0.0';
+  html += `
+    <tr style="border-bottom: 1px solid #f1f5f9;">
+      <td style="padding: 6px 12px; font-family: monospace; color: #94a3b8;">500番台</td>
+      <td style="padding: 6px 12px; padding-left: 24px; color: #475569;">Ⅱ 売上原価（仕入・外注費等）</td>
+      <td style="padding: 6px 12px; text-align: right; font-family: monospace; color: #64748b;">${formatCurrency(costOfSales)}</td>
+      <td style="padding: 6px 12px; text-align: right; font-family: monospace;"></td>
+      <td style="padding: 6px 12px; text-align: right; font-size: 11px; color: #64748b;">${costRatio}%</td>
+    </tr>
+  `;
+
+  // 3. 売上総利益（粗利益）
+  const grossMargin = totalSales > 0 ? ((grossProfit / totalSales) * 100).toFixed(1) : '0.0';
+  html += `
+    <tr style="background: #f0fdf4; font-weight: 700; color: #166534; border-top: 1px solid #86efac; border-bottom: 1px solid #86efac;">
+      <td style="padding: 8px 12px; font-family: monospace;">-</td>
+      <td style="padding: 8px 12px;">【売上総利益】（粗利益）</td>
+      <td style="padding: 8px 12px; text-align: right; font-family: monospace;"></td>
+      <td style="padding: 8px 12px; text-align: right; font-family: monospace; font-size: 0.95rem;">${formatCurrency(grossProfit)}</td>
+      <td style="padding: 8px 12px; text-align: right; font-size: 11px;">${grossMargin}%</td>
+    </tr>
+  `;
+
+  // 4. 販売費及び一般管理費 (SGA)
+  const sgaRatio = totalSales > 0 ? ((totalSga / totalSales) * 100).toFixed(1) : '0.0';
+  html += `
+    <tr style="background: #f8fafc; font-weight: 700; color: #1e293b; border-top: 1px solid #cbd5e1;">
+      <td style="padding: 8px 12px; font-family: monospace; color: #64748b;">600番台</td>
+      <td style="padding: 8px 12px;">Ⅲ 販売費及び一般管理費</td>
+      <td style="padding: 8px 12px; text-align: right; font-family: monospace;"></td>
+      <td style="padding: 8px 12px; text-align: right; font-family: monospace; font-size: 0.95rem; color: #d97706;">${formatCurrency(totalSga)}</td>
+      <td style="padding: 8px 12px; text-align: right; font-size: 11px; color: #64748b;">${sgaRatio}%</td>
+    </tr>
+  `;
+
+  // SGAの内訳行
+  if (sgaItems.length > 0) {
+    sgaItems.forEach(([catName, amt]) => {
+      const itemRatio = totalSales > 0 ? ((amt / totalSales) * 100).toFixed(1) : '0.0';
+      html += `
+        <tr style="border-bottom: 1px solid #f1f5f9; font-size: 0.775rem;">
+          <td style="padding: 4px 12px; font-family: monospace; color: #94a3b8; font-size: 10px;">-</td>
+          <td style="padding: 4px 12px; padding-left: 28px; color: #475569;">${escapeHtml(catName)}</td>
+          <td style="padding: 4px 12px; text-align: right; font-family: monospace; color: #64748b;">${formatCurrency(amt)}</td>
+          <td style="padding: 4px 12px; text-align: right; font-family: monospace;"></td>
+          <td style="padding: 4px 12px; text-align: right; font-size: 10px; color: #94a3b8;">${itemRatio}%</td>
+        </tr>
+      `;
+    });
+  } else {
+    html += `
+      <tr style="border-bottom: 1px solid #f1f5f9; font-size: 0.775rem;">
+        <td style="padding: 4px 12px;"></td>
+        <td style="padding: 4px 12px; padding-left: 28px; color: #94a3b8;">（経費支出なし）</td>
+        <td style="padding: 4px 12px; text-align: right; font-family: monospace; color: #94a3b8;">¥0</td>
+        <td style="padding: 4px 12px;"></td>
+        <td style="padding: 4px 12px; text-align: right; font-size: 10px; color: #94a3b8;">0.0%</td>
+      </tr>
+    `;
+  }
+
+  // 5. 営業利益
+  const opMargin = totalSales > 0 ? ((operatingProfit / totalSales) * 100).toFixed(1) : '0.0';
+  const opColor = operatingProfit >= 0 ? '#1e40af' : '#b91c1c';
+  const opBg = operatingProfit >= 0 ? '#eff6ff' : '#fef2f2';
+  html += `
+    <tr style="background: ${opBg}; font-weight: 700; color: ${opColor}; border-top: 1.5px solid #bfdbfe; border-bottom: 1.5px solid #bfdbfe;">
+      <td style="padding: 8px 12px; font-family: monospace;">-</td>
+      <td style="padding: 8px 12px;">【営業利益】</td>
+      <td style="padding: 8px 12px; text-align: right; font-family: monospace;"></td>
+      <td style="padding: 8px 12px; text-align: right; font-family: monospace; font-size: 1rem;">${formatCurrency(operatingProfit)}</td>
+      <td style="padding: 8px 12px; text-align: right; font-size: 11px;">${opMargin}%</td>
+    </tr>
+  `;
+
+  // 6. 営業外損益
+  if (nonOpRev > 0 || nonOpExp > 0) {
+    html += `
+      <tr style="border-bottom: 1px solid #f1f5f9; font-size: 0.775rem;">
+        <td style="padding: 4px 12px; font-family: monospace; color: #94a3b8;">410番台</td>
+        <td style="padding: 4px 12px; padding-left: 24px; color: #475569;">Ⅳ 営業外収益（受取利息・雑収入等）</td>
+        <td style="padding: 4px 12px; text-align: right; font-family: monospace; color: #059669;">+${formatCurrency(nonOpRev)}</td>
+        <td style="padding: 4px 12px;"></td>
+        <td style="padding: 4px 12px;"></td>
+      </tr>
+      <tr style="border-bottom: 1px solid #f1f5f9; font-size: 0.775rem;">
+        <td style="padding: 4px 12px; font-family: monospace; color: #94a3b8;">700番台</td>
+        <td style="padding: 4px 12px; padding-left: 24px; color: #475569;">Ⅴ 営業外費用（支払利息等）</td>
+        <td style="padding: 4px 12px; text-align: right; font-family: monospace; color: #e11d48;">-${formatCurrency(nonOpExp)}</td>
+        <td style="padding: 4px 12px;"></td>
+        <td style="padding: 4px 12px;"></td>
+      </tr>
+    `;
+  }
+
+  // 7. 当期純利益
+  const netMargin = totalSales > 0 ? ((netIncome / totalSales) * 100).toFixed(1) : '0.0';
+  const netColor = netIncome >= 0 ? '#047857' : '#991b1b';
+  const netBg = netIncome >= 0 ? '#ecfdf5' : '#fee2e2';
+  html += `
+    <tr style="background: ${netBg}; font-weight: 800; color: ${netColor}; border-top: 2px solid #059669; border-bottom: 2px solid #059669;">
+      <td style="padding: 10px 12px; font-family: monospace;">-</td>
+      <td style="padding: 10px 12px; font-size: 0.95rem;">★ 【当期純利益】（税引前当期純利益）</td>
+      <td style="padding: 10px 12px; text-align: right; font-family: monospace;"></td>
+      <td style="padding: 10px 12px; text-align: right; font-family: monospace; font-size: 1.15rem;">${formatCurrency(netIncome)}</td>
+      <td style="padding: 10px 12px; text-align: right; font-size: 12px;">${netMargin}%</td>
+    </tr>
+  `;
+
+  tbody.innerHTML = html;
 }
 
 function renderExpenseCategoryBreakdown(pnl) {
@@ -8285,6 +8446,7 @@ function updateOpeningBalanceCheck() {
 }
 
 function saveOpeningBalancesFromUI() {
+  console.log("【期首残高保存】実行開始");
   const inputs = document.querySelectorAll('.ob-input');
   const newBalances = {};
   inputs.forEach(inp => {
@@ -8312,10 +8474,12 @@ function saveOpeningBalancesFromUI() {
 
   if (typeof saveFiscalSettings === 'function') {
     saveFiscalSettings(updatedSettings);
+    console.log("【期首残高保存】完了", updatedSettings);
     showToast('期首残高を保存しました！貸借対照表および試算表に即時反映されます。', 'success');
     renderBalanceSheet(currentAccGlobalPeriod);
     renderTrialBalance(currentAccGlobalPeriod);
     renderGeneralLedger(currentAccGlobalPeriod);
+    renderAccountingDashboard(currentAccGlobalPeriod);
   }
 }
 
@@ -8326,8 +8490,12 @@ let currentMjDebitLines = [];
 let currentMjCreditLines = [];
 
 function openManualJournalModal(editId = null) {
+  console.log("【振替伝票モーダル】開く処理開始", { editId });
   const modal = document.getElementById('manualJournalModal');
-  if (!modal) return;
+  if (!modal) {
+    console.error("【振替伝票モーダル】manualJournalModal 要素が見つかりません");
+    return;
+  }
 
   const dateInput = document.getElementById('mjDate');
   const entryNumInput = document.getElementById('mjEntryNumber');
@@ -8347,9 +8515,11 @@ function openManualJournalModal(editId = null) {
   updateMjLinesUI();
   modal.style.display = 'flex';
   modal.classList.add('active');
+  console.log("【振替伝票モーダル】表示完了");
 }
 
 function closeManualJournalModal() {
+  console.log("【振替伝票モーダル】閉じる");
   const modal = document.getElementById('manualJournalModal');
   if (!modal) return;
   modal.style.display = 'none';
@@ -8520,6 +8690,7 @@ function updateMjTotals() {
 }
 
 function saveManualJournalFromUI() {
+  console.log("【振替伝票登録】実行開始");
   const dateInput = document.getElementById('mjDate');
   const entryNumInput = document.getElementById('mjEntryNumber');
   const descInput = document.getElementById('mjDescription');
@@ -8547,30 +8718,37 @@ function saveManualJournalFromUI() {
 
   const validation = validateManualJournal(journalData);
   if (!validation.isValid) {
-    alert(`【登録できません】\n${validation.errors.join('\n')}`);
+    const errMsg = validation.error || (Array.isArray(validation.errors) ? validation.errors.join('\n') : '入力内容をご確認ください');
+    console.warn("【振替伝票登録】バリデーションエラー:", errMsg);
+    alert(`【登録できません】\n${errMsg}`);
     return;
   }
 
   if (typeof saveManualJournal === 'function') {
     saveManualJournal(journalData);
+    console.log("【振替伝票登録】保存完了", journalData);
     showToast('振替伝票（複合仕訳）を登録しました！仕訳帳・試算表・元帳・B/Sへ即時反映されます。', 'success');
     closeManualJournalModal();
     renderAccountingJournals(currentAccGlobalPeriod);
     renderBalanceSheet(currentAccGlobalPeriod);
     renderTrialBalance(currentAccGlobalPeriod);
     renderGeneralLedger(currentAccGlobalPeriod);
+    renderAccountingDashboard(currentAccGlobalPeriod);
   }
 }
 
 function deleteManualJournalFromUI(id) {
+  console.log("【振替伝票削除】開始", id);
   if (!confirm('この手動仕訳（振替伝票）を削除しますか？\n元帳や財務諸表の数値も再計算されます。')) return;
   if (typeof deleteManualJournal === 'function') {
     deleteManualJournal(id);
+    console.log("【振替伝票削除】完了", id);
     showToast('仕訳を削除しました。', 'info');
     renderAccountingJournals(currentAccGlobalPeriod);
     renderBalanceSheet(currentAccGlobalPeriod);
     renderTrialBalance(currentAccGlobalPeriod);
     renderGeneralLedger(currentAccGlobalPeriod);
+    renderAccountingDashboard(currentAccGlobalPeriod);
   }
 }
 
@@ -8712,16 +8890,22 @@ function submitReconcileFee() {
 
 // 勘定科目新規登録モーダル
 function openNewAccountModal() {
+  console.log("【勘定科目追加モーダル】開く処理開始");
   const modal = document.getElementById('newAccountModal');
-  if (!modal) return;
+  if (!modal) {
+    console.error("【勘定科目追加モーダル】newAccountModal 要素が見つかりません");
+    return;
+  }
   document.getElementById('naCode').value = '';
   document.getElementById('naName').value = '';
   document.getElementById('naSubAccounts').value = '';
   modal.style.display = 'flex';
   modal.classList.add('active');
+  console.log("【勘定科目追加モーダル】表示完了");
 }
 
 function closeNewAccountModal() {
+  console.log("【勘定科目追加モーダル】閉じる");
   const modal = document.getElementById('newAccountModal');
   if (!modal) return;
   modal.style.display = 'none';
@@ -8760,6 +8944,7 @@ function updateNaSubTypeOptions() {
 }
 
 function submitNewAccount() {
+  console.log("【勘定科目追加】登録開始");
   const code = (document.getElementById('naCode')?.value || '').trim();
   const name = (document.getElementById('naName')?.value || '').trim();
   const type = document.getElementById('naType')?.value || 'expense';
@@ -8788,9 +8973,12 @@ function submitNewAccount() {
   list.push(newAccount);
   if (typeof saveAccountMasterList === 'function') {
     saveAccountMasterList(list);
+    console.log("【勘定科目追加】保存完了", newAccount);
     showToast(`勘定科目「${name}」を追加しました！`, 'success');
     closeNewAccountModal();
     renderAccountingSettings();
+    renderTrialBalance(currentAccGlobalPeriod);
+    renderGeneralLedger(currentAccGlobalPeriod);
   }
 }
 
@@ -8800,6 +8988,7 @@ window.renderBalanceSheet = renderBalanceSheet;
 window.renderTrialBalance = renderTrialBalance;
 window.renderGeneralLedger = renderGeneralLedger;
 window.renderAccountingSettings = renderAccountingSettings;
+window.renderFormalProfitAndLossTable = renderFormalProfitAndLossTable;
 window.updateOpeningBalanceCheck = updateOpeningBalanceCheck;
 window.saveOpeningBalancesFromUI = saveOpeningBalancesFromUI;
 window.openManualJournalModal = openManualJournalModal;
@@ -8822,6 +9011,42 @@ window.updateNaSubTypeOptions = updateNaSubTypeOptions;
 window.submitNewAccount = submitNewAccount;
 window.exportJournalCSV = handleExportJournalCSV;
 window.__openReconcileFeeModal = openReconcileFeeModal;
+
+// 会計モジュール用 グローバルイベント委譲リスナー（ボタン無反応・DOM再描画防止）
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('button, a');
+  if (!btn) return;
+
+  if (btn.id === 'btnOpenManualJournalModal') {
+    e.preventDefault();
+    console.log("【振替伝票モーダル】開くボタンクリック (イベント委譲)");
+    openManualJournalModal();
+  } else if (btn.id === 'btnOpenNewAccountModal') {
+    e.preventDefault();
+    console.log("【勘定科目追加モーダル】開くボタンクリック (イベント委譲)");
+    openNewAccountModal();
+  } else if (btn.id === 'btnSaveOpeningBalances') {
+    e.preventDefault();
+    console.log("【期首残高保存】クリック (イベント委譲)");
+    saveOpeningBalancesFromUI();
+  } else if (btn.id === 'btnSaveManualJournal') {
+    e.preventDefault();
+    console.log("【振替伝票登録】クリック (イベント委譲)");
+    saveManualJournalFromUI();
+  } else if (btn.id === 'btnAddDebitLine') {
+    e.preventDefault();
+    console.log("【借方行追加】クリック (イベント委譲)");
+    addDebitLine();
+  } else if (btn.id === 'btnAddCreditLine') {
+    e.preventDefault();
+    console.log("【貸方行追加】クリック (イベント委譲)");
+    addCreditLine();
+  } else if (btn.id === 'btnExportJournalCSV') {
+    e.preventDefault();
+    console.log("【仕訳CSVエクスポート】クリック (イベント委譲)");
+    handleExportJournalCSV();
+  }
+});
 
 
 // ==========================================================================

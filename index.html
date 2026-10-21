@@ -281,7 +281,7 @@
         </button>
         <div style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
-          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.20-sync-v17</span>
+          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.20-sync-v18</span>
         </div>
       </div>
 
@@ -2317,11 +2317,45 @@
           </div>
 
           <!-- 科目別経費内訳 -->
-          <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px;">
+          <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
             <span style="font-size: 0.875rem; font-weight: 700; color: #1e293b; display: block; margin-bottom: 12px;">📑
               経費科目別内訳</span>
             <div id="accExpenseCategoryList" style="display: flex; flex-direction: column; gap: 8px;">
               <!-- JSで科目別プログレスバーを出力 -->
+            </div>
+          </div>
+
+          <!-- 財務諸表形式 損益計算書 (Profit & Loss Statement) テーブル -->
+          <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 2px solid #6366f1; padding-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+              <div>
+                <h3 style="margin: 0; font-size: 1rem; font-weight: 700; color: #1e293b;">
+                  📊 損益計算書 (Profit &amp; Loss Statement)
+                </h3>
+                <p style="font-size: 0.75rem; color: #64748b; margin: 2px 0 0 0;">
+                  選択期間の確定損益計算書（売上高 → 売上総利益 → 営業利益 → 当期純利益）
+                </p>
+              </div>
+              <div id="plNetProfitBadge" style="font-size: 0.825rem; font-weight: 700; padding: 4px 12px; border-radius: 9999px; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0;">
+                当期純利益: ¥0
+              </div>
+            </div>
+
+            <div style="overflow-x: auto;">
+              <table class="acc-table" style="width: 100%; border-collapse: collapse; font-size: 0.825rem;">
+                <thead>
+                  <tr style="background: #f8fafc; color: #475569; border-bottom: 1.5px solid #cbd5e1; text-align: left;">
+                    <th style="padding: 8px 12px; width: 90px;">科目コード</th>
+                    <th style="padding: 8px 12px;">勘定科目名 / 区分</th>
+                    <th style="padding: 8px 12px; text-align: right; width: 140px;">内訳金額(円)</th>
+                    <th style="padding: 8px 12px; text-align: right; width: 160px;">段階利益 / 合計(円)</th>
+                    <th style="padding: 8px 12px; text-align: right; width: 85px;">構成比</th>
+                  </tr>
+                </thead>
+                <tbody id="plFormalTableBody">
+                  <!-- JSで段階利益テーブルを出力 -->
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -2424,7 +2458,7 @@
                   <line x1="12" y1="5" x2="12" y2="19" />
                   <line x1="5" y1="12" x2="19" y2="12" />
                 </svg>
-                ＋ 振替伝票作成（複合仕訳）
+                振替伝票作成（複合仕訳）
               </button>
               <button type="button" class="btn btn-primary btn-sm" id="btnExportJournalCSV"
                 onclick="window.exportJournalCSV && window.exportJournalCSV()"
@@ -2723,7 +2757,7 @@
                   <p style="font-size: 0.75rem; color: #64748b; margin: 2px 0 0 0;">
                     5大区分（資産・負債・純資産・収益・費用）および原価・販管費体系</p>
                 </div>
-                <button type="button" class="btn btn-outline btn-sm"
+                <button type="button" class="btn btn-outline btn-sm" id="btnOpenNewAccountModal"
                   onclick="window.openNewAccountModal && window.openNewAccountModal()"
                   style="border-color: #cbd5e1; font-weight: 700; font-size: 0.75rem;">
                   ＋ 科目追加
@@ -5131,7 +5165,7 @@
           <div style="border: 1.5px solid #bfdbfe; border-radius: 8px; overflow: hidden; background: #ffffff;">
             <div style="background: #eff6ff; padding: 8px 12px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #bfdbfe;">
               <span style="font-size: 0.85rem; font-weight: 700; color: #1e40af;">【借方】(Debit)</span>
-              <button type="button" class="btn btn-outline btn-xs" onclick="window.addDebitLine && window.addDebitLine()" style="color: #1e40af; border-color: #93c5fd; background: #fff; font-size: 11px; padding: 2px 8px; font-weight: 700;">＋ 行追加</button>
+              <button type="button" class="btn btn-outline btn-xs" id="btnAddDebitLine" onclick="window.addDebitLine && window.addDebitLine()" style="color: #1e40af; border-color: #93c5fd; background: #fff; font-size: 11px; padding: 2px 8px; font-weight: 700;">＋ 行追加</button>
             </div>
             <div style="max-height: 240px; overflow-y: auto; padding: 8px;">
               <table style="width: 100%; border-collapse: collapse; font-size: 0.75rem;">
@@ -5157,7 +5191,7 @@
           <div style="border: 1.5px solid #bbf7d0; border-radius: 8px; overflow: hidden; background: #ffffff;">
             <div style="background: #f0fdf4; padding: 8px 12px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #bbf7d0;">
               <span style="font-size: 0.85rem; font-weight: 700; color: #166534;">【貸方】(Credit)</span>
-              <button type="button" class="btn btn-outline btn-xs" onclick="window.addCreditLine && window.addCreditLine()" style="color: #166534; border-color: #86efac; background: #fff; font-size: 11px; padding: 2px 8px; font-weight: 700;">＋ 行追加</button>
+              <button type="button" class="btn btn-outline btn-xs" id="btnAddCreditLine" onclick="window.addCreditLine && window.addCreditLine()" style="color: #166534; border-color: #86efac; background: #fff; font-size: 11px; padding: 2px 8px; font-weight: 700;">＋ 行追加</button>
             </div>
             <div style="max-height: 240px; overflow-y: auto; padding: 8px;">
               <table style="width: 100%; border-collapse: collapse; font-size: 0.75rem;">

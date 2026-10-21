@@ -169,8 +169,19 @@ export function normalizeInvoiceDoc(raw) {
     }
   });
 
-  const taxTotal = tax10 + tax8;
-  const grandTotal = subtotal + taxTotal;
+  let taxTotal = tax10 + tax8;
+  let grandTotal = subtotal + taxTotal;
+  if (grandTotal === 0) {
+    const rawGrand = Number(doc.grandTotal || raw.grandTotal || doc.totalAmount || raw.totalAmount || 0);
+    if (rawGrand > 0) {
+      grandTotal = rawGrand;
+      if (subtotal === 0) {
+        subtotal = Math.round(rawGrand / 1.1);
+        taxTotal = rawGrand - subtotal;
+        tax10 = taxTotal;
+      }
+    }
+  }
 
   return {
     id,
@@ -199,16 +210,19 @@ export function normalizeInvoiceDoc(raw) {
 export function isDateInPeriod(dateStr, periodFilter = 'all') {
   if (!periodFilter || periodFilter === 'all') return true;
   if (!dateStr) return false;
-  const d = String(dateStr).trim().slice(0, 10);
+  const d = String(dateStr).replace(/\//g, '-').trim().slice(0, 10);
   if (!d) return false;
 
   if (typeof periodFilter === 'string') {
     if (periodFilter === 'all') return true;
-    return d.startsWith(periodFilter);
+    const p = periodFilter.replace(/\//g, '-').trim();
+    return d.startsWith(p);
   }
 
   if (typeof periodFilter === 'object') {
-    const { start, end } = periodFilter;
+    if (periodFilter.preset === 'all') return true;
+    const start = periodFilter.start ? String(periodFilter.start).replace(/\//g, '-').trim().slice(0, 10) : '';
+    const end = periodFilter.end ? String(periodFilter.end).replace(/\//g, '-').trim().slice(0, 10) : '';
     if (start && d < start) return false;
     if (end && d > end) return false;
     return true;
@@ -262,15 +276,44 @@ export function validateManualJournal(entry) {
 
 /**
  * 請求書、経費、手動・複合仕訳を1つの統合仕訳ストリームとして生成
- * @param {object} params
+ * @param {object|Array} arg1
  * @returns {Array<object>} 統合仕訳リスト
  */
-export function buildUnifiedJournals({
-  invoices = [],
-  expenses = [],
-  manualJournals = [],
-  periodFilter = 'all'
-} = {}) {
+export function buildUnifiedJournals(arg1 = {}, arg2 = [], arg3 = [], arg4 = [], arg5 = 'all') {
+  let invoices = [];
+  let expenses = [];
+  let manualJournals = [];
+  let payrollRecords = [];
+  let periodFilter = 'all';
+
+  if (arg1 && typeof arg1 === 'object' && !Array.isArray(arg1)) {
+    // オブジェクト分割代入形式: { invoices, expenses, manualJournals, payrollRecords, periodFilter }
+    invoices = Array.isArray(arg1.invoices) ? arg1.invoices : [];
+    expenses = Array.isArray(arg1.expenses) ? arg1.expenses : [];
+    manualJournals = Array.isArray(arg1.manualJournals) ? arg1.manualJournals : [];
+    payrollRecords = Array.isArray(arg1.payrollRecords) ? arg1.payrollRecords : [];
+    periodFilter = arg1.periodFilter || 'all';
+  } else {
+    // 位置引数形式: (invoices, expenses, manualJournals, payrollRecords, periodFilter)
+    // または (invoices, expenses, periodFilter, manualJournals)
+    invoices = Array.isArray(arg1) ? arg1 : [];
+    expenses = Array.isArray(arg2) ? arg2 : [];
+
+    if (Array.isArray(arg3)) {
+      manualJournals = arg3;
+      if (Array.isArray(arg4)) {
+        payrollRecords = arg4;
+        periodFilter = arg5 || 'all';
+      } else {
+        periodFilter = arg4 || 'all';
+      }
+    } else {
+      periodFilter = arg3 || 'all';
+      manualJournals = Array.isArray(arg4) ? arg4 : [];
+      payrollRecords = Array.isArray(arg5) ? arg5 : [];
+    }
+  }
+
   const unified = [];
 
   // 手動・複合仕訳側の sourceId セットを構築（二重計上防止用）
@@ -400,6 +443,55 @@ export function buildUnifiedJournals({
       creditLines: [{ accountCode: creditCode, accountName: creditName, subAccount: method, amount: amountInc, taxType: 'out_of_scope', invoiceType: 'none' }],
       totalDebit: amountInc,
       totalCredit: amountInc
+    });
+  });
+
+  // 2.5 給与計算データ自動仕訳（要件1: 手動給与仕訳がある場合はスキップ）
+  (payrollRecords || []).forEach(pay => {
+    if (!pay) return;
+    const cleanPayId = String(pay.id || pay.recordId || '').trim();
+    if (cleanPayId && manualPayrollSourceIds.has(cleanPayId)) {
+      return; // 複合仕訳側で計上済みのためスキップ
+    }
+
+    const date = pay.paymentDate || pay.date || pay.period || '';
+    if (!isDateInPeriod(date, periodFilter)) return;
+
+    const grossSalary = Number(pay.grossSalary || pay.totalPayment || pay.grossPay || pay.total || 0);
+    const deductions = Number(pay.deductionsTotal || pay.totalDeduction || pay.taxTotal || 0);
+    const netSalary = Number(pay.netPayment || pay.netSalary || (grossSalary - deductions));
+    const empName = pay.employeeName || pay.name || '従業員';
+
+    if (grossSalary <= 0 && netSalary <= 0) return;
+
+    const debLines = [
+      { accountCode: '602', accountName: '給料手当', subAccount: empName, amount: grossSalary || netSalary, taxType: 'non_taxable', invoiceType: 'none' }
+    ];
+    const credLines = [];
+    if (netSalary > 0) {
+      credLines.push({ accountCode: '102', accountName: '普通預金', subAccount: '', amount: netSalary, taxType: 'out_of_scope', invoiceType: 'none' });
+    }
+    if (deductions > 0) {
+      credLines.push({ accountCode: '214', accountName: '預り金', subAccount: '源泉税・社保控除', amount: deductions, taxType: 'out_of_scope', invoiceType: 'none' });
+    }
+    if (credLines.length === 0) {
+      credLines.push({ accountCode: '102', accountName: '普通預金', subAccount: '', amount: grossSalary, taxType: 'out_of_scope', invoiceType: 'none' });
+    }
+
+    const totDeb = debLines.reduce((s, l) => s + l.amount, 0);
+    const totCred = credLines.reduce((s, l) => s + l.amount, 0);
+
+    unified.push({
+      id: `jnl_pay_${cleanPayId || Date.now()}`,
+      date: date || new Date().toISOString().split('T')[0],
+      entryNumber: `PAY-${(cleanPayId || '').slice(-6) || 'AUTO'}`,
+      description: `給与支給: ${empName}`,
+      sourceType: 'payroll',
+      sourceId: cleanPayId,
+      debitLines: debLines,
+      creditLines: credLines,
+      totalDebit: totDeb,
+      totalCredit: totCred
     });
   });
 
@@ -591,19 +683,39 @@ export function calculateProfitAndLoss(invoices = [], expenses = [], periodFilte
 /**
  * 特定の勘定科目（および補助科目）の総勘定元帳データを計算
  * @param {string} targetAccountCodeOrName 
- * @param {object} options 
+ * @param {object|Array} arg2 
  * @returns {object} 元帳明細および残高推移
  */
-export function calculateGeneralLedger(targetAccountCodeOrName, {
-  accountMaster = DEFAULT_ACCOUNT_MASTER,
-  openingBalances = {},
-  unifiedJournals = [],
-  periodFilter = 'all',
-  subAccount = ''
-} = {}) {
+export function calculateGeneralLedger(targetAccountCodeOrName, arg2 = {}, arg3 = [], arg4 = {}, arg5 = [], arg6 = [], arg7 = 'all') {
+  let accountMaster = DEFAULT_ACCOUNT_MASTER;
+  let openingBalances = {};
+  let unifiedJournals = [];
+  let periodFilter = 'all';
+  let subAccount = '';
+
+  if (arg2 && typeof arg2 === 'object' && !Array.isArray(arg2) && (arg2.accountMaster || arg2.unifiedJournals || arg2.openingBalances !== undefined)) {
+    // オブジェクト引数形式
+    accountMaster = (Array.isArray(arg2.accountMaster) && arg2.accountMaster.length > 0) ? arg2.accountMaster : DEFAULT_ACCOUNT_MASTER;
+    openingBalances = arg2.openingBalances || {};
+    unifiedJournals = Array.isArray(arg2.unifiedJournals) ? arg2.unifiedJournals : [];
+    periodFilter = arg2.periodFilter || 'all';
+    subAccount = arg2.subAccount || '';
+  } else if (Array.isArray(arg2)) {
+    // 位置引数形式: calculateGeneralLedger(selectedAccount, invoices, expenses, fiscalSettings, accountMaster, manualJournals, periodFilter)
+    const invoices = arg2;
+    const expenses = Array.isArray(arg3) ? arg3 : [];
+    const fiscalSettings = (arg4 && typeof arg4 === 'object' && !Array.isArray(arg4)) ? arg4 : {};
+    accountMaster = (Array.isArray(arg5) && arg5.length > 0) ? arg5 : DEFAULT_ACCOUNT_MASTER;
+    const manualJournals = Array.isArray(arg6) ? arg6 : [];
+    periodFilter = arg7 || fiscalSettings.periodFilter || 'all';
+
+    openingBalances = fiscalSettings.openingBalances || fiscalSettings || {};
+    unifiedJournals = buildUnifiedJournals(invoices, expenses, manualJournals, [], periodFilter);
+  }
+
   const accDef = findAccountDef(targetAccountCodeOrName, accountMaster);
   if (!accDef) {
-    return { account: null, openingBalance: 0, entries: [], closingBalance: 0, totalDebit: 0, totalCredit: 0 };
+    return { account: null, openingBalance: 0, entries: [], closingBalance: 0, totalDebit: 0, periodDebit: 0, totalCredit: 0, periodCredit: 0 };
   }
 
   // 期首残高の取得
@@ -657,6 +769,7 @@ export function calculateGeneralLedger(targetAccountCodeOrName, {
         date: jnl.date,
         entryNumber: jnl.entryNumber,
         counterpart,
+        counterAccount: counterpart, // 互換性
         description: jnl.description,
         debitAmount: amt,
         creditAmount: 0,
@@ -691,6 +804,7 @@ export function calculateGeneralLedger(targetAccountCodeOrName, {
         date: jnl.date,
         entryNumber: jnl.entryNumber,
         counterpart,
+        counterAccount: counterpart, // 互換性
         description: jnl.description,
         debitAmount: 0,
         creditAmount: amt,
@@ -708,7 +822,9 @@ export function calculateGeneralLedger(targetAccountCodeOrName, {
     entries,
     closingBalance: currentBalance,
     totalDebit,
-    totalCredit
+    periodDebit: totalDebit, // 互換性
+    totalCredit,
+    periodCredit: totalCredit // 互換性
   };
 }
 
@@ -718,15 +834,34 @@ export function calculateGeneralLedger(targetAccountCodeOrName, {
 
 /**
  * 残高試算表（合計残高試算表）の計算
- * @param {object} params
+ * @param {object|Array} arg1
  * @returns {object} 全科目の期首・借方計・貸方計・期末残高および合計バランス
  */
-export function calculateTrialBalance({
-  accountMaster = DEFAULT_ACCOUNT_MASTER,
-  openingBalances = {},
-  unifiedJournals = [],
-  periodFilter = 'all'
-} = {}) {
+export function calculateTrialBalance(arg1 = {}, arg2 = {}, arg3 = {}, arg4 = [], arg5 = [], arg6 = 'all') {
+  let accountMaster = DEFAULT_ACCOUNT_MASTER;
+  let openingBalances = {};
+  let unifiedJournals = [];
+  let periodFilter = 'all';
+
+  if (arg1 && typeof arg1 === 'object' && !Array.isArray(arg1) && (arg1.accountMaster || arg1.unifiedJournals || arg1.openingBalances !== undefined)) {
+    // オブジェクト引数形式: { accountMaster, openingBalances, unifiedJournals, periodFilter }
+    accountMaster = (Array.isArray(arg1.accountMaster) && arg1.accountMaster.length > 0) ? arg1.accountMaster : DEFAULT_ACCOUNT_MASTER;
+    openingBalances = arg1.openingBalances || {};
+    unifiedJournals = Array.isArray(arg1.unifiedJournals) ? arg1.unifiedJournals : [];
+    periodFilter = arg1.periodFilter || 'all';
+  } else if (Array.isArray(arg1)) {
+    // 位置引数形式: calculateTrialBalance(invoices, expenses, fiscalSettings, accountMaster, manualJournals, periodFilter)
+    const invoices = arg1;
+    const expenses = Array.isArray(arg2) ? arg2 : [];
+    const fiscalSettings = (arg3 && typeof arg3 === 'object' && !Array.isArray(arg3)) ? arg3 : {};
+    accountMaster = (Array.isArray(arg4) && arg4.length > 0) ? arg4 : DEFAULT_ACCOUNT_MASTER;
+    const manualJournals = Array.isArray(arg5) ? arg5 : [];
+    periodFilter = arg6 || fiscalSettings.periodFilter || 'all';
+
+    openingBalances = fiscalSettings.openingBalances || fiscalSettings || {};
+    unifiedJournals = buildUnifiedJournals(invoices, expenses, manualJournals, [], periodFilter);
+  }
+
   const master = Array.isArray(accountMaster) && accountMaster.length > 0 ? accountMaster : DEFAULT_ACCOUNT_MASTER;
 
   let totalOpeningDebit = 0;
@@ -810,11 +945,17 @@ export function calculateTrialBalance({
       openingDebit,
       openingCredit,
       periodDebit: pDeb,
+      debitTotal: pDeb, // 互換性
       periodCredit: pCred,
+      creditTotal: pCred, // 互換性
       closingDebit,
-      closingCredit
+      debitBalance: closingDebit, // 互換性
+      closingCredit,
+      creditBalance: closingCredit // 互換性
     };
   });
+
+  const isBalanced = totalClosingDebit === totalClosingCredit;
 
   return {
     rows,
@@ -822,11 +963,16 @@ export function calculateTrialBalance({
       totalOpeningDebit,
       totalOpeningCredit,
       totalPeriodDebit,
+      debitTotal: totalPeriodDebit, // 互換性
       totalPeriodCredit,
+      creditTotal: totalPeriodCredit, // 互換性
       totalClosingDebit,
+      debitBalanceTotal: totalClosingDebit, // 互換性
       totalClosingCredit,
-      isBalanced: totalClosingDebit === totalClosingCredit
-    }
+      creditBalanceTotal: totalClosingCredit, // 互換性
+      isBalanced
+    },
+    isBalanced // ★トップレベルの貸借一致フラグ
   };
 }
 
@@ -837,16 +983,37 @@ export function calculateTrialBalance({
 
 /**
  * 貸借対照表（B/S）の計算
- * @param {object} params
+ * @param {object|Array} arg1
  * @returns {object} 資産・負債・純資産の部および完全一致バランス検証
  */
-export function calculateBalanceSheet({
-  accountMaster = DEFAULT_ACCOUNT_MASTER,
-  openingBalances = {},
-  unifiedJournals = [],
-  periodFilter = 'all',
-  profitAndLoss = null
-} = {}) {
+export function calculateBalanceSheet(arg1 = {}, arg2 = {}, arg3 = {}, arg4 = [], arg5 = [], arg6 = 'all') {
+  let accountMaster = DEFAULT_ACCOUNT_MASTER;
+  let openingBalances = {};
+  let unifiedJournals = [];
+  let periodFilter = 'all';
+  let profitAndLoss = null;
+
+  if (arg1 && typeof arg1 === 'object' && !Array.isArray(arg1) && (arg1.accountMaster || arg1.unifiedJournals || arg1.openingBalances !== undefined || arg1.profitAndLoss)) {
+    // オブジェクト引数形式: { accountMaster, openingBalances, unifiedJournals, periodFilter, profitAndLoss }
+    accountMaster = (Array.isArray(arg1.accountMaster) && arg1.accountMaster.length > 0) ? arg1.accountMaster : DEFAULT_ACCOUNT_MASTER;
+    openingBalances = arg1.openingBalances || {};
+    unifiedJournals = Array.isArray(arg1.unifiedJournals) ? arg1.unifiedJournals : [];
+    periodFilter = arg1.periodFilter || 'all';
+    profitAndLoss = arg1.profitAndLoss || null;
+  } else if (Array.isArray(arg1)) {
+    // 位置引数形式: calculateBalanceSheet(invoices, expenses, fiscalSettings, accountMaster, manualJournals, periodFilter)
+    const invoices = arg1;
+    const expenses = Array.isArray(arg2) ? arg2 : [];
+    const fiscalSettings = (arg3 && typeof arg3 === 'object' && !Array.isArray(arg3)) ? arg3 : {};
+    accountMaster = (Array.isArray(arg4) && arg4.length > 0) ? arg4 : DEFAULT_ACCOUNT_MASTER;
+    const manualJournals = Array.isArray(arg5) ? arg5 : [];
+    periodFilter = arg6 || fiscalSettings.periodFilter || 'all';
+
+    openingBalances = fiscalSettings.openingBalances || fiscalSettings || {};
+    unifiedJournals = buildUnifiedJournals(invoices, expenses, manualJournals, [], periodFilter);
+    profitAndLoss = calculateProfitAndLoss(invoices, expenses, periodFilter, manualJournals);
+  }
+
   // 試算表をベースに残高を算出
   const tb = calculateTrialBalance({ accountMaster, openingBalances, unifiedJournals, periodFilter });
   const bsRows = tb.rows.filter(r => r.type === 'asset' || r.type === 'liability' || r.type === 'equity');
@@ -875,32 +1042,37 @@ export function calculateBalanceSheet({
     // 資産科目
     if (r.type === 'asset') {
       const amount = r.closingDebit - r.closingCredit;
+      const itemObj = { code: r.code, name: r.name, amount, balance: amount };
       if (r.subType === 'fixed_asset') {
-        fixedAssets.push({ code: r.code, name: r.name, amount });
+        fixedAssets.push(itemObj);
         totalFixedAssets += amount;
       } else {
-        currentAssets.push({ code: r.code, name: r.name, amount });
+        currentAssets.push(itemObj);
         totalCurrentAssets += amount;
       }
     }
     // 負債科目
     else if (r.type === 'liability') {
       const amount = r.closingCredit - r.closingDebit;
+      const itemObj = { code: r.code, name: r.name, amount, balance: amount };
       if (r.subType === 'fixed_liability') {
-        fixedLiabilities.push({ code: r.code, name: r.name, amount });
+        fixedLiabilities.push(itemObj);
         totalFixedLiabilities += amount;
       } else {
-        currentLiabilities.push({ code: r.code, name: r.name, amount });
+        currentLiabilities.push(itemObj);
         totalCurrentLiabilities += amount;
       }
     }
     // 純資産科目
     else if (r.type === 'equity') {
       const amount = r.closingCredit - r.closingDebit;
-      equityItems.push({ code: r.code, name: r.name, amount });
+      equityItems.push({ code: r.code, name: r.name, amount, balance: amount });
       totalEquityBase += amount;
     }
   });
+
+  // 純資産に「当期純利益」を項目として追加（UIで自動表示されるようにする）
+  equityItems.push({ code: 'NET_INCOME', name: '当期純利益', amount: netIncome, balance: netIncome });
 
   const totalAssets = totalCurrentAssets + totalFixedAssets;
   const totalLiabilities = totalCurrentLiabilities + totalFixedLiabilities;
@@ -914,15 +1086,19 @@ export function calculateBalanceSheet({
     assets: {
       current: currentAssets,
       totalCurrent: totalCurrentAssets,
+      currentTotal: totalCurrentAssets, // 互換性
       fixed: fixedAssets,
       totalFixed: totalFixedAssets,
+      fixedTotal: totalFixedAssets, // 互換性
       total: totalAssets
     },
     liabilities: {
       current: currentLiabilities,
       totalCurrent: totalCurrentLiabilities,
+      currentTotal: totalCurrentLiabilities, // 互換性
       fixed: fixedLiabilities,
       totalFixed: totalFixedLiabilities,
+      fixedTotal: totalFixedLiabilities, // 互換性
       total: totalLiabilities
     },
     equity: {
@@ -932,6 +1108,7 @@ export function calculateBalanceSheet({
     },
     totalLiabilitiesAndEquity,
     balanceDiff,
+    diff: balanceDiff, // 互換性
     isBalanced: Math.abs(balanceDiff) === 0
   };
 }
