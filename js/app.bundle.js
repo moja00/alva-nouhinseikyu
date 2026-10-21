@@ -797,6 +797,7 @@ function normalizeInvoiceDoc(raw) {
     taxTotal,
     grandTotal,
     costTotal,
+    assignedCogs: Number(doc.assignedCogs || raw.assignedCogs || doc.cogsTotal || raw.cogsTotal || 0),
     rawDoc: doc
   };
 }
@@ -991,6 +992,23 @@ function buildUnifiedJournals(arg1 = {}, arg2 = [], arg3 = [], arg4 = [], arg5 =
           });
         }
       }
+    }
+
+    // ③ 売上原価計上仕訳（要件4: シリアル引当実原価または品目原価を501仕入高 / 131商品・棚卸資産に連動）
+    const cogsAmount = Number(inv.assignedCogs || inv.costTotal || 0);
+    if (isDateInPeriod(date, periodFilter) && cogsAmount > 0) {
+      unified.push({
+        id: `jnl_cogs_${inv.id}`,
+        date,
+        entryNumber: docNo ? `COG-${docNo}` : `COG-${inv.id.slice(-6)}`,
+        description: `売上原価計上（ロット・シリアル実原価）: ${client} (${docNo})`,
+        sourceType: 'sales_cogs',
+        sourceId: inv.id,
+        debitLines: [{ accountCode: '501', accountName: '仕入高', subAccount: client, amount: cogsAmount, taxType: 'taxable_10', invoiceType: 'qualified' }],
+        creditLines: [{ accountCode: '131', accountName: '商品・棚卸資産', subAccount: '', amount: cogsAmount, taxType: 'out_of_scope', invoiceType: 'none' }],
+        totalDebit: cogsAmount,
+        totalCredit: cogsAmount
+      });
     }
   });
 
@@ -3324,6 +3342,8 @@ const KEYS = {
   ATTENDANCE: 'quickdoc_attendance',
   ATTENDANCE_EMPLOYEE: 'billcraft_attendance_employee',
   INVENTORY: 'billcraft_inventory_master',
+  INVENTORY_LOTS: 'billcraft_inventory_lots',
+  INVENTORY_SERIALS: 'billcraft_inventory_serials',
   PURCHASE_MAPPINGS: 'billcraft_purchase_mappings',
   PAYROLL_RECORDS: 'billcraft_payroll_records',
   PAYROLL_SETTINGS: 'billcraft_payroll_settings',
@@ -3861,16 +3881,77 @@ const DEFAULT_INVENTORY = [
     itemId: 'prod_1790317962497_3xgg',
     name: 'DP-5000　ベーシックセット　バッテリー２個',
     sku: 'DP-5000-B2',
+    type: 'bundle', // セット品 / BOM
+    hasSerial: false,
+    bundleItems: [
+      { inventoryId: 'inv_dp5000_body', name: 'DP-5000 本体', qty: 1, role: 'main' },
+      { inventoryId: 'inv_dp5000_bat', name: 'PSE認証 リチウムイオンバッテリー', qty: 2, role: 'battery' },
+      { inventoryId: 'inv_dp5000_chg', name: 'PSE認証 専用急速充電器', qty: 1, role: 'charger' }
+    ],
     currentStock: 5,
     safetyStock: 2,
     unit: '式',
-    unitCost: 180000,
+    unitCost: 172000,
     unitPrice: 268257,
     location: '本社倉庫 A-1',
     lastInDate: '2026-09-25',
-    note: '主力構成商品',
+    note: '主力セット商品（本体1台+バッテリー2個+充電器1個）',
     history: [
       { id: 'log_init_1', date: '2026-09-25', type: 'in', qty: 5, reason: '初期棚卸在庫登録', currentStock: 5, timestamp: new Date().toISOString() }
+    ]
+  },
+  {
+    id: 'inv_dp5000_body',
+    name: 'DP-5000 本体',
+    sku: 'DP-5000-MAIN',
+    type: 'single', // 単品
+    hasSerial: true, // シリアル管理対象
+    currentStock: 5,
+    safetyStock: 2,
+    unit: '台',
+    unitCost: 152000,
+    unitPrice: 220000,
+    location: '本社倉庫 A-1',
+    lastInDate: '2026-10-21',
+    note: '海外輸入本体（シリアル番号管理対象）',
+    history: [
+      { id: 'log_init_body', date: '2026-10-21', type: 'in', qty: 5, reason: '輸入ロットLOT-202610-01入庫', currentStock: 5, timestamp: new Date().toISOString() }
+    ]
+  },
+  {
+    id: 'inv_dp5000_bat',
+    name: 'PSE認証 リチウムイオンバッテリー',
+    sku: 'BAT-DP5K',
+    type: 'single',
+    hasSerial: true, // シリアル管理対象
+    currentStock: 10,
+    safetyStock: 4,
+    unit: '個',
+    unitCost: 8000,
+    unitPrice: 15000,
+    location: 'パーツ保管棚 B-1',
+    lastInDate: '2026-10-21',
+    note: '国内仕入PSE認証バッテリー（シリアル番号管理対象）',
+    history: [
+      { id: 'log_init_bat', date: '2026-10-21', type: 'in', qty: 10, reason: '国内仕入LOT-DOM-BAT-01入庫', currentStock: 10, timestamp: new Date().toISOString() }
+    ]
+  },
+  {
+    id: 'inv_dp5000_chg',
+    name: 'PSE認証 専用急速充電器',
+    sku: 'CHG-DP5K',
+    type: 'single',
+    hasSerial: false,
+    currentStock: 5,
+    safetyStock: 2,
+    unit: '個',
+    unitCost: 4000,
+    unitPrice: 8000,
+    location: 'パーツ保管棚 B-2',
+    lastInDate: '2026-10-21',
+    note: '国内仕入PSE認証充電器',
+    history: [
+      { id: 'log_init_chg', date: '2026-10-21', type: 'in', qty: 5, reason: '国内仕入入庫', currentStock: 5, timestamp: new Date().toISOString() }
     ]
   },
   {
@@ -3878,6 +3959,8 @@ const DEFAULT_INVENTORY = [
     itemId: 'prod_1790320521317_adue',
     name: 'DP-MS　スプレッダー',
     sku: 'DP-MS-01',
+    type: 'single',
+    hasSerial: false,
     currentStock: 3,
     safetyStock: 1,
     unit: '個',
@@ -3889,6 +3972,48 @@ const DEFAULT_INVENTORY = [
     history: [
       { id: 'log_init_2', date: '2026-09-25', type: 'in', qty: 3, reason: '初期棚卸在庫登録', currentStock: 3, timestamp: new Date().toISOString() }
     ]
+  }
+];
+const DEFAULT_INVENTORY_SERIALS = [
+  { id: 'sn_DP5K_1001', serialNumber: 'DP5K-2026-1001', inventoryId: 'inv_dp5000_body', itemName: 'DP-5000 本体', itemType: 'body', lotId: 'lot_202610_01', lotNumber: 'LOT-202610-01', inDate: '2026-10-21', unitCost: 152000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
+  { id: 'sn_DP5K_1002', serialNumber: 'DP5K-2026-1002', inventoryId: 'inv_dp5000_body', itemName: 'DP-5000 本体', itemType: 'body', lotId: 'lot_202610_01', lotNumber: 'LOT-202610-01', inDate: '2026-10-21', unitCost: 152000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
+  { id: 'sn_DP5K_1003', serialNumber: 'DP5K-2026-1003', inventoryId: 'inv_dp5000_body', itemName: 'DP-5000 本体', itemType: 'body', lotId: 'lot_202610_01', lotNumber: 'LOT-202610-01', inDate: '2026-10-21', unitCost: 152000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
+  { id: 'sn_DP5K_1004', serialNumber: 'DP5K-2026-1004', inventoryId: 'inv_dp5000_body', itemName: 'DP-5000 本体', itemType: 'body', lotId: 'lot_202610_01', lotNumber: 'LOT-202610-01', inDate: '2026-10-21', unitCost: 152000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
+  { id: 'sn_DP5K_1005', serialNumber: 'DP5K-2026-1005', inventoryId: 'inv_dp5000_body', itemName: 'DP-5000 本体', itemType: 'body', lotId: 'lot_202610_01', lotNumber: 'LOT-202610-01', inDate: '2026-10-21', unitCost: 152000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
+  { id: 'sn_BAT_001', serialNumber: 'BAT-2026-001', inventoryId: 'inv_dp5000_bat', itemName: 'PSE認証 リチウムイオンバッテリー', itemType: 'battery', lotId: 'lot_dom_bat_01', lotNumber: 'LOT-DOM-BAT-01', inDate: '2026-10-21', unitCost: 8000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
+  { id: 'sn_BAT_002', serialNumber: 'BAT-2026-002', inventoryId: 'inv_dp5000_bat', itemName: 'PSE認証 リチウムイオンバッテリー', itemType: 'battery', lotId: 'lot_dom_bat_01', lotNumber: 'LOT-DOM-BAT-01', inDate: '2026-10-21', unitCost: 8000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
+  { id: 'sn_BAT_003', serialNumber: 'BAT-2026-003', inventoryId: 'inv_dp5000_bat', itemName: 'PSE認証 リチウムイオンバッテリー', itemType: 'battery', lotId: 'lot_dom_bat_01', lotNumber: 'LOT-DOM-BAT-01', inDate: '2026-10-21', unitCost: 8000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
+  { id: 'sn_BAT_004', serialNumber: 'BAT-2026-004', inventoryId: 'inv_dp5000_bat', itemName: 'PSE認証 リチウムイオンバッテリー', itemType: 'battery', lotId: 'lot_dom_bat_01', lotNumber: 'LOT-DOM-BAT-01', inDate: '2026-10-21', unitCost: 8000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
+  { id: 'sn_BAT_005', serialNumber: 'BAT-2026-005', inventoryId: 'inv_dp5000_bat', itemName: 'PSE認証 リチウムイオンバッテリー', itemType: 'battery', lotId: 'lot_dom_bat_01', lotNumber: 'LOT-DOM-BAT-01', inDate: '2026-10-21', unitCost: 8000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
+  { id: 'sn_BAT_006', serialNumber: 'BAT-2026-006', inventoryId: 'inv_dp5000_bat', itemName: 'PSE認証 リチウムイオンバッテリー', itemType: 'battery', lotId: 'lot_dom_bat_01', lotNumber: 'LOT-DOM-BAT-01', inDate: '2026-10-21', unitCost: 8000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
+  { id: 'sn_BAT_007', serialNumber: 'BAT-2026-007', inventoryId: 'inv_dp5000_bat', itemName: 'PSE認証 リチウムイオンバッテリー', itemType: 'battery', lotId: 'lot_dom_bat_01', lotNumber: 'LOT-DOM-BAT-01', inDate: '2026-10-21', unitCost: 8000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
+  { id: 'sn_BAT_008', serialNumber: 'BAT-2026-008', inventoryId: 'inv_dp5000_bat', itemName: 'PSE認証 リチウムイオンバッテリー', itemType: 'battery', lotId: 'lot_dom_bat_01', lotNumber: 'LOT-DOM-BAT-01', inDate: '2026-10-21', unitCost: 8000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
+  { id: 'sn_BAT_009', serialNumber: 'BAT-2026-009', inventoryId: 'inv_dp5000_bat', itemName: 'PSE認証 リチウムイオンバッテリー', itemType: 'battery', lotId: 'lot_dom_bat_01', lotNumber: 'LOT-DOM-BAT-01', inDate: '2026-10-21', unitCost: 8000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
+  { id: 'sn_BAT_010', serialNumber: 'BAT-2026-010', inventoryId: 'inv_dp5000_bat', itemName: 'PSE認証 リチウムイオンバッテリー', itemType: 'battery', lotId: 'lot_dom_bat_01', lotNumber: 'LOT-DOM-BAT-01', inDate: '2026-10-21', unitCost: 8000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() }
+];
+const DEFAULT_INVENTORY_LOTS = [
+  {
+    id: 'lot_202610_01',
+    lotNumber: 'LOT-202610-01',
+    inventoryId: 'inv_dp5000_body',
+    itemName: 'DP-5000 本体',
+    date: '2026-10-21',
+    qty: 5,
+    sourceType: 'import',
+    supplier: 'Shenzhen Tech Ltd.',
+    costBreakdown: {
+      baseProductCost: 600000,
+      overseasConsultingFee: 75000,
+      shippingAndInsurance: 40000,
+      customsDuty: 30000,
+      domesticDeliveryFee: 15000,
+      importTax: 76000
+    },
+    totalCost: 760000,
+    unitCost: 152000,
+    importTax: 76000,
+    note: '2026年10月度輸入第1便',
+    createdAt: new Date().toISOString()
   }
 ];
 const DEFAULT_PURCHASE_MAPPINGS = {
@@ -6668,6 +6793,13 @@ function deduplicateInventoryList(rawList) {
         location: (inv.location || '本社倉庫').trim(),
         lastInDate: inv.lastInDate || '',
         note: inv.note || '',
+        type: inv.type || (inv.id === 'inv_1' ? 'bundle' : 'single'),
+        hasSerial: inv.hasSerial !== undefined ? !!inv.hasSerial : (inv.id === 'inv_dp5000_body' || inv.id === 'inv_dp5000_bat'),
+        bundleItems: Array.isArray(inv.bundleItems) ? [...inv.bundleItems] : (inv.id === 'inv_1' ? [
+          { inventoryId: 'inv_dp5000_body', name: 'DP-5000 本体', qty: 1, role: 'main' },
+          { inventoryId: 'inv_dp5000_bat', name: 'PSE認証 リチウムイオンバッテリー', qty: 2, role: 'battery' },
+          { inventoryId: 'inv_dp5000_chg', name: 'PSE認証 専用急速充電器', qty: 1, role: 'charger' }
+        ] : []),
         history: Array.isArray(inv.history) ? [...inv.history] : []
       });
     } else {
@@ -6680,6 +6812,9 @@ function deduplicateInventoryList(rawList) {
       if (inv.currentStock > existing.currentStock) existing.currentStock = inv.currentStock;
       if (inv.safetyStock > existing.safetyStock) existing.safetyStock = inv.safetyStock;
       if (!existing.lastInDate && inv.lastInDate) existing.lastInDate = inv.lastInDate;
+      if (inv.type) existing.type = inv.type;
+      if (inv.hasSerial !== undefined) existing.hasSerial = inv.hasSerial;
+      if (Array.isArray(inv.bundleItems) && inv.bundleItems.length > 0) existing.bundleItems = inv.bundleItems;
       // 履歴をマージ（重複IDを除外）
       if (Array.isArray(inv.history)) {
         const histIds = new Set(existing.history.map(h => h.id || (h.date + h.type + h.qty)));
@@ -6768,6 +6903,28 @@ function getInventoryList() {
       localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(list));
       saveServerInventory(list).catch(() => { });
     }
+
+    // デフォルト構成品（本体・バッテリー・充電器）が未登録の場合は補完
+    DEFAULT_INVENTORY.forEach(def => {
+      const exists = list.find(it => it.id === def.id || it.sku === def.sku || it.name === def.name);
+      if (!exists) {
+        list.push({ ...def });
+        modified = true;
+      } else if (def.type === 'bundle' && exists.type !== 'bundle') {
+        exists.type = 'bundle';
+        exists.bundleItems = def.bundleItems;
+        modified = true;
+      }
+    });
+
+    // セット品（BOM）の理論在庫可能数および標準原価を構成品在庫から動的算出
+    list.forEach(inv => {
+      if (inv.type === 'bundle' && Array.isArray(inv.bundleItems) && inv.bundleItems.length > 0) {
+        const calc = calculateBundleStockAndCost(inv, list);
+        inv.currentStock = calc.availableStock;
+        inv.unitCost = calc.unitCost;
+      }
+    });
 
     return list;
   } catch (e) {
@@ -7722,15 +7879,208 @@ function saveLockedMonths(months) {
 }
 
 /**
- * 指定した日付（YYYY-MM-DD または YYYY-MM）が月次締め（ロック）されているか判定
- * @param {string} dateStr 
- * @returns {boolean}
+ * セット品（BOM）の現在庫可能数および標準原価を構成品から自動計算
+ * @param {object} bundleItem - セット品オブジェクト
+ * @param {Array} allItems - 全在庫品目リスト
+ * @returns {{ availableStock: number, unitCost: number }}
  */
-function isMonthLocked(dateStr) {
-  if (!dateStr || typeof dateStr !== 'string') return false;
-  const ym = dateStr.substring(0, 7);
-  const locked = getLockedMonths();
-  return locked.includes(ym);
+function calculateBundleStockAndCost(bundleItem, allItems = []) {
+  if (!bundleItem || bundleItem.type !== 'bundle' || !Array.isArray(bundleItem.bundleItems) || bundleItem.bundleItems.length === 0) {
+    return {
+      availableStock: Number(bundleItem?.currentStock) || 0,
+      unitCost: Number(bundleItem?.unitCost) || 0
+    };
+  }
+
+  let minStock = Infinity;
+  let totalCost = 0;
+
+  bundleItem.bundleItems.forEach(bPart => {
+    const part = allItems.find(p => p.id === bPart.inventoryId || p.name === bPart.name);
+    const reqQty = Number(bPart.qty) || 1;
+    if (part) {
+      const partStock = Number(part.currentStock) || 0;
+      const partCost = Number(part.unitCost) || 0;
+      const possibleSets = Math.floor(partStock / reqQty);
+      if (possibleSets < minStock) {
+        minStock = possibleSets;
+      }
+      totalCost += (partCost * reqQty);
+    } else {
+      minStock = 0;
+    }
+  });
+
+  return {
+    availableStock: minStock === Infinity ? 0 : minStock,
+    unitCost: totalCost > 0 ? totalCost : (Number(bundleItem.unitCost) || 0)
+  };
+}
+
+// ==========================================================================
+// ロット入庫（Inventory Lots）管理
+// ==========================================================================
+function getInventoryLotList() {
+  try {
+    const raw = localStorage.getItem(KEYS.INVENTORY_LOTS);
+    if (!raw) return [...DEFAULT_INVENTORY_LOTS];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : [...DEFAULT_INVENTORY_LOTS];
+  } catch (e) {
+    return [...DEFAULT_INVENTORY_LOTS];
+  }
+}
+function saveInventoryLot(lotData) {
+  try {
+    if (!lotData) return false;
+    const list = getInventoryLotList();
+    const entryId = lotData.id || `lot_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+    const newLot = {
+      ...lotData,
+      id: entryId,
+      updatedAt: new Date().toISOString()
+    };
+    if (!newLot.createdAt) newLot.createdAt = newLot.updatedAt;
+
+    const existingIndex = list.findIndex(l => l.id === entryId || l.lotNumber === newLot.lotNumber);
+    if (existingIndex >= 0) {
+      list[existingIndex] = newLot;
+    } else {
+      list.unshift(newLot);
+    }
+
+    localStorageSetItemAndSync(KEYS.INVENTORY_LOTS, JSON.stringify(list));
+    saveServerInventoryLots(list).catch(() => {});
+    return entryId;
+  } catch (e) {
+    console.error('Failed to save inventory lot:', e);
+    return false;
+  }
+}
+async function saveServerInventoryLots(lots) {
+  try {
+    await apiFetch('inventory-lots', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(lots)
+    });
+  } catch (e) {
+    console.warn('サーバーへのロット保存失敗:', e);
+  }
+}
+
+// ==========================================================================
+// シリアル番号台帳（Inventory Serials）管理
+// ==========================================================================
+function getInventorySerialList() {
+  try {
+    const raw = localStorage.getItem(KEYS.INVENTORY_SERIALS);
+    if (!raw) return [...DEFAULT_INVENTORY_SERIALS];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : [...DEFAULT_INVENTORY_SERIALS];
+  } catch (e) {
+    return [...DEFAULT_INVENTORY_SERIALS];
+  }
+}
+function saveInventorySerial(serialData) {
+  try {
+    if (!serialData || !serialData.serialNumber) return false;
+    const list = getInventorySerialList();
+    const sn = serialData.serialNumber.trim();
+    const entryId = serialData.id || `sn_${sn.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+    const newSerial = {
+      ...serialData,
+      id: entryId,
+      serialNumber: sn,
+      updatedAt: new Date().toISOString()
+    };
+
+    const existingIndex = list.findIndex(s => s.id === entryId || s.serialNumber === sn);
+    if (existingIndex >= 0) {
+      list[existingIndex] = newSerial;
+    } else {
+      list.push(newSerial);
+    }
+
+    localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(list));
+    saveServerInventorySerials(list).catch(() => {});
+    return entryId;
+  } catch (e) {
+    console.error('Failed to save inventory serial:', e);
+    return false;
+  }
+}
+function saveBatchInventorySerials(serialsArray = []) {
+  try {
+    if (!Array.isArray(serialsArray) || serialsArray.length === 0) return 0;
+    const list = getInventorySerialList();
+    const snMap = new Map();
+    list.forEach(s => snMap.set(s.serialNumber, s));
+
+    let addedCount = 0;
+    serialsArray.forEach(item => {
+      if (!item || !item.serialNumber) return;
+      const sn = item.serialNumber.trim();
+      const entryId = item.id || `sn_${sn.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+      const newObj = {
+        ...item,
+        id: entryId,
+        serialNumber: sn,
+        updatedAt: new Date().toISOString()
+      };
+      snMap.set(sn, newObj);
+      addedCount++;
+    });
+
+    const updatedList = Array.from(snMap.values());
+    localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(updatedList));
+    saveServerInventorySerials(updatedList).catch(() => {});
+    return addedCount;
+  } catch (e) {
+    console.error('Failed to batch save inventory serials:', e);
+    return 0;
+  }
+}
+function updateSerialStatus(serialNumber, newStatus, details = {}) {
+  try {
+    if (!serialNumber) return false;
+    const list = getInventorySerialList();
+    const target = list.find(s => s.serialNumber === serialNumber);
+    if (!target) return false;
+
+    target.status = newStatus;
+    target.updatedAt = new Date().toISOString();
+    if (details.clientName !== undefined) target.clientName = details.clientName;
+    if (details.shippedDate !== undefined) target.shippedDate = details.shippedDate;
+    if (details.docNumber !== undefined) target.docNumber = details.docNumber;
+    if (details.docId !== undefined) target.docId = details.docId;
+    if (details.bundleItemId !== undefined) target.bundleItemId = details.bundleItemId;
+
+    localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(list));
+    saveServerInventorySerials(list).catch(() => {});
+    return true;
+  } catch (e) {
+    console.error('Failed to update serial status:', e);
+    return false;
+  }
+}
+function getAvailableSerialsByItem(inventoryIdOrName) {
+  const list = getInventorySerialList();
+  return list.filter(s => 
+    (s.inventoryId === inventoryIdOrName || s.itemName === inventoryIdOrName) && 
+    s.status === 'in_stock'
+  );
+}
+async function saveServerInventorySerials(serials) {
+  try {
+    await apiFetch('inventory-serials', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(serials)
+    });
+  } catch (e) {
+    console.warn('サーバーへのシリアル台帳保存失敗:', e);
+  }
 }
 
 if (typeof window !== 'undefined') {
@@ -7750,6 +8100,14 @@ if (typeof window !== 'undefined') {
   window.getLockedMonths = getLockedMonths;
   window.saveLockedMonths = saveLockedMonths;
   window.isMonthLocked = isMonthLocked;
+  window.getInventoryLotList = getInventoryLotList;
+  window.saveInventoryLot = saveInventoryLot;
+  window.getInventorySerialList = getInventorySerialList;
+  window.saveInventorySerial = saveInventorySerial;
+  window.saveBatchInventorySerials = saveBatchInventorySerials;
+  window.updateSerialStatus = updateSerialStatus;
+  window.getAvailableSerialsByItem = getAvailableSerialsByItem;
+  window.calculateBundleStockAndCost = calculateBundleStockAndCost;
   window.restoreAttendanceFromBackup = function() {
     const backup = localStorage.getItem(KEYS.ATTENDANCE + '_backup');
     if (backup && backup !== '[]') {
@@ -8016,6 +8374,77 @@ const DOM = {
   btnSaveInventoryItem: document.getElementById('btnSaveInventoryItem'),
   inventoryTableContainer: document.getElementById('inventoryTableContainer'),
   inventorySummaryStatus: document.getElementById('inventorySummaryStatus'),
+  tabBtnInventoryItems: document.getElementById('tabBtnInventoryItems'),
+  tabBtnInventorySerials: document.getElementById('tabBtnInventorySerials'),
+  tabBtnInventoryLots: document.getElementById('tabBtnInventoryLots'),
+  inventoryItemsTabContent: document.getElementById('inventoryItemsTabContent'),
+  inventorySerialsTabContent: document.getElementById('inventorySerialsTabContent'),
+  inventoryLotsTabContent: document.getElementById('inventoryLotsTabContent'),
+  btnOpenInventoryLotModal: document.getElementById('btnOpenInventoryLotModal'),
+  invInputType: document.getElementById('invInputType'),
+  invInputHasSerial: document.getElementById('invInputHasSerial'),
+  invSerialManageGroup: document.getElementById('invSerialManageGroup'),
+  invBomSection: document.getElementById('invBomSection'),
+  invBomRowsContainer: document.getElementById('invBomRowsContainer'),
+  btnAddBomRow: document.getElementById('btnAddBomRow'),
+
+  // ロット入庫 ＆ 原価按分計算モーダル (Landed Cost Calculator)
+  inventoryLotModal: document.getElementById('inventoryLotModal'),
+  btnCloseInventoryLotModal: document.getElementById('btnCloseInventoryLotModal'),
+  btnCancelInventoryLotModal: document.getElementById('btnCancelInventoryLotModal'),
+  btnSubmitInventoryLotModal: document.getElementById('btnSubmitInventoryLotModal'),
+  lotInputItemId: document.getElementById('lotInputItemId'),
+  lotInputNumber: document.getElementById('lotInputNumber'),
+  btnAutoLotNumber: document.getElementById('btnAutoLotNumber'),
+  lotInputDate: document.getElementById('lotInputDate'),
+  lotInputQty: document.getElementById('lotInputQty'),
+  lotInputSupplier: document.getElementById('lotInputSupplier'),
+  lotInputStorageLocation: document.getElementById('lotInputStorageLocation'),
+  labelLotTypeImport: document.getElementById('labelLotTypeImport'),
+  labelLotTypeDomestic: document.getElementById('labelLotTypeDomestic'),
+  lotSectionImportCost: document.getElementById('lotSectionImportCost'),
+  lotSectionDomesticCost: document.getElementById('lotSectionDomesticCost'),
+  lotCostGoods: document.getElementById('lotCostGoods'),
+  lotCostConsulting: document.getElementById('lotCostConsulting'),
+  lotCostShipping: document.getElementById('lotCostShipping'),
+  lotCostTariff: document.getElementById('lotCostTariff'),
+  lotCostDomesticDelivery: document.getElementById('lotCostDomesticDelivery'),
+  lotCostImportTax: document.getElementById('lotCostImportTax'),
+  lotDomUnitPrice: document.getElementById('lotDomUnitPrice'),
+  lotDomShipping: document.getElementById('lotDomShipping'),
+  lotDomTaxRate: document.getElementById('lotDomTaxRate'),
+  lotDispTotalCost: document.getElementById('lotDispTotalCost'),
+  lotDispUnitCost: document.getElementById('lotDispUnitCost'),
+  lotDispTax: document.getElementById('lotDispTax'),
+  lotDispGrandTotal: document.getElementById('lotDispGrandTotal'),
+  lotSerialSection: document.getElementById('lotSerialSection'),
+  lotInputSerials: document.getElementById('lotInputSerials'),
+  lotSerialCountBadge: document.getElementById('lotSerialCountBadge'),
+  btnGenerateSerialNumbers: document.getElementById('btnGenerateSerialNumbers'),
+  lotCheckSyncAccounting: document.getElementById('lotCheckSyncAccounting'),
+  lotSelectCreditAccount: document.getElementById('lotSelectCreditAccount'),
+  lotJournalPreviewBox: document.getElementById('lotJournalPreviewBox'),
+
+  // シリアル番号管理台帳 ＆ ロット履歴
+  inputSearchSerial: document.getElementById('inputSearchSerial'),
+  selectSerialItemFilter: document.getElementById('selectSerialItemFilter'),
+  selectSerialStatusFilter: document.getElementById('selectSerialStatusFilter'),
+  btnRefreshSerials: document.getElementById('btnRefreshSerials'),
+  inventorySerialTableContainer: document.getElementById('inventorySerialTableContainer'),
+  inventoryLotTableContainer: document.getElementById('inventoryLotTableContainer'),
+
+  // 納品・請求書用 シリアル番号引当モーダル
+  serialAssignModal: document.getElementById('serialAssignModal'),
+  btnCloseSerialAssignModal: document.getElementById('btnCloseSerialAssignModal'),
+  btnCancelSerialAssignModal: document.getElementById('btnCancelSerialAssignModal'),
+  btnSaveSerialAssignModal: document.getElementById('btnSaveSerialAssignModal'),
+  serialAssignItemIndex: document.getElementById('serialAssignItemIndex'),
+  serialAssignItemName: document.getElementById('serialAssignItemName'),
+  serialAssignItemQty: document.getElementById('serialAssignItemQty'),
+  serialAssignComponentsContainer: document.getElementById('serialAssignComponentsContainer'),
+  serialAssignTotalCogs: document.getElementById('serialAssignTotalCogs'),
+  serialAssignCheckPrintNote: document.getElementById('serialAssignCheckPrintNote'),
+  serialAssignPrintPreview: document.getElementById('serialAssignPrintPreview'),
 
   // 在庫入出庫調整モーダル
   inventoryAdjustModal: document.getElementById('inventoryAdjustModal'),
@@ -8985,6 +9414,57 @@ function issueAndSyncAccountingDocument(options = {}) {
     updateClientMasterDatalist();
   }
 
+  // 3.5. シリアル引当品の出荷済更新 & BOM非シリアル構成部品の在庫引き落とし & 実原価集計
+  if (currentDoc && Array.isArray(currentDoc.items)) {
+    let docAssignedCogs = 0;
+    const clientName = currentDoc.client ? (currentDoc.client.name || '') : '';
+    const docNo = currentDoc.docNumber || currentDoc.id;
+    const issueDateStr = currentDoc.issueDate || new Date().toISOString().split('T')[0];
+
+    currentDoc.items.forEach(it => {
+      let itemAssignedCogs = 0;
+      // ① シリアル引当がある場合
+      if (Array.isArray(it.assignedSerials) && it.assignedSerials.length > 0) {
+        it.assignedSerials.forEach(as => {
+          updateSerialStatus(as.serialNumber, 'shipped', {
+            customerName: clientName,
+            invoiceId: currentDoc.id,
+            invoiceNumber: docNo,
+            shippedDate: issueDateStr
+          });
+          itemAssignedCogs += Number(as.costPrice) || 0;
+        });
+      }
+
+      // ② BOMセット品の場合（非シリアル構成品の在庫引き落とし）
+      try {
+        const invList = getInventoryList();
+        const bundleItem = invList.find(x => x.type === 'bundle' && (x.id === it.bundleItemId || x.name === it.name));
+        if (bundleItem && Array.isArray(bundleItem.bom)) {
+          bundleItem.bom.forEach(b => {
+            const comp = invList.find(x => x.id === b.componentId);
+            if (comp && !comp.hasSerial) {
+              const usedQty = (Number(b.quantity) || 1) * (Number(it.quantity) || 1);
+              updateInventoryStock(comp.id, -usedQty, 'out', `確定出荷引当: ${docNo} (${bundleItem.name})`);
+              itemAssignedCogs += (Number(comp.unitCost) || 0) * usedQty;
+            }
+          });
+        }
+      } catch (err) {
+        console.warn('BOM構成品在庫引落エラー:', err);
+      }
+
+      if (it.assignedCogs) {
+        itemAssignedCogs = Math.max(itemAssignedCogs, Number(it.assignedCogs));
+      }
+      docAssignedCogs += itemAssignedCogs;
+    });
+
+    if (docAssignedCogs > 0) {
+      currentDoc.assignedCogs = docAssignedCogs;
+    }
+  }
+
   // 4. 書類履歴へ保存（財務会計への即時データ投入）
   const success = saveDocToHistory(currentDoc);
   if (!success) {
@@ -9028,10 +9508,36 @@ async function cancelCurrentDocIssue() {
   const typeLabel = (DOC_TYPES[currentDoc.docType] || DOC_TYPES.invoice).label;
   const docNo = currentDoc.docNumber || 'この書類';
 
-  const confirmMsg = `「${typeLabel} (${docNo})」の確定発行を取り消しますか？\n\n【取り消しの効果】\n・財務会計（売上高・売掛金消込・仕訳帳）から即座に除外されます。\n・書類データは削除されず、修正可能な「下書き」状態に戻ります。`;
+  const confirmMsg = `「${typeLabel} (${docNo})」の確定発行を取り消しますか？\n\n【取り消しの効果】\n・財務会計（売上高・売掛金消込・仕訳帳）から即座に除外されます。\n・引当されていたシリアル番号や在庫が復旧します。\n・書類データは削除されず、修正可能な「下書き」状態に戻ります。`;
   
   if (!confirm(confirmMsg)) {
     return false;
+  }
+
+  // シリアル引当の在庫復元 & 非シリアル構成品の在庫戻し
+  if (currentDoc && Array.isArray(currentDoc.items)) {
+    currentDoc.items.forEach(it => {
+      if (Array.isArray(it.assignedSerials) && it.assignedSerials.length > 0) {
+        it.assignedSerials.forEach(as => {
+          updateSerialStatus(as.serialNumber, 'in_stock');
+        });
+      }
+      try {
+        const invList = getInventoryList();
+        const bundleItem = invList.find(x => x.type === 'bundle' && (x.id === it.bundleItemId || x.name === it.name));
+        if (bundleItem && Array.isArray(bundleItem.bom)) {
+          bundleItem.bom.forEach(b => {
+            const comp = invList.find(x => x.id === b.componentId);
+            if (comp && !comp.hasSerial) {
+              const usedQty = (Number(b.quantity) || 1) * (Number(it.quantity) || 1);
+              updateInventoryStock(comp.id, usedQty, 'in', `確定発行取消による在庫復元: ${docNo} (${bundleItem.name})`);
+            }
+          });
+        }
+      } catch (err) {
+        console.warn('BOM在庫復帰エラー:', err);
+      }
+    });
   }
 
   currentDoc.isIssued = false;
@@ -9185,6 +9691,9 @@ function renderItemInputCards() {
         </div>
         <div class="item-actions" style="display: flex; align-items: center; gap: 6px;">
           ${!isDiscount ? `
+            <button type="button" class="btn-assign-serial" data-index="${index}" style="display: inline-flex; align-items: center; gap: 4px; font-size: 0.725rem; padding: 2px 8px; border-radius: 4px; cursor: pointer; border: 1px solid ${item.assignedSerials && item.assignedSerials.length > 0 ? '#059669' : '#cbd5e1'}; background: ${item.assignedSerials && item.assignedSerials.length > 0 ? '#ecfdf5' : '#ffffff'}; color: ${item.assignedSerials && item.assignedSerials.length > 0 ? '#047857' : '#334155'}; font-weight: ${item.assignedSerials && item.assignedSerials.length > 0 ? '700' : '600'};" title="出荷する個体のシリアル番号を引き当て、ロット仕入原価を売上原価に連動">
+              🔢 ${item.assignedSerials && item.assignedSerials.length > 0 ? `引当済 (${item.assignedSerials.length}点 / 原価 ¥${Number(item.assignedCogs || item.costPrice || 0).toLocaleString()})` : 'シリアル引当'}
+            </button>
             <button type="button" class="btn-save-to-master" title="この商品を商品マスタに登録">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
               マスタ登録
@@ -9323,6 +9832,14 @@ function renderItemInputCards() {
           note: item.note || ''
         });
         showToast(`「${item.name}」を商品マスタに保存しました`, 'success');
+      });
+    }
+
+    // シリアル引当ボタンイベント
+    const btnAssignSerial = card.querySelector('.btn-assign-serial');
+    if (btnAssignSerial) {
+      btnAssignSerial.addEventListener('click', () => {
+        openSerialAssignModal(index);
       });
     }
 
@@ -10483,6 +11000,13 @@ function setupEventListeners() {
   if (DOM.btnSaveInventoryItem) {
     DOM.btnSaveInventoryItem.addEventListener('click', saveInventoryItemHandler);
   }
+  if (DOM.invInputType) {
+    DOM.invInputType.addEventListener('change', () => {
+      const isBundle = DOM.invInputType.value === 'bundle';
+      if (DOM.invSerialManageGroup) DOM.invSerialManageGroup.style.display = isBundle ? 'none' : 'flex';
+      if (DOM.invBomSection) DOM.invBomSection.style.display = isBundle ? 'block' : 'none';
+    });
+  }
   if (DOM.btnSyncInventoryWithItems) {
     DOM.btnSyncInventoryWithItems.addEventListener('click', () => {
       const res = syncInventoryWithItemsMaster();
@@ -10493,6 +11017,103 @@ function setupEventListeners() {
       } else {
         showToast('商品マスタの商品はすべて在庫マスタに連携済みです。', 'info');
       }
+    });
+  }
+
+  // 在庫マスタ タブ切替イベント
+  if (DOM.tabBtnInventoryItems) {
+    DOM.tabBtnInventoryItems.addEventListener('click', () => switchInventoryTab('items'));
+  }
+  if (DOM.tabBtnInventorySerials) {
+    DOM.tabBtnInventorySerials.addEventListener('click', () => switchInventoryTab('serials'));
+  }
+  if (DOM.tabBtnInventoryLots) {
+    DOM.tabBtnInventoryLots.addEventListener('click', () => switchInventoryTab('lots'));
+  }
+
+  // ロット入庫 ＆ 原価按分計算モーダル イベント
+  if (DOM.btnOpenInventoryLotModal) {
+    DOM.btnOpenInventoryLotModal.addEventListener('click', () => openInventoryLotModal());
+  }
+  if (DOM.btnCloseInventoryLotModal) {
+    DOM.btnCloseInventoryLotModal.addEventListener('click', closeInventoryLotModal);
+  }
+  if (DOM.btnCancelInventoryLotModal) {
+    DOM.btnCancelInventoryLotModal.addEventListener('click', closeInventoryLotModal);
+  }
+  if (DOM.btnSubmitInventoryLotModal) {
+    DOM.btnSubmitInventoryLotModal.addEventListener('click', submitInventoryLotStockIn);
+  }
+  if (DOM.btnAutoLotNumber) {
+    DOM.btnAutoLotNumber.addEventListener('click', autoGenerateLotNumber);
+  }
+  if (DOM.btnGenerateSerialNumbers) {
+    DOM.btnGenerateSerialNumbers.addEventListener('click', generateSerialNumbersForLot);
+  }
+  if (DOM.lotInputItemId) {
+    DOM.lotInputItemId.addEventListener('change', updateLandedCostCalculation);
+  }
+  if (DOM.lotInputQty) {
+    DOM.lotInputQty.addEventListener('input', updateLandedCostCalculation);
+  }
+  if (DOM.lotInputSerials) {
+    DOM.lotInputSerials.addEventListener('input', updateLandedCostCalculation);
+  }
+  if (DOM.lotSelectCreditAccount) {
+    DOM.lotSelectCreditAccount.addEventListener('change', updateLandedCostCalculation);
+  }
+  if (DOM.lotCheckSyncAccounting) {
+    DOM.lotCheckSyncAccounting.addEventListener('change', updateLandedCostCalculation);
+  }
+
+  // 費用計算入力イベント
+  const lotCostInputs = [
+    DOM.lotCostGoods, DOM.lotCostConsulting, DOM.lotCostShipping,
+    DOM.lotCostTariff, DOM.lotCostDomesticDelivery, DOM.lotCostImportTax,
+    DOM.lotDomUnitPrice, DOM.lotDomShipping, DOM.lotDomTaxRate
+  ];
+  lotCostInputs.forEach(input => {
+    if (input) input.addEventListener('input', updateLandedCostCalculation);
+  });
+
+  const lotTypeRadios = document.getElementsByName('lotProcurementType');
+  lotTypeRadios.forEach(r => {
+    r.addEventListener('change', () => switchLotProcurementType(r.value));
+  });
+
+  if (DOM.inventoryLotModal) {
+    DOM.inventoryLotModal.addEventListener('click', (e) => {
+      if (e.target === DOM.inventoryLotModal) closeInventoryLotModal();
+    });
+  }
+
+  // シリアル番号管理台帳 フィルターイベント
+  if (DOM.inputSearchSerial) {
+    DOM.inputSearchSerial.addEventListener('input', renderInventorySerialTable);
+  }
+  if (DOM.selectSerialItemFilter) {
+    DOM.selectSerialItemFilter.addEventListener('change', renderInventorySerialTable);
+  }
+  if (DOM.selectSerialStatusFilter) {
+    DOM.selectSerialStatusFilter.addEventListener('change', renderInventorySerialTable);
+  }
+  if (DOM.btnRefreshSerials) {
+    DOM.btnRefreshSerials.addEventListener('click', renderInventorySerialTable);
+  }
+
+  // 納品・請求書用 シリアル引当モーダル イベント
+  if (DOM.btnCloseSerialAssignModal) {
+    DOM.btnCloseSerialAssignModal.addEventListener('click', closeSerialAssignModal);
+  }
+  if (DOM.btnCancelSerialAssignModal) {
+    DOM.btnCancelSerialAssignModal.addEventListener('click', closeSerialAssignModal);
+  }
+  if (DOM.btnSaveSerialAssignModal) {
+    DOM.btnSaveSerialAssignModal.addEventListener('click', confirmSerialAssign);
+  }
+  if (DOM.serialAssignModal) {
+    DOM.serialAssignModal.addEventListener('click', (e) => {
+      if (e.target === DOM.serialAssignModal) closeSerialAssignModal();
     });
   }
 
@@ -12190,6 +12811,10 @@ function resetInventoryForm() {
   if (DOM.inventoryItemId) DOM.inventoryItemId.value = '';
   if (DOM.invInputName) DOM.invInputName.value = '';
   if (DOM.invInputSku) DOM.invInputSku.value = '';
+  if (DOM.invInputType) DOM.invInputType.value = 'single';
+  if (DOM.invInputHasSerial) DOM.invInputHasSerial.checked = false;
+  if (DOM.invSerialManageGroup) DOM.invSerialManageGroup.style.display = 'flex';
+  if (DOM.invBomSection) DOM.invBomSection.style.display = 'none';
   if (DOM.invInputCurrentStock) DOM.invInputCurrentStock.value = '0';
   if (DOM.invInputSafetyStock) DOM.invInputSafetyStock.value = '5';
   if (DOM.invInputUnit) DOM.invInputUnit.value = '個';
@@ -12217,6 +12842,8 @@ function toggleInventoryForm(isEdit = false, item = null) {
     if (DOM.inventoryItemId) DOM.inventoryItemId.value = item.itemId || '';
     if (DOM.invInputName) DOM.invInputName.value = item.name || '';
     if (DOM.invInputSku) DOM.invInputSku.value = item.sku || '';
+    if (DOM.invInputType) DOM.invInputType.value = item.type || 'single';
+    if (DOM.invInputHasSerial) DOM.invInputHasSerial.checked = !!item.hasSerial;
     if (DOM.invInputCurrentStock) DOM.invInputCurrentStock.value = item.currentStock !== undefined ? item.currentStock : 0;
     if (DOM.invInputSafetyStock) DOM.invInputSafetyStock.value = item.safetyStock !== undefined ? item.safetyStock : 5;
     if (DOM.invInputUnit) DOM.invInputUnit.value = item.unit || '個';
@@ -12225,6 +12852,14 @@ function toggleInventoryForm(isEdit = false, item = null) {
     if (DOM.invInputLocation) DOM.invInputLocation.value = item.location || '';
     if (DOM.invInputNote) DOM.invInputNote.value = item.note || '';
     if (DOM.btnSaveInventoryItem) DOM.btnSaveInventoryItem.textContent = '変更内容を更新';
+
+    if (item.type === 'bundle') {
+      if (DOM.invSerialManageGroup) DOM.invSerialManageGroup.style.display = 'none';
+      if (DOM.invBomSection) DOM.invBomSection.style.display = 'block';
+    } else {
+      if (DOM.invSerialManageGroup) DOM.invSerialManageGroup.style.display = 'flex';
+      if (DOM.invBomSection) DOM.invBomSection.style.display = 'none';
+    }
   } else {
     resetInventoryForm();
     DOM.inventoryFormContainer.style.display = 'block';
@@ -12239,6 +12874,8 @@ function saveInventoryItemHandler() {
     return;
   }
 
+  const type = DOM.invInputType ? DOM.invInputType.value : 'single';
+  const hasSerial = (type !== 'bundle') && DOM.invInputHasSerial ? DOM.invInputHasSerial.checked : false;
   const currentStock = DOM.invInputCurrentStock ? Math.max(0, parseInt(DOM.invInputCurrentStock.value, 10) || 0) : 0;
   const safetyStock = DOM.invInputSafetyStock ? Math.max(0, parseInt(DOM.invInputSafetyStock.value, 10) || 0) : 0;
   const unit = DOM.invInputUnit ? DOM.invInputUnit.value.trim() || '個' : '個';
@@ -12267,11 +12904,16 @@ function saveInventoryItemHandler() {
     }
   }
 
+  const existingItem = editId ? getInventoryList().find(i => i.id === editId) : null;
+
   const itemData = {
     id: editId || undefined,
     itemId: itemId || undefined,
     name,
     sku,
+    type,
+    hasSerial,
+    bom: existingItem ? existingItem.bom : (type === 'bundle' ? [] : undefined),
     currentStock,
     safetyStock,
     unit,
@@ -12302,7 +12944,8 @@ function renderInventoryTable() {
       (item.name && item.name.toLowerCase().includes(q)) ||
       (item.sku && item.sku.toLowerCase().includes(q)) ||
       (item.location && item.location.toLowerCase().includes(q)) ||
-      (item.note && item.note.toLowerCase().includes(q))
+      (item.note && item.note.toLowerCase().includes(q)) ||
+      (item.type && item.type.toLowerCase().includes(q))
     );
   }
 
@@ -12315,6 +12958,12 @@ function renderInventoryTable() {
     filtered = filtered.filter(i => i.currentStock <= i.safetyStock);
   } else if (filter === 'zero') {
     filtered = filtered.filter(i => i.currentStock <= 0);
+  } else if (filter === 'bundle') {
+    filtered = filtered.filter(i => i.type === 'bundle');
+  } else if (filter === 'single') {
+    filtered = filtered.filter(i => i.type !== 'bundle');
+  } else if (filter === 'serial') {
+    filtered = filtered.filter(i => i.hasSerial);
   }
 
   if (DOM.inventorySummaryStatus) {
@@ -12324,7 +12973,7 @@ function renderInventoryTable() {
   if (filtered.length === 0) {
     DOM.inventoryTableContainer.innerHTML = `
       <div style="text-align: center; padding: 40px 20px; color: #64748b; font-size: 0.85rem;">
-        ${q ? '該当する在庫品目が見つかりませんでした。' : '在庫品目が登録されていません。「＋ 新規在庫品目を追加」から登録してください。'}
+        ${q ? '該当する在庫品目が見つかりませんでした。' : '在庫品目が登録されていません。「＋ 新規品目追加」または「📥 ロット入庫」から登録してください。'}
       </div>
     `;
     return;
@@ -12334,14 +12983,14 @@ function renderInventoryTable() {
     <table class="inv-table">
       <thead>
         <tr>
-          <th style="min-width: 180px;">品名 / SKU</th>
-          <th style="text-align: right; min-width: 90px;">現在庫</th>
+          <th style="min-width: 200px;">品名 / SKU / 区分</th>
+          <th style="text-align: right; min-width: 95px;">現在庫</th>
           <th style="min-width: 80px; text-align: center;">状態</th>
           <th style="min-width: 50px;">単位</th>
-          <th style="text-align: right; min-width: 90px;">仕入原価</th>
-          <th style="min-width: 100px;">保管場所</th>
-          <th style="min-width: 90px;">最終入庫</th>
-          <th style="text-align: center; min-width: 190px;">入出庫・操作</th>
+          <th style="text-align: right; min-width: 95px;">仕入原価</th>
+          <th style="min-width: 90px;">保管場所</th>
+          <th style="min-width: 85px;">最終入庫</th>
+          <th style="text-align: center; min-width: 200px;">入出庫・操作</th>
         </tr>
       </thead>
       <tbody>
@@ -12358,31 +13007,56 @@ function renderInventoryTable() {
       statusBadge = '<span class="stock-val-pill stock-warn">⚠️ 僅少</span>';
     }
 
+    const isBundle = item.type === 'bundle';
+    const hasSerial = !!item.hasSerial;
+
+    let typeBadges = '';
+    if (isBundle) {
+      typeBadges += `<span class="badge" style="background:#dbeafe; color:#1e40af; font-size:0.675rem; font-weight:700; padding:1px 5px; border-radius:4px; margin-right:4px;">📦 セット品(BOM)</span>`;
+    } else {
+      typeBadges += `<span class="badge" style="background:#f1f5f9; color:#475569; font-size:0.675rem; font-weight:600; padding:1px 5px; border-radius:4px; margin-right:4px;">🧩 単品</span>`;
+    }
+    if (hasSerial) {
+      typeBadges += `<span class="badge" style="background:#fef3c7; color:#92400e; font-size:0.675rem; font-weight:700; padding:1px 5px; border-radius:4px; cursor:pointer;" onclick="window.invFilterSerialByItem('${item.id}')" title="シリアル番号台帳で一覧を表示">🔢 S/N追跡</span>`;
+    }
+
     const formattedCost = item.unitCost ? `¥${Number(item.unitCost).toLocaleString()}` : '-';
-    const skuDisp = item.sku ? `<span style="font-size: 0.725rem; color: #64748b; font-family: monospace; display: block;">SKU: ${escapeHtml(item.sku)}</span>` : '';
+    const skuDisp = item.sku ? `<span style="font-size: 0.725rem; color: #64748b; font-family: monospace;">SKU: ${escapeHtml(item.sku)}</span>` : '';
 
     html += `
       <tr data-id="${item.id}">
         <td>
-          <div style="font-weight: 600; color: #0f172a;">${escapeHtml(item.name)}</div>
-          ${skuDisp}
+          <div style="font-weight: 600; color: #0f172a; margin-bottom: 2px;">${escapeHtml(item.name)}</div>
+          <div style="display: flex; align-items: center; gap: 4px; flex-wrap: wrap;">
+            ${typeBadges}
+            ${skuDisp}
+          </div>
         </td>
         <td style="text-align: right;">
           <span style="font-size: 1.05rem; font-weight: 700; color: ${isZero ? '#dc2626' : (isLow ? '#d97706' : '#059669')};">
             ${Number(item.currentStock).toLocaleString()}
           </span>
-          <span style="font-size: 0.725rem; color: #64748b; display: block;">適正: ${Number(item.safetyStock).toLocaleString()}</span>
+          ${isBundle ? '<span style="font-size: 0.65rem; color: #2563eb; display: block;">(理論構成可能数)</span>' : `<span style="font-size: 0.725rem; color: #64748b; display: block;">適正: ${Number(item.safetyStock).toLocaleString()}</span>`}
         </td>
         <td style="text-align: center;">${statusBadge}</td>
         <td>${escapeHtml(item.unit || '個')}</td>
-        <td style="text-align: right; font-family: monospace;">${formattedCost}</td>
+        <td style="text-align: right; font-family: monospace;">
+          ${formattedCost}
+          ${isBundle ? '<span style="font-size: 0.65rem; color: #64748b; display: block;">(BOM標準)</span>' : ''}
+        </td>
         <td><span style="font-size: 0.8rem; color: #475569;">${escapeHtml(item.location || '-')}</span></td>
         <td style="font-size: 0.75rem; color: #64748b;">${escapeHtml(item.lastInDate || '-')}</td>
         <td style="text-align: center;">
           <div class="inv-action-btn-group" style="justify-content: center;">
-            <button type="button" class="btn-inv-action btn-inv-in" onclick="window.invOpenAdjust('${item.id}', 'in')" title="仕入・受入 入庫">
-              ➕入庫
-            </button>
+            ${hasSerial ? `
+              <button type="button" class="btn-inv-action" style="background:#ecfdf5; border-color:#a7f3d0; color:#047857; font-weight:700;" onclick="window.openInventoryLotModal('${item.id}')" title="輸入・国内仕入ロット入庫・シリアル登録">
+                📥ロット入庫
+              </button>
+            ` : `
+              <button type="button" class="btn-inv-action btn-inv-in" onclick="window.invOpenAdjust('${item.id}', 'in')" title="仕入・受入 入庫">
+                ➕入庫
+              </button>
+            `}
             <button type="button" class="btn-inv-action btn-inv-out" onclick="window.invOpenAdjust('${item.id}', 'out')" title="納品・使用 出庫">
               ➖出庫
             </button>
@@ -12407,6 +13081,884 @@ function renderInventoryTable() {
   html += `</tbody></table>`;
   DOM.inventoryTableContainer.innerHTML = html;
 }
+
+// ==========================================================================
+// 在庫マスタ タブ切り替え（品目マスタ / シリアル台帳 / ロット履歴）
+// ==========================================================================
+let currentInventoryTab = 'items';
+
+function switchInventoryTab(tabName) {
+  currentInventoryTab = tabName;
+  const tabs = [
+    { key: 'items', btn: DOM.tabBtnInventoryItems, content: DOM.inventoryItemsTabContent },
+    { key: 'serials', btn: DOM.tabBtnInventorySerials, content: DOM.inventorySerialsTabContent },
+    { key: 'lots', btn: DOM.tabBtnInventoryLots, content: DOM.inventoryLotsTabContent }
+  ];
+
+  tabs.forEach(t => {
+    if (t.key === tabName) {
+      if (t.btn) {
+        t.btn.style.background = '#ffffff';
+        t.btn.style.color = '#0f172a';
+        t.btn.style.fontWeight = '700';
+        t.btn.style.border = '1px solid #e2e8f0';
+        t.btn.style.borderBottom = '1px solid #ffffff';
+        t.btn.style.marginBottom = '-1px';
+        t.btn.style.zIndex = '2';
+      }
+      if (t.content) t.content.style.display = 'block';
+    } else {
+      if (t.btn) {
+        t.btn.style.background = 'transparent';
+        t.btn.style.color = '#64748b';
+        t.btn.style.fontWeight = '600';
+        t.btn.style.border = '1px solid transparent';
+        t.btn.style.marginBottom = '0';
+        t.btn.style.zIndex = '1';
+      }
+      if (t.content) t.content.style.display = 'none';
+    }
+  });
+
+  if (tabName === 'items') renderInventoryTable();
+  if (tabName === 'serials') renderInventorySerialTable();
+  if (tabName === 'lots') renderInventoryLotTable();
+}
+
+window.switchInventoryTab = switchInventoryTab;
+window.invFilterSerialByItem = function(itemId) {
+  switchInventoryTab('serials');
+  if (DOM.selectSerialItemFilter) {
+    DOM.selectSerialItemFilter.value = itemId;
+    renderInventorySerialTable();
+  }
+};
+
+// ==========================================================================
+// シリアル番号管理台帳のレンダリング
+// ==========================================================================
+function renderInventorySerialTable() {
+  if (!DOM.inventorySerialTableContainer) return;
+  const serialList = getInventorySerialList();
+  const q = DOM.inputSearchSerial ? DOM.inputSearchSerial.value.trim().toLowerCase() : '';
+  const itemFilter = DOM.selectSerialItemFilter ? DOM.selectSerialItemFilter.value : 'all';
+  const statusFilter = DOM.selectSerialStatusFilter ? DOM.selectSerialStatusFilter.value : 'all';
+
+  let filtered = serialList;
+  if (itemFilter !== 'all') {
+    filtered = filtered.filter(s => s.itemId === itemFilter);
+  }
+  if (statusFilter !== 'all') {
+    filtered = filtered.filter(s => s.status === statusFilter);
+  }
+  if (q) {
+    filtered = filtered.filter(s => 
+      (s.serialNumber && s.serialNumber.toLowerCase().includes(q)) ||
+      (s.itemName && s.itemName.toLowerCase().includes(q)) ||
+      (s.lotNumber && s.lotNumber.toLowerCase().includes(q)) ||
+      (s.customerName && s.customerName.toLowerCase().includes(q)) ||
+      (s.invoiceNumber && s.invoiceNumber.toLowerCase().includes(q))
+    );
+  }
+
+  if (filtered.length === 0) {
+    DOM.inventorySerialTableContainer.innerHTML = `
+      <div style="text-align: center; padding: 40px 20px; color: #64748b; font-size: 0.85rem;">
+        該当するシリアル番号が見つかりませんでした。「📥 ロット入庫」からシリアル番号を登録してください。
+      </div>
+    `;
+    return;
+  }
+
+  let html = `
+    <table class="inv-table">
+      <thead>
+        <tr>
+          <th style="min-width: 140px;">シリアル番号 (S/N)</th>
+          <th style="min-width: 150px;">品名</th>
+          <th style="min-width: 130px;">ロットID / 入荷日</th>
+          <th style="text-align: right; min-width: 90px;">確定仕入原価</th>
+          <th style="min-width: 90px; text-align: center;">ステータス</th>
+          <th style="min-width: 130px;">納入先 (取引先)</th>
+          <th style="min-width: 110px;">出荷日 / 伝票</th>
+          <th style="text-align: center; min-width: 90px;">操作</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+
+  filtered.forEach(s => {
+    let statusPill = '<span class="stock-val-pill stock-safe">🟢 在庫中</span>';
+    if (s.status === 'shipped') {
+      statusPill = '<span class="badge" style="background:#eff6ff; color:#1d4ed8; font-weight:700; padding:2px 8px; border-radius:12px; font-size:0.75rem;">🔵 出荷済</span>';
+    } else if (s.status === 'defective') {
+      statusPill = '<span class="badge" style="background:#fee2e2; color:#b91c1c; font-weight:700; padding:2px 8px; border-radius:12px; font-size:0.75rem;">🔴 不良・保留</span>';
+    }
+
+    const costDisp = s.costPrice ? `¥${Number(s.costPrice).toLocaleString()}` : '-';
+
+    html += `
+      <tr>
+        <td style="font-family: monospace; font-weight: 700; color: #0f172a;">${escapeHtml(s.serialNumber)}</td>
+        <td style="font-size: 0.825rem; font-weight: 600;">${escapeHtml(s.itemName || '-')}</td>
+        <td style="font-size: 0.75rem; color: #475569;">
+          <span style="font-family: monospace; font-weight: 600; display: block;">${escapeHtml(s.lotNumber || '-')}</span>
+          <span style="color: #64748b;">${escapeHtml(s.arrivalDate || '-')}</span>
+        </td>
+        <td style="text-align: right; font-family: monospace; font-weight: 600;">${costDisp}</td>
+        <td style="text-align: center;">${statusPill}</td>
+        <td style="font-size: 0.825rem; color: #1e293b;">${escapeHtml(s.customerName || '-')}</td>
+        <td style="font-size: 0.75rem; color: #64748b;">
+          ${s.shippedDate ? `<span>${escapeHtml(s.shippedDate)}</span>` : ''}
+          ${s.invoiceNumber ? `<span style="display:block; font-family:monospace; color:#2563eb; font-weight:600;">${escapeHtml(s.invoiceNumber)}</span>` : '-'}
+        </td>
+        <td style="text-align: center;">
+          ${s.status === 'in_stock' ? `
+            <button type="button" class="btn btn-xs btn-outline-danger" onclick="window.changeSerialStatus('${escapeHtml(s.serialNumber)}', 'defective')" style="font-size:0.7rem; padding:1px 6px;">
+              初期不良化
+            </button>
+          ` : (s.status === 'defective' ? `
+            <button type="button" class="btn btn-xs btn-outline-success" onclick="window.changeSerialStatus('${escapeHtml(s.serialNumber)}', 'in_stock')" style="font-size:0.7rem; padding:1px 6px;">
+              在庫に戻す
+            </button>
+          ` : '<span style="font-size:0.7rem; color:#94a3b8;">出荷完了</span>')}
+        </td>
+      </tr>
+    `;
+  });
+
+  html += `</tbody></table>`;
+  DOM.inventorySerialTableContainer.innerHTML = html;
+}
+
+window.renderInventorySerialTable = renderInventorySerialTable;
+window.changeSerialStatus = function(sn, newStatus) {
+  if (confirm(`シリアル番号「${sn}」のステータスを「${newStatus === 'in_stock' ? '在庫中' : '初期不良'}」に変更しますか？`)) {
+    updateSerialStatus(sn, newStatus);
+    renderInventorySerialTable();
+    showToast(`シリアル「${sn}」のステータスを更新しました。`, 'info');
+  }
+};
+
+// ==========================================================================
+// 入荷ロット履歴のレンダリング
+// ==========================================================================
+function renderInventoryLotTable() {
+  if (!DOM.inventoryLotTableContainer) return;
+  const lotList = getInventoryLotList();
+
+  if (lotList.length === 0) {
+    DOM.inventoryLotTableContainer.innerHTML = `
+      <div style="text-align: center; padding: 40px 20px; color: #64748b; font-size: 0.85rem;">
+        入荷ロット履歴がありません。「📥 ロット入庫・原価計算」から入庫登録してください。
+      </div>
+    `;
+    return;
+  }
+
+  let html = `
+    <table class="inv-table">
+      <thead>
+        <tr>
+          <th style="min-width: 140px;">ロット番号</th>
+          <th style="min-width: 90px;">入荷日</th>
+          <th style="min-width: 160px;">品名 / 仕入先</th>
+          <th style="text-align: right; min-width: 70px;">数量</th>
+          <th style="min-width: 80px; text-align: center;">仕入区分</th>
+          <th style="text-align: right; min-width: 100px;">1台確定原価</th>
+          <th style="text-align: right; min-width: 100px;">原価総額</th>
+          <th style="text-align: right; min-width: 90px;">輸入消費税</th>
+          <th style="text-align: center; min-width: 80px;">会計連動</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+
+  lotList.forEach(lot => {
+    const isImport = lot.procurementType === 'import';
+    const typeLabel = isImport ? '<span class="badge" style="background:#ecfdf5; color:#047857; font-size:0.7rem; font-weight:700; padding:2px 6px; border-radius:4px;">🌐 輸入仕入</span>' : '<span class="badge" style="background:#f1f5f9; color:#475569; font-size:0.7rem; font-weight:600; padding:2px 6px; border-radius:4px;">🇯🇵 国内仕入</span>';
+    const unitCost = Number(lot.unitCost) || 0;
+    const totalCost = Number(lot.totalCost) || (unitCost * (Number(lot.quantity) || 1));
+    const importTax = Number(lot.importTax || lot.taxTotal) || 0;
+
+    html += `
+      <tr>
+        <td style="font-family: monospace; font-weight: 700; color: #0f172a;">${escapeHtml(lot.lotNumber)}</td>
+        <td style="font-size: 0.8rem; color: #475569;">${escapeHtml(lot.arrivalDate || '-')}</td>
+        <td>
+          <div style="font-weight: 600; font-size: 0.85rem; color: #0f172a;">${escapeHtml(lot.itemName || '-')}</div>
+          <span style="font-size: 0.725rem; color: #64748b;">${escapeHtml(lot.supplier || '-')}</span>
+        </td>
+        <td style="text-align: right; font-weight: 700; font-size: 0.95rem;">${Number(lot.quantity || 0).toLocaleString()}</td>
+        <td style="text-align: center;">${typeLabel}</td>
+        <td style="text-align: right; font-family: monospace; font-weight: 700; color: #047857;">¥${unitCost.toLocaleString()}</td>
+        <td style="text-align: right; font-family: monospace;">¥${totalCost.toLocaleString()}</td>
+        <td style="text-align: right; font-family: monospace; color: #b91c1c;">${importTax > 0 ? `¥${importTax.toLocaleString()}` : '-'}</td>
+        <td style="text-align: center;">
+          ${lot.syncAccounting ? '<span style="color:#059669; font-weight:700; font-size:0.8rem;" title="財務会計へ仕訳登録済">✅ 連携済</span>' : '<span style="color:#94a3b8; font-size:0.75rem;">-</span>'}
+        </td>
+      </tr>
+    `;
+  });
+
+  html += `</tbody></table>`;
+  DOM.inventoryLotTableContainer.innerHTML = html;
+}
+
+window.renderInventoryLotTable = renderInventoryLotTable;
+
+// ==========================================================================
+// 「📥 ロット入庫 ＆ 原価按分計算 (Landed Cost Calculator)」モーダル
+// ==========================================================================
+function openInventoryLotModal(defaultItemId = null) {
+  if (!DOM.inventoryLotModal) return;
+  const list = getInventoryList();
+  const singleItems = list.filter(i => i.type !== 'bundle');
+
+  if (DOM.lotInputItemId) {
+    DOM.lotInputItemId.innerHTML = singleItems.map(item => `
+      <option value="${item.id}" data-has-serial="${item.hasSerial ? '1' : '0'}" data-sku="${escapeHtml(item.sku || '')}">
+        ${escapeHtml(item.name)} ${item.hasSerial ? '🔢(S/N追跡)' : ''} [現在庫: ${item.currentStock}${item.unit || '個'}]
+      </option>
+    `).join('');
+
+    if (defaultItemId) {
+      DOM.lotInputItemId.value = defaultItemId;
+    }
+  }
+
+  // ロット番号自動生成
+  autoGenerateLotNumber();
+
+  // 入荷日デフォルト: 本日
+  if (DOM.lotInputDate) {
+    DOM.lotInputDate.value = new Date().toISOString().split('T')[0];
+  }
+
+  // 仕入区分初期値: 輸入
+  if (DOM.labelLotTypeImport) {
+    const importRadio = document.querySelector('input[name="lotProcurementType"][value="import"]');
+    if (importRadio) importRadio.checked = true;
+    switchLotProcurementType('import');
+  }
+
+  updateLandedCostCalculation();
+  DOM.inventoryLotModal.classList.add('active');
+  DOM.inventoryLotModal.style.display = 'flex';
+}
+
+window.openInventoryLotModal = openInventoryLotModal;
+
+function closeInventoryLotModal() {
+  if (!DOM.inventoryLotModal) return;
+  DOM.inventoryLotModal.classList.remove('active');
+  DOM.inventoryLotModal.style.display = 'none';
+}
+
+window.closeInventoryLotModal = closeInventoryLotModal;
+
+function autoGenerateLotNumber() {
+  if (!DOM.lotInputNumber) return;
+  const d = new Date();
+  const yymmdd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+  const existingLots = getInventoryLotList();
+  const todayCount = existingLots.filter(l => l.lotNumber && l.lotNumber.includes(yymmdd)).length;
+  const seq = String(todayCount + 1).padStart(2, '0');
+  DOM.lotInputNumber.value = `LOT-${yymmdd}-${seq}`;
+}
+
+function switchLotProcurementType(type) {
+  if (type === 'import') {
+    if (DOM.labelLotTypeImport) {
+      DOM.labelLotTypeImport.style.border = '2px solid #059669';
+      DOM.labelLotTypeImport.style.background = '#ecfdf5';
+      DOM.labelLotTypeImport.style.color = '#065f46';
+      DOM.labelLotTypeImport.style.fontWeight = '700';
+    }
+    if (DOM.labelLotTypeDomestic) {
+      DOM.labelLotTypeDomestic.style.border = '1px solid #cbd5e1';
+      DOM.labelLotTypeDomestic.style.background = '#f8fafc';
+      DOM.labelLotTypeDomestic.style.color = '#475569';
+      DOM.labelLotTypeDomestic.style.fontWeight = '600';
+    }
+    if (DOM.lotSectionImportCost) DOM.lotSectionImportCost.style.display = 'block';
+    if (DOM.lotSectionDomesticCost) DOM.lotSectionDomesticCost.style.display = 'none';
+  } else {
+    if (DOM.labelLotTypeImport) {
+      DOM.labelLotTypeImport.style.border = '1px solid #cbd5e1';
+      DOM.labelLotTypeImport.style.background = '#f8fafc';
+      DOM.labelLotTypeImport.style.color = '#475569';
+      DOM.labelLotTypeImport.style.fontWeight = '600';
+    }
+    if (DOM.labelLotTypeDomestic) {
+      DOM.labelLotTypeDomestic.style.border = '2px solid #2563eb';
+      DOM.labelLotTypeDomestic.style.background = '#eff6ff';
+      DOM.labelLotTypeDomestic.style.color = '#1e40af';
+      DOM.labelLotTypeDomestic.style.fontWeight = '700';
+    }
+    if (DOM.lotSectionImportCost) DOM.lotSectionImportCost.style.display = 'none';
+    if (DOM.lotSectionDomesticCost) DOM.lotSectionDomesticCost.style.display = 'block';
+  }
+  updateLandedCostCalculation();
+}
+
+function updateLandedCostCalculation() {
+  const typeRadio = document.querySelector('input[name="lotProcurementType"]:checked');
+  const type = typeRadio ? typeRadio.value : 'import';
+  const qty = Math.max(1, Number(DOM.lotInputQty ? DOM.lotInputQty.value : 10) || 1);
+
+  let landedCostTotal = 0;
+  let taxTotal = 0;
+
+  if (type === 'import') {
+    const costGoods = Number(DOM.lotCostGoods ? DOM.lotCostGoods.value : 0) || 0;
+    const costConsulting = Number(DOM.lotCostConsulting ? DOM.lotCostConsulting.value : 0) || 0;
+    const costShipping = Number(DOM.lotCostShipping ? DOM.lotCostShipping.value : 0) || 0;
+    const costTariff = Number(DOM.lotCostTariff ? DOM.lotCostTariff.value : 0) || 0;
+    const costDomesticDelivery = Number(DOM.lotCostDomesticDelivery ? DOM.lotCostDomesticDelivery.value : 0) || 0;
+    const costImportTax = Number(DOM.lotCostImportTax ? DOM.lotCostImportTax.value : 0) || 0;
+
+    // 実質原価 = 本体代金 + コンサル料 + 国際送料 + 関税 + 国内送料 (輸入消費税は原価から除外)
+    landedCostTotal = costGoods + costConsulting + costShipping + costTariff + costDomesticDelivery;
+    taxTotal = costImportTax;
+  } else {
+    const unitPrice = Number(DOM.lotDomUnitPrice ? DOM.lotDomUnitPrice.value : 0) || 0;
+    const shipping = Number(DOM.lotDomShipping ? DOM.lotDomShipping.value : 0) || 0;
+    const taxRate = Number(DOM.lotDomTaxRate ? DOM.lotDomTaxRate.value : 10) || 0;
+
+    const goodsTotal = qty * unitPrice;
+    landedCostTotal = goodsTotal + shipping;
+    taxTotal = Math.floor(goodsTotal * (taxRate / 100));
+  }
+
+  const unitLandedCost = Math.round(landedCostTotal / qty);
+  const grandTotal = landedCostTotal + taxTotal;
+
+  if (DOM.lotDispTotalCost) DOM.lotDispTotalCost.textContent = `¥${landedCostTotal.toLocaleString()}`;
+  if (DOM.lotDispUnitCost) DOM.lotDispUnitCost.innerHTML = `¥${unitLandedCost.toLocaleString()} <small style="font-size: 0.85rem; font-weight: normal;">/ 個</small>`;
+  if (DOM.lotDispTax) DOM.lotDispTax.textContent = `¥${taxTotal.toLocaleString()}`;
+  if (DOM.lotDispGrandTotal) DOM.lotDispGrandTotal.textContent = `¥${grandTotal.toLocaleString()}`;
+
+  // シリアル管理品かどうかの判定と表示
+  const selectedOpt = DOM.lotInputItemId ? DOM.lotInputItemId.options[DOM.lotInputItemId.selectedIndex] : null;
+  const hasSerial = selectedOpt ? selectedOpt.dataset.hasSerial === '1' : false;
+
+  if (DOM.lotSerialSection) {
+    DOM.lotSerialSection.style.display = hasSerial ? 'block' : 'none';
+  }
+
+  // シリアル番号入力カウントの更新
+  if (DOM.lotInputSerials && DOM.lotSerialCountBadge) {
+    const lines = DOM.lotInputSerials.value.split(/[\r\n,]+/).map(s => s.trim()).filter(Boolean);
+    DOM.lotSerialCountBadge.textContent = `入力: ${lines.length} / 必要: ${qty}`;
+    DOM.lotSerialCountBadge.style.color = (lines.length === qty) ? '#059669' : (lines.length > qty ? '#d97706' : '#dc2626');
+  }
+
+  // 会計仕訳プレビューの更新
+  if (DOM.lotJournalPreviewBox) {
+    const creditCode = DOM.lotSelectCreditAccount ? DOM.lotSelectCreditAccount.value : '102';
+    const creditName = creditCode === '102' ? '普通預金' : (creditCode === '201' ? '買掛金' : '現金');
+    DOM.lotJournalPreviewBox.innerHTML = `
+      【借方】131 商品・棚卸資産 ¥${landedCostTotal.toLocaleString()} ＋ 116 仮払消費税 ¥${taxTotal.toLocaleString()}<br>
+      【貸方】${creditCode} ${creditName} ¥${grandTotal.toLocaleString()}
+    `;
+  }
+}
+
+window.updateLandedCostCalculation = updateLandedCostCalculation;
+
+function generateSerialNumbersForLot() {
+  if (!DOM.lotInputItemId || !DOM.lotInputSerials) return;
+  const selectedOpt = DOM.lotInputItemId.options[DOM.lotInputItemId.selectedIndex];
+  const itemName = selectedOpt ? selectedOpt.text : '';
+  const qty = Math.max(1, Number(DOM.lotInputQty ? DOM.lotInputQty.value : 10) || 1);
+
+  const d = new Date();
+  const yymm = `${String(d.getFullYear()).slice(-2)}${String(d.getMonth() + 1).padStart(2, '0')}`;
+
+  let prefix = `SN-${yymm}-`;
+  if (itemName.includes('DP-5000') || itemName.includes('本体')) {
+    prefix = `DP5K-${yymm}-`;
+  } else if (itemName.includes('バッテリー') || itemName.includes('電池')) {
+    prefix = `BAT-${yymm}-`;
+  }
+
+  const existingSerials = getInventorySerialList();
+  const existingNumbers = new Set(existingSerials.map(s => s.serialNumber));
+
+  const generated = [];
+  let num = 1;
+  while (generated.length < qty) {
+    const sn = `${prefix}${String(num).padStart(3, '0')}`;
+    if (!existingNumbers.has(sn)) {
+      generated.push(sn);
+    }
+    num++;
+  }
+
+  DOM.lotInputSerials.value = generated.join('\n');
+  updateLandedCostCalculation();
+  showToast(`シリアル番号 ${qty} 件を自動生成しました。`, 'info');
+}
+
+window.generateSerialNumbersForLot = generateSerialNumbersForLot;
+
+function submitInventoryLotStockIn() {
+  const selectedOpt = DOM.lotInputItemId ? DOM.lotInputItemId.options[DOM.lotInputItemId.selectedIndex] : null;
+  if (!selectedOpt) {
+    showToast('入庫対象品目を選択してください', 'danger');
+    return;
+  }
+
+  const itemId = DOM.lotInputItemId.value;
+  const itemName = selectedOpt.text.split('[')[0].trim();
+  const hasSerial = selectedOpt.dataset.hasSerial === '1';
+  const lotNumber = DOM.lotInputNumber ? DOM.lotInputNumber.value.trim() : '';
+  const arrivalDate = DOM.lotInputDate ? DOM.lotInputDate.value : new Date().toISOString().split('T')[0];
+  const qty = Math.max(1, Number(DOM.lotInputQty ? DOM.lotInputQty.value : 1) || 1);
+  const supplier = DOM.lotInputSupplier ? DOM.lotInputSupplier.value.trim() : '';
+  const storageLocation = DOM.lotInputStorageLocation ? DOM.lotInputStorageLocation.value.trim() : '';
+
+  if (!lotNumber) {
+    showToast('ロット番号を入力してください', 'danger');
+    return;
+  }
+
+  const typeRadio = document.querySelector('input[name="lotProcurementType"]:checked');
+  const procurementType = typeRadio ? typeRadio.value : 'import';
+
+  // 原価計算値の取得
+  let landedCostTotal = 0;
+  let taxTotal = 0;
+  let costDetails = {};
+
+  if (procurementType === 'import') {
+    const costGoods = Number(DOM.lotCostGoods?.value || 0);
+    const costConsulting = Number(DOM.lotCostConsulting?.value || 0);
+    const costShipping = Number(DOM.lotCostShipping?.value || 0);
+    const costTariff = Number(DOM.lotCostTariff?.value || 0);
+    const costDomesticDelivery = Number(DOM.lotCostDomesticDelivery?.value || 0);
+    const costImportTax = Number(DOM.lotCostImportTax?.value || 0);
+
+    landedCostTotal = costGoods + costConsulting + costShipping + costTariff + costDomesticDelivery;
+    taxTotal = costImportTax;
+    costDetails = { costGoods, costConsulting, costShipping, costTariff, costDomesticDelivery, costImportTax };
+  } else {
+    const unitPrice = Number(DOM.lotDomUnitPrice?.value || 0);
+    const shipping = Number(DOM.lotDomShipping?.value || 0);
+    const taxRate = Number(DOM.lotDomTaxRate?.value || 10);
+    const goodsTotal = qty * unitPrice;
+    landedCostTotal = goodsTotal + shipping;
+    taxTotal = Math.floor(goodsTotal * (taxRate / 100));
+    costDetails = { unitPrice, shipping, taxRate, goodsTotal };
+  }
+
+  const unitCost = Math.round(landedCostTotal / qty);
+  const grandTotal = landedCostTotal + taxTotal;
+
+  // シリアル番号の検証
+  let parsedSerials = [];
+  if (hasSerial) {
+    const rawSerialText = DOM.lotInputSerials ? DOM.lotInputSerials.value : '';
+    parsedSerials = rawSerialText.split(/[\r\n,]+/).map(s => s.trim()).filter(Boolean);
+
+    if (parsedSerials.length !== qty) {
+      if (!confirm(`入力されたシリアル番号（${parsedSerials.length}件）が入庫数量（${qty}台）と一致していません。このまま登録しますか？`)) {
+        return;
+      }
+    }
+  }
+
+  // 1. ロットデータの構築 & 保存
+  const lotId = `lot_${Date.now()}`;
+  const syncAccounting = DOM.lotCheckSyncAccounting ? DOM.lotCheckSyncAccounting.checked : true;
+  const creditAccount = DOM.lotSelectCreditAccount ? DOM.lotSelectCreditAccount.value : '102';
+
+  const lotData = {
+    id: lotId,
+    lotNumber,
+    itemId,
+    itemName,
+    procurementType,
+    arrivalDate,
+    quantity: qty,
+    unitCost,
+    totalCost: landedCostTotal,
+    importTax: taxTotal,
+    taxTotal,
+    grandTotal,
+    supplier,
+    storageLocation,
+    hasSerial,
+    costDetails,
+    syncAccounting,
+    creditAccount
+  };
+
+  saveInventoryLot(lotData);
+
+  // 2. 在庫マスタの現在庫 & 仕入単価を更新
+  updateInventoryStock(itemId, qty, 'in', `ロット入庫: ${lotNumber} (確定実仕入原価: ¥${unitCost.toLocaleString()})`);
+  const invList = getInventoryList();
+  const targetItem = invList.find(i => i.id === itemId);
+  if (targetItem) {
+    targetItem.unitCost = unitCost;
+    if (storageLocation) targetItem.location = storageLocation;
+    saveInventoryItem(targetItem);
+  }
+
+  // 3. シリアル番号の一括保存
+  if (hasSerial && parsedSerials.length > 0) {
+    const serialObjects = parsedSerials.map(sn => ({
+      serialNumber: sn,
+      itemId,
+      itemName,
+      lotId,
+      lotNumber,
+      costPrice: unitCost,
+      status: 'in_stock',
+      arrivalDate,
+      customerName: '',
+      invoiceNumber: '',
+      shippedDate: ''
+    }));
+    saveBatchInventorySerials(serialObjects);
+  }
+
+  // 4. 財務会計への自動複合仕訳登録
+  if (syncAccounting) {
+    const creditAccDef = findAccountDef(creditAccount);
+    const creditName = creditAccDef ? creditAccDef.name : (creditAccount === '102' ? '普通預金' : '買掛金');
+    const journalEntry = {
+      id: `jnl_lot_${lotId}`,
+      date: arrivalDate,
+      entryNumber: lotNumber,
+      description: `ロット入庫・仕入計上: ${lotNumber} (${itemName} × ${qty})`,
+      sourceType: 'inventory_lot',
+      sourceId: lotId,
+      debitLines: [
+        { accountCode: '131', accountName: '商品・棚卸資産', subAccount: '', amount: landedCostTotal, taxType: 'taxable_10', invoiceType: 'qualified' },
+        ...(taxTotal > 0 ? [{ accountCode: '116', accountName: '仮払消費税', subAccount: procurementType === 'import' ? '輸入消費税' : '国内仕入', amount: taxTotal, taxType: 'out_of_scope', invoiceType: 'qualified' }] : [])
+      ],
+      creditLines: [
+        { accountCode: creditAccount, accountName: creditName, subAccount: supplier || '', amount: grandTotal, taxType: 'out_of_scope', invoiceType: 'none' }
+      ],
+      totalDebit: grandTotal,
+      totalCredit: grandTotal
+    };
+
+    saveManualJournal(journalEntry);
+    initAccountingMonthSelector();
+    renderAccountingJournals();
+  }
+
+  closeInventoryLotModal();
+  renderInventoryTable();
+  renderInventorySerialTable();
+  renderInventoryLotTable();
+  showToast(`ロット「${lotNumber}」（${itemName} × ${qty}）の入庫および確定原価按分計算（¥${unitCost.toLocaleString()}/台）を完了しました！`, 'success');
+}
+
+window.submitInventoryLotStockIn = submitInventoryLotStockIn;
+
+// ==========================================================================
+// 納品書・請求書作成時のセット品シリアル引当モーダル
+// ==========================================================================
+function openSerialAssignModal(itemIndex) {
+  if (!DOM.serialAssignModal) return;
+  const item = currentDoc.items[itemIndex];
+  if (!item) return;
+
+  DOM.serialAssignItemIndex.value = itemIndex;
+  DOM.serialAssignItemName.textContent = item.name || '名称未設定';
+  const qty = Number(item.quantity) || 1;
+  DOM.serialAssignItemQty.textContent = `${qty} ${item.unit || '組'}`;
+
+  // 在庫マスタからセット品（BOM）または単品情報を取得
+  const invList = getInventoryList();
+  let bundleItem = invList.find(x => x.type === 'bundle' && (x.id === item.bundleItemId || x.name === item.name));
+  if (!bundleItem && (item.name || '').includes('DP-5000')) {
+    bundleItem = invList.find(x => x.id === 'inv_1' || x.type === 'bundle');
+  }
+
+  const container = DOM.serialAssignComponentsContainer;
+  container.innerHTML = '';
+
+  const currentlyAssigned = Array.isArray(item.assignedSerials) ? item.assignedSerials : [];
+
+  if (bundleItem && Array.isArray(bundleItem.bom)) {
+    // セット品（BOM）の場合
+    bundleItem.bom.forEach((bomRow, bomIdx) => {
+      const comp = invList.find(c => c.id === bomRow.componentId);
+      const compName = comp ? comp.name : bomRow.componentId;
+      const needQty = (Number(bomRow.quantity) || 1) * qty;
+
+      const card = document.createElement('div');
+      card.style.cssText = 'background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px 12px;';
+
+      if (comp && comp.hasSerial) {
+        // シリアル管理部品（本体、バッテリーなど）
+        const availableSerials = getAvailableSerialsByItem(comp.id);
+        const assignedForThisComp = currentlyAssigned.filter(a => a.itemId === comp.id);
+
+        let selectorsHtml = '';
+        for (let i = 0; i < needQty; i++) {
+          const currentVal = assignedForThisComp[i] ? assignedForThisComp[i].serialNumber : '';
+          const optionsHtml = availableSerials.map(s => {
+            const isSelected = s.serialNumber === currentVal;
+            const costStr = s.costPrice ? `(確定原価: ¥${Number(s.costPrice).toLocaleString()})` : '';
+            return `<option value="${escapeHtml(s.serialNumber)}" data-cost="${s.costPrice || 0}" ${isSelected ? 'selected' : ''}>
+              ${escapeHtml(s.serialNumber)} ${costStr} [ロット: ${escapeHtml(s.lotNumber || '-')}]
+            </option>`;
+          }).join('');
+
+          selectorsHtml += `
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+              <span style="font-size: 0.75rem; color: #64748b; width: 45px;">#${i + 1} 個目:</span>
+              <select class="form-select serial-select-input" data-comp-id="${comp.id}" data-comp-name="${escapeHtml(comp.name)}" style="font-size: 0.85rem; font-family: monospace; font-weight: 600; flex: 1;">
+                <option value="">-- シリアル番号を選択 --</option>
+                ${optionsHtml}
+              </select>
+            </div>
+          `;
+        }
+
+        card.innerHTML = `
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <strong style="font-size: 0.85rem; color: #1e293b;">🧩 ${escapeHtml(compName)}</strong>
+            <span class="badge" style="background: #ecfdf5; color: #047857; font-weight: 700; font-size: 0.725rem; padding: 2px 6px; border-radius: 4px;">
+              必要: ${needQty}台 (S/N引当対象)
+            </span>
+          </div>
+          ${selectorsHtml}
+        `;
+      } else {
+        // シリアル管理不要部品（充電器など）
+        const unitCost = Number(comp ? comp.unitCost : 0) || 0;
+        card.innerHTML = `
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <strong style="font-size: 0.85rem; color: #1e293b;">🔌 ${escapeHtml(compName)}</strong>
+              <span style="font-size: 0.725rem; color: #64748b; display: block;">シリアル番号管理不要（出荷確定時に現在庫より ${needQty}個 引当）</span>
+            </div>
+            <div style="text-align: right;">
+              <span style="font-size: 0.75rem; color: #64748b;">標準原価:</span>
+              <strong style="font-size: 0.85rem; color: #0f172a; font-family: monospace;">¥${(unitCost * needQty).toLocaleString()}</strong>
+            </div>
+          </div>
+        `;
+      }
+      container.appendChild(card);
+    });
+  } else {
+    // 単品でシリアル管理品の場合
+    const comp = invList.find(c => c.name === item.name || c.id === item.itemId);
+    const needQty = qty;
+    const availableSerials = comp ? getAvailableSerialsByItem(comp.id) : [];
+
+    let selectorsHtml = '';
+    for (let i = 0; i < needQty; i++) {
+      const currentVal = currentlyAssigned[i] ? currentlyAssigned[i].serialNumber : '';
+      const optionsHtml = availableSerials.map(s => {
+        const isSelected = s.serialNumber === currentVal;
+        const costStr = s.costPrice ? `(確定原価: ¥${Number(s.costPrice).toLocaleString()})` : '';
+        return `<option value="${escapeHtml(s.serialNumber)}" data-cost="${s.costPrice || 0}" ${isSelected ? 'selected' : ''}>
+          ${escapeHtml(s.serialNumber)} ${costStr}
+        </option>`;
+      }).join('');
+
+      selectorsHtml += `
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+          <span style="font-size: 0.75rem; color: #64748b; width: 45px;">#${i + 1}:</span>
+          <select class="form-select serial-select-input" data-comp-id="${comp ? comp.id : ''}" data-comp-name="${escapeHtml(item.name)}" style="font-size: 0.85rem; font-family: monospace; font-weight: 600; flex: 1;">
+            <option value="">-- シリアル番号を選択 --</option>
+            ${optionsHtml}
+          </select>
+        </div>
+      `;
+    }
+
+    const card = document.createElement('div');
+    card.style.cssText = 'background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px 12px;';
+    card.innerHTML = `
+      <div style="margin-bottom: 8px;">
+        <strong style="font-size: 0.85rem; color: #1e293b;">🔢 ${escapeHtml(item.name)} 個別シリアル選択</strong>
+      </div>
+      ${selectorsHtml}
+    `;
+    container.appendChild(card);
+  }
+
+  // 選択イベントリスナー接続
+  container.querySelectorAll('.serial-select-input').forEach(sel => {
+    sel.addEventListener('change', updateSerialAssignPreview);
+  });
+
+  updateSerialAssignPreview();
+  DOM.serialAssignModal.classList.add('active');
+  DOM.serialAssignModal.style.display = 'flex';
+}
+
+window.openSerialAssignModal = openSerialAssignModal;
+
+function closeSerialAssignModal() {
+  if (!DOM.serialAssignModal) return;
+  DOM.serialAssignModal.classList.remove('active');
+  DOM.serialAssignModal.style.display = 'none';
+}
+
+window.closeSerialAssignModal = closeSerialAssignModal;
+
+function updateSerialAssignPreview() {
+  const container = DOM.serialAssignComponentsContainer;
+  if (!container) return;
+
+  const selects = container.querySelectorAll('.serial-select-input');
+  let totalCost = 0;
+  const bodySerials = [];
+  const batSerials = [];
+  const otherSerials = [];
+
+  selects.forEach(sel => {
+    const sn = sel.value;
+    if (!sn) return;
+    const selectedOpt = sel.options[sel.selectedIndex];
+    const cost = Number(selectedOpt ? selectedOpt.dataset.cost : 0) || 0;
+    totalCost += cost;
+
+    const compName = sel.dataset.compName || '';
+    if (compName.includes('本体') || compName.includes('DP-5000')) {
+      bodySerials.push(sn);
+    } else if (compName.includes('バッテリー') || compName.includes('電池')) {
+      batSerials.push(sn);
+    } else {
+      otherSerials.push(sn);
+    }
+  });
+
+  // セット品非シリアル構成品（充電器等）の原価も加算
+  const idx = Number(DOM.serialAssignItemIndex.value);
+  const item = currentDoc.items[idx];
+  if (item) {
+    const invList = getInventoryList();
+    let bundleItem = invList.find(x => x.type === 'bundle' && (x.id === item.bundleItemId || x.name === item.name));
+    if (!bundleItem && (item.name || '').includes('DP-5000')) {
+      bundleItem = invList.find(x => x.id === 'inv_1' || x.type === 'bundle');
+    }
+    if (bundleItem && Array.isArray(bundleItem.bom)) {
+      const qty = Number(item.quantity) || 1;
+      bundleItem.bom.forEach(b => {
+        const comp = invList.find(c => c.id === b.componentId);
+        if (comp && !comp.hasSerial) {
+          totalCost += (Number(comp.unitCost) || 0) * (Number(b.quantity) || 1) * qty;
+        }
+      });
+    }
+  }
+
+  if (DOM.serialAssignTotalCogs) {
+    DOM.serialAssignTotalCogs.textContent = `¥${totalCost.toLocaleString()}`;
+  }
+
+  // 印字プレビュー文字列の生成
+  const parts = [];
+  if (bodySerials.length > 0) parts.push(`本体S/N: ${bodySerials.join(', ')}`);
+  if (batSerials.length > 0) parts.push(`バッテリーS/N: ${batSerials.join(', ')}`);
+  if (otherSerials.length > 0) parts.push(`S/N: ${otherSerials.join(', ')}`);
+
+  const previewStr = parts.length > 0 ? `（${parts.join(' / ')}）` : '（シリアル番号未選択）';
+  if (DOM.serialAssignPrintPreview) {
+    DOM.serialAssignPrintPreview.textContent = `印字例: ${previewStr}`;
+  }
+}
+
+function confirmSerialAssign() {
+  const idx = Number(DOM.serialAssignItemIndex.value);
+  const item = currentDoc.items[idx];
+  if (!item) return;
+
+  const container = DOM.serialAssignComponentsContainer;
+  const selects = container.querySelectorAll('.serial-select-input');
+  const assigned = [];
+  let totalCost = 0;
+  const bodySerials = [];
+  const batSerials = [];
+  const otherSerials = [];
+
+  selects.forEach(sel => {
+    const sn = sel.value;
+    if (!sn) return;
+    const selectedOpt = sel.options[sel.selectedIndex];
+    const cost = Number(selectedOpt ? selectedOpt.dataset.cost : 0) || 0;
+    totalCost += cost;
+
+    const compId = sel.dataset.compId || '';
+    const compName = sel.dataset.compName || '';
+
+    assigned.push({
+      serialNumber: sn,
+      itemId: compId,
+      itemName: compName,
+      costPrice: cost
+    });
+
+    if (compName.includes('本体') || compName.includes('DP-5000')) {
+      bodySerials.push(sn);
+    } else if (compName.includes('バッテリー') || compName.includes('電池')) {
+      batSerials.push(sn);
+    } else {
+      otherSerials.push(sn);
+    }
+  });
+
+  // 非シリアル構成品（充電器）の原価合算
+  const invList = getInventoryList();
+  let bundleItem = invList.find(x => x.type === 'bundle' && (x.id === item.bundleItemId || x.name === item.name));
+  if (!bundleItem && (item.name || '').includes('DP-5000')) {
+    bundleItem = invList.find(x => x.id === 'inv_1' || x.type === 'bundle');
+  }
+  if (bundleItem) {
+    item.bundleItemId = bundleItem.id;
+    if (Array.isArray(bundleItem.bom)) {
+      const qty = Number(item.quantity) || 1;
+      bundleItem.bom.forEach(b => {
+        const comp = invList.find(c => c.id === b.componentId);
+        if (comp && !comp.hasSerial) {
+          totalCost += (Number(comp.unitCost) || 0) * (Number(b.quantity) || 1) * qty;
+        }
+      });
+    }
+  }
+
+  item.assignedSerials = assigned;
+  item.assignedCogs = totalCost;
+  item.costPrice = totalCost; // 売上原価に反映
+
+  // 明細摘要欄への自動印字
+  if (DOM.serialAssignCheckPrintNote && DOM.serialAssignCheckPrintNote.checked && assigned.length > 0) {
+    const parts = [];
+    if (bodySerials.length > 0) parts.push(`本体S/N: ${bodySerials.join(', ')}`);
+    if (batSerials.length > 0) parts.push(`バッテリーS/N: ${batSerials.join(', ')}`);
+    if (otherSerials.length > 0) parts.push(`S/N: ${otherSerials.join(', ')}`);
+    const snText = `（${parts.join(' / ')}）`;
+
+    // 既存の摘要があれば更新、無ければ追加
+    if (item.description) {
+      // 過去のS/N印字部分を除去してから再付加
+      const cleanDesc = item.description.replace(/（(本体S\/N|バッテリーS\/N|S\/N)[^）]*）/g, '').trim();
+      item.description = cleanDesc ? `${cleanDesc} ${snText}` : snText;
+    } else {
+      item.description = snText;
+    }
+  }
+
+  closeSerialAssignModal();
+  renderItemInputCards();
+  renderAll();
+  showToast(`明細 #${idx + 1} にシリアル ${assigned.length}点を引き当てました（実仕入原価: ¥${totalCost.toLocaleString()}）。`, 'success');
+}
+
+window.confirmSerialAssign = confirmSerialAssign;
 
 window.invOpenAdjust = function(id, defaultType = 'in') {
   const list = getInventoryList();

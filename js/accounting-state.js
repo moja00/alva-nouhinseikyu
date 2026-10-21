@@ -203,6 +203,7 @@ export function normalizeInvoiceDoc(raw) {
     taxTotal,
     grandTotal,
     costTotal,
+    assignedCogs: Number(doc.assignedCogs || raw.assignedCogs || doc.cogsTotal || raw.cogsTotal || 0),
     rawDoc: doc
   };
 }
@@ -398,6 +399,23 @@ export function buildUnifiedJournals(arg1 = {}, arg2 = [], arg3 = [], arg4 = [],
           });
         }
       }
+    }
+
+    // ③ 売上原価計上仕訳（要件4: シリアル引当実原価または品目原価を501仕入高 / 131商品・棚卸資産に連動）
+    const cogsAmount = Number(inv.assignedCogs || inv.costTotal || 0);
+    if (isDateInPeriod(date, periodFilter) && cogsAmount > 0) {
+      unified.push({
+        id: `jnl_cogs_${inv.id}`,
+        date,
+        entryNumber: docNo ? `COG-${docNo}` : `COG-${inv.id.slice(-6)}`,
+        description: `売上原価計上（ロット・シリアル実原価）: ${client} (${docNo})`,
+        sourceType: 'sales_cogs',
+        sourceId: inv.id,
+        debitLines: [{ accountCode: '501', accountName: '仕入高', subAccount: client, amount: cogsAmount, taxType: 'taxable_10', invoiceType: 'qualified' }],
+        creditLines: [{ accountCode: '131', accountName: '商品・棚卸資産', subAccount: '', amount: cogsAmount, taxType: 'out_of_scope', invoiceType: 'none' }],
+        totalDebit: cogsAmount,
+        totalCredit: cogsAmount
+      });
     }
   });
 

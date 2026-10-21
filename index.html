@@ -281,7 +281,7 @@
         </button>
         <div style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
-          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.21-settle-inv</span>
+          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.21-bom-lot</span>
         </div>
       </div>
 
@@ -1468,106 +1468,199 @@
           style="font-size: 1.2rem;">✕</button>
       </div>
 
+      <!-- 在庫マスタ タブナビゲーション -->
+      <div style="display: flex; gap: 4px; padding: 0 20px; border-bottom: 1px solid #e2e8f0; background: #f8fafc;">
+        <button type="button" id="tabBtnInventoryItems" class="btn btn-sm" style="border-radius: 6px 6px 0 0; border: 1px solid #e2e8f0; border-bottom: 1px solid #ffffff; background: #ffffff; color: #0f172a; font-weight: 700; padding: 8px 16px; margin-bottom: -1px; z-index: 2;">
+          📦 在庫品目・BOM構成マスタ
+        </button>
+        <button type="button" id="tabBtnInventorySerials" class="btn btn-sm" style="border-radius: 6px 6px 0 0; border: 1px solid transparent; background: transparent; color: #64748b; font-weight: 600; padding: 8px 16px;">
+          🔢 シリアル番号管理台帳
+        </button>
+        <button type="button" id="tabBtnInventoryLots" class="btn btn-sm" style="border-radius: 6px 6px 0 0; border: 1px solid transparent; background: transparent; color: #64748b; font-weight: 600; padding: 8px 16px;">
+          📜 入荷ロット履歴
+        </button>
+      </div>
+
       <div class="modal-body" style="padding: 16px 20px; overflow-y: auto; flex: 1;">
 
-        <!-- 上部アクションバー（検索・アラートフィルタ・商品マスタ取込・新規追加） -->
-        <div
-          style="display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap;">
-          <div style="flex: 1; min-width: 220px; position: relative;">
-            <input type="text" id="inputSearchInventory" class="form-input" placeholder="🔍 品名・型番(SKU)・保管場所で絞り込み..."
-              style="font-size: 0.85rem;">
+        <!-- 1. 在庫品目・BOM構成マスタ タブ -->
+        <div id="inventoryItemsTabContent">
+          <!-- 上部アクションバー（検索・アラートフィルタ・商品マスタ取込・ロット入庫・新規追加） -->
+          <div
+            style="display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap;">
+            <div style="flex: 1; min-width: 200px; position: relative;">
+              <input type="text" id="inputSearchInventory" class="form-input" placeholder="🔍 品名・型番(SKU)・区分・保管場所で絞り込み..."
+                style="font-size: 0.85rem;">
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <select id="selectInventoryFilter" class="form-select" style="font-size: 0.85rem; width: auto;">
+                <option value="all">すべての在庫品目</option>
+                <option value="bundle">📦 セット品 (BOM) のみ</option>
+                <option value="single">🧩 単品・構成部品のみ</option>
+                <option value="serial">🔢 シリアル管理品のみ</option>
+                <option value="low">⚠️ 安全在庫割れアラートのみ</option>
+                <option value="zero">❌ 在庫切れ(0個)のみ</option>
+              </select>
+              <button type="button" id="btnSyncInventoryWithItems" class="btn btn-secondary btn-sm"
+                style="display: flex; align-items: center; gap: 4px;" title="商品マスタに登録されている商品で在庫マスタに未登録のものを一括取り込みます">
+                🔄 商品取込
+              </button>
+              <button type="button" id="btnOpenInventoryLotModal" class="btn btn-success btn-sm"
+                style="display: flex; align-items: center; gap: 4px; background: #059669; border-color: #059669; color: #ffffff;"
+                title="輸入・国内仕入ロットの入庫、諸費用按分(Landed Cost)、シリアル一括登録、財務会計仕訳連動">
+                📥 ロット入庫・原価計算
+              </button>
+              <button type="button" id="btnToggleNewInventoryForm" class="btn btn-primary btn-sm"
+                style="display: flex; align-items: center; gap: 4px;">
+                ➕ 新規品目追加
+              </button>
+            </div>
           </div>
-          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-            <select id="selectInventoryFilter" class="form-select" style="font-size: 0.85rem; width: auto;">
-              <option value="all">すべての在庫品目</option>
-              <option value="low">⚠️ 安全在庫割れアラートのみ</option>
-              <option value="zero">❌ 在庫切れ(0個)のみ</option>
-            </select>
-            <button type="button" id="btnSyncInventoryWithItems" class="btn btn-secondary btn-sm"
-              style="display: flex; align-items: center; gap: 4px;" title="商品マスタに登録されている商品で在庫マスタに未登録のものを一括取り込みます">
-              🔄 商品マスタから取込
-            </button>
-            <button type="button" id="btnToggleNewInventoryForm" class="btn btn-primary btn-sm"
-              style="display: flex; align-items: center; gap: 4px;">
-              ➕ 新規在庫品目を追加
-            </button>
+
+          <!-- 新規登録・編集フォーム（アコーディオン） -->
+          <div id="inventoryFormContainer"
+            style="display: none; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+            <h4 id="inventoryFormTitle"
+              style="font-size: 0.95rem; margin-bottom: 12px; color: #1e293b; font-weight: 700;">新規在庫品目の登録</h4>
+            <input type="hidden" id="inventoryEditId" value="">
+            <input type="hidden" id="inventoryItemId" value="">
+
+            <!-- 商品区分・シリアル管理フラグ -->
+            <div class="form-row" style="margin-bottom: 12px; background: #ffffff; padding: 10px 14px; border-radius: 6px; border: 1px solid #e2e8f0;">
+              <div class="form-group" style="flex: 1.5;">
+                <label class="form-label" for="invInputType" style="font-size: 0.75rem; font-weight: 700;">商品・構成区分 <span style="color: var(--danger);">*</span></label>
+                <select id="invInputType" class="form-select" style="font-size: 0.85rem; font-weight: 600;">
+                  <option value="single">🧩 単品・構成部品（個別に在庫・ロット原価・シリアル管理）</option>
+                  <option value="bundle">📦 セット品 / BOM（構成レシピから在庫数・標準原価を自動計算）</option>
+                </select>
+              </div>
+              <div class="form-group" id="invSerialManageGroup" style="flex: 1; display: flex; align-items: center; padding-top: 18px;">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.825rem; font-weight: 600; color: #0f172a;">
+                  <input type="checkbox" id="invInputHasSerial" style="width: 16px; height: 16px; accent-color: #2563eb;">
+                  🔢 個別シリアル番号を追跡・管理する（本体・バッテリー等）
+                </label>
+              </div>
+            </div>
+
+            <div class="form-row" style="margin-bottom: 10px;">
+              <div class="form-group" style="flex: 2;">
+                <label class="form-label" for="invInputName" style="font-size: 0.75rem;">品名・項目名 <span
+                    style="color: var(--danger);">*</span></label>
+                <input type="text" id="invInputName" class="form-input" placeholder="例: DP-5000 基本セット、交換用バッテリー など" required
+                  style="font-size: 0.85rem;">
+              </div>
+              <div class="form-group" style="flex: 1;">
+                <label class="form-label" for="invInputSku" style="font-size: 0.75rem;">型番・SKU（任意）</label>
+                <input type="text" id="invInputSku" class="form-input" placeholder="例: DP5000-SET, BAT-PSE-01"
+                  style="font-size: 0.85rem;">
+              </div>
+            </div>
+
+            <!-- BOMセット品構成レシピ（セット品選択時のみ表示） -->
+            <div id="invBomSection" style="display: none; margin-bottom: 12px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 12px;">
+              <div style="font-size: 0.825rem; font-weight: 700; color: #1e40af; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
+                <span>🛠️ セット品構成レシピ (BOM)</span>
+                <span style="font-size: 0.75rem; color: #3b82f6;">※現在庫可能数および標準仕入原価は構成部品から自動計算されます</span>
+              </div>
+              <div id="invBomRowsContainer" style="display: flex; flex-direction: column; gap: 8px;">
+                <!-- JSでレンダリング -->
+              </div>
+              <div style="margin-top: 8px;">
+                <button type="button" id="btnAddBomRow" class="btn btn-secondary btn-xs" style="font-size: 0.75rem;">➕ 構成部品を追加</button>
+              </div>
+            </div>
+
+            <div class="form-row" style="margin-bottom: 10px;">
+              <div class="form-group" style="flex: 1;">
+                <label class="form-label" for="invInputCurrentStock" style="font-size: 0.75rem;" id="labelInvCurrentStock">現在庫数 <span
+                    style="color: var(--danger);">*</span></label>
+                <input type="number" id="invInputCurrentStock" class="form-input" min="0" value="0" required
+                  style="font-size: 0.9rem; font-weight: 700;">
+              </div>
+              <div class="form-group" style="flex: 1;">
+                <label class="form-label" for="invInputSafetyStock" style="font-size: 0.75rem;">安全在庫数（アラート基準） <span
+                    style="color: var(--danger);">*</span></label>
+                <input type="number" id="invInputSafetyStock" class="form-input" min="0" value="5" required
+                  style="font-size: 0.9rem;">
+              </div>
+              <div class="form-group" style="flex: 1;">
+                <label class="form-label" for="invInputUnit" style="font-size: 0.75rem;">単位</label>
+                <input type="text" id="invInputUnit" class="form-input" placeholder="個, 組, 式, 台 など" value="個"
+                  style="font-size: 0.85rem;">
+              </div>
+              <div class="form-group" style="flex: 1.2;">
+                <label class="form-label" for="invInputUnitCost" style="font-size: 0.75rem;" id="labelInvUnitCost">仕入単価（原価 円）</label>
+                <input type="number" id="invInputUnitCost" class="form-input" min="0" placeholder="0"
+                  style="font-size: 0.85rem;">
+              </div>
+              <div class="form-group" style="flex: 1.2;">
+                <label class="form-label" for="invInputUnitPrice" style="font-size: 0.75rem;">販売単価（円）</label>
+                <input type="number" id="invInputUnitPrice" class="form-input" min="0" placeholder="0"
+                  style="font-size: 0.85rem;">
+              </div>
+            </div>
+
+            <div class="form-row" style="margin-bottom: 12px;">
+              <div class="form-group" style="flex: 1.5;">
+                <label class="form-label" for="invInputLocation" style="font-size: 0.75rem;">保管場所・棚番（任意）</label>
+                <input type="text" id="invInputLocation" class="form-input" placeholder="例: 本社倉庫 A-1, 部品棚 B-2"
+                  style="font-size: 0.85rem;">
+              </div>
+              <div class="form-group" style="flex: 2;">
+                <label class="form-label" for="invInputNote" style="font-size: 0.75rem;">備考・補足（任意）</label>
+                <input type="text" id="invInputNote" class="form-input" placeholder="仕様や発注先メモなど"
+                  style="font-size: 0.85rem;">
+              </div>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 8px;">
+              <button type="button" class="btn btn-secondary btn-sm" id="btnCancelInventoryForm">キャンセル</button>
+              <button type="button" class="btn btn-primary btn-sm" id="btnSaveInventoryItem">在庫品目を保存</button>
+            </div>
+          </div>
+
+          <!-- 在庫一覧テーブルコンテナ -->
+          <div id="inventoryTableContainer" style="overflow-x: auto;">
+            <!-- JSでレンダリング -->
           </div>
         </div>
 
-        <!-- 新規登録・編集フォーム（アコーディオン） -->
-        <div id="inventoryFormContainer"
-          style="display: none; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 16px; margin-bottom: 16px;">
-          <h4 id="inventoryFormTitle"
-            style="font-size: 0.95rem; margin-bottom: 12px; color: #1e293b; font-weight: 700;">新規在庫品目の登録</h4>
-          <input type="hidden" id="inventoryEditId" value="">
-          <input type="hidden" id="inventoryItemId" value="">
-
-          <div class="form-row" style="margin-bottom: 10px;">
-            <div class="form-group" style="flex: 2;">
-              <label class="form-label" for="invInputName" style="font-size: 0.75rem;">品名・項目名 <span
-                  style="color: var(--danger);">*</span></label>
-              <input type="text" id="invInputName" class="form-input" placeholder="例: 製品基本セット、交換用消耗部品 など" required
-                style="font-size: 0.85rem;">
+        <!-- 2. シリアル番号管理台帳 タブ -->
+        <div id="inventorySerialsTabContent" style="display: none;">
+          <!-- 上部フィルターバー -->
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap;">
+            <div style="flex: 1; min-width: 220px;">
+              <input type="text" id="inputSearchSerial" class="form-input" placeholder="🔍 シリアル番号(S/N)・ロット・納入先・伝票番号で検索..." style="font-size: 0.85rem;">
             </div>
-            <div class="form-group" style="flex: 1;">
-              <label class="form-label" for="invInputSku" style="font-size: 0.75rem;">型番・SKU（任意）</label>
-              <input type="text" id="invInputSku" class="form-input" placeholder="例: PRD-001, SP-01"
-                style="font-size: 0.85rem;">
-            </div>
-          </div>
-
-          <div class="form-row" style="margin-bottom: 10px;">
-            <div class="form-group" style="flex: 1;">
-              <label class="form-label" for="invInputCurrentStock" style="font-size: 0.75rem;">現在庫数 <span
-                  style="color: var(--danger);">*</span></label>
-              <input type="number" id="invInputCurrentStock" class="form-input" min="0" value="0" required
-                style="font-size: 0.9rem; font-weight: 700;">
-            </div>
-            <div class="form-group" style="flex: 1;">
-              <label class="form-label" for="invInputSafetyStock" style="font-size: 0.75rem;">安全在庫数（アラート基準） <span
-                  style="color: var(--danger);">*</span></label>
-              <input type="number" id="invInputSafetyStock" class="form-input" min="0" value="5" required
-                style="font-size: 0.9rem;">
-            </div>
-            <div class="form-group" style="flex: 1;">
-              <label class="form-label" for="invInputUnit" style="font-size: 0.75rem;">単位</label>
-              <input type="text" id="invInputUnit" class="form-input" placeholder="個, 組, 式, 台 など" value="個"
-                style="font-size: 0.85rem;">
-            </div>
-            <div class="form-group" style="flex: 1.2;">
-              <label class="form-label" for="invInputUnitCost" style="font-size: 0.75rem;">仕入単価（原価 円）</label>
-              <input type="number" id="invInputUnitCost" class="form-input" min="0" placeholder="0"
-                style="font-size: 0.85rem;">
-            </div>
-            <div class="form-group" style="flex: 1.2;">
-              <label class="form-label" for="invInputUnitPrice" style="font-size: 0.75rem;">販売単価（円）</label>
-              <input type="number" id="invInputUnitPrice" class="form-input" min="0" placeholder="0"
-                style="font-size: 0.85rem;">
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <select id="selectSerialItemFilter" class="form-select" style="font-size: 0.85rem; width: auto;">
+                <option value="all">すべての品目</option>
+                <option value="inv_dp5000_body">DP-5000 本体</option>
+                <option value="inv_dp5000_bat">PSE バッテリー</option>
+              </select>
+              <select id="selectSerialStatusFilter" class="form-select" style="font-size: 0.85rem; width: auto;">
+                <option value="all">すべてのステータス</option>
+                <option value="in_stock">🟢 在庫中 (引当可能)</option>
+                <option value="shipped">🔵 出荷済 (納品完了)</option>
+                <option value="defective">🔴 初期不良 / 廃棄</option>
+              </select>
+              <button type="button" id="btnRefreshSerials" class="btn btn-secondary btn-sm" style="display: flex; align-items: center; gap: 4px;">
+                🔄 更新
+              </button>
             </div>
           </div>
-
-          <div class="form-row" style="margin-bottom: 12px;">
-            <div class="form-group" style="flex: 1.5;">
-              <label class="form-label" for="invInputLocation" style="font-size: 0.75rem;">保管場所・棚番（任意）</label>
-              <input type="text" id="invInputLocation" class="form-input" placeholder="例: 本社倉庫 A-1, 部品棚 B-2"
-                style="font-size: 0.85rem;">
-            </div>
-            <div class="form-group" style="flex: 2;">
-              <label class="form-label" for="invInputNote" style="font-size: 0.75rem;">備考・補足（任意）</label>
-              <input type="text" id="invInputNote" class="form-input" placeholder="仕様や発注先メモなど"
-                style="font-size: 0.85rem;">
-            </div>
-          </div>
-
-          <div style="display: flex; justify-content: flex-end; gap: 8px;">
-            <button type="button" class="btn btn-secondary btn-sm" id="btnCancelInventoryForm">キャンセル</button>
-            <button type="button" class="btn btn-primary btn-sm" id="btnSaveInventoryItem">在庫品目を保存</button>
+          <!-- シリアル番号一覧テーブルコンテナ -->
+          <div id="inventorySerialTableContainer" style="overflow-x: auto;">
+            <!-- JSでレンダリング -->
           </div>
         </div>
 
-        <!-- 在庫一覧テーブルコンテナ -->
-        <div id="inventoryTableContainer" style="overflow-x: auto;">
-          <!-- JSでレンダリング -->
+        <!-- 3. 入荷ロット履歴 タブ -->
+        <div id="inventoryLotsTabContent" style="display: none;">
+          <!-- ロット一覧テーブルコンテナ -->
+          <div id="inventoryLotTableContainer" style="overflow-x: auto;">
+            <!-- JSでレンダリング -->
+          </div>
         </div>
 
       </div>
@@ -1681,6 +1774,266 @@
 
       <div class="modal-footer" style="display: flex; justify-content: flex-end; padding: 12px 18px;">
         <button type="button" class="btn btn-secondary btn-sm" id="btnCloseInventoryHistoryModal2">閉じる</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 📥 ロット入庫 ＆ 輸入・仕入原価按分計算モーダル (Landed Cost Calculator) -->
+  <div class="modal-overlay" id="inventoryLotModal" style="z-index: 1055;">
+    <div class="modal-card" style="max-width: 840px; width: 95vw; max-height: 90vh; display: flex; flex-direction: column;">
+      <div class="modal-header" style="padding: 14px 20px; background: #f0fdf4; border-bottom: 1px solid #bbf7d0;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <div style="width: 32px; height: 32px; border-radius: 8px; background: #059669; color: #ffffff; display: flex; align-items: center; justify-content: center; font-size: 1.1rem;">
+            📥
+          </div>
+          <div>
+            <h3 class="modal-title" style="margin: 0; font-size: 1.1rem; color: #065f46;">ロット入庫 ＆ 原価按分計算 (Landed Cost Calculator)</h3>
+            <span style="font-size: 0.725rem; color: #047857;">本体代金・コンサル料・国際送料・関税を合算按分し確定原価算出 ＆ シリアル登録 ＆ 財務会計仕訳連動</span>
+          </div>
+        </div>
+        <button type="button" class="btn-icon-danger" id="btnCloseInventoryLotModal" style="font-size: 1.2rem;">✕</button>
+      </div>
+
+      <div class="modal-body" style="padding: 16px 20px; overflow-y: auto; flex: 1;">
+        <!-- 仕入種別スイッチ（輸入 / 国内） -->
+        <div style="display: flex; gap: 8px; margin-bottom: 14px;">
+          <label style="flex: 1; text-align: center; padding: 10px 8px; border: 2px solid #059669; background: #ecfdf5; border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 700; color: #065f46;" id="labelLotTypeImport">
+            <input type="radio" name="lotProcurementType" value="import" checked style="accent-color: #059669;">
+            🌐 海外輸入仕入（本体：諸費用按分 Landed Cost モード）
+          </label>
+          <label style="flex: 1; text-align: center; padding: 10px 8px; border: 1px solid #cbd5e1; background: #f8fafc; border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 600; color: #475569;" id="labelLotTypeDomestic">
+            <input type="radio" name="lotProcurementType" value="domestic" style="accent-color: #2563eb;">
+            🇯🇵 国内仕入（バッテリー・充電器等：通常仕入モード）
+          </label>
+        </div>
+
+        <!-- 基本情報（品目・ロット番号・入荷日・数量） -->
+        <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; margin-bottom: 14px;">
+          <div class="form-row" style="margin-bottom: 10px;">
+            <div class="form-group" style="flex: 2;">
+              <label class="form-label" for="lotInputItemId" style="font-size: 0.75rem; font-weight: 700;">入庫対象品目 <span style="color: var(--danger);">*</span></label>
+              <select id="lotInputItemId" class="form-select" style="font-size: 0.9rem; font-weight: 600;">
+                <!-- JSでオプション生成（単品構成品が対象） -->
+              </select>
+            </div>
+            <div class="form-group" style="flex: 1.2;">
+              <label class="form-label" for="lotInputNumber" style="font-size: 0.75rem; font-weight: 700;">ロット番号 <span style="color: var(--danger);">*</span></label>
+              <div style="display: flex; gap: 4px;">
+                <input type="text" id="lotInputNumber" class="form-input" style="font-size: 0.85rem; font-family: monospace; font-weight: 600;" placeholder="LOT-20261021-01" required>
+                <button type="button" id="btnAutoLotNumber" class="btn btn-secondary btn-xs" title="現在日時からロット番号を自動生成">⚡</button>
+              </div>
+            </div>
+            <div class="form-group" style="flex: 1;">
+              <label class="form-label" for="lotInputDate" style="font-size: 0.75rem; font-weight: 700;">入荷日 <span style="color: var(--danger);">*</span></label>
+              <input type="date" id="lotInputDate" class="form-input" style="font-size: 0.85rem;" required>
+            </div>
+            <div class="form-group" style="flex: 1;">
+              <label class="form-label" for="lotInputQty" style="font-size: 0.75rem; font-weight: 700;">入庫数量 <span style="color: var(--danger);">*</span></label>
+              <input type="number" id="lotInputQty" class="form-input" min="1" value="10" required style="font-size: 0.95rem; font-weight: 700; text-align: right;">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group" style="flex: 2;">
+              <label class="form-label" for="lotInputSupplier" style="font-size: 0.75rem;">仕入先・発送元（任意）</label>
+              <input type="text" id="lotInputSupplier" class="form-input" placeholder="例: 海外製造元工場 / 国内バッテリー販売代理店" style="font-size: 0.85rem;">
+            </div>
+            <div class="form-group" style="flex: 1.5;">
+              <label class="form-label" for="lotInputStorageLocation" style="font-size: 0.75rem;">格納保管場所（任意）</label>
+              <input type="text" id="lotInputStorageLocation" class="form-input" placeholder="例: 本社倉庫 A-1" style="font-size: 0.85rem;">
+            </div>
+          </div>
+        </div>
+
+        <!-- 費用入力セクション (1) 海外輸入仕入 Landed Cost モード -->
+        <div id="lotSectionImportCost" style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 14px; margin-bottom: 14px;">
+          <h4 style="font-size: 0.85rem; font-weight: 700; color: #1e293b; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+            <span>🚢 輸入費用内訳（原価算入費用 ＋ 【別枠】輸入消費税）</span>
+            <span style="font-size: 0.725rem; color: #64748b; font-weight: normal;">※台数按分で1台あたり確定原価を算出</span>
+          </h4>
+
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 10px;">
+            <div class="form-group">
+              <label class="form-label" for="lotCostGoods" style="font-size: 0.725rem; font-weight: 600;">① 本体代金合計 (邦貨/円) <span style="color: var(--danger);">*</span></label>
+              <input type="number" id="lotCostGoods" class="form-input lot-cost-calc-input" min="0" value="120000" style="font-size: 0.9rem; font-weight: 600; text-align: right;">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="lotCostConsulting" style="font-size: 0.725rem; font-weight: 600;">② 海外営業コンサル料・手数料 (原価算入)</label>
+              <input type="number" id="lotCostConsulting" class="form-input lot-cost-calc-input" min="0" value="15000" style="font-size: 0.9rem; font-weight: 600; text-align: right;">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="lotCostShipping" style="font-size: 0.725rem; font-weight: 600;">③ 国際送料・保険料 (原価算入)</label>
+              <input type="number" id="lotCostShipping" class="form-input lot-cost-calc-input" min="0" value="12000" style="font-size: 0.9rem; font-weight: 600; text-align: right;">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="lotCostTariff" style="font-size: 0.725rem; font-weight: 600;">④ 通関関税 (原価算入)</label>
+              <input type="number" id="lotCostTariff" class="form-input lot-cost-calc-input" min="0" value="6000" style="font-size: 0.9rem; font-weight: 600; text-align: right;">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="lotCostDomesticDelivery" style="font-size: 0.725rem; font-weight: 600;">⑤ 国内配送送料 (原価算入)</label>
+              <input type="number" id="lotCostDomesticDelivery" class="form-input lot-cost-calc-input" min="0" value="5000" style="font-size: 0.9rem; font-weight: 600; text-align: right;">
+            </div>
+            <div class="form-group" style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 6px 8px;">
+              <label class="form-label" for="lotCostImportTax" style="font-size: 0.725rem; font-weight: 700; color: #b91c1c;">⑥ 【別枠】輸入消費税 (仮払消費税連動)</label>
+              <input type="number" id="lotCostImportTax" class="form-input lot-cost-calc-input" min="0" value="12000" style="font-size: 0.9rem; font-weight: 700; text-align: right; color: #b91c1c;">
+              <span style="font-size: 0.65rem; color: #7f1d1d; display: block; margin-top: 2px;">※原価には含めず、財務会計の「仮払消費税」として計上</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 費用入力セクション (2) 国内仕入モード -->
+        <div id="lotSectionDomesticCost" style="display: none; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 14px; margin-bottom: 14px;">
+          <h4 style="font-size: 0.85rem; font-weight: 700; color: #1e293b; margin-bottom: 8px;">🇯🇵 国内仕入費用明細</h4>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px;">
+            <div class="form-group">
+              <label class="form-label" for="lotDomUnitPrice" style="font-size: 0.725rem; font-weight: 600;">仕入単価 (税抜 円) <span style="color: var(--danger);">*</span></label>
+              <input type="number" id="lotDomUnitPrice" class="form-input lot-cost-calc-input" min="0" value="2500" style="font-size: 0.9rem; font-weight: 600; text-align: right;">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="lotDomShipping" style="font-size: 0.725rem; font-weight: 600;">国内送料 (原価按分)</label>
+              <input type="number" id="lotDomShipping" class="form-input lot-cost-calc-input" min="0" value="800" style="font-size: 0.9rem; font-weight: 600; text-align: right;">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="lotDomTaxRate" style="font-size: 0.725rem; font-weight: 600;">税区分</label>
+              <select id="lotDomTaxRate" class="form-select lot-cost-calc-input" style="font-size: 0.85rem;">
+                <option value="10">課税仕入 10% (標準)</option>
+                <option value="8">軽減税率 8%</option>
+                <option value="0">免税 / 非課税</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- 按分計算プレビュー（Landed Costサマリーボックス） -->
+        <div style="background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; padding: 12px 16px; margin-bottom: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+            <div>
+              <span style="font-size: 0.75rem; color: #166534; font-weight: 600; display: block;">実質仕入原価合計（原価算入費用合算）:</span>
+              <span style="font-size: 1.15rem; font-weight: 700; color: #14532d;" id="lotDispTotalCost">¥158,000</span>
+            </div>
+            <div style="text-align: right;">
+              <span style="font-size: 0.75rem; color: #166534; font-weight: 700; display: block;">🎯 1台あたりの確定実質仕入原価 (Landed Cost):</span>
+              <span style="font-size: 1.35rem; font-weight: 800; color: #047857;" id="lotDispUnitCost">¥15,800 <small style="font-size: 0.85rem; font-weight: normal;">/ 個</small></span>
+            </div>
+            <div style="border-left: 1px solid #bbf7d0; padding-left: 12px;">
+              <span style="font-size: 0.725rem; color: #64748b; display: block;">消費税 (仮払消費税): <strong id="lotDispTax" style="color: #0f172a;">¥12,000</strong></span>
+              <span style="font-size: 0.725rem; color: #64748b; display: block;">総支払額: <strong id="lotDispGrandTotal" style="color: #0f172a;">¥170,000</strong></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- シリアル番号一括/個別登録エリア（シリアル管理対象品目のみ表示） -->
+        <div id="lotSerialSection" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; margin-bottom: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <label class="form-label" style="font-size: 0.8rem; font-weight: 700; color: #1e293b; margin: 0;">
+              🔢 シリアル番号の登録（入庫数量分） <span style="color: var(--danger);">*</span>
+            </label>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 0.75rem; font-weight: 600;" id="lotSerialCountBadge">入力: 0 / 必要: 10</span>
+              <button type="button" id="btnGenerateSerialNumbers" class="btn btn-secondary btn-xs" style="font-size: 0.75rem;">
+                ⚡ 連番自動生成
+              </button>
+            </div>
+          </div>
+          <span style="font-size: 0.725rem; color: #64748b; display: block; margin-bottom: 6px;">
+            バーコードリーダーによる読取または1行1件（またはカンマ区切り）でシリアル番号を入力してください。各シリアルに今回の確定原価が自動付与されます。
+          </span>
+          <textarea id="lotInputSerials" class="form-input" rows="4" style="font-family: monospace; font-size: 0.85rem; line-height: 1.4;" placeholder="DP5K-2610-001&#10;DP5K-2610-002&#10;DP5K-2610-003&#10;..."></textarea>
+        </div>
+
+        <!-- 財務会計自動仕訳連動設定 -->
+        <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px 14px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 700; color: #0f172a;">
+              <input type="checkbox" id="lotCheckSyncAccounting" checked style="width: 16px; height: 16px; accent-color: #059669;">
+              📊 財務会計（仕訳帳・B/S資産・仮払消費税）に自動仕訳を登録する
+            </label>
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <label for="lotSelectCreditAccount" style="font-size: 0.75rem; color: #475569;">支払科目（貸方）:</label>
+              <select id="lotSelectCreditAccount" class="form-select" style="font-size: 0.8rem; width: auto; padding: 2px 8px;">
+                <option value="102">102 普通預金（即時決済）</option>
+                <option value="201">201 買掛金（掛仕入・未払）</option>
+                <option value="101">101 現金</option>
+              </select>
+            </div>
+          </div>
+          <div id="lotJournalPreviewBox" style="background: #ffffff; border: 1px dashed #94a3b8; border-radius: 6px; padding: 8px 12px; font-size: 0.75rem; font-family: monospace; color: #334155;">
+            【借方】131 商品・棚卸資産 ¥158,000 ＋ 116 仮払消費税 ¥12,000 ／ 【貸方】102 普通預金 ¥170,000
+          </div>
+        </div>
+
+      </div>
+
+      <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px; padding: 12px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0;">
+        <button type="button" class="btn btn-secondary btn-sm" id="btnCancelInventoryLotModal">キャンセル</button>
+        <button type="button" class="btn btn-success btn-sm" id="btnSubmitInventoryLotModal" style="background: #059669; border-color: #059669; color: #ffffff; font-weight: 700; padding: 6px 18px;">
+          📥 ロット入庫を確定して保存
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🔢 納品・請求書用 シリアル番号引当モーダル -->
+  <div class="modal-overlay" id="serialAssignModal" style="z-index: 1065;">
+    <div class="modal-card" style="max-width: 600px; width: 92vw; max-height: 85vh; display: flex; flex-direction: column;">
+      <div class="modal-header" style="padding: 14px 20px; background: #eff6ff; border-bottom: 1px solid #bfdbfe;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 1.2rem;">🔢</span>
+          <div>
+            <h3 class="modal-title" style="margin: 0; font-size: 1.05rem; color: #1e40af;" id="serialAssignModalTitle">シリアル番号引当（セット品・個別個体）</h3>
+            <span style="font-size: 0.725rem; color: #3b82f6;" id="serialAssignModalSub">出荷する個体シリアルを選択し、ロット確定原価を売上原価に連動させます</span>
+          </div>
+        </div>
+        <button type="button" class="btn-icon-danger" id="btnCloseSerialAssignModal" style="font-size: 1.2rem;">✕</button>
+      </div>
+
+      <div class="modal-body" style="padding: 16px 20px; overflow-y: auto; flex: 1;">
+        <input type="hidden" id="serialAssignItemIndex" value="">
+
+        <!-- 対象明細インフォメーション -->
+        <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px 14px; margin-bottom: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <span style="font-size: 0.725rem; color: #64748b; display: block;">対象明細品目:</span>
+              <strong style="font-size: 0.95rem; color: #0f172a;" id="serialAssignItemName">DP-5000 基本セット</strong>
+            </div>
+            <div style="text-align: right;">
+              <span style="font-size: 0.725rem; color: #64748b; display: block;">販売数量:</span>
+              <strong style="font-size: 1.1rem; color: #0f172a;" id="serialAssignItemQty">1 台</strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- 構成部品ごとのシリアル選択リストコンテナ -->
+        <div id="serialAssignComponentsContainer" style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 14px;">
+          <!-- JSでレンダリング（本体セレクタ、バッテリー2個セレクタ、充電器ステータス） -->
+        </div>
+
+        <!-- 実仕入原価（Landed Cost）合計プレビュー -->
+        <div style="background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-size: 0.825rem; color: #065f46; font-weight: 600;">引当個体の実質仕入原価合計 (C/O/G/S):</span>
+          <strong style="font-size: 1.15rem; color: #047857;" id="serialAssignTotalCogs">¥0</strong>
+        </div>
+
+        <!-- 帳票印字オプション -->
+        <div style="background: #f1f5f9; border-radius: 6px; padding: 10px 12px;">
+          <label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer; font-size: 0.8rem; font-weight: 600; color: #1e293b;">
+            <input type="checkbox" id="serialAssignCheckPrintNote" checked style="margin-top: 2px; accent-color: #2563eb;">
+            <span>
+              納品書・請求書の明細摘要欄にシリアル番号を自動印字する
+              <span style="display: block; font-size: 0.725rem; color: #64748b; font-weight: normal; margin-top: 2px;" id="serialAssignPrintPreview">
+                印字例: （本体S/N: DP5K-2610-001 / バッテリーS/N: BAT-2610-001, BAT-2610-002）
+              </span>
+            </span>
+          </label>
+        </div>
+
+      </div>
+
+      <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px; padding: 12px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0;">
+        <button type="button" class="btn btn-secondary btn-sm" id="btnCancelSerialAssignModal">キャンセル</button>
+        <button type="button" class="btn btn-primary btn-sm" id="btnSaveSerialAssignModal" style="font-weight: 700; padding: 6px 18px;">
+          引当を適用する
+        </button>
       </div>
     </div>
   </div>

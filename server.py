@@ -1276,6 +1276,24 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps(inv_data, ensure_ascii=False).encode('utf-8'))
             return
 
+        # 在庫ロット一覧取得API
+        if self.path == '/api/inventory-lots':
+            lots_data = get_fs_collection('inventory_lots', [])
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.end_headers()
+            self.wfile.write(json.dumps(lots_data, ensure_ascii=False).encode('utf-8'))
+            return
+
+        # シリアル番号台帳一覧取得API
+        if self.path == '/api/inventory-serials':
+            serials_data = get_fs_collection('inventory_serials', [])
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.end_headers()
+            self.wfile.write(json.dumps(serials_data, ensure_ascii=False).encode('utf-8'))
+            return
+
         # 仕入名目マッピング取得API
         if self.path == '/api/purchase-mappings':
             mappings = get_fs_document('settings', 'purchase_mappings', DEFAULT_PURCHASE_MAPPINGS)
@@ -1875,6 +1893,60 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
                 self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
             return
 
+        # 在庫ロット 保存API
+        if self.path == '/api/inventory-lots':
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length).decode('utf-8')
+            try:
+                lots_data = json.loads(post_data)
+                if isinstance(lots_data, list):
+                    for item in lots_data:
+                        doc_id = item.get('id')
+                        if doc_id:
+                            db.collection('inventory_lots').document(doc_id).set(item)
+                elif isinstance(lots_data, dict):
+                    doc_id = lots_data.get('id')
+                    if doc_id:
+                        db.collection('inventory_lots').document(doc_id).set(lots_data)
+                
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": True}).encode('utf-8'))
+            except Exception as e:
+                self.send_response(500)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
+            return
+
+        # シリアル番号台帳 保存API
+        if self.path == '/api/inventory-serials':
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length).decode('utf-8')
+            try:
+                serials_data = json.loads(post_data)
+                if isinstance(serials_data, list):
+                    for item in serials_data:
+                        doc_id = item.get('id')
+                        if doc_id:
+                            db.collection('inventory_serials').document(doc_id).set(item)
+                elif isinstance(serials_data, dict):
+                    doc_id = serials_data.get('id')
+                    if doc_id:
+                        db.collection('inventory_serials').document(doc_id).set(serials_data)
+                
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": True}).encode('utf-8'))
+            except Exception as e:
+                self.send_response(500)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
+            return
+
         # 仕入名目マッピング辞書 保存API
         if self.path == '/api/purchase-mappings':
             content_length = int(self.headers.get('Content-Length', 0))
@@ -2115,6 +2187,8 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
                 '/api/master/clients': 'clients',
                 '/api/clients': 'clients',
                 '/api/inventory': 'inventory',
+                '/api/inventory-lots': 'inventory_lots',
+                '/api/inventory-serials': 'inventory_serials',
                 '/api/payroll/records': 'payroll_records',
                 '/api/payroll_records': 'payroll_records'
             }
