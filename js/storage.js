@@ -2926,9 +2926,10 @@ export function saveExpense(expense) {
  * 複数経費を一括精算済みに更新
  * @param {Array<string>} expenseIds 
  * @param {string} settledDate 
+ * @param {string} settlementJournalId
  * @returns {number} 更新件数
  */
-export function markExpensesSettled(expenseIds = [], settledDate = '') {
+export function markExpensesSettled(expenseIds = [], settledDate = '', settlementJournalId = '') {
   try {
     if (!Array.isArray(expenseIds) || expenseIds.length === 0) return 0;
     const targetSet = new Set(expenseIds);
@@ -2940,6 +2941,9 @@ export function markExpensesSettled(expenseIds = [], settledDate = '') {
       if (targetSet.has(e.id)) {
         e.isSettled = true;
         e.settledDate = dateStr;
+        if (settlementJournalId) {
+          e.settlementJournalId = settlementJournalId;
+        }
         e.updatedAt = new Date().toISOString();
         count++;
       }

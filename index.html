@@ -281,7 +281,7 @@
         </button>
         <div style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
-          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.21-fiscal-fix</span>
+          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.21-settle-inv</span>
         </div>
       </div>
 
@@ -2395,6 +2395,93 @@
             </div>
           </div>
 
+          <!-- 📦 棚卸資産（在庫マスタ）連動 ＆ 売上原価（期末棚卸高）計上パネル -->
+          <div id="accInventoryIntegrationPanel" class="acc-inventory-panel"
+            style="background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); border: 1.5px solid #cbd5e1; border-radius: 12px; padding: 18px 20px; margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 8px;">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 1.3rem;">📦</span>
+                <div>
+                  <h4 style="margin: 0; font-size: 0.95rem; font-weight: 800; color: #1e293b;">
+                    棚卸資産（在庫マスタ）連動 ＆ 売上原価（期末棚卸高）計上
+                  </h4>
+                  <p style="margin: 2px 0 0 0; font-size: 0.75rem; color: #64748b;">
+                    「在庫マスタ」の最新理論在庫額（現在庫数 × 仕入単価）を期末棚卸高としてP/L（売上原価）およびB/S（131 商品・棚卸資産）に完全自動連動します
+                  </p>
+                </div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span id="accInventoryStatusBadge" style="font-size: 0.75rem; font-weight: 700; padding: 3px 10px; border-radius: 9999px; background: #e0f2fe; color: #0369a1; border: 1px solid #7dd3fc;">
+                  理論在庫集計中
+                </span>
+              </div>
+            </div>
+
+            <!-- 3カラム在庫評価額サマリーグリッド -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-bottom: 16px;">
+              <!-- ① 期首商品棚卸高 -->
+              <div style="background: #ffffff; border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 12px 14px;">
+                <div style="font-size: 0.75rem; font-weight: 700; color: #64748b; margin-bottom: 4px;">
+                  1️⃣ 期首商品棚卸高 (B/S 131期首残高)
+                </div>
+                <div id="accInvOpeningValue" style="font-size: 1.35rem; font-weight: 800; color: #334155; font-family: monospace;">
+                  ¥0
+                </div>
+                <div style="font-size: 0.7rem; color: #94a3b8; margin-top: 2px;">
+                  期首残高設定より自動取得
+                </div>
+              </div>
+
+              <!-- ② 現在の理論在庫評価額（期末棚卸高） -->
+              <div style="background: #ffffff; border: 1.5px solid #6366f1; border-radius: 8px; padding: 12px 14px; box-shadow: 0 2px 8px rgba(99, 102, 241, 0.08);">
+                <div style="font-size: 0.75rem; font-weight: 700; color: #4f46e5; margin-bottom: 4px; display: flex; justify-content: space-between;">
+                  <span>2️⃣ 現在の理論在庫評価額 (期末棚卸高)</span>
+                  <span id="accInvItemCountBadge" style="font-size: 0.7rem; background: #e0e7ff; color: #3730a3; padding: 1px 6px; border-radius: 4px;">0品目</span>
+                </div>
+                <div id="accInvEndingValue" style="font-size: 1.35rem; font-weight: 900; color: #4338ca; font-family: monospace;">
+                  ¥0
+                </div>
+                <div style="font-size: 0.7rem; color: #6366f1; margin-top: 2px;">
+                  在庫マスタ全商品の [現在庫数 × 仕入単価] 合計
+                </div>
+              </div>
+
+              <!-- ③ 棚卸増減（売上原価調整額） -->
+              <div style="background: #ffffff; border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 12px 14px;">
+                <div style="font-size: 0.75rem; font-weight: 700; color: #64748b; margin-bottom: 4px;">
+                  3️⃣ 棚卸増減 (期末 - 期首)
+                </div>
+                <div id="accInvDeltaValue" style="font-size: 1.35rem; font-weight: 800; color: #059669; font-family: monospace;">
+                  ¥0
+                </div>
+                <div id="accInvDeltaHelp" style="font-size: 0.7rem; color: #059669; margin-top: 2px;">
+                  在庫増加時は売上原価から控除されます
+                </div>
+              </div>
+            </div>
+
+            <!-- 操作アクションバー ＆ 現在の連動ステータス -->
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; background: #ffffff; padding: 10px 14px; border-radius: 8px; border: 1px solid #cbd5e1;">
+              <div style="display: flex; align-items: center; gap: 8px; font-size: 0.775rem;">
+                <span id="accInvJournalStatusText" style="color: #475569; font-weight: 600;">
+                  ※「在庫評価額をB/S・P/Lに反映」ボタンを押すと、差額調整仕訳（棚卸仕訳）が自動生成されます。
+                </span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <button type="button" class="btn btn-secondary btn-xs" id="btnRefreshInventoryTheory"
+                  onclick="window.refreshInventoryTheoryValue && window.refreshInventoryTheoryValue()"
+                  style="padding: 5px 12px; font-size: 0.75rem;">
+                  🔄 最新評価額を再計算
+                </button>
+                <button type="button" class="btn btn-primary btn-xs" id="btnSyncInventoryToAccounting"
+                  onclick="window.syncInventoryToAccounting && window.syncInventoryToAccounting()"
+                  style="padding: 6px 14px; font-size: 0.8rem; font-weight: 700; background: #4f46e5; border-color: #4f46e5; color: #fff; box-shadow: 0 2px 4px rgba(79, 70, 229, 0.2);">
+                  ⚡ 在庫評価額をB/S・P/Lに反映
+                </button>
+              </div>
+            </div>
+          </div>
+
           <!-- 財務諸表形式 損益計算書 (Profit & Loss Statement) テーブル -->
           <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 2px solid #6366f1; padding-bottom: 8px; flex-wrap: wrap; gap: 8px;">
@@ -2534,6 +2621,30 @@
                 onclick="window.switchAppView &amp;&amp; window.switchAppView('expenses')"
                 style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px;">
                 <span>📷</span> AIレシート読み込み・経費登録画面を開く
+              </button>
+            </div>
+          </div>
+
+          <!-- 👥 財務会計内 社員別立替経費・未精算サマリー ＆ 一括精算バー -->
+          <div id="accExpenseSettlementSummaryBar" class="expense-settlement-summary-bar"
+            style="background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%); border: 1.5px solid #cbd5e1; border-radius: 10px; padding: 12px 16px; margin-bottom: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.03); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+            <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 1.1rem;">👥</span>
+                <div>
+                  <div style="font-size: 0.85rem; font-weight: 800; color: #1e293b;">社員別 立替経費・未精算状況</div>
+                  <div style="font-size: 0.725rem; color: #64748b;">未精算の立替経費は財務会計で「212 未払金」として集計されます</div>
+                </div>
+              </div>
+              <div id="accExpenseClaimantSummaryChips" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                <!-- JSで社員別未精算チップを挿入 -->
+              </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <button type="button" class="btn btn-sm btn-primary" id="btnAccOpenBatchSettlementModal"
+                onclick="window.openEmployeeExpenseBatchSettlementModal && window.openEmployeeExpenseBatchSettlementModal()"
+                style="display: inline-flex; align-items: center; gap: 6px; font-weight: 700; background: #059669; border-color: #059669; color: #fff; padding: 6px 14px; box-shadow: 0 2px 4px rgba(5,150,105,0.2);">
+                <span>💴</span> 選択した社員の未精算経費を一括精算する
               </button>
             </div>
           </div>
@@ -3317,6 +3428,31 @@
 
         <!-- 右カラム：登録済み経費一覧テーブル（広々と全幅表示） -->
         <div id="expenseColList" style="display: flex; flex-direction: column; gap: 16px;">
+
+          <!-- 👥 社員別立替経費・未精算サマリー ＆ 一括精算バー -->
+          <div id="expenseSettlementSummaryBar" class="expense-settlement-summary-bar"
+            style="background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%); border: 1.5px solid #cbd5e1; border-radius: 10px; padding: 12px 16px; box-shadow: 0 2px 4px rgba(0,0,0,0.03); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+            <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 1.1rem;">👥</span>
+                <div>
+                  <div style="font-size: 0.85rem; font-weight: 800; color: #1e293b;">社員別 立替経費・未精算状況</div>
+                  <div style="font-size: 0.725rem; color: #64748b;">未精算の立替経費は財務会計で「212 未払金」として集計されます</div>
+                </div>
+              </div>
+              <div id="expenseClaimantSummaryChips" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                <!-- JSで社員別未精算チップを挿入 -->
+              </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <button type="button" class="btn btn-sm btn-primary" id="btnOpenBatchSettlementModal"
+                onclick="window.openEmployeeExpenseBatchSettlementModal && window.openEmployeeExpenseBatchSettlementModal()"
+                style="display: inline-flex; align-items: center; gap: 6px; font-weight: 700; background: #059669; border-color: #059669; color: #fff; padding: 6px 14px; box-shadow: 0 2px 4px rgba(5,150,105,0.2);">
+                <span>💴</span> 選択した社員の未精算経費を一括精算する
+              </button>
+            </div>
+          </div>
+
           <div
             style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); flex: 1; display: flex; flex-direction: column;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
@@ -4987,6 +5123,124 @@
         <span style="font-size: 0.75rem; color: #64748b;">※「印刷 / PDF保存」をクリックすると、上記A4精算書のみが綺麗に印刷・PDF保存されます。</span>
         <button type="button" class="btn btn-secondary btn-sm" id="btnCloseExpenseSettlementModal2"
           onclick="if(window.closeExpenseSettlementModal){window.closeExpenseSettlementModal();}else{var m=document.getElementById('expenseSettlementModal');if(m){m.classList.remove('active');m.style.display='none';document.body.style.overflow='';}}">閉じる</button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 社員立替経費 一括精算＆財務会計連動モーダル -->
+  <div class="modal-overlay" id="employeeExpenseBatchSettlementModal"
+    style="display: none; position: fixed; inset: 0; z-index: 99999; background: rgba(15, 23, 42, 0.75); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); align-items: center; justify-content: center; padding: 16px; box-sizing: border-box;">
+    <div class="modal-card"
+      style="max-width: 680px; width: 95%; max-height: 90vh; display: flex; flex-direction: column; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4); border: 1px solid #cbd5e1;">
+
+      <!-- ヘッダー -->
+      <div style="padding: 16px 20px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 1.3rem;">💴</span>
+          <div>
+            <h3 style="margin: 0; font-size: 1.05rem; font-weight: 800; color: #1e293b;">社員立替経費の一括精算（財務会計連動）</h3>
+            <p style="margin: 2px 0 0 0; font-size: 0.75rem; color: #64748b;">対象社員の未精算経費を一括で精算済みにし、財務会計へ出金仕訳を自動発行します</p>
+          </div>
+        </div>
+        <button type="button" class="modal-close" onclick="window.closeEmployeeExpenseBatchSettlementModal && window.closeEmployeeExpenseBatchSettlementModal()"
+          style="font-size: 1.25rem; border: none; background: none; cursor: pointer; color: #64748b;">✕</button>
+      </div>
+
+      <!-- ボディ -->
+      <div style="padding: 20px; overflow-y: auto; flex: 1;">
+        <form id="formEmployeeBatchSettlement" onsubmit="event.preventDefault(); window.executeEmployeeExpenseBatchSettlement && window.executeEmployeeExpenseBatchSettlement();">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px;">
+            <div>
+              <label class="form-label" style="font-size: 0.8rem; font-weight: 700; color: #334155;">👤 精算対象社員 <span style="color: var(--danger);">*</span></label>
+              <select id="batchSettleEmployeeSelect" class="form-select" onchange="window.updateBatchSettlementEmployeePreview && window.updateBatchSettlementEmployeePreview()"
+                style="font-size: 0.875rem; font-weight: 700; padding: 6px 10px; border-radius: 6px; border: 1.5px solid #cbd5e1; background: #fff; width: 100%;">
+                <!-- JSで動的生成 -->
+              </select>
+            </div>
+            <div>
+              <label class="form-label" style="font-size: 0.8rem; font-weight: 700; color: #334155;">📅 支払日 (精算振込日) <span style="color: var(--danger);">*</span></label>
+              <input type="date" id="batchSettlePaymentDate" class="form-input" required
+                style="font-size: 0.875rem; font-weight: 700; padding: 6px 10px; border-radius: 6px; border: 1.5px solid #cbd5e1; background: #fff; width: 100%;">
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px;">
+            <div>
+              <label class="form-label" style="font-size: 0.8rem; font-weight: 700; color: #334155;">🏦 出金元口座 (貸方科目) <span style="color: var(--danger);">*</span></label>
+              <select id="batchSettleCreditAccount" class="form-select" onchange="window.updateBatchSettlementEmployeePreview && window.updateBatchSettlementEmployeePreview()"
+                style="font-size: 0.875rem; font-weight: 700; padding: 6px 10px; border-radius: 6px; border: 1.5px solid #cbd5e1; background: #fff; width: 100%;">
+                <option value="102" selected>102 普通預金（銀行振込）</option>
+                <option value="101">101 現金（手渡し精算）</option>
+              </select>
+            </div>
+            <div>
+              <label class="form-label" style="font-size: 0.8rem; font-weight: 700; color: #334155;">📋 消込対象科目 (借方科目)</label>
+              <select id="batchSettleDebitAccount" class="form-select" onchange="window.updateBatchSettlementEmployeePreview && window.updateBatchSettlementEmployeePreview()"
+                style="font-size: 0.875rem; font-weight: 700; padding: 6px 10px; border-radius: 6px; border: 1.5px solid #cbd5e1; background: #fff; width: 100%;">
+                <option value="212" selected>212 未払金（社員立替）</option>
+                <option value="114">114 立替金</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- 精算金額サマリーカード -->
+          <div style="background: #f0fdf4; border: 1.5px solid #bbf7d0; border-radius: 8px; padding: 14px 16px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <div style="font-size: 0.775rem; font-weight: 700; color: #166534;">一括精算・出金合計金額</div>
+              <div id="batchSettleItemsCountText" style="font-size: 0.75rem; color: #15803d; margin-top: 2px;">未精算 0件</div>
+            </div>
+            <div id="batchSettleTotalAmountText" style="font-size: 1.5rem; font-weight: 900; color: #15803d; font-family: monospace;">
+              ¥0
+            </div>
+          </div>
+
+          <!-- 自動生成される仕訳プレビュー -->
+          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-bottom: 16px;">
+            <div style="font-size: 0.75rem; font-weight: 700; color: #475569; margin-bottom: 6px;">
+              📝 確定時に自動生成される財務会計仕訳（振替伝票）:
+            </div>
+            <div id="batchSettleJournalPreview" style="font-family: monospace; font-size: 0.8rem; color: #1e293b; line-height: 1.5; background: #fff; padding: 8px 12px; border-radius: 4px; border: 1px solid #cbd5e1;">
+              【借方】212 未払金 (社員名) ¥0  /  【貸方】102 普通預金 ¥0
+            </div>
+          </div>
+
+          <!-- 対象明細一覧プレビュー -->
+          <div>
+            <div style="font-size: 0.8rem; font-weight: 700; color: #334155; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
+              <span>📋 対象となる未精算経費明細</span>
+              <span id="batchSettleTableItemCount" style="font-size: 0.75rem; color: #64748b;">0件</span>
+            </div>
+            <div style="border: 1px solid #e2e8f0; border-radius: 6px; max-height: 180px; overflow-y: auto; background: #fff;">
+              <table class="acc-table" style="width: 100%; border-collapse: collapse; font-size: 0.775rem;">
+                <thead style="position: sticky; top: 0; background: #f1f5f9; z-index: 1;">
+                  <tr style="border-bottom: 1px solid #cbd5e1; text-align: left; color: #475569;">
+                    <th style="padding: 6px 8px; width: 85px;">日付</th>
+                    <th style="padding: 6px 8px;">支払先・店名</th>
+                    <th style="padding: 6px 8px; width: 90px;">科目</th>
+                    <th style="padding: 6px 8px; text-align: right; width: 95px;">金額(税込)</th>
+                  </tr>
+                </thead>
+                <tbody id="batchSettleExpenseItemsTableBody">
+                  <!-- JSでレンダリング -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </form>
+      </div>
+
+      <!-- フッター -->
+      <div style="padding: 12px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="window.closeEmployeeExpenseBatchSettlementModal && window.closeEmployeeExpenseBatchSettlementModal()">
+          キャンセル
+        </button>
+        <button type="button" class="btn btn-success btn-sm" id="btnConfirmBatchSettlement"
+          onclick="window.executeEmployeeExpenseBatchSettlement && window.executeEmployeeExpenseBatchSettlement()"
+          style="padding: 7px 18px; font-weight: 700; font-size: 0.85rem; background: #059669; border-color: #059669; color: #fff;">
+          確定して一括精算＆仕訳を発行
+        </button>
       </div>
 
     </div>

@@ -1015,31 +1015,44 @@ function buildUnifiedJournals(arg1 = {}, arg2 = [], arg3 = [], arg4 = [], arg5 =
     const taxType = taxRate === 8 ? 'taxable_8' : (taxRate === 10 ? 'taxable_10' : 'exempt');
     const invoiceType = exp.invoiceNumber ? 'qualified' : (exp.invoiceType || 'none');
 
+    // 立替者判定（会社直接以外は社員立替）
+    const claimant = String(exp.claimant || '').trim();
+    const isEmployeeAdvance = Boolean(claimant && !['会社', '会社立替/その他', '会社直接', 'none', ''].includes(claimant));
+
     // 貸方支払方法の勘定科目判定
     let creditCode = '101';
     let creditName = '現金';
+    let creditSubAccount = '';
     const method = String(exp.paymentMethod || '').trim();
-    if (method.includes('普通預金') || method.startsWith('102')) {
+
+    if (isEmployeeAdvance) {
+      // 要件1: 社員立替（未精算または精算仕訳連動時は「212 未払金」、補助科目: 社員名）
+      creditCode = '212';
+      creditName = '未払金';
+      creditSubAccount = claimant;
+    } else if (method.includes('普通預金') || method.startsWith('102')) {
       creditCode = '102'; creditName = '普通預金';
     } else if (method.includes('未払金') || method.includes('クレジットカード') || method.startsWith('212')) {
-      creditCode = '212'; creditName = '未払金';
+      creditCode = '212'; creditName = '未払金'; creditSubAccount = 'クレジットカード';
     } else if (method.includes('立替金') || method.includes('役員借入金') || method.startsWith('114')) {
-      creditCode = '114'; creditName = '立替金';
+      creditCode = '114'; creditName = '立替金'; creditSubAccount = claimant || '役員立替';
     } else if (method.includes('現金') || method.startsWith('101')) {
       creditCode = '101'; creditName = '現金';
     } else if (method) {
       creditCode = '102'; creditName = '普通預金';
     }
 
+    const claimantTag = isEmployeeAdvance ? ` [立替:${claimant}${exp.isSettled ? '(精算済)' : '(未精算)'}]` : '';
+
     unified.push({
       id: `jnl_exp_${exp.id}`,
       date,
       entryNumber: `EXP-${exp.id.slice(-6)}`,
-      description: `${expenseCat}: ${exp.note || ''}${payee}`.trim(),
+      description: `${expenseCat}: ${exp.note || ''}${payee}${claimantTag}`.trim(),
       sourceType: 'expense',
       sourceId: exp.id,
       debitLines: [{ accountCode: accCode, accountName: expenseCat, subAccount: '', amount: amountInc, taxType, invoiceType }],
-      creditLines: [{ accountCode: creditCode, accountName: creditName, subAccount: method, amount: amountInc, taxType: 'out_of_scope', invoiceType: 'none' }],
+      creditLines: [{ accountCode: creditCode, accountName: creditName, subAccount: creditSubAccount || method, amount: amountInc, taxType: 'out_of_scope', invoiceType: 'none' }],
       totalDebit: amountInc,
       totalCredit: amountInc
     });
@@ -1195,25 +1208,37 @@ function calculateProfitAndLoss(invoices = [], expenses = [], periodFilter = 'al
 
   // 統合仕訳からP/L科目（収益・費用）を抽出集計
   unified.forEach(u => {
-    // 貸方の収益行を集計
+    // 貸方の行を集計（収益の加算、および費用の控除［棚卸調整・仕入値引き等］）
     u.creditLines.forEach(c => {
       const acc = findAccountDef(c.accountCode || c.accountName);
-      if (acc && acc.type === 'revenue') {
-        const amt = Number(c.amount) || 0;
+      if (!acc) return;
+      const amt = Number(c.amount) || 0;
+      if (acc.type === 'revenue') {
         if (acc.subType === 'operating_revenue') {
           totalSales += amt;
         } else {
           totalNonOperatingRevenue += amt;
         }
         revenueByCategory[acc.name] = (revenueByCategory[acc.name] || 0) + amt;
+      } else if (acc.type === 'expense') {
+        // 貸方に費用科目が来た場合（要件2: 期末棚卸による売上原価控除など）
+        if (acc.subType === 'cost_of_sales') {
+          totalCostOfSales -= amt;
+        } else if (acc.subType === 'non_operating_expense') {
+          totalNonOperatingExpense -= amt;
+        } else {
+          totalSga -= amt;
+        }
+        expenseByCategory[acc.name] = (expenseByCategory[acc.name] || 0) - amt;
       }
     });
 
-    // 借方の費用行を集計
+    // 借方の行を集計（費用の加算、および収益の控除）
     u.debitLines.forEach(d => {
       const acc = findAccountDef(d.accountCode || d.accountName);
-      if (acc && acc.type === 'expense') {
-        const amt = Number(d.amount) || 0;
+      if (!acc) return;
+      const amt = Number(d.amount) || 0;
+      if (acc.type === 'expense') {
         if (acc.subType === 'cost_of_sales') {
           totalCostOfSales += amt;
         } else if (acc.subType === 'non_operating_expense') {
@@ -1222,6 +1247,14 @@ function calculateProfitAndLoss(invoices = [], expenses = [], periodFilter = 'al
           totalSga += amt;
         }
         expenseByCategory[acc.name] = (expenseByCategory[acc.name] || 0) + amt;
+      } else if (acc.type === 'revenue') {
+        // 借方に収益科目が来た場合（売上取消・返品等）
+        if (acc.subType === 'operating_revenue') {
+          totalSales -= amt;
+        } else {
+          totalNonOperatingRevenue -= amt;
+        }
+        revenueByCategory[acc.name] = (revenueByCategory[acc.name] || 0) - amt;
       }
     });
   });
@@ -6180,9 +6213,10 @@ function saveExpense(expense) {
  * 複数経費を一括精算済みに更新
  * @param {Array<string>} expenseIds 
  * @param {string} settledDate 
+ * @param {string} settlementJournalId
  * @returns {number} 更新件数
  */
-function markExpensesSettled(expenseIds = [], settledDate = '') {
+function markExpensesSettled(expenseIds = [], settledDate = '', settlementJournalId = '') {
   try {
     if (!Array.isArray(expenseIds) || expenseIds.length === 0) return 0;
     const targetSet = new Set(expenseIds);
@@ -6194,6 +6228,9 @@ function markExpensesSettled(expenseIds = [], settledDate = '') {
       if (targetSet.has(e.id)) {
         e.isSettled = true;
         e.settledDate = dateStr;
+        if (settlementJournalId) {
+          e.settlementJournalId = settlementJournalId;
+        }
         e.updatedAt = new Date().toISOString();
         count++;
       }
@@ -13362,7 +13399,8 @@ function renderAccountingDashboard(periodFilter = currentAccGlobalPeriod) {
   }
   const invoices = getHistoryList();
   const expenses = getExpenseList();
-  const pnl = calculateProfitAndLoss(invoices, expenses, periodFilter || 'all');
+  const manualJournals = (typeof getManualJournals === 'function') ? getManualJournals() : [];
+  const pnl = calculateProfitAndLoss(invoices, expenses, periodFilter || 'all', manualJournals);
 
   // KPI表示更新
   if (DOM.kpiTotalSales) DOM.kpiTotalSales.textContent = formatCurrency(pnl.totalSales);
@@ -13394,6 +13432,11 @@ function renderAccountingDashboard(periodFilter = currentAccGlobalPeriod) {
   // 消費税集計サマリーパネルの描画
   if (typeof renderTaxSummaryCard === 'function') {
     renderTaxSummaryCard(periodFilter);
+  }
+
+  // 📦 棚卸資産（在庫マスタ）連動パネルの描画
+  if (typeof renderAccInventoryIntegrationPanel === 'function') {
+    renderAccInventoryIntegrationPanel(periodFilter);
   }
 }
 
@@ -15846,6 +15889,11 @@ function renderAccountingExpenses(periodFilter = currentAccGlobalPeriod) {
       accSummaryBody.innerHTML = sumHtml;
     }
   }
+
+  // 社員別立替経費・未精算サマリーバーも更新
+  if (typeof renderExpenseSettlementSummaryBar === 'function') {
+    renderExpenseSettlementSummaryBar();
+  }
 }
 
 window.__toggleExpenseSettled = function(id, newStatus) {
@@ -17333,6 +17381,12 @@ function handleMarkExpensesSettled() {
     return;
   }
 
+  // 一括精算モーダルを開いて支払日や口座を選択して仕訳発行連動精算
+  if (typeof openEmployeeExpenseBatchSettlementModal === 'function') {
+    openEmployeeExpenseBatchSettlementModal(claimant);
+    return;
+  }
+
   const targetLabel = claimant === 'all' ? '全員' : claimant;
   if (!confirm(`【${targetLabel}】様の未精算経費 ${unsettledItems.length} 件を一括で「精算済み」に更新しますか？`)) {
     return;
@@ -17344,6 +17398,519 @@ function handleMarkExpensesSettled() {
   applyAccGlobalPeriod(currentAccGlobalPeriod.preset);
   showToast(`🎉 ${count} 件の経費を一括精算済みに更新しました！`, 'success');
 }
+
+// ==========================================================================
+// 8. 社員別立替経費一括精算 ＆ 財務会計仕訳連動 コントローラー
+// ==========================================================================
+
+function renderExpenseSettlementSummaryBar() {
+  const allExpenses = typeof getExpenseList === 'function' ? getExpenseList() : [];
+  
+  // 社員ごとに未精算データを集計（会社直接払いは除外）
+  const claimantStats = {};
+  let totalUnsettledCount = 0;
+  let totalUnsettledAmount = 0;
+
+  allExpenses.forEach(exp => {
+    const claimant = (exp.claimant || '小林俊介').trim();
+    if (['会社', '会社立替/その他', '会社直接', 'none', ''].includes(claimant)) return;
+    
+    if (!claimantStats[claimant]) {
+      claimantStats[claimant] = { count: 0, amount: 0, totalCount: 0 };
+    }
+    claimantStats[claimant].totalCount++;
+
+    if (!exp.isSettled) {
+      const amt = Math.round((Number(exp.amount) || 0) * (1 + (Number(exp.taxRate !== undefined ? exp.taxRate : 10) / 100)));
+      claimantStats[claimant].count++;
+      claimantStats[claimant].amount += amt;
+      totalUnsettledCount++;
+      totalUnsettledAmount += amt;
+    }
+  });
+
+  // チップHTMLの生成
+  let chipsHtml = '';
+  const claimantNames = Object.keys(claimantStats);
+  if (claimantNames.length === 0) {
+    chipsHtml = `<span style="font-size: 0.75rem; color: #94a3b8;">社員立替経費データなし</span>`;
+  } else {
+    claimantNames.forEach(name => {
+      const stat = claimantStats[name];
+      if (stat.count > 0) {
+        chipsHtml += `
+          <button type="button" class="btn btn-xs" onclick="window.openEmployeeExpenseBatchSettlementModal && window.openEmployeeExpenseBatchSettlementModal('${escapeHtml(name)}')"
+            style="display: inline-flex; align-items: center; gap: 5px; background: #fef3c7; border: 1.5px solid #fde68a; color: #92400e; padding: 3px 10px; border-radius: 9999px; font-weight: 700; font-size: 0.775rem; cursor: pointer; transition: all 0.2s;"
+            title="${escapeHtml(name)} の未精算経費を一括精算">
+            <span>👤 ${escapeHtml(name)}:</span>
+            <span style="font-family: monospace; font-size: 0.85rem;">¥${stat.amount.toLocaleString()}</span>
+            <span style="background: #fde68a; color: #b45309; padding: 1px 6px; border-radius: 9999px; font-size: 0.7rem;">${stat.count}件 未精算</span>
+          </button>
+        `;
+      } else {
+        chipsHtml += `
+          <span style="display: inline-flex; align-items: center; gap: 4px; background: #f1f5f9; border: 1px solid #e2e8f0; color: #64748b; padding: 3px 8px; border-radius: 9999px; font-size: 0.725rem;">
+            👤 ${escapeHtml(name)}: 精算完了 ✅
+          </span>
+        `;
+      }
+    });
+
+    // 全体サマリーチップ
+    if (totalUnsettledCount > 0) {
+      chipsHtml += `
+        <span style="display: inline-flex; align-items: center; gap: 4px; background: #ecfdf5; border: 1.5px solid #a7f3d0; color: #065f46; padding: 3px 10px; border-radius: 9999px; font-weight: 800; font-size: 0.775rem;">
+          合計未精算: <strong style="font-family: monospace;">¥${totalUnsettledAmount.toLocaleString()}</strong> (${totalUnsettledCount}件)
+        </span>
+      `;
+    }
+  }
+
+  // 経費画面と財務会計画面の両方のコンテナへ出力
+  const el1 = document.getElementById('expenseClaimantSummaryChips');
+  if (el1) el1.innerHTML = chipsHtml;
+  const el2 = document.getElementById('accExpenseClaimantSummaryChips');
+  if (el2) el2.innerHTML = chipsHtml;
+}
+
+window.renderExpenseSettlementSummaryBar = renderExpenseSettlementSummaryBar;
+
+function openEmployeeExpenseBatchSettlementModal(targetClaimant = '') {
+  const modal = document.getElementById('employeeExpenseBatchSettlementModal');
+  if (!modal) return;
+
+  const allExpenses = typeof getExpenseList === 'function' ? getExpenseList() : [];
+  
+  // 社員一覧の集計
+  const claimantsSet = new Set(['小林俊介', '宮崎真輔']);
+  allExpenses.forEach(exp => {
+    const c = (exp.claimant || '').trim();
+    if (c && !['会社', '会社立替/その他', '会社直接', 'none', ''].includes(c)) {
+      claimantsSet.add(c);
+    }
+  });
+
+  const select = document.getElementById('batchSettleEmployeeSelect');
+  if (select) {
+    select.innerHTML = '';
+    
+    // 未精算件数付きでオプション生成
+    Array.from(claimantsSet).forEach(c => {
+      const unsettled = allExpenses.filter(e => !e.isSettled && (e.claimant || '小林俊介') === c);
+      const sum = unsettled.reduce((s, e) => s + Math.round((Number(e.amount) || 0) * (1 + (Number(e.taxRate !== undefined ? e.taxRate : 10) / 100))), 0);
+      const opt = document.createElement('option');
+      opt.value = c;
+      opt.textContent = `${c} (未精算: ${unsettled.length}件 / ¥${sum.toLocaleString()})`;
+      select.appendChild(opt);
+    });
+
+    // 全員オプション
+    const optAll = document.createElement('option');
+    optAll.value = 'all';
+    const allUnsettled = allExpenses.filter(e => !e.isSettled && !['会社', '会社立替/その他', '会社直接', 'none', ''].includes((e.claimant || '').trim()));
+    const allSum = allUnsettled.reduce((s, e) => s + Math.round((Number(e.amount) || 0) * (1 + (Number(e.taxRate !== undefined ? e.taxRate : 10) / 100))), 0);
+    optAll.textContent = `全社員一括 (未精算: ${allUnsettled.length}件 / ¥${allSum.toLocaleString()})`;
+    select.appendChild(optAll);
+
+    if (targetClaimant) {
+      select.value = targetClaimant;
+    }
+  }
+
+  // 支払日の初期値（本日）
+  const dateInput = document.getElementById('batchSettlePaymentDate');
+  if (dateInput && !dateInput.value) {
+    dateInput.value = new Date().toISOString().split('T')[0];
+  }
+
+  updateBatchSettlementEmployeePreview();
+
+  modal.classList.add('active');
+  modal.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+
+function closeEmployeeExpenseBatchSettlementModal() {
+  const modal = document.getElementById('employeeExpenseBatchSettlementModal');
+  if (modal) {
+    modal.classList.remove('active');
+    modal.style.display = 'none';
+  }
+  document.body.style.overflow = '';
+}
+
+window.openEmployeeExpenseBatchSettlementModal = openEmployeeExpenseBatchSettlementModal;
+window.closeEmployeeExpenseBatchSettlementModal = closeEmployeeExpenseBatchSettlementModal;
+
+function updateBatchSettlementEmployeePreview() {
+  const select = document.getElementById('batchSettleEmployeeSelect');
+  const claimant = select ? select.value : '小林俊介';
+  const allExpenses = typeof getExpenseList === 'function' ? getExpenseList() : [];
+
+  let items = allExpenses.filter(e => !e.isSettled);
+  if (claimant !== 'all') {
+    items = items.filter(e => (e.claimant || '小林俊介') === claimant);
+  } else {
+    items = items.filter(e => !['会社', '会社立替/その他', '会社直接', 'none', ''].includes((e.claimant || '').trim()));
+  }
+
+  let totalAmount = 0;
+  items.forEach(e => {
+    const amt = Math.round((Number(e.amount) || 0) * (1 + (Number(e.taxRate !== undefined ? e.taxRate : 10) / 100)));
+    totalAmount += amt;
+  });
+
+  const totalEl = document.getElementById('batchSettleTotalAmountText');
+  if (totalEl) totalEl.textContent = `¥${totalAmount.toLocaleString()}`;
+
+  const countEl = document.getElementById('batchSettleItemsCountText');
+  if (countEl) countEl.textContent = `未精算 ${items.length} 件`;
+
+  const tableCountEl = document.getElementById('batchSettleTableItemCount');
+  if (tableCountEl) tableCountEl.textContent = `${items.length} 件`;
+
+  // 出金元口座と消込科目の名称
+  const credSelect = document.getElementById('batchSettleCreditAccount');
+  const credCode = credSelect ? credSelect.value : '102';
+  const credName = credCode === '101' ? '現金' : '普通預金';
+
+  const debSelect = document.getElementById('batchSettleDebitAccount');
+  const debCode = debSelect ? debSelect.value : '212';
+  const debName = debCode === '114' ? '立替金' : '未払金';
+
+  const targetLabel = claimant === 'all' ? '全社員立替' : claimant;
+
+  // 仕訳プレビュー
+  const jnlPreviewEl = document.getElementById('batchSettleJournalPreview');
+  if (jnlPreviewEl) {
+    jnlPreviewEl.textContent = `【借方】${debCode} ${debName} (${targetLabel}) ¥${totalAmount.toLocaleString()}  /  【貸方】${credCode} ${credName} ¥${totalAmount.toLocaleString()}`;
+  }
+
+  // 確定ボタンの活性・非活性
+  const confirmBtn = document.getElementById('btnConfirmBatchSettlement');
+  if (confirmBtn) {
+    confirmBtn.disabled = items.length === 0;
+    confirmBtn.style.opacity = items.length === 0 ? '0.5' : '1';
+    confirmBtn.style.cursor = items.length === 0 ? 'not-allowed' : 'pointer';
+  }
+
+  // テーブルプレビュー
+  const tbody = document.getElementById('batchSettleExpenseItemsTableBody');
+  if (tbody) {
+    if (items.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: #94a3b8; padding: 24px;">未精算の経費明細はありません。</td></tr>`;
+      return;
+    }
+
+    let rows = '';
+    items.forEach(it => {
+      const amtInc = Math.round((Number(it.amount) || 0) * (1 + (Number(it.taxRate !== undefined ? it.taxRate : 10) / 100)));
+      const catName = ACCOUNT_CATEGORIES[it.category]?.name || it.category || '経費';
+      rows += `
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="padding: 6px 8px;">${escapeHtml(it.date || '-')}</td>
+          <td style="padding: 6px 8px; font-weight: 600; color: #1e293b;">${escapeHtml(it.payee || '-')}</td>
+          <td style="padding: 6px 8px;"><span class="badge badge-primary" style="font-size: 10px;">${escapeHtml(catName)}</span></td>
+          <td style="padding: 6px 8px; text-align: right; font-weight: 700; font-family: monospace;">¥${amtInc.toLocaleString()}</td>
+        </tr>
+      `;
+    });
+    tbody.innerHTML = rows;
+  }
+}
+
+window.updateBatchSettlementEmployeePreview = updateBatchSettlementEmployeePreview;
+
+function executeEmployeeExpenseBatchSettlement() {
+  const select = document.getElementById('batchSettleEmployeeSelect');
+  const claimant = select ? select.value : '小林俊介';
+  const dateInput = document.getElementById('batchSettlePaymentDate');
+  const paymentDate = dateInput ? dateInput.value : new Date().toISOString().split('T')[0];
+
+  if (!paymentDate) {
+    alert('支払日（精算振込日）を入力してください。');
+    return;
+  }
+
+  const credSelect = document.getElementById('batchSettleCreditAccount');
+  const credCode = credSelect ? credSelect.value : '102';
+  const credName = credCode === '101' ? '現金' : '普通預金';
+
+  const debSelect = document.getElementById('batchSettleDebitAccount');
+  const debCode = debSelect ? debSelect.value : '212';
+  const debName = debCode === '114' ? '立替金' : '未払金';
+
+  const allExpenses = typeof getExpenseList === 'function' ? getExpenseList() : [];
+  let items = allExpenses.filter(e => !e.isSettled);
+  if (claimant !== 'all') {
+    items = items.filter(e => (e.claimant || '小林俊介') === claimant);
+  } else {
+    items = items.filter(e => !['会社', '会社立替/その他', '会社直接', 'none', ''].includes((e.claimant || '').trim()));
+  }
+
+  if (items.length === 0) {
+    alert('精算対象となる未精算経費がありません。');
+    return;
+  }
+
+  let totalAmount = 0;
+  items.forEach(e => {
+    const amt = Math.round((Number(e.amount) || 0) * (1 + (Number(e.taxRate !== undefined ? e.taxRate : 10) / 100)));
+    totalAmount += amt;
+  });
+
+  const targetLabel = claimant === 'all' ? '全社員' : claimant;
+  if (!confirm(`【${targetLabel}】様の未精算経費 ${items.length} 件 (合計 ¥${totalAmount.toLocaleString()}) を一括精算し、財務会計へ出金仕訳を登録しますか？`)) {
+    return;
+  }
+
+  // 1. 財務会計の手動仕訳（振替伝票）を自動生成
+  const entryId = `mj_settle_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+  const journalData = {
+    id: entryId,
+    date: paymentDate,
+    entryNumber: `STL-${Date.now().toString().slice(-6)}`,
+    description: `【経費精算】${targetLabel} 立替経費一括精算 (${items.length}件)`,
+    sourceType: 'expense_settlement',
+    settledClaimant: claimant,
+    settledExpenseIds: items.map(i => i.id),
+    debitLines: [{
+      accountCode: debCode,
+      accountName: debName,
+      subAccount: claimant === 'all' ? '社員立替' : claimant,
+      amount: totalAmount,
+      taxType: 'out_of_scope',
+      invoiceType: 'none'
+    }],
+    creditLines: [{
+      accountCode: credCode,
+      accountName: credName,
+      subAccount: '',
+      amount: totalAmount,
+      taxType: 'out_of_scope',
+      invoiceType: 'none'
+    }]
+  };
+
+  if (typeof saveManualJournal === 'function') {
+    saveManualJournal(journalData);
+  }
+
+  // 2. 経費データを一括で精算済みに更新（精算仕訳IDを紐付け）
+  const targetIds = items.map(i => i.id);
+  markExpensesSettled(targetIds, paymentDate, entryId);
+
+  // 3. UIの完全再描画
+  closeEmployeeExpenseBatchSettlementModal();
+  renderExpenseSettlementSummaryBar();
+  if (typeof renderAccountingExpenses === 'function') renderAccountingExpenses();
+  if (typeof applyAccGlobalPeriod === 'function') applyAccGlobalPeriod(currentAccGlobalPeriod.preset);
+  if (typeof renderExpenseSettlementSheet === 'function') renderExpenseSettlementSheet();
+
+  showToast(`🎉 【${targetLabel}】様の未精算経費 ${items.length} 件（¥${totalAmount.toLocaleString()}）を一括精算し、財務会計に出金仕訳を計上しました！`, 'success');
+}
+
+window.executeEmployeeExpenseBatchSettlement = executeEmployeeExpenseBatchSettlement;
+
+
+// ==========================================================================
+// 9. 棚卸資産（在庫マスタ）連動 ＆ 売上原価計上 コントローラー
+// ==========================================================================
+
+function renderAccInventoryIntegrationPanel(periodFilter = currentAccGlobalPeriod) {
+  const panel = document.getElementById('accInventoryIntegrationPanel');
+  if (!panel) return;
+
+  const fiscalSettings = typeof getFiscalSettings === 'function' ? getFiscalSettings() : {};
+  const openingBalances = fiscalSettings.openingBalances || {};
+  const startInv = Number(openingBalances['131'] || 0);
+
+  // 在庫マスタから全商品の理論評価額（現在庫数 × 仕入単価）を集計
+  const invList = typeof getInventoryList === 'function' ? getInventoryList() : [];
+  let endInv = 0;
+  let itemCount = 0;
+
+  invList.forEach(item => {
+    const qty = Number(item.currentStock) || 0;
+    const cost = Number(item.unitCost) || 0;
+    if (qty > 0 || cost > 0) itemCount++;
+    endInv += (qty * cost);
+  });
+
+  const delta = endInv - startInv;
+
+  // UIへ数値を反映
+  const openEl = document.getElementById('accInvOpeningValue');
+  if (openEl) openEl.textContent = `¥${startInv.toLocaleString()}`;
+
+  const endEl = document.getElementById('accInvEndingValue');
+  if (endEl) endEl.textContent = `¥${endInv.toLocaleString()}`;
+
+  const countBadge = document.getElementById('accInvItemCountBadge');
+  if (countBadge) countBadge.textContent = `${invList.length}品目`;
+
+  const deltaEl = document.getElementById('accInvDeltaValue');
+  const deltaHelp = document.getElementById('accInvDeltaHelp');
+  if (deltaEl) {
+    if (delta > 0) {
+      deltaEl.textContent = `+¥${delta.toLocaleString()}`;
+      deltaEl.style.color = '#059669';
+      if (deltaHelp) deltaHelp.textContent = '期末在庫増加（売上原価から控除されます）';
+    } else if (delta < 0) {
+      deltaEl.textContent = `-¥${Math.abs(delta).toLocaleString()}`;
+      deltaEl.style.color = '#dc2626';
+      if (deltaHelp) deltaHelp.textContent = '期末在庫減少（売上原価に加算されます）';
+    } else {
+      deltaEl.textContent = `±¥0`;
+      deltaEl.style.color = '#64748b';
+      if (deltaHelp) deltaHelp.textContent = '期首と期末の在庫評価額に変動はありません';
+    }
+  }
+
+  // 現在の期末棚卸仕訳の反映状況をチェック
+  const manualJournals = typeof getManualJournals === 'function' ? getManualJournals() : [];
+  const closingJnl = manualJournals.find(j => j.sourceType === 'inventory_closing');
+
+  const statusBadge = document.getElementById('accInventoryStatusBadge');
+  const statusText = document.getElementById('accInvJournalStatusText');
+
+  if (closingJnl) {
+    if (statusBadge) {
+      statusBadge.textContent = '✅ B/S・P/L 反映済み';
+      statusBadge.style.background = '#ecfdf5';
+      statusBadge.style.color = '#047857';
+      statusBadge.style.borderColor = '#a7f3d0';
+    }
+    if (statusText) {
+      statusText.innerHTML = `✅ <strong style="color: #047857;">${closingJnl.date}</strong> 付で期末棚卸仕訳が計上済みです（理論評価額: <strong>¥${endInv.toLocaleString()}</strong>）`;
+    }
+  } else {
+    if (statusBadge) {
+      statusBadge.textContent = '未反映（理論値のみ）';
+      statusBadge.style.background = '#fffbeb';
+      statusBadge.style.color = '#b45309';
+      statusBadge.style.borderColor = '#fde68a';
+    }
+    if (statusText) {
+      statusText.textContent = '※「在庫評価額をB/S・P/Lに反映」ボタンを押すと、差額調整仕訳（棚卸仕訳）が自動生成されます。';
+    }
+  }
+}
+
+window.renderAccInventoryIntegrationPanel = renderAccInventoryIntegrationPanel;
+
+function refreshInventoryTheoryValue() {
+  renderAccInventoryIntegrationPanel(currentAccGlobalPeriod);
+  showToast('🔄 在庫マスタから最新の理論在庫評価額を再計算しました', 'info');
+}
+
+window.refreshInventoryTheoryValue = refreshInventoryTheoryValue;
+
+function syncInventoryToAccounting() {
+  const fiscalSettings = typeof getFiscalSettings === 'function' ? getFiscalSettings() : {};
+  const openingBalances = fiscalSettings.openingBalances || {};
+  const startInv = Number(openingBalances['131'] || 0);
+
+  const invList = typeof getInventoryList === 'function' ? getInventoryList() : [];
+  let endInv = 0;
+  invList.forEach(item => {
+    const qty = Number(item.currentStock) || 0;
+    const cost = Number(item.unitCost) || 0;
+    endInv += (qty * cost);
+  });
+
+  const delta = endInv - startInv;
+
+  if (delta === 0 && startInv === 0 && endInv === 0) {
+    alert('在庫マスタに在庫データが存在しないか、評価額が0円です。先に「在庫マスタ」で在庫数と仕入単価を登録してください。');
+    return;
+  }
+
+  // 既存の棚卸仕訳を検索（上書きまたは再生成）
+  const manualJournals = typeof getManualJournals === 'function' ? getManualJournals() : [];
+  const existingIndex = manualJournals.findIndex(j => j.sourceType === 'inventory_closing');
+  const existingId = existingIndex >= 0 ? manualJournals[existingIndex].id : null;
+
+  const closingDate = (currentAccGlobalPeriod && currentAccGlobalPeriod.end) 
+    ? currentAccGlobalPeriod.end 
+    : new Date().toISOString().split('T')[0];
+
+  const entryId = existingId || `mj_inv_closing_${Date.now()}`;
+  const absDelta = Math.abs(delta);
+
+  let debitLines = [];
+  let creditLines = [];
+
+  if (delta >= 0) {
+    // 期末在庫が増加（または同額）: 資産増加、売上原価控除
+    debitLines = [{
+      accountCode: '131',
+      accountName: '商品・棚卸資産',
+      subAccount: '期末棚卸',
+      amount: absDelta,
+      taxType: 'out_of_scope',
+      invoiceType: 'none'
+    }];
+    creditLines = [{
+      accountCode: '501',
+      accountName: '仕入高',
+      subAccount: '期末商品棚卸高',
+      amount: absDelta,
+      taxType: 'out_of_scope',
+      invoiceType: 'none'
+    }];
+  } else {
+    // 期末在庫が減少: 売上原価加算、資産減少
+    debitLines = [{
+      accountCode: '501',
+      accountName: '仕入高',
+      subAccount: '棚卸減耗・原価加算',
+      amount: absDelta,
+      taxType: 'out_of_scope',
+      invoiceType: 'none'
+    }];
+    creditLines = [{
+      accountCode: '131',
+      accountName: '商品・棚卸資産',
+      subAccount: '期末棚卸',
+      amount: absDelta,
+      taxType: 'out_of_scope',
+      invoiceType: 'none'
+    }];
+  }
+
+  const journalData = {
+    id: entryId,
+    date: closingDate,
+    entryNumber: `INV-${Date.now().toString().slice(-6)}`,
+    description: `【期末棚卸】理論在庫評価額の計上・売上原価連動 (期首: ¥${startInv.toLocaleString()} → 期末: ¥${endInv.toLocaleString()})`,
+    sourceType: 'inventory_closing',
+    debitLines,
+    creditLines
+  };
+
+  if (typeof saveManualJournal === 'function') {
+    saveManualJournal(journalData);
+  }
+
+  // 財務会計画面全体を即時再計算＆再描画
+  if (typeof applyAccGlobalPeriod === 'function') {
+    applyAccGlobalPeriod(currentAccGlobalPeriod.preset);
+  } else {
+    renderAccountingDashboard(currentAccGlobalPeriod);
+    renderBalanceSheet(currentAccGlobalPeriod);
+    renderTrialBalance(currentAccGlobalPeriod);
+    renderGeneralLedger(currentAccGlobalPeriod);
+    renderAccountingJournals(currentAccGlobalPeriod);
+  }
+
+  renderAccInventoryIntegrationPanel(currentAccGlobalPeriod);
+
+  showToast(`🎉 在庫マスタの理論評価額（¥${endInv.toLocaleString()}）をB/S（131 商品・棚卸資産）およびP/L（売上原価）に正常に反映しました！`, 'success');
+}
+
+window.syncInventoryToAccounting = syncInventoryToAccounting;
+
 
 // ==========================================================================
 // 勤怠打刻（タイムカード） コントローラー

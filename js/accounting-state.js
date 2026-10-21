@@ -422,31 +422,44 @@ export function buildUnifiedJournals(arg1 = {}, arg2 = [], arg3 = [], arg4 = [],
     const taxType = taxRate === 8 ? 'taxable_8' : (taxRate === 10 ? 'taxable_10' : 'exempt');
     const invoiceType = exp.invoiceNumber ? 'qualified' : (exp.invoiceType || 'none');
 
+    // 立替者判定（会社直接以外は社員立替）
+    const claimant = String(exp.claimant || '').trim();
+    const isEmployeeAdvance = Boolean(claimant && !['会社', '会社立替/その他', '会社直接', 'none', ''].includes(claimant));
+
     // 貸方支払方法の勘定科目判定
     let creditCode = '101';
     let creditName = '現金';
+    let creditSubAccount = '';
     const method = String(exp.paymentMethod || '').trim();
-    if (method.includes('普通預金') || method.startsWith('102')) {
+
+    if (isEmployeeAdvance) {
+      // 要件1: 社員立替（未精算または精算仕訳連動時は「212 未払金」、補助科目: 社員名）
+      creditCode = '212';
+      creditName = '未払金';
+      creditSubAccount = claimant;
+    } else if (method.includes('普通預金') || method.startsWith('102')) {
       creditCode = '102'; creditName = '普通預金';
     } else if (method.includes('未払金') || method.includes('クレジットカード') || method.startsWith('212')) {
-      creditCode = '212'; creditName = '未払金';
+      creditCode = '212'; creditName = '未払金'; creditSubAccount = 'クレジットカード';
     } else if (method.includes('立替金') || method.includes('役員借入金') || method.startsWith('114')) {
-      creditCode = '114'; creditName = '立替金';
+      creditCode = '114'; creditName = '立替金'; creditSubAccount = claimant || '役員立替';
     } else if (method.includes('現金') || method.startsWith('101')) {
       creditCode = '101'; creditName = '現金';
     } else if (method) {
       creditCode = '102'; creditName = '普通預金';
     }
 
+    const claimantTag = isEmployeeAdvance ? ` [立替:${claimant}${exp.isSettled ? '(精算済)' : '(未精算)'}]` : '';
+
     unified.push({
       id: `jnl_exp_${exp.id}`,
       date,
       entryNumber: `EXP-${exp.id.slice(-6)}`,
-      description: `${expenseCat}: ${exp.note || ''}${payee}`.trim(),
+      description: `${expenseCat}: ${exp.note || ''}${payee}${claimantTag}`.trim(),
       sourceType: 'expense',
       sourceId: exp.id,
       debitLines: [{ accountCode: accCode, accountName: expenseCat, subAccount: '', amount: amountInc, taxType, invoiceType }],
-      creditLines: [{ accountCode: creditCode, accountName: creditName, subAccount: method, amount: amountInc, taxType: 'out_of_scope', invoiceType: 'none' }],
+      creditLines: [{ accountCode: creditCode, accountName: creditName, subAccount: creditSubAccount || method, amount: amountInc, taxType: 'out_of_scope', invoiceType: 'none' }],
       totalDebit: amountInc,
       totalCredit: amountInc
     });
@@ -603,25 +616,37 @@ export function calculateProfitAndLoss(invoices = [], expenses = [], periodFilte
 
   // 統合仕訳からP/L科目（収益・費用）を抽出集計
   unified.forEach(u => {
-    // 貸方の収益行を集計
+    // 貸方の行を集計（収益の加算、および費用の控除［棚卸調整・仕入値引き等］）
     u.creditLines.forEach(c => {
       const acc = findAccountDef(c.accountCode || c.accountName);
-      if (acc && acc.type === 'revenue') {
-        const amt = Number(c.amount) || 0;
+      if (!acc) return;
+      const amt = Number(c.amount) || 0;
+      if (acc.type === 'revenue') {
         if (acc.subType === 'operating_revenue') {
           totalSales += amt;
         } else {
           totalNonOperatingRevenue += amt;
         }
         revenueByCategory[acc.name] = (revenueByCategory[acc.name] || 0) + amt;
+      } else if (acc.type === 'expense') {
+        // 貸方に費用科目が来た場合（要件2: 期末棚卸による売上原価控除など）
+        if (acc.subType === 'cost_of_sales') {
+          totalCostOfSales -= amt;
+        } else if (acc.subType === 'non_operating_expense') {
+          totalNonOperatingExpense -= amt;
+        } else {
+          totalSga -= amt;
+        }
+        expenseByCategory[acc.name] = (expenseByCategory[acc.name] || 0) - amt;
       }
     });
 
-    // 借方の費用行を集計
+    // 借方の行を集計（費用の加算、および収益の控除）
     u.debitLines.forEach(d => {
       const acc = findAccountDef(d.accountCode || d.accountName);
-      if (acc && acc.type === 'expense') {
-        const amt = Number(d.amount) || 0;
+      if (!acc) return;
+      const amt = Number(d.amount) || 0;
+      if (acc.type === 'expense') {
         if (acc.subType === 'cost_of_sales') {
           totalCostOfSales += amt;
         } else if (acc.subType === 'non_operating_expense') {
@@ -630,6 +655,14 @@ export function calculateProfitAndLoss(invoices = [], expenses = [], periodFilte
           totalSga += amt;
         }
         expenseByCategory[acc.name] = (expenseByCategory[acc.name] || 0) + amt;
+      } else if (acc.type === 'revenue') {
+        // 借方に収益科目が来た場合（売上取消・返品等）
+        if (acc.subType === 'operating_revenue') {
+          totalSales -= amt;
+        } else {
+          totalNonOperatingRevenue -= amt;
+        }
+        revenueByCategory[acc.name] = (revenueByCategory[acc.name] || 0) - amt;
       }
     });
   });

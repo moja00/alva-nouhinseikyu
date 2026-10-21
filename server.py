@@ -830,6 +830,7 @@ def sanitize_expense_item(item):
     clean['isPurchase'] = bool(clean.get('isPurchase', False))
     clean['isSettled'] = bool(clean.get('isSettled', False))
     clean['settledDate'] = str(clean.get('settledDate', '') or '')
+    clean['settlementJournalId'] = str(clean.get('settlementJournalId', '') or '')
     clean['linkedInventoryId'] = str(clean.get('linkedInventoryId', '') or '')
     try:
         clean['linkedInventoryQty'] = float(clean.get('linkedInventoryQty', 0) or 0)
