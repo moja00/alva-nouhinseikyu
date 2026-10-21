@@ -2425,6 +2425,27 @@ function setupEventListeners() {
     }
   };
 
+  const updateSettingFiscalPreview = () => {
+    const startM = Number(document.getElementById('settingFiscalStartMonth')?.value || 4);
+    const year = Number(document.getElementById('settingFiscalYear')?.value || 2026);
+    const endM = ((startM - 1 + 12 - 1) % 12) + 1;
+    const endY = startM === 1 ? year : year + 1;
+    const lastDay = new Date(endY, endM, 0).getDate();
+
+    const dispEndMonth = document.getElementById('dispFiscalEndMonthText');
+    if (dispEndMonth) {
+      const yearPrefix = startM === 1 ? '同年' : '翌年';
+      dispEndMonth.innerText = `決算期: ${yearPrefix}${endM}月決算`;
+    }
+
+    const dispPeriod = document.getElementById('dispFiscalPeriodPreview');
+    if (dispPeriod) {
+      const sStr = `${year}/${String(startM).padStart(2, '0')}/01`;
+      const eStr = `${endY}/${String(endM).padStart(2, '0')}/${String(lastDay).padStart(2, '0')}`;
+      dispPeriod.innerText = `期間: ${sStr} 〜 ${eStr}`;
+    }
+  };
+
   const openCompanyProfileModal = () => {
     const modal = document.getElementById('companyProfileModal');
     if (!modal) return;
@@ -2443,6 +2464,13 @@ function setupEventListeners() {
     setVal('settingIssuerEmail', profile.email || '');
     setVal('settingIssuerAddress', profile.address || '群馬県前橋市下川町63-7');
     setVal('settingBankInfo', profile.bankInfo || '高崎信用金庫\n前橋南支店\n普通　012 2182393\nカ)　アルバワークス');
+
+    // 会計年度・決算期設定の読み込み
+    const fiscal = (typeof getFiscalSettings === 'function') ? getFiscalSettings() : {};
+    setVal('settingFiscalStartMonth', String(fiscal.fiscalStartMonth || profile.fiscalStartMonth || 4));
+    setVal('settingFiscalYear', String(fiscal.fiscalYear || profile.fiscalYear || new Date().getFullYear()));
+    setVal('settingTaxAccountingMethod', fiscal.taxMethod || profile.taxMethod || 'tax_inclusive');
+    updateSettingFiscalPreview();
 
     const chk = document.getElementById('settingCheckShowStamp');
     if (chk) chk.checked = profile.showStamp !== false;
@@ -2468,6 +2496,27 @@ function setupEventListeners() {
     const bankInfo = getVal('settingBankInfo') || '高崎信用金庫\n前橋南支店\n普通　012 2182393\nカ)　アルバワークス';
     const showStamp = document.getElementById('settingCheckShowStamp')?.checked !== false;
 
+    // 会計年度・決算期設定の保存
+    const fiscalStartMonth = Number(document.getElementById('settingFiscalStartMonth')?.value || 4);
+    const fiscalYear = Number(document.getElementById('settingFiscalYear')?.value || new Date().getFullYear());
+    const taxMethod = document.getElementById('settingTaxAccountingMethod')?.value || 'tax_inclusive';
+
+    const endMonth = ((fiscalStartMonth - 1 + 12 - 1) % 12) + 1;
+    const endYear = fiscalStartMonth === 1 ? fiscalYear : fiscalYear + 1;
+    const lastDay = new Date(endYear, endMonth, 0).getDate();
+    const fiscalYearStart = `${fiscalYear}-${String(fiscalStartMonth).padStart(2, '0')}-01`;
+    const fiscalYearEnd = `${endYear}-${String(endMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+    if (typeof saveFiscalSettings === 'function') {
+      saveFiscalSettings({
+        fiscalYear,
+        fiscalStartMonth,
+        fiscalYearStart,
+        fiscalYearEnd,
+        taxMethod
+      });
+    }
+
     let stampDataUrl = tempSettingStampDataUrl;
     if (!stampDataUrl && name) {
       stampDataUrl = generateCompanyStamp(name);
@@ -2483,7 +2532,10 @@ function setupEventListeners() {
       address,
       bankInfo,
       showStamp,
-      stampDataUrl
+      stampDataUrl,
+      fiscalYear,
+      fiscalStartMonth,
+      taxMethod
     };
 
     saveIssuerProfile(updated);
@@ -2495,9 +2547,23 @@ function setupEventListeners() {
     }
 
     updatePortalInfo();
+    if (typeof updateAccPeriodPresetLabels === 'function') {
+      updateAccPeriodPresetLabels();
+    }
+    if (typeof applyAccGlobalPeriod === 'function' && typeof currentAccGlobalPeriod !== 'undefined') {
+      applyAccGlobalPeriod(currentAccGlobalPeriod.preset);
+    }
+    if (typeof renderAccountingSettings === 'function') {
+      renderAccountingSettings();
+    }
     closeCompanyProfileModal();
-    showToast('自社情報・印鑑・口座設定を保存しました！', 'success');
+    showToast('自社情報・会計年度設定を保存しました！', 'success');
   };
+
+  const selStartMonth = document.getElementById('settingFiscalStartMonth');
+  if (selStartMonth) selStartMonth.addEventListener('change', updateSettingFiscalPreview);
+  const selYear = document.getElementById('settingFiscalYear');
+  if (selYear) selYear.addEventListener('change', updateSettingFiscalPreview);
 
   const btnOpenCompanyProfile = document.getElementById('btnOpenCompanyProfile');
   if (btnOpenCompanyProfile) {
@@ -5357,15 +5423,27 @@ function getPresetPeriodRange(preset) {
     const end = `${y}-${String(m + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
     return { start, end };
   } else if (preset === 'thisYear' || preset === 'thisFiscalYear') {
-    // 日本の会計年度: 4月1日〜翌年3月31日
-    const fiscalYear = m >= 3 ? y : y - 1;
-    const start = `${fiscalYear}-04-01`;
-    const end = `${fiscalYear + 1}-03-31`;
+    // 自社情報で設定された会計年度（期首月〜期末月）
+    const fiscal = (typeof getFiscalSettings === 'function') ? getFiscalSettings() : {};
+    const startMonth = Number(fiscal.fiscalStartMonth || 4);
+    const curFiscalYear = fiscal.fiscalYear ? Number(fiscal.fiscalYear) : (m >= (startMonth - 1) ? y : y - 1);
+    if (typeof calculateFiscalDates === 'function') {
+      const dates = calculateFiscalDates(curFiscalYear, startMonth);
+      return { start: dates.start, end: dates.end };
+    }
+    const start = `${curFiscalYear}-${String(startMonth).padStart(2, '0')}-01`;
+    const end = `${curFiscalYear + 1}-${String(startMonth === 1 ? 12 : startMonth - 1).padStart(2, '0')}-31`;
     return { start, end };
   } else if (preset === 'lastYear' || preset === 'lastFiscalYear') {
-    const fiscalYear = (m >= 3 ? y : y - 1) - 1;
-    const start = `${fiscalYear}-04-01`;
-    const end = `${fiscalYear + 1}-03-31`;
+    const fiscal = (typeof getFiscalSettings === 'function') ? getFiscalSettings() : {};
+    const startMonth = Number(fiscal.fiscalStartMonth || 4);
+    const curFiscalYear = (fiscal.fiscalYear ? Number(fiscal.fiscalYear) : (m >= (startMonth - 1) ? y : y - 1)) - 1;
+    if (typeof calculateFiscalDates === 'function') {
+      const dates = calculateFiscalDates(curFiscalYear, startMonth);
+      return { start: dates.start, end: dates.end };
+    }
+    const start = `${curFiscalYear}-${String(startMonth).padStart(2, '0')}-01`;
+    const end = `${curFiscalYear + 1}-${String(startMonth === 1 ? 12 : startMonth - 1).padStart(2, '0')}-31`;
     return { start, end };
   } else if (preset === 'custom') {
     return {
@@ -5374,6 +5452,28 @@ function getPresetPeriodRange(preset) {
     };
   }
   return { start: '', end: '' };
+}
+
+/**
+ * 会計年度設定に応じて「今期」「前期」のプルダウン選択肢ラベルを動的に更新
+ */
+function updateAccPeriodPresetLabels() {
+  const sel = DOM.accGlobalPeriodPreset || document.getElementById('accGlobalPeriodPreset');
+  if (!sel) return;
+  const fiscal = (typeof getFiscalSettings === 'function') ? getFiscalSettings() : {};
+  const startMonth = Number(fiscal.fiscalStartMonth || 4);
+  const endMonth = ((startMonth - 1 + 12 - 1) % 12) + 1;
+  const endYearLabel = startMonth === 1 ? '12月' : `翌年${endMonth}月`;
+  const fy = fiscal.fiscalYear || new Date().getFullYear();
+
+  const thisYearOpt = sel.querySelector('option[value="thisYear"]');
+  if (thisYearOpt) {
+    thisYearOpt.innerText = `今期 (${fy}年度: ${startMonth}月〜${endYearLabel})`;
+  }
+  const lastYearOpt = sel.querySelector('option[value="lastYear"]');
+  if (lastYearOpt) {
+    lastYearOpt.innerText = `前期 (${fy - 1}年度)`;
+  }
 }
 
 /**
@@ -5628,6 +5728,9 @@ function initAccountingMonthSelector() {
 }
 
 function renderAccountingDashboard(periodFilter = currentAccGlobalPeriod) {
+  if (typeof updateAccPeriodPresetLabels === 'function') {
+    updateAccPeriodPresetLabels();
+  }
   const invoices = getHistoryList();
   const expenses = getExpenseList();
   const pnl = calculateProfitAndLoss(invoices, expenses, periodFilter || 'all');
@@ -5861,14 +5964,27 @@ function renderMonthlyBarChart() {
 
   const invoices = getHistoryList();
   const expenses = getExpenseList();
+  const fiscal = (typeof getFiscalSettings === 'function') ? getFiscalSettings() : {};
+  const startMonth = Number(fiscal.fiscalStartMonth || 4);
+  const fy = fiscal.fiscalYear ? Number(fiscal.fiscalYear) : new Date().getFullYear();
 
-  // 直近6ヶ月の月キーを生成
+  // 月キーの生成（今期が選ばれている場合は会計年度12ヶ月、それ以外は直近6ヶ月）
   const months = [];
-  const now = new Date();
-  for (let i = 5; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const mStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    months.push(mStr);
+  const isFiscalYearView = (typeof currentAccGlobalPeriod !== 'undefined' && currentAccGlobalPeriod.preset === 'thisYear');
+
+  if (isFiscalYearView) {
+    for (let i = 0; i < 12; i++) {
+      const curM = ((startMonth - 1 + i) % 12) + 1;
+      const curY = (startMonth - 1 + i >= 12) ? fy + 1 : fy;
+      months.push(`${curY}-${String(curM).padStart(2, '0')}`);
+    }
+  } else {
+    const now = new Date();
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const mStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      months.push(mStr);
+    }
   }
 
   // 各月の損益を計算
@@ -8607,6 +8723,15 @@ function renderAccountingSettings() {
   const accountMaster = (typeof getAccountMasterList === 'function') ? getAccountMasterList() : [];
   const fiscalSettings = (typeof getFiscalSettings === 'function') ? getFiscalSettings() : { openingBalances: {} };
   const openingBalances = fiscalSettings.openingBalances || {};
+
+  // 期首残高の対象年度バッジの更新
+  const fy = fiscalSettings.fiscalYear || new Date().getFullYear();
+  const startM = fiscalSettings.fiscalStartMonth || 4;
+  const sStr = fiscalSettings.fiscalYearStart || `${fy}-${String(startM).padStart(2, '0')}-01`;
+  const badge = document.getElementById('dispOpeningBalanceFiscalYearBadge');
+  if (badge) {
+    badge.innerText = `${fy}年度 (${sStr.replace(/-/g, '/')}時点)`;
+  }
 
   // 1. 期首残高入力テーブル
   const obTbody = document.getElementById('openingBalancesTableBody');

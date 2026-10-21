@@ -281,7 +281,7 @@
         </button>
         <div style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
-          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.21-exp-sync-fix</span>
+          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.21-fiscal-fix</span>
         </div>
       </div>
 
@@ -944,6 +944,76 @@
               </button>
               <input type="file" id="settingFileStampUpload" accept="image/*"
                 style="position: absolute; opacity: 0; width: 0.1px; height: 0.1px; pointer-events: none;">
+            </div>
+          </div>
+        </div>
+
+        <!-- 📅 会計年度・決算期設定 -->
+        <div class="form-section" style="margin-bottom: 16px;">
+          <div class="section-header" style="margin-bottom: 10px;">
+            <span class="section-title" style="font-size: 0.9rem;">
+              📅 会計年度・決算期設定
+            </span>
+          </div>
+
+          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px;">
+            <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+              <!-- 期首月選択 -->
+              <div class="form-group" style="margin-bottom: 0;">
+                <label class="form-label" for="settingFiscalStartMonth" style="font-size: 0.8rem; font-weight: 700; color: #334155;">
+                  期首月（事業年度の開始月） <span style="color: var(--danger);">*</span>
+                </label>
+                <select id="settingFiscalStartMonth" class="form-select" style="font-size: 0.85rem; font-weight: 700; padding: 6px 10px;">
+                  <option value="1">1月始まり (12月決算)</option>
+                  <option value="2">2月始まり (翌年1月決算)</option>
+                  <option value="3">3月始まり (翌年2月決算)</option>
+                  <option value="4" selected>4月始まり (翌年3月決算)</option>
+                  <option value="5">5月始まり (翌年4月決算)</option>
+                  <option value="6">6月始まり (翌年5月決算)</option>
+                  <option value="7">7月始まり (翌年6月決算)</option>
+                  <option value="8">8月始まり (翌年7月決算)</option>
+                  <option value="9">9月始まり (翌年8月決算)</option>
+                  <option value="10">10月始まり (翌年9月決算)</option>
+                  <option value="11">11月始まり (翌年10月決算)</option>
+                  <option value="12">12月始まり (翌年11月決算)</option>
+                </select>
+                <div id="dispFiscalEndMonthText" style="font-size: 0.75rem; color: #0369a1; font-weight: 700; margin-top: 4px;">
+                  決算期: 翌年3月決算
+                </div>
+              </div>
+
+              <!-- 対象会計年度選択 -->
+              <div class="form-group" style="margin-bottom: 0;">
+                <label class="form-label" for="settingFiscalYear" style="font-size: 0.8rem; font-weight: 700; color: #334155;">
+                  現在の対象会計年度（Fiscal Year） <span style="color: var(--danger);">*</span>
+                </label>
+                <select id="settingFiscalYear" class="form-select" style="font-size: 0.85rem; font-weight: 700; padding: 6px 10px;">
+                  <option value="2023">2023年度</option>
+                  <option value="2024">2024年度</option>
+                  <option value="2025">2025年度</option>
+                  <option value="2026" selected>2026年度</option>
+                  <option value="2027">2027年度</option>
+                  <option value="2028">2028年度</option>
+                </select>
+                <div id="dispFiscalPeriodPreview" style="font-size: 0.75rem; color: #166534; font-weight: 700; margin-top: 4px;">
+                  期間: 2026/04/01 〜 2027/03/31
+                </div>
+              </div>
+            </div>
+
+            <!-- 消費税経理方式選択 -->
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label" for="settingTaxAccountingMethod" style="font-size: 0.8rem; font-weight: 700; color: #334155;">
+                消費税の経理方式
+              </label>
+              <select id="settingTaxAccountingMethod" class="form-select" style="font-size: 0.85rem; font-weight: 600; padding: 6px 10px;">
+                <option value="tax_inclusive" selected>税込経理（標準・中小企業向け）</option>
+                <option value="tax_exclusive">税抜経理</option>
+              </select>
+            </div>
+
+            <div style="font-size: 0.725rem; color: #64748b; margin-top: 8px; line-height: 1.4;">
+              ※設定した会計年度および期首月は、財務会計の損益計算書（P/L）、貸借対照表（B/S）、残高試算表、および集計期間「今期」に自動連動されます。
             </div>
           </div>
         </div>
@@ -2145,8 +2215,8 @@
             <option value="thisMonth">今月 (当月)</option>
             <option value="lastMonth">先月</option>
             <option value="last3Months">直近3ヶ月</option>
-            <option value="thisYear">今年度 (4月〜翌3月)</option>
-            <option value="lastYear">前年度</option>
+            <option value="thisYear">今期 (会計年度通期)</option>
+            <option value="lastYear">前期 (前会計年度)</option>
             <option value="all">全期間 (すべて)</option>
             <option value="custom">📅 任意期間カレンダー指定...</option>
           </select>
@@ -2498,6 +2568,7 @@
               <p style="font-size: 0.75rem; color: #64748b; margin: 2px 0 0 0;">
                 請求書・経費・給与・手動振替伝票を二重計上なく完全統合した仕訳帳です</p>
             </div>
+            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
               <button type="button" class="btn btn-outline btn-sm" id="btnSyncPayrollFromAcc"
                 onclick="window.handleSyncPayrollToAccounting && window.handleSyncPayrollToAccounting()"
                 style="display: flex; align-items: center; gap: 6px; background: #f0fdf4; border-color: #86efac; color: #166534; font-weight: 700;"
@@ -2745,9 +2816,14 @@
             <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px;">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                 <div>
-                  <h3 style="margin: 0; font-size: 0.95rem; font-weight: 700; color: #1e293b;">
-                    期首残高設定（貸借バランス）
-                  </h3>
+                  <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                    <h3 style="margin: 0; font-size: 0.95rem; font-weight: 700; color: #1e293b;">
+                      期首残高設定（貸借バランス）
+                    </h3>
+                    <span id="dispOpeningBalanceFiscalYearBadge" style="font-size: 0.75rem; font-weight: 700; background: #e0f2fe; color: #0369a1; border: 1px solid #7dd3fc; padding: 2px 8px; border-radius: 9999px;">
+                      2026年度 (2026/04/01時点)
+                    </span>
+                  </div>
                   <p style="font-size: 0.75rem; color: #64748b; margin: 2px 0 0 0;">
                     期首（期初）時点の各科目の残高を設定します。借方と貸方が一致している必要があります。</p>
                 </div>

@@ -4237,26 +4237,59 @@ export function deleteManualJournal(id) {
 }
 
 /**
+ * 会計年度と期首月から、期首日(YYYY-MM-DD)と期末日(YYYY-MM-DD)を計算
+ */
+export function calculateFiscalDates(year, month) {
+  const y = Number(year) || new Date().getFullYear();
+  const m = Number(month) || 4;
+  const startStr = `${y}-${String(m).padStart(2, '0')}-01`;
+  const endMonth = ((m - 1 + 12 - 1) % 12) + 1;
+  const endYear = m === 1 ? y : y + 1;
+  const lastDay = new Date(endYear, endMonth, 0).getDate();
+  const endStr = `${endYear}-${String(endMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+  return { start: startStr, end: endStr, endMonth, endYear };
+}
+
+/**
  * 会計年度・期首残高設定を取得
  * @returns {Object}
  */
 export function getFiscalSettings() {
   try {
     const raw = localStorage.getItem(KEYS.FISCAL_SETTINGS);
-    const currentYear = new Date().getFullYear();
+    const today = new Date();
+    const currentYear = today.getFullYear();
+    const defaultDates = calculateFiscalDates(currentYear, 4);
     const defaultSettings = {
-      fiscalYearStart: `${currentYear}-01-01`,
-      fiscalYearEnd: `${currentYear}-12-31`,
+      fiscalYear: currentYear,
+      fiscalStartMonth: 4,
+      fiscalYearStart: defaultDates.start,
+      fiscalYearEnd: defaultDates.end,
+      taxMethod: 'tax_inclusive',
       openingBalances: {}
     };
     if (!raw) return defaultSettings;
     const parsed = JSON.parse(raw);
-    return { ...defaultSettings, ...parsed };
+    const year = parsed.fiscalYear ? Number(parsed.fiscalYear) : currentYear;
+    const startM = parsed.fiscalStartMonth ? Number(parsed.fiscalStartMonth) : 4;
+    const dates = calculateFiscalDates(year, startM);
+    return {
+      ...defaultSettings,
+      ...parsed,
+      fiscalYear: year,
+      fiscalStartMonth: startM,
+      fiscalYearStart: parsed.fiscalYearStart || dates.start,
+      fiscalYearEnd: parsed.fiscalYearEnd || dates.end
+    };
   } catch (e) {
     console.warn('Failed to load fiscal settings:', e);
+    const defaultDates = calculateFiscalDates(2026, 4);
     return {
-      fiscalYearStart: '2026-01-01',
-      fiscalYearEnd: '2026-12-31',
+      fiscalYear: 2026,
+      fiscalStartMonth: 4,
+      fiscalYearStart: defaultDates.start,
+      fiscalYearEnd: defaultDates.end,
+      taxMethod: 'tax_inclusive',
       openingBalances: {}
     };
   }
