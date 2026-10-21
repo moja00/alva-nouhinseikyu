@@ -322,11 +322,13 @@ export function buildUnifiedJournals(arg1 = {}, arg2 = [], arg3 = [], arg4 = [],
 
   (manualJournals || []).forEach(jnl => {
     if (!jnl) return;
-    if (jnl.sourceType === 'reconciliation' && jnl.sourceId) {
+    if ((jnl.sourceType === 'reconciliation' || jnl.sourceType === 'reconcile') && jnl.sourceId) {
       manualReconciliationSourceIds.add(String(jnl.sourceId).trim());
     }
     if (jnl.sourceType === 'payroll' && jnl.sourceId) {
       manualPayrollSourceIds.add(String(jnl.sourceId).trim());
+      const cleanMonth = String(jnl.sourceId).replace(/^payroll_/, '').trim();
+      if (cleanMonth) manualPayrollSourceIds.add(cleanMonth);
     }
   });
 
@@ -421,15 +423,19 @@ export function buildUnifiedJournals(arg1 = {}, arg2 = [], arg3 = [], arg4 = [],
     const invoiceType = exp.invoiceNumber ? 'qualified' : (exp.invoiceType || 'none');
 
     // 貸方支払方法の勘定科目判定
-    let creditCode = '102';
-    let creditName = '普通預金';
+    let creditCode = '101';
+    let creditName = '現金';
     const method = String(exp.paymentMethod || '').trim();
-    if (method === '現金') {
-      creditCode = '101'; creditName = '現金';
-    } else if (method === '未払金' || method === 'クレジットカード') {
+    if (method.includes('普通預金') || method.startsWith('102')) {
+      creditCode = '102'; creditName = '普通預金';
+    } else if (method.includes('未払金') || method.includes('クレジットカード') || method.startsWith('212')) {
       creditCode = '212'; creditName = '未払金';
-    } else if (method === '立替金' || method === '役員立替') {
+    } else if (method.includes('立替金') || method.includes('役員借入金') || method.startsWith('114')) {
       creditCode = '114'; creditName = '立替金';
+    } else if (method.includes('現金') || method.startsWith('101')) {
+      creditCode = '101'; creditName = '現金';
+    } else if (method) {
+      creditCode = '102'; creditName = '普通預金';
     }
 
     unified.push({
@@ -450,7 +456,10 @@ export function buildUnifiedJournals(arg1 = {}, arg2 = [], arg3 = [], arg4 = [],
   (payrollRecords || []).forEach(pay => {
     if (!pay) return;
     const cleanPayId = String(pay.id || pay.recordId || '').trim();
-    if (cleanPayId && manualPayrollSourceIds.has(cleanPayId)) {
+    const payMonth = String(pay.targetMonth || '').trim();
+    if ((cleanPayId && manualPayrollSourceIds.has(cleanPayId)) ||
+        (payMonth && manualPayrollSourceIds.has(payMonth)) ||
+        (payMonth && manualPayrollSourceIds.has(`payroll_${payMonth}`))) {
       return; // 複合仕訳側で計上済みのためスキップ
     }
 

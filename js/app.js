@@ -536,7 +536,8 @@ const DOM = {
   expenseInputClaimant: document.getElementById('expenseInputClaimant'),
   btnClaimantKobayashi: document.getElementById('btnClaimantKobayashi'),
   btnClaimantMiyazaki: document.getElementById('btnClaimantMiyazaki'),
-  btnClaimantCompany: document.getElementById('btnClaimantCompany'),
+  expensePaymentMethod: document.getElementById('expensePaymentMethod'),
+  expenseDuplicateAlert: document.getElementById('expenseDuplicateAlert'),
   btnResetExpenseForm: document.getElementById('btnResetExpenseForm'),
   btnSaveExpense: document.getElementById('btnSaveExpense'),
   radioExpenseTypeExpense: document.getElementById('radioExpenseTypeExpense'),
@@ -3052,6 +3053,14 @@ function setupEventListeners() {
     DOM.btnClearReceiptImage.addEventListener('click', clearReceiptImage);
   }
 
+  // リアルタイム重複チェック
+  [DOM.expenseInputDate, DOM.expenseInputAmount, DOM.expenseInputPayee].forEach(el => {
+    if (el) {
+      el.addEventListener('input', checkExpenseDuplicateLive);
+      el.addEventListener('change', checkExpenseDuplicateLive);
+    }
+  });
+
   // レシート画像 拡大モーダル制御
   if (DOM.btnZoomReceiptImage) {
     DOM.btnZoomReceiptImage.addEventListener('click', () => {
@@ -5294,6 +5303,7 @@ function switchAccountingTab(tabKey) {
     renderAccountingJournals(currentAccGlobalPeriod);
   } else if (fullId === 'acc-tab-settings') {
     renderAccountingSettings();
+    renderMonthLockManagement();
   }
 }
 
@@ -5648,6 +5658,11 @@ function renderAccountingDashboard(periodFilter = currentAccGlobalPeriod) {
 
   // 月別推移グラフの描画
   renderMonthlyBarChart();
+
+  // 消費税集計サマリーパネルの描画
+  if (typeof renderTaxSummaryCard === 'function') {
+    renderTaxSummaryCard(periodFilter);
+  }
 }
 
 function renderFormalProfitAndLossTable(pnl) {
@@ -5958,6 +5973,169 @@ function renderMonthlyBarChart() {
   });
 }
 
+// ==========================================================================
+// 消費税集計サマリーパネル（インボイス制度対応）
+// ==========================================================================
+function renderTaxSummaryCard(periodFilter = currentAccGlobalPeriod) {
+  const card = document.getElementById('accTaxSummaryCard');
+  if (!card) return;
+
+  const invoices = typeof getHistoryList === 'function' ? getHistoryList() : [];
+  const expenses = typeof getExpenseList === 'function' ? getExpenseList() : [];
+  const manual = typeof getManualJournals === 'function' ? getManualJournals() : [];
+  const unified = typeof buildUnifiedJournals === 'function' ? buildUnifiedJournals({ invoices, expenses, manualJournals: manual, periodFilter }) : [];
+
+  let outTax10 = 0;
+  let outTax8 = 0;
+  let inTax10 = 0;
+  let inTax8 = 0;
+
+  unified.forEach(jnl => {
+    // 貸方: 課税売上（仮受消費税）
+    (jnl.creditLines || []).forEach(cl => {
+      const amt = Number(cl.amount) || 0;
+      if (cl.taxType === 'taxable_10') {
+        outTax10 += Math.round(amt * 10 / 110);
+      } else if (cl.taxType === 'taxable_8') {
+        outTax8 += Math.round(amt * 8 / 108);
+      }
+    });
+
+    // 借方: 課税仕入・経費（仮払消費税）
+    (jnl.debitLines || []).forEach(dl => {
+      const amt = Number(dl.amount) || 0;
+      if (dl.taxType === 'taxable_10') {
+        inTax10 += Math.round(amt * 10 / 110);
+      } else if (dl.taxType === 'taxable_8') {
+        inTax8 += Math.round(amt * 8 / 108);
+      }
+    });
+  });
+
+  const totalOutTax = outTax10 + outTax8;
+  const totalInTax = inTax10 + inTax8;
+  const netPayable = totalOutTax - totalInTax;
+
+  const outTotEl = document.getElementById('taxOutputTotal');
+  const out10El = document.getElementById('taxOutput10');
+  const out8El = document.getElementById('taxOutput8');
+  const inTotEl = document.getElementById('taxInputTotal');
+  const in10El = document.getElementById('taxInput10');
+  const in8El = document.getElementById('taxInput8');
+  const netPayEl = document.getElementById('taxNetPayable');
+  const badgeEl = document.getElementById('taxPayableBadge');
+  const noteEl = document.getElementById('taxNetPayableNote');
+
+  if (outTotEl) outTotEl.textContent = formatCurrency(totalOutTax);
+  if (out10El) out10El.textContent = formatCurrency(outTax10);
+  if (out8El) out8El.textContent = formatCurrency(outTax8);
+
+  if (inTotEl) inTotEl.textContent = formatCurrency(totalInTax);
+  if (in10El) in10El.textContent = formatCurrency(inTax10);
+  if (in8El) in8El.textContent = formatCurrency(inTax8);
+
+  if (netPayEl) {
+    netPayEl.textContent = formatCurrency(netPayable);
+    netPayEl.style.color = netPayable >= 0 ? '#14532d' : '#2563eb';
+  }
+
+  if (badgeEl) {
+    if (netPayable >= 0) {
+      badgeEl.textContent = `納付予測額: ${formatCurrency(netPayable)}`;
+      badgeEl.style.background = '#e0e7ff';
+      badgeEl.style.color = '#3730a3';
+      badgeEl.style.borderColor = '#c7d2fe';
+    } else {
+      badgeEl.textContent = `還付予測額: ${formatCurrency(Math.abs(netPayable))}`;
+      badgeEl.style.background = '#eff6ff';
+      badgeEl.style.color = '#1d4ed8';
+      badgeEl.style.borderColor = '#93c5fd';
+    }
+  }
+
+  if (noteEl) {
+    noteEl.textContent = netPayable >= 0
+      ? '※仮受消費税 － 仮払消費税（原則課税方式による概算）'
+      : '※支払った消費税が多いため還付申告見込です';
+  }
+}
+
+// ==========================================================================
+// 月次締め（会計ロック）管理機能
+// ==========================================================================
+function renderMonthLockManagement() {
+  const container = document.getElementById('lockedMonthsBadgeContainer');
+  if (!container) return;
+
+  const locked = typeof getLockedMonths === 'function' ? getLockedMonths() : [];
+  if (locked.length === 0) {
+    container.innerHTML = '<span style="font-size: 0.75rem; color: #94a3b8;">現在ロックされている年月はありません</span>';
+    return;
+  }
+
+  let html = '';
+  locked.forEach(ym => {
+    const [y, m] = ym.split('-');
+    const label = `${y}年${parseInt(m, 10)}月`;
+    html += `
+      <span style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 9999px; background: #fee2e2; color: #991b1b; font-size: 0.75rem; font-weight: 700; border: 1px solid #fca5a5;">
+        <span>🔒 ${label} (${ym}) 締切済</span>
+        <button type="button" onclick="window.handleUnlockMonth && window.handleUnlockMonth('${ym}')" style="background: none; border: none; cursor: pointer; color: #b91c1c; font-weight: 800; padding: 0 2px;" title="この月のロックを解除">✕</button>
+      </span>
+    `;
+  });
+  container.innerHTML = html;
+}
+
+function handleLockMonth() {
+  console.log("【月次締め実行】開始");
+  const inp = document.getElementById('lockMonthInput');
+  const ym = inp?.value;
+  if (!ym) {
+    alert('締め切る年月を選択してください。');
+    return;
+  }
+  const [y, m] = ym.split('-');
+  const label = `${y}年${parseInt(m, 10)}月`;
+  if (!confirm(`【月次締め実行の確認】\n${label}（${ym}）を月次締め（ロック）しますか？\n締め切り後は、当月の仕訳帳・振替伝票・経費・請求書の修正や削除ができなくなります。`)) {
+    return;
+  }
+
+  const locked = typeof getLockedMonths === 'function' ? getLockedMonths() : [];
+  if (!locked.includes(ym)) {
+    locked.push(ym);
+    if (typeof saveLockedMonths === 'function') {
+      saveLockedMonths(locked);
+    }
+  }
+
+  showToast(`🔒 ${label} の月次締めを完了しました。伝票データが保護されました。`, 'success');
+  renderMonthLockManagement();
+}
+
+function handleUnlockMonth(ym) {
+  console.log("【月次締め解除】開始", { ym });
+  const [y, m] = ym.split('-');
+  const label = `${y}年${parseInt(m, 10)}月`;
+  if (!confirm(`【月次締め解除の確認】\n${label}（${ym}）の月次締め（ロック）を解除しますか？\n解除すると、当月の伝票編集が可能になります。`)) {
+    return;
+  }
+
+  let locked = typeof getLockedMonths === 'function' ? getLockedMonths() : [];
+  locked = locked.filter(item => item !== ym);
+  if (typeof saveLockedMonths === 'function') {
+    saveLockedMonths(locked);
+  }
+
+  showToast(`🔓 ${label} のロックを解除しました。`, 'info');
+  renderMonthLockManagement();
+}
+
+window.renderTaxSummaryCard = renderTaxSummaryCard;
+window.renderMonthLockManagement = renderMonthLockManagement;
+window.handleLockMonth = handleLockMonth;
+window.handleUnlockMonth = handleUnlockMonth;
+
 function filterSalesTable(filter) {
   currentSalesFilter = filter;
   if (DOM.btnFilterAllInvoices) DOM.btnFilterAllInvoices.classList.toggle('active', filter === 'all');
@@ -6039,6 +6217,17 @@ function renderAccountingSales(filter = 'all', periodFilter = currentAccGlobalPe
 }
 
 window.__toggleInvoicePayment = function(id, newStatus) {
+  const full = (typeof getDocFromHistory === 'function') ? getDocFromHistory(id) : null;
+  const list = getHistoryList();
+  const summary = list.find(d => d.id === id);
+  const doc = full || summary?.fullDoc || summary;
+  const checkDate = doc?.paidDate || doc?.issueDate || getTodayDateString();
+
+  if (typeof isMonthLocked === 'function' && isMonthLocked(checkDate)) {
+    alert(`⚠️ 対象伝票の日付（${checkDate.substring(0, 7)}）は月次締め（会計ロック）されているため、消込ステータスを変更できません。`);
+    return;
+  }
+
   const success = updateDocPaymentStatus(id, newStatus);
   if (success) {
     showToast(newStatus ? '入金消込を完了しました！仕訳帳にも自動連動されます。' : '未入金ステータスに戻しました。', 'success');
@@ -6047,6 +6236,17 @@ window.__toggleInvoicePayment = function(id, newStatus) {
 };
 
 window.__cancelInvoiceIssue = async function(id, docNumber = '') {
+  const full = (typeof getDocFromHistory === 'function') ? getDocFromHistory(id) : null;
+  const list = getHistoryList();
+  const summary = list.find(d => d.id === id);
+  const doc = full || summary?.fullDoc || summary;
+  const checkDate = doc?.issueDate || getTodayDateString();
+
+  if (typeof isMonthLocked === 'function' && isMonthLocked(checkDate)) {
+    alert(`⚠️ 対象伝票の発行日（${checkDate.substring(0, 7)}）は月次締め（会計ロック）されているため、確定発行を取り消せません。`);
+    return;
+  }
+
   const label = docNumber ? `伝票「${docNumber}」` : 'この書類';
   if (!confirm(`${label}の確定発行を取り消しますか？\n\n【取り消しの効果】\n・売上消込台帳・P/Lダッシュボード・仕訳帳から即座に除外されます。\n・書類データは削除されず、下書き状態に戻ります。`)) {
     return;
@@ -7526,8 +7726,32 @@ function resetExpenseForm() {
   setActiveExpenseClaimant(activeExpenseClaimant);
   clearReceiptImage();
   switchExpenseEntryType('expense'); // デフォルトは経費として読み込み・登録
+  if (DOM.expensePaymentMethod) DOM.expensePaymentMethod.value = '101 現金';
+  if (DOM.expenseDuplicateAlert) DOM.expenseDuplicateAlert.style.display = 'none';
   if (DOM.btnSaveExpense) {
     DOM.btnSaveExpense.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> 経費を保存する`;
+  }
+}
+
+function checkExpenseDuplicateLive() {
+  const alertEl = DOM.expenseDuplicateAlert || document.getElementById('expenseDuplicateAlert');
+  if (!alertEl) return;
+  const date = DOM.expenseInputDate?.value;
+  const amount = Number(DOM.expenseInputAmount?.value) || 0;
+  const payee = (DOM.expenseInputPayee?.value || '').trim();
+  const currentId = DOM.expenseEditId?.value || '';
+
+  if (!date || amount <= 0 || !payee) {
+    alertEl.style.display = 'none';
+    return;
+  }
+
+  const allExp = (typeof getExpenseList === 'function' ? getExpenseList() : []) || [];
+  const found = allExp.some(e => e.id !== currentId && e.date === date && Number(e.amount) === amount && (e.payee || '').trim() === payee);
+  if (found) {
+    alertEl.style.display = 'flex';
+  } else {
+    alertEl.style.display = 'none';
   }
 }
 
@@ -7551,6 +7775,22 @@ function handleSaveExpense() {
       alert('有効な金額（1円以上）を入力してください。');
       return;
     }
+
+    if (typeof isMonthLocked === 'function' && isMonthLocked(date)) {
+      alert(`⚠️ 出費日（${date.substring(0, 7)}）は月次締め（会計ロック）されているため、経費を登録・更新できません。`);
+      return;
+    }
+
+    // 重複チェック
+    const allExistingExp = (typeof getExpenseList === 'function' ? getExpenseList() : []) || [];
+    const isDuplicate = allExistingExp.some(e => e.id !== id && e.date === date && Number(e.amount) === amount && (e.payee || '').trim() === payee);
+    if (isDuplicate) {
+      if (!confirm(`⚠️ 同じ出費日（${date}）・同じ金額（¥${amount.toLocaleString()}）・同じ支払先（${payee || '未指定'}）の経費がすでに登録されています。\n重複の可能性がありますが、このまま保存しますか？`)) {
+        return;
+      }
+    }
+
+    const paymentMethod = DOM.expensePaymentMethod ? DOM.expensePaymentMethod.value : '101 現金';
 
     const isPurchase = DOM.radioExpenseTypePurchase && DOM.radioExpenseTypePurchase.checked;
     let linkedInventoryId = '';
@@ -7579,6 +7819,7 @@ function handleSaveExpense() {
       invoiceNumber,
       note,
       claimant,
+      paymentMethod,
       isSettled: false,
       isCost: isPurchase,
       isPurchase: isPurchase,
@@ -7775,13 +8016,24 @@ function renderAccountingExpenses(periodFilter = currentAccGlobalPeriod) {
         ? `<button type="button" class="btn btn-outline btn-xs" style="background: #dcfce7; color: #15803d; border-color: #86efac; font-weight: 700; font-size: 11px; padding: 2px 8px;" onclick="window.__toggleExpenseSettled('${exp.id}', false)" title="クリックして未精算に戻す">✓ 精算済</button>`
         : `<button type="button" class="btn btn-warning btn-xs" style="background: #fef08a; color: #854d0e; border-color: #fde047; font-weight: 700; font-size: 11px; padding: 2px 8px;" onclick="window.__toggleExpenseSettled('${exp.id}', true)" title="クリックして精算済みにする">⏳ 未精算</button>`;
 
+      const isDup = allExpenses.some(o => o.id !== exp.id && o.date === exp.date && Number(o.amount) === Number(exp.amount) && (o.payee || '').trim() === (exp.payee || '').trim());
+      const dupBadge = isDup ? `<span class="badge" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; font-size: 10px; margin-left: 4px;" title="同じ日付・金額・支払先の経費が複数存在します">⚠️ 重複の可能性</span>` : '';
+      const payMethod = exp.paymentMethod || '101 現金';
+      const payBadge = `<div style="font-size: 10px; color: #475569; margin-top: 2px;">💳 ${escapeHtml(payMethod)}</div>`;
+
       html += `
-        <tr>
+        <tr ${isDup ? 'style="background: #fffbfa;"' : ''}>
           <td>${escapeHtml(exp.date)}</td>
           <td>${claimantBadge}</td>
-          <td><span class="badge badge-primary">${escapeHtml(catName)}</span></td>
           <td>
-            <div style="font-weight: 600; color: var(--slate-800);">${escapeHtml(exp.payee || '-')}</div>
+            <span class="badge badge-primary">${escapeHtml(catName)}</span>
+            ${payBadge}
+          </td>
+          <td>
+            <div style="font-weight: 600; color: var(--slate-800); display: flex; align-items: center; flex-wrap: wrap;">
+              <span>${escapeHtml(exp.payee || '-')}</span>
+              ${dupBadge}
+            </div>
             ${exp.note ? `<div style="font-size: 11px; color: var(--slate-500); margin-top: 2px;">${escapeHtml(exp.note)}</div>` : ''}
           </td>
           <td style="text-align: right; font-weight: 700; font-family: monospace;">${formatCurrency(exp.amount)}</td>
@@ -7822,12 +8074,24 @@ function renderAccountingExpenses(periodFilter = currentAccGlobalPeriod) {
           clBadge = `<span class="badge" style="background: #fef3c7; color: #92400e; font-size: 10px;">${escapeHtml(claimant)}</span>`;
         }
 
+        const isDup = allExpenses.some(o => o.id !== exp.id && o.date === exp.date && Number(o.amount) === Number(exp.amount) && (o.payee || '').trim() === (exp.payee || '').trim());
+        const dupBadge = isDup ? `<span class="badge" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; font-size: 10px; margin-left: 4px;">⚠️ 重複の可能性</span>` : '';
+        const payMethod = exp.paymentMethod || '101 現金';
+
         sumHtml += `
-          <tr>
+          <tr ${isDup ? 'style="background: #fffbfa;"' : ''}>
             <td style="padding: 8px 12px;">${escapeHtml(exp.date)}</td>
             <td style="padding: 8px 12px;">${clBadge}</td>
-            <td style="padding: 8px 12px; font-weight: 600; color: #1e293b;">${escapeHtml(exp.payee || '-')}</td>
-            <td style="padding: 8px 12px;"><span class="badge" style="background: #eff6ff; color: #1d4ed8; font-size: 11px;">${escapeHtml(catName)}</span></td>
+            <td style="padding: 8px 12px; font-weight: 600; color: #1e293b;">
+              <div style="display: flex; align-items: center; flex-wrap: wrap;">
+                <span>${escapeHtml(exp.payee || '-')}</span>
+                ${dupBadge}
+              </div>
+            </td>
+            <td style="padding: 8px 12px;">
+              <span class="badge" style="background: #eff6ff; color: #1d4ed8; font-size: 11px;">${escapeHtml(catName)}</span>
+              <div style="font-size: 10px; color: #64748b; margin-top: 2px;">💳 ${escapeHtml(payMethod)}</div>
+            </td>
             <td style="padding: 8px 12px; text-align: right; font-weight: 700; font-family: monospace;">${formatCurrency(exp.amount)}</td>
             <td style="padding: 8px 12px; font-family: monospace; font-size: 11px; color: #64748b;">${escapeHtml(exp.invoiceNumber || '-')}</td>
             <td style="padding: 8px 12px; text-align: center;">${receiptBadge}</td>
@@ -7863,6 +8127,7 @@ window.__editExpense = function(id) {
   DOM.expenseInputPayee.value = target.payee || '';
   if (DOM.expenseInputInvoiceNum) DOM.expenseInputInvoiceNum.value = target.invoiceNumber || '';
   DOM.expenseInputNote.value = target.note || '';
+  if (DOM.expensePaymentMethod) DOM.expensePaymentMethod.value = target.paymentMethod || '101 現金';
 
   if (target.claimant) {
     setActiveExpenseClaimant(target.claimant);
@@ -7883,9 +8148,14 @@ window.__editExpense = function(id) {
 };
 
 window.__deleteExpense = function(id) {
+  const expenses = getExpenseList();
+  const target = expenses.find(e => e.id === id);
+  if (target && typeof isMonthLocked === 'function' && isMonthLocked(target.date)) {
+    alert(`⚠️ 出費日（${target.date.substring(0, 7)}）は月次締め（会計ロック）されているため、削除できません。`);
+    return;
+  }
+
   if (confirm('この経費データを削除しますか？\n※ 保存されている領収書写真もデータフォルダから完全に削除されます。')) {
-    const expenses = getExpenseList();
-    const target = expenses.find(e => e.id === id);
     const receiptUrl = target ? (target.receiptImage || target.receiptDataUrl || '') : '';
 
     deleteExpense(id);
@@ -7902,6 +8172,7 @@ window.__deleteExpense = function(id) {
     }
 
     applyAccGlobalPeriod(currentAccGlobalPeriod.preset);
+    if (typeof renderTaxSummaryCard === 'function') renderTaxSummaryCard(currentAccGlobalPeriod);
     showToast('経費データと領収書写真を削除しました');
   }
 };
@@ -8513,7 +8784,8 @@ function openManualJournalModal(editId = null) {
   addCreditLine({ accountName: '売掛金', amount: '', taxType: 'out_of_scope', invoiceType: 'qualified' });
 
   updateMjLinesUI();
-  modal.style.display = 'flex';
+  modal.style.cssText = 'display: flex !important; position: fixed !important; inset: 0 !important; z-index: 99999 !important; background: rgba(0,0,0,0.5) !important; align-items: center !important; justify-content: center !important; opacity: 1 !important; visibility: visible !important;';
+  modal.classList.remove('hidden');
   modal.classList.add('active');
   console.log("【振替伝票モーダル】表示完了");
 }
@@ -8522,7 +8794,7 @@ function closeManualJournalModal() {
   console.log("【振替伝票モーダル】閉じる");
   const modal = document.getElementById('manualJournalModal');
   if (!modal) return;
-  modal.style.display = 'none';
+  modal.style.cssText = 'display: none !important; opacity: 0 !important; visibility: hidden !important;';
   modal.classList.remove('active');
 }
 
@@ -8695,8 +8967,14 @@ function saveManualJournalFromUI() {
   const entryNumInput = document.getElementById('mjEntryNumber');
   const descInput = document.getElementById('mjDescription');
 
+  const dateVal = dateInput?.value || getTodayDateString();
+  if (typeof isMonthLocked === 'function' && isMonthLocked(dateVal)) {
+    alert(`⚠️ 取引日付（${dateVal.substring(0, 7)}）は月次締め（会計ロック）されているため、振替伝票を登録・編集できません。`);
+    return;
+  }
+
   const journalData = {
-    date: dateInput?.value || getTodayDateString(),
+    date: dateVal,
     entryNumber: entryNumInput?.value || '',
     description: descInput?.value || '振替伝票',
     debitLines: currentMjDebitLines.map(l => ({
@@ -8734,11 +9012,19 @@ function saveManualJournalFromUI() {
     renderTrialBalance(currentAccGlobalPeriod);
     renderGeneralLedger(currentAccGlobalPeriod);
     renderAccountingDashboard(currentAccGlobalPeriod);
+    if (typeof renderTaxSummaryCard === 'function') renderTaxSummaryCard(currentAccGlobalPeriod);
   }
 }
 
 function deleteManualJournalFromUI(id) {
   console.log("【振替伝票削除】開始", id);
+  const list = typeof getManualJournals === 'function' ? getManualJournals() : [];
+  const target = list.find(j => j.id === id);
+  if (target && typeof isMonthLocked === 'function' && isMonthLocked(target.date)) {
+    alert(`⚠️ 取引日付（${target.date.substring(0, 7)}）は月次締め（会計ロック）されているため、削除できません。`);
+    return;
+  }
+
   if (!confirm('この手動仕訳（振替伝票）を削除しますか？\n元帳や財務諸表の数値も再計算されます。')) return;
   if (typeof deleteManualJournal === 'function') {
     deleteManualJournal(id);
@@ -8749,6 +9035,7 @@ function deleteManualJournalFromUI(id) {
     renderTrialBalance(currentAccGlobalPeriod);
     renderGeneralLedger(currentAccGlobalPeriod);
     renderAccountingDashboard(currentAccGlobalPeriod);
+    if (typeof renderTaxSummaryCard === 'function') renderTaxSummaryCard(currentAccGlobalPeriod);
   }
 }
 
@@ -8758,6 +9045,7 @@ function deleteManualJournalFromUI(id) {
 let currentReconcileDoc = null;
 
 function openReconcileFeeModal(invoiceId) {
+  console.log("【消込モーダル】開く処理開始", { invoiceId });
   const modal = document.getElementById('reconcileFeeModal');
   if (!modal) return;
 
@@ -8789,6 +9077,23 @@ function openReconcileFeeModal(invoiceId) {
   const dateInp = document.getElementById('rfDate');
   if (dateInp) dateInp.value = getTodayDateString();
 
+  // 口座セレクトに勘定科目の補助科目（群馬銀行、高崎信金等）を動的生成
+  const accSelect = document.getElementById('rfAccount');
+  if (accSelect) {
+    const master = typeof getAccountMasterList === 'function' ? getAccountMasterList() : [];
+    const futsuu = master.find(a => a.name === '普通預金');
+    let optsHtml = '';
+    if (futsuu && Array.isArray(futsuu.subAccounts) && futsuu.subAccounts.length > 0) {
+      futsuu.subAccounts.forEach(sub => {
+        optsHtml += `<option value="普通預金:${sub}">普通預金 (${sub})</option>`;
+      });
+    }
+    optsHtml += `<option value="普通預金">普通預金 (代表口座)</option>`;
+    optsHtml += `<option value="当座預金">当座預金</option>`;
+    optsHtml += `<option value="現金">現金</option>`;
+    accSelect.innerHTML = optsHtml;
+  }
+
   // デフォルト: 手数料 440円、差引入金額
   const defaultFee = grandTotal >= 30000 ? 440 : 220;
   const actInp = document.getElementById('rfActualAmount');
@@ -8797,14 +9102,17 @@ function openReconcileFeeModal(invoiceId) {
   if (feeInp) feeInp.value = defaultFee;
   if (actInp) actInp.value = Math.max(0, grandTotal - defaultFee);
 
-  modal.style.display = 'flex';
+  modal.style.cssText = 'display: flex !important; position: fixed !important; inset: 0 !important; z-index: 99999 !important; background: rgba(0,0,0,0.5) !important; align-items: center !important; justify-content: center !important; opacity: 1 !important; visibility: visible !important;';
+  modal.classList.remove('hidden');
   modal.classList.add('active');
+  console.log("【消込モーダル】表示完了");
 }
 
 function closeReconcileFeeModal() {
+  console.log("【消込モーダル】閉じる");
   const modal = document.getElementById('reconcileFeeModal');
   if (!modal) return;
-  modal.style.display = 'none';
+  modal.style.cssText = 'display: none !important; opacity: 0 !important; visibility: hidden !important;';
   modal.classList.remove('active');
 }
 
@@ -8837,9 +9145,22 @@ function submitReconcileFee() {
   const actVal = Number(document.getElementById('rfActualAmount')?.value) || 0;
   const feeVal = Number(document.getElementById('rfFeeAmount')?.value) || 0;
 
+  if (typeof isMonthLocked === 'function' && isMonthLocked(dateVal)) {
+    alert(`⚠️ 入金日（${dateVal.substring(0, 7)}）は月次締め（会計ロック）されているため、消込を実行できません。`);
+    return;
+  }
+
   if (actVal + feeVal !== grandTotal) {
     alert(`入金額(${formatCurrency(actVal)}) ＋ 振込手数料(${formatCurrency(feeVal)}) の合計が請求総額(${formatCurrency(grandTotal)}) と一致していません。`);
     return;
+  }
+
+  let debitAccName = accVal;
+  let debitSubAcc = '';
+  if (accVal.includes(':')) {
+    const parts = accVal.split(':');
+    debitAccName = parts[0];
+    debitSubAcc = parts[1] || '';
   }
 
   // 1. 請求書を入金済みに更新
@@ -8850,12 +9171,12 @@ function submitReconcileFee() {
     date: dateVal,
     entryNumber: `REC-${currentReconcileDoc.docNumber || invoiceId.substr(0, 6)}`,
     description: `[消込] ${currentReconcileDoc.clientName || currentReconcileDoc.client?.name || ''} 請求書「${currentReconcileDoc.docNumber || ''}」入金(振込手数料差引)`,
-    sourceType: 'reconcile',
-    sourceId: invoiceId, // ★ 二重計上防止排他制御のキー
+    sourceType: 'reconciliation', // ★ 排他制御キー
+    sourceId: invoiceId,
     debitLines: [
       {
-        accountName: accVal,
-        subAccount: '',
+        accountName: debitAccName,
+        subAccount: debitSubAcc,
         amount: actVal,
         taxType: 'out_of_scope',
         invoiceType: 'qualified'
@@ -8881,11 +9202,13 @@ function submitReconcileFee() {
 
   if (typeof saveManualJournal === 'function') {
     saveManualJournal(journalData);
+    console.log("【消込実行】複合仕訳保存完了", journalData);
   }
 
   showToast(`振込手数料(${formatCurrency(feeVal)}円)を計上し、入金消込を完了しました！仕訳帳にも二重計上なく反映されます。`, 'success');
   closeReconcileFeeModal();
   applyAccGlobalPeriod(currentAccGlobalPeriod.preset);
+  if (typeof renderTaxSummaryCard === 'function') renderTaxSummaryCard(currentAccGlobalPeriod);
 }
 
 // 勘定科目新規登録モーダル
@@ -8899,7 +9222,8 @@ function openNewAccountModal() {
   document.getElementById('naCode').value = '';
   document.getElementById('naName').value = '';
   document.getElementById('naSubAccounts').value = '';
-  modal.style.display = 'flex';
+  modal.style.cssText = 'display: flex !important; position: fixed !important; inset: 0 !important; z-index: 99999 !important; background: rgba(0,0,0,0.5) !important; align-items: center !important; justify-content: center !important; opacity: 1 !important; visibility: visible !important;';
+  modal.classList.remove('hidden');
   modal.classList.add('active');
   console.log("【勘定科目追加モーダル】表示完了");
 }
@@ -8908,7 +9232,7 @@ function closeNewAccountModal() {
   console.log("【勘定科目追加モーダル】閉じる");
   const modal = document.getElementById('newAccountModal');
   if (!modal) return;
-  modal.style.display = 'none';
+  modal.style.cssText = 'display: none !important; opacity: 0 !important; visibility: hidden !important;';
   modal.classList.remove('active');
 }
 
@@ -9011,6 +9335,8 @@ window.updateNaSubTypeOptions = updateNaSubTypeOptions;
 window.submitNewAccount = submitNewAccount;
 window.exportJournalCSV = handleExportJournalCSV;
 window.__openReconcileFeeModal = openReconcileFeeModal;
+window.handleSyncPayrollToAccounting = handleSyncPayrollToAccounting;
+window.checkExpenseDuplicateLive = checkExpenseDuplicateLive;
 
 // 会計モジュール用 グローバルイベント委譲リスナー（ボタン無反応・DOM再描画防止）
 document.addEventListener('click', (e) => {
@@ -9045,6 +9371,14 @@ document.addEventListener('click', (e) => {
     e.preventDefault();
     console.log("【仕訳CSVエクスポート】クリック (イベント委譲)");
     handleExportJournalCSV();
+  } else if (btn.id === 'btnSyncPayrollFromAcc') {
+    e.preventDefault();
+    console.log("【給与仕訳計上】クリック (イベント委譲)");
+    handleSyncPayrollToAccounting();
+  } else if (btn.id === 'btnExecuteMonthLock') {
+    e.preventDefault();
+    console.log("【月次締め実行】クリック (イベント委譲)");
+    handleLockMonth();
   }
 });
 
@@ -10724,45 +11058,106 @@ function handlePrintPayrollSheet() {
 // ==========================================================================
 // 財務会計への給与仕訳連携
 // ==========================================================================
-function handleSyncPayrollToAccounting() {
-  currentPayrollRecord = getPayrollRecordFromForm();
-  const r = currentPayrollRecord;
-  if (!r) return;
-
-  const [y, m] = (r.targetMonth || currentPayrollMonth).split('-');
-  const ymText = `${y}年${parseInt(m, 10)}月度`;
-
-  // 会計の経費／支出として「給与手当」「法定福利費」の仕訳を自動生成・連携
-  if (confirm(`${ymText} の給与（支給総額 ¥${formatPayrollCurrency(r.totalGross)}）を財務会計に仕訳反映しますか？`)) {
-    // 1. 給与手当の経費データ
-    const payExpense = {
-      id: `exp_payroll_${r.targetMonth}`,
-      date: `${r.targetMonth}-25`, // 支給日
-      category: '役員報酬・給料手当',
-      amount: r.totalGross,
-      taxRate: 0, // 給与は不課税
-      payee: `${r.empName || '宮崎真輔'}（給与）`,
-      invoiceNumber: '',
-      note: `${ymText} 給与支給（差引手取 ¥${formatPayrollCurrency(r.netPay)}、社保預り ¥${formatPayrollCurrency(r.totalSocialInsurance)}、所得税預り ¥${formatPayrollCurrency(r.incomeTax)}）`
-    };
-    saveExpense(payExpense);
-
-    // 2. 会社負担法定福利費（社会保険料と同額相当を福利厚生・法定福利費として計上）
-    if (r.totalSocialInsurance > 0) {
-      const socialExpense = {
-        id: `exp_social_${r.targetMonth}`,
-        date: `${r.targetMonth}-25`,
-        category: '法定福利費',
-        amount: r.totalSocialInsurance,
-        taxRate: 0,
-        payee: '日本年金機構・協会けんぽ',
-        invoiceNumber: '',
-        note: `${ymText} 社会保険料 会社負担分（健保・厚年・雇用保険）`
-      };
-      saveExpense(socialExpense);
+function handleSyncPayrollToAccounting(targetMonthOpt = null) {
+  console.log("【給与仕訳連携】開始", { targetMonthOpt });
+  let r = null;
+  if (targetMonthOpt) {
+    r = typeof getPayrollRecordByMonth === 'function' ? getPayrollRecordByMonth(targetMonthOpt) : null;
+  }
+  if (!r) {
+    r = (typeof getPayrollRecordFromForm === 'function') ? getPayrollRecordFromForm() : null;
+  }
+  if (!r || !r.totalGross || r.totalGross <= 0) {
+    const records = typeof getPayrollRecords === 'function' ? getPayrollRecords() : [];
+    if (records.length > 0) {
+      r = records[records.length - 1]; // 最新のレコード
     }
+  }
 
-    showToast(`${ymText} の給与・社会保険仕訳を財務会計へ反映しました！`, 'success');
+  if (!r || !r.totalGross || r.totalGross <= 0) {
+    alert('計上対象となる確定給与明細が見つかりません。先に「給与明細・賞与計算」画面で給与データを計算・保存してください。');
+    return;
+  }
+
+  const ym = r.targetMonth || currentPayrollMonth || getTodayDateString().substring(0, 7);
+  const payDate = `${ym}-25`;
+
+  if (typeof isMonthLocked === 'function' && isMonthLocked(payDate)) {
+    alert(`⚠️ 支給年月（${ym}）は月次締め（会計ロック）されているため、給与仕訳を計上できません。`);
+    return;
+  }
+
+  const [y, m] = ym.split('-');
+  const ymText = `${y}年${parseInt(m, 10)}月度`;
+  const gross = Number(r.totalGross) || 0;
+  const incomeTax = Number(r.incomeTax) || 0;
+  const socialInsurance = Number(r.totalSocialInsurance) || 0;
+  const deposit = incomeTax + socialInsurance; // 預り金（源泉所得税 ＋ 社会保険本人負担分）
+  const net = Number(r.netPay) || (gross - deposit); // 普通預金（差引手取）
+
+  const msg = `【財務会計への給与仕訳計上】\n` +
+    `${ymText} の給与明細（総支給額 ¥${formatPayrollCurrency(gross)}）を財務会計に複合仕訳として反映しますか？\n\n` +
+    `【借方】給料手当: ¥${formatPayrollCurrency(gross)}\n` +
+    `【貸方】預り金（源泉税・社保控除）: ¥${formatPayrollCurrency(deposit)}\n` +
+    `【貸方】普通預金（差引支給額）: ¥${formatPayrollCurrency(net)}`;
+
+  if (!confirm(msg)) return;
+
+  const creditLines = [];
+  if (deposit > 0) {
+    creditLines.push({
+      accountName: '預り金',
+      subAccount: '源泉税・社保控除',
+      amount: deposit,
+      taxType: 'out_of_scope',
+      invoiceType: 'none'
+    });
+  }
+  if (net > 0) {
+    creditLines.push({
+      accountName: '普通預金',
+      subAccount: '給与振込',
+      amount: net,
+      taxType: 'out_of_scope',
+      invoiceType: 'none'
+    });
+  }
+  if (creditLines.length === 0) {
+    creditLines.push({
+      accountName: '普通預金',
+      subAccount: '給与振込',
+      amount: gross,
+      taxType: 'out_of_scope',
+      invoiceType: 'none'
+    });
+  }
+
+  const journalData = {
+    date: payDate,
+    entryNumber: `PAY-${ym.replace('-', '')}`,
+    description: `${ymText} 給料手当・役員報酬 支給（社保・所得税預り控除）`,
+    sourceType: 'payroll',
+    sourceId: `payroll_${ym}`, // ★ 排他制御キー
+    debitLines: [
+      {
+        accountName: '給料手当',
+        subAccount: r.empName || '役員・従業員',
+        amount: gross,
+        taxType: 'non_taxable',
+        invoiceType: 'none'
+      }
+    ],
+    creditLines: creditLines
+  };
+
+  if (typeof saveManualJournal === 'function') {
+    saveManualJournal(journalData);
+    console.log("【給与仕訳連携】複合仕訳保存完了", journalData);
+  }
+
+  showToast(`💼 ${ymText} の給与仕訳（複合仕訳）を財務会計へ計上しました！`, 'success');
+  if (typeof applyAccGlobalPeriod === 'function' && typeof currentAccGlobalPeriod !== 'undefined') {
+    applyAccGlobalPeriod(currentAccGlobalPeriod.preset);
   }
 }
 

@@ -281,7 +281,7 @@
         </button>
         <div style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
-          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.20-sync-v18</span>
+          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.20-sync-v19</span>
         </div>
       </div>
 
@@ -2357,6 +2357,54 @@
                 </tbody>
               </table>
             </div>
+
+            <!-- 段階利益テーブルの下: 消費税集計サマリーパネル -->
+            <div id="accTaxSummaryCard" style="margin-top: 24px; padding: 18px 20px; background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); border: 1.5px solid #cbd5e1; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 8px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span style="font-size: 1.2rem;">🧾</span>
+                  <div>
+                    <h4 style="margin: 0; font-size: 0.95rem; font-weight: 700; color: #1e293b;">インボイス制度対応 消費税集計（仮受・仮払・納付予測額）</h4>
+                    <p style="margin: 2px 0 0 0; font-size: 0.75rem; color: #64748b;">選択期間の売上（仮受税）および経費・仕入（仮払税）の自動集計と消費税見込</p>
+                  </div>
+                </div>
+                <div id="taxPayableBadge" style="font-size: 0.85rem; font-weight: 700; padding: 5px 14px; border-radius: 9999px; background: #e0e7ff; color: #3730a3; border: 1px solid #c7d2fe;">
+                  納付予測額: ¥0
+                </div>
+              </div>
+
+              <!-- 3カラムカード -->
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px;">
+                <!-- 1. 仮受消費税 -->
+                <div style="background: #ffffff; border: 1.5px solid #bfdbfe; border-radius: 8px; padding: 12px 14px;">
+                  <div style="font-size: 0.75rem; font-weight: 700; color: #1e40af; margin-bottom: 4px;">💰 仮受消費税 (課税売上)</div>
+                  <div id="taxOutputTotal" style="font-size: 1.25rem; font-weight: 800; font-family: monospace; color: #1e3a8a;">¥0</div>
+                  <div style="font-size: 0.7rem; color: #64748b; margin-top: 4px; display: flex; justify-content: space-between;">
+                    <span>10%対象: <strong id="taxOutput10">¥0</strong></span>
+                    <span>8%軽減: <strong id="taxOutput8">¥0</strong></span>
+                  </div>
+                </div>
+
+                <!-- 2. 仮払消費税 -->
+                <div style="background: #ffffff; border: 1.5px solid #fed7aa; border-radius: 8px; padding: 12px 14px;">
+                  <div style="font-size: 0.75rem; font-weight: 700; color: #c2410c; margin-bottom: 4px;">💳 仮払消費税 (課税仕入・経費)</div>
+                  <div id="taxInputTotal" style="font-size: 1.25rem; font-weight: 800; font-family: monospace; color: #9a3412;">¥0</div>
+                  <div style="font-size: 0.7rem; color: #64748b; margin-top: 4px; display: flex; justify-content: space-between;">
+                    <span>10%対象: <strong id="taxInput10">¥0</strong></span>
+                    <span>8%軽減: <strong id="taxInput8">¥0</strong></span>
+                  </div>
+                </div>
+
+                <!-- 3. 差引納付予測額 -->
+                <div style="background: #ffffff; border: 1.5px solid #bbf7d0; border-radius: 8px; padding: 12px 14px;">
+                  <div style="font-size: 0.75rem; font-weight: 700; color: #166534; margin-bottom: 4px;">⚖️ 消費税 差引納付予測額</div>
+                  <div id="taxNetPayable" style="font-size: 1.25rem; font-weight: 800; font-family: monospace; color: #14532d;">¥0</div>
+                  <div style="font-size: 0.7rem; color: #64748b; margin-top: 4px;" id="taxNetPayableNote">
+                    ※仮受消費税 － 仮払消費税（原則課税方式による概算）
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -2450,7 +2498,12 @@
               <p style="font-size: 0.75rem; color: #64748b; margin: 2px 0 0 0;">
                 請求書・経費・給与・手動振替伝票を二重計上なく完全統合した仕訳帳です</p>
             </div>
-            <div style="display: flex; gap: 8px;">
+              <button type="button" class="btn btn-outline btn-sm" id="btnSyncPayrollFromAcc"
+                onclick="window.handleSyncPayrollToAccounting && window.handleSyncPayrollToAccounting()"
+                style="display: flex; align-items: center; gap: 6px; background: #f0fdf4; border-color: #86efac; color: #166534; font-weight: 700;"
+                title="確定した給与・社会保険・源泉所得税を財務会計へ複合仕訳としてワンクリック計上">
+                <span>💼</span> 給与仕訳を財務会計へ計上
+              </button>
               <button type="button" class="btn btn-outline btn-sm" id="btnOpenManualJournalModal"
                 onclick="window.openManualJournalModal && window.openManualJournalModal()"
                 style="display: flex; align-items: center; gap: 6px; background: #eef2ff; border-color: #c7d2fe; color: #4338ca; font-weight: 700;">
@@ -2779,6 +2832,36 @@
                     <!-- JSで動的レンダリング -->
                   </tbody>
                 </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- 月次締め（会計ロック）管理カード -->
+          <div id="accMonthLockCard" style="margin-top: 20px; background: #ffffff; border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 18px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+              <div>
+                <h3 style="margin: 0; font-size: 0.95rem; font-weight: 700; color: #1e293b; display: flex; align-items: center; gap: 6px;">
+                  <span>🔒</span> 月次締め（会計ロック）管理
+                </h3>
+                <p style="font-size: 0.75rem; color: #64748b; margin: 2px 0 0 0;">
+                  月次締めした年月の仕訳帳・振替伝票・経費・請求書を保護し、誤編集や削除を完全に防止します
+                </p>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <input type="month" id="lockMonthInput" class="form-control" style="font-size: 0.825rem; padding: 5px 8px; width: 140px;">
+                <button type="button" class="btn btn-primary btn-sm" id="btnExecuteMonthLock" onclick="window.handleLockMonth && window.handleLockMonth()" style="font-size: 0.75rem; font-weight: 700; background: #0f172a; border-color: #0f172a; padding: 6px 14px;">
+                  🔒 対象年月を締め切る
+                </button>
+              </div>
+            </div>
+
+            <!-- ロック中年月リスト -->
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px;">
+              <div style="font-size: 0.75rem; font-weight: 700; color: #475569; margin-bottom: 8px;">
+                現在月次締め（ロック中）の年月:
+              </div>
+              <div id="lockedMonthsBadgeContainer" style="display: flex; flex-wrap: wrap; gap: 8px; min-height: 28px; align-items: center;">
+                <span style="font-size: 0.75rem; color: #94a3b8;">現在ロックされている年月はありません</span>
               </div>
             </div>
           </div>
@@ -3111,6 +3194,20 @@
                     <option value="0">0% (非課税)</option>
                   </select>
                 </div>
+                <div class="form-group" style="flex: 1.1;">
+                  <label class="form-label" style="font-size: 0.75rem;" for="expensePaymentMethod">決済方法（貸方科目）</label>
+                  <select id="expensePaymentMethod" class="form-select" style="font-size: 0.85rem;">
+                    <option value="101 現金" selected>101 現金</option>
+                    <option value="102 普通預金">102 普通預金</option>
+                    <option value="212 未払金（クレカ・後日払）">212 未払金（クレカ・後日払）</option>
+                    <option value="114 立替金（役員借入金）">114 立替金（役員借入金）</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- 重複登録アラート表示領域 -->
+              <div id="expenseDuplicateAlert" style="display: none; background: #fff1f2; border: 1.5px solid #fecdd3; color: #be123c; padding: 8px 12px; border-radius: 6px; font-size: 0.8rem; margin-bottom: 10px; font-weight: 700; align-items: center; gap: 6px;">
+                <span>⚠️ 重複の可能性:</span> 同一日付・同一金額・同一支払先の経費が既に登録されています
               </div>
 
               <div class="form-row" style="margin-bottom: 10px;">
@@ -5128,9 +5225,9 @@
   <!-- ==========================================================================
        振替伝票（複合仕訳）作成・編集モーダル
        ========================================================================== -->
-  <div class="modal" id="manualJournalModal" style="display: none; z-index: 10000;">
-    <div class="modal-overlay" onclick="window.closeManualJournalModal && window.closeManualJournalModal()"></div>
-    <div class="modal-content" style="max-width: 960px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; padding: 0; border-radius: 12px;">
+  <div class="modal" id="manualJournalModal" style="display: none; position: fixed !important; inset: 0 !important; z-index: 99999 !important; background: rgba(0,0,0,0.5) !important; align-items: center !important; justify-content: center !important;">
+    <div class="modal-overlay" onclick="window.closeManualJournalModal && window.closeManualJournalModal()" style="position: absolute; inset: 0;"></div>
+    <div class="modal-content" style="position: relative !important; z-index: 100000 !important; background: #ffffff !important; max-width: 960px; width: 95%; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; padding: 0; border-radius: 12px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4) !important;">
       
       <!-- モーダルヘッダー -->
       <div class="modal-header" style="padding: 14px 20px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
@@ -5235,9 +5332,9 @@
   <!-- ==========================================================================
        売掛金 振込手数料差引消込モーダル
        ========================================================================== -->
-  <div class="modal" id="reconcileFeeModal" style="display: none; z-index: 10000;">
-    <div class="modal-overlay" onclick="window.closeReconcileFeeModal && window.closeReconcileFeeModal()"></div>
-    <div class="modal-content" style="max-width: 520px; border-radius: 12px; overflow: hidden; padding: 0;">
+  <div class="modal" id="reconcileFeeModal" style="display: none; position: fixed !important; inset: 0 !important; z-index: 99999 !important; background: rgba(0,0,0,0.5) !important; align-items: center !important; justify-content: center !important;">
+    <div class="modal-overlay" onclick="window.closeReconcileFeeModal && window.closeReconcileFeeModal()" style="position: absolute; inset: 0;"></div>
+    <div class="modal-content" style="position: relative !important; z-index: 100000 !important; background: #ffffff !important; max-width: 520px; width: 95%; border-radius: 12px; overflow: hidden; padding: 0; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4) !important;">
       
       <div class="modal-header" style="padding: 14px 20px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
         <h3 class="modal-title" style="margin: 0; font-size: 1rem; font-weight: 700; color: #1e293b;">💰 振込手数料を差引いて入金消込</h3>
@@ -5299,9 +5396,9 @@
   <!-- ==========================================================================
        勘定科目 新規追加モーダル
        ========================================================================== -->
-  <div class="modal" id="newAccountModal" style="display: none; z-index: 10000;">
-    <div class="modal-overlay" onclick="window.closeNewAccountModal && window.closeNewAccountModal()"></div>
-    <div class="modal-content" style="max-width: 480px; border-radius: 12px; overflow: hidden; padding: 0;">
+  <div class="modal" id="newAccountModal" style="display: none; position: fixed !important; inset: 0 !important; z-index: 99999 !important; background: rgba(0,0,0,0.5) !important; align-items: center !important; justify-content: center !important;">
+    <div class="modal-overlay" onclick="window.closeNewAccountModal && window.closeNewAccountModal()" style="position: absolute; inset: 0;"></div>
+    <div class="modal-content" style="position: relative !important; z-index: 100000 !important; background: #ffffff !important; max-width: 480px; width: 95%; border-radius: 12px; overflow: hidden; padding: 0; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4) !important;">
       
       <div class="modal-header" style="padding: 14px 20px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
         <h3 class="modal-title" style="margin: 0; font-size: 1rem; font-weight: 700; color: #1e293b;">＋ 勘定科目 新規追加</h3>
@@ -5372,7 +5469,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261020_sync_v17"></script>
+  <script src="js/app.bundle.js?v=20261020_sync_v19"></script>
 </body>
 
 </html>

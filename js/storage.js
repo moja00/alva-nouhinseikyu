@@ -23,6 +23,7 @@ const KEYS = {
   ACCOUNT_MASTER: 'billcraft_account_master',
   MANUAL_JOURNALS: 'billcraft_manual_journals',
   FISCAL_SETTINGS: 'billcraft_fiscal_settings',
+  LOCKED_MONTHS: 'billcraft_locked_months',
   DELETED_DOC_IDS: 'quickdoc_deleted_doc_ids',
   TRASH_HISTORY: 'quickdoc_trash_history'
 };
@@ -4152,7 +4153,8 @@ export async function pushAllLocalDataToServer() {
     attendance: (typeof getAttendanceList === 'function') ? getAttendanceList() : [],
     accountMaster: getAccountMasterList(),
     manualJournals: getManualJournals(),
-    fiscalSettings: getFiscalSettings()
+    fiscalSettings: getFiscalSettings(),
+    lockedMonths: getLockedMonths()
   };
 
   try {
@@ -4218,11 +4220,57 @@ export async function pullAllServerDataToLocal() {
     if (data.fiscalSettings && typeof data.fiscalSettings === 'object') {
       localStorageSetItemAndSync(KEYS.FISCAL_SETTINGS, JSON.stringify(data.fiscalSettings));
     }
+    if (data.lockedMonths && Array.isArray(data.lockedMonths)) {
+      saveLockedMonths(data.lockedMonths);
+    }
     return { success: true, message: 'サーバーから最新データを同期しました！' };
   } catch (err) {
     console.error('Failed to pull all data from server:', err);
     return { success: false, error: err.message || err };
   }
+}
+
+/**
+ * 月次締め（ロック）年月リストの取得
+ * @returns {string[]} 例: ['2026-09', '2026-08']
+ */
+export function getLockedMonths() {
+  try {
+    const raw = localStorage.getItem(KEYS.LOCKED_MONTHS);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+/**
+ * 月次締め（ロック）年月リストの保存
+ * @param {string[]} months 
+ */
+export function saveLockedMonths(months) {
+  try {
+    if (!Array.isArray(months)) months = [];
+    const unique = Array.from(new Set(months.filter(Boolean))).sort().reverse();
+    localStorageSetItemAndSync(KEYS.LOCKED_MONTHS, JSON.stringify(unique));
+    return true;
+  } catch (e) {
+    console.error('Failed to save locked months:', e);
+    return false;
+  }
+}
+
+/**
+ * 指定した日付（YYYY-MM-DD または YYYY-MM）が月次締め（ロック）されているか判定
+ * @param {string} dateStr 
+ * @returns {boolean}
+ */
+export function isMonthLocked(dateStr) {
+  if (!dateStr || typeof dateStr !== 'string') return false;
+  const ym = dateStr.substring(0, 7);
+  const locked = getLockedMonths();
+  return locked.includes(ym);
 }
 
 if (typeof window !== 'undefined') {
@@ -4239,6 +4287,9 @@ if (typeof window !== 'undefined') {
   window.deleteManualJournal = deleteManualJournal;
   window.getFiscalSettings = getFiscalSettings;
   window.saveFiscalSettings = saveFiscalSettings;
+  window.getLockedMonths = getLockedMonths;
+  window.saveLockedMonths = saveLockedMonths;
+  window.isMonthLocked = isMonthLocked;
   window.restoreAttendanceFromBackup = function() {
     const backup = localStorage.getItem(KEYS.ATTENDANCE + '_backup');
     if (backup && backup !== '[]') {
