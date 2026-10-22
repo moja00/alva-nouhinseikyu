@@ -285,7 +285,8 @@ const DOM = {
   // 商品マスタ関連
   btnOpenItemMaster: document.getElementById('btnOpenItemMaster'),
   btnOpenItemSelectModal: document.getElementById('btnOpenItemSelectModal'),
-  itemMasterModal: document.getElementById('itemMasterModal'),
+  itemMasterModal: document.getElementById('itemsViewScreen') || document.getElementById('itemMasterModal'),
+  itemsViewScreen: document.getElementById('itemsViewScreen'),
   btnCloseItemMasterModal: document.getElementById('btnCloseItemMasterModal'),
   btnCloseItemMasterModal2: document.getElementById('btnCloseItemMasterModal2'),
   inputSearchItemMaster: document.getElementById('inputSearchItemMaster'),
@@ -314,7 +315,8 @@ const DOM = {
   btnOpenClientMaster: document.getElementById('btnOpenClientMaster'),
   btnSelectClientFromMaster: document.getElementById('btnSelectClientFromMaster'),
   clientMasterDatalist: document.getElementById('clientMasterDatalist'),
-  clientMasterModal: document.getElementById('clientMasterModal'),
+  clientMasterModal: document.getElementById('clientsViewScreen') || document.getElementById('clientMasterModal'),
+  clientsViewScreen: document.getElementById('clientsViewScreen'),
   btnCloseClientMasterModal: document.getElementById('btnCloseClientMasterModal'),
   btnCloseClientMasterModal2: document.getElementById('btnCloseClientMasterModal2'),
   inputSearchClientMaster: document.getElementById('inputSearchClientMaster'),
@@ -339,7 +341,8 @@ const DOM = {
   clientMasterListContainer: document.getElementById('clientMasterListContainer'),
 
   // 在庫マスタ
-  inventoryMasterModal: document.getElementById('inventoryMasterModal'),
+  inventoryMasterModal: document.getElementById('inventoryViewScreen') || document.getElementById('inventoryMasterModal'),
+  inventoryViewScreen: document.getElementById('inventoryViewScreen'),
   btnOpenInventoryMaster: document.getElementById('btnOpenInventoryMaster'),
   btnPortalOpenInventoryMaster: document.getElementById('btnPortalOpenInventoryMaster'),
   btnCloseInventoryMasterModal: document.getElementById('btnCloseInventoryMasterModal'),
@@ -1051,6 +1054,60 @@ function switchAppView(viewName) {
         } catch (err) {
           console.error('Error initializing payroll view:', err);
         }
+        break;
+
+      case 'items':
+        // 商品マスタ専用フル画面
+        const itemsScreen = document.getElementById('itemsViewScreen') || DOM.itemsViewScreen || DOM.itemMasterModal;
+        if (itemsScreen) {
+          itemsScreen.classList.add('active');
+        }
+        try {
+          if (DOM.inputSearchItemMaster) DOM.inputSearchItemMaster.value = '';
+          if (typeof resetItemMasterForm === 'function') resetItemMasterForm();
+          if (typeof renderItemMasterList === 'function') renderItemMasterList();
+        } catch (err) {
+          console.error('Error initializing items view:', err);
+        }
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        break;
+
+      case 'clients':
+        // 取引先マスタ専用フル画面
+        const clientsScreen = document.getElementById('clientsViewScreen') || DOM.clientsViewScreen || DOM.clientMasterModal;
+        if (clientsScreen) {
+          clientsScreen.classList.add('active');
+        }
+        try {
+          if (DOM.clientFilterBtns) {
+            DOM.clientFilterBtns.forEach(btn => {
+              btn.classList.toggle('active', btn.dataset.filter === currentClientFilter);
+            });
+          }
+          if (DOM.inputSearchClientMaster) DOM.inputSearchClientMaster.value = '';
+          if (typeof resetClientMasterForm === 'function') resetClientMasterForm();
+          if (typeof renderClientMasterList === 'function') renderClientMasterList(currentClientFilter, '');
+        } catch (err) {
+          console.error('Error initializing clients view:', err);
+        }
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        break;
+
+      case 'inventory':
+        // 在庫マスタ専用フル画面
+        const invScreen = document.getElementById('inventoryViewScreen') || DOM.inventoryViewScreen || DOM.inventoryMasterModal;
+        if (invScreen) {
+          invScreen.classList.add('active');
+        }
+        try {
+          if (typeof resetInventoryForm === 'function') resetInventoryForm();
+          if (typeof renderInventoryTable === 'function') renderInventoryTable();
+          if (typeof renderInventorySerialsTable === 'function') renderInventorySerialsTable();
+          if (typeof renderInventoryLotsTable === 'function') renderInventoryLotsTable();
+        } catch (err) {
+          console.error('Error initializing inventory view:', err);
+        }
+        window.scrollTo({ top: 0, behavior: 'smooth' });
         break;
     }
   } catch (globalErr) {
@@ -4199,14 +4256,22 @@ function closeBackupModal() {
 // 商品マスタ管理 ＆ 販売店仕切り価格自動計算
 // ==========================================================================
 function openItemMasterModal() {
-  DOM.itemMasterModal.classList.add('active');
-  DOM.inputSearchItemMaster.value = '';
-  resetItemMasterForm();
-  renderItemMasterList();
+  if (typeof switchAppView === 'function') {
+    switchAppView('items');
+  } else if (DOM.itemMasterModal) {
+    DOM.itemMasterModal.classList.add('active');
+    if (DOM.inputSearchItemMaster) DOM.inputSearchItemMaster.value = '';
+    resetItemMasterForm();
+    renderItemMasterList();
+  }
 }
 
 function closeItemMasterModal() {
-  DOM.itemMasterModal.classList.remove('active');
+  if (typeof switchAppView === 'function') {
+    switchAppView('portal');
+  } else if (DOM.itemMasterModal) {
+    DOM.itemMasterModal.classList.remove('active');
+  }
 }
 
 function toggleItemMasterForm(show) {
@@ -4447,21 +4512,27 @@ let currentClientFilter = 'customer';
 
 function openClientMasterModal(defaultFilter = 'customer') {
   currentClientFilter = defaultFilter;
-  if (DOM.clientFilterBtns) {
-    DOM.clientFilterBtns.forEach(btn => {
-      btn.classList.toggle('active', btn.dataset.filter === currentClientFilter);
-    });
+  if (typeof switchAppView === 'function') {
+    switchAppView('clients');
+  } else {
+    if (DOM.clientFilterBtns) {
+      DOM.clientFilterBtns.forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.filter === currentClientFilter);
+      });
+    }
+    if (DOM.inputSearchClientMaster) DOM.inputSearchClientMaster.value = '';
+    resetClientMasterForm();
+    renderClientMasterList(currentClientFilter, '');
+    if (DOM.clientMasterModal) DOM.clientMasterModal.classList.add('active');
   }
-  if (DOM.inputSearchClientMaster) DOM.inputSearchClientMaster.value = '';
-  resetClientMasterForm();
-  renderClientMasterList(currentClientFilter, '');
-  if (DOM.clientMasterModal) DOM.clientMasterModal.classList.add('active');
-  document.body.style.overflow = 'hidden';
 }
 
 function closeClientMasterModal() {
-  if (DOM.clientMasterModal) DOM.clientMasterModal.classList.remove('active');
-  document.body.style.overflow = '';
+  if (typeof switchAppView === 'function') {
+    switchAppView('portal');
+  } else if (DOM.clientMasterModal) {
+    DOM.clientMasterModal.classList.remove('active');
+  }
   updateClientMasterDatalist();
 }
 
@@ -4782,19 +4853,23 @@ function handleClientNameAutocomplete() {
 let currentInventoryFilter = 'all';
 
 function openInventoryMasterModal() {
-  if (!DOM.inventoryMasterModal) return;
-  DOM.inventoryMasterModal.classList.add('active');
-  DOM.inventoryMasterModal.style.display = 'flex';
-  document.body.style.overflow = 'hidden';
-  resetInventoryForm();
-  renderInventoryTable();
+  if (typeof switchAppView === 'function') {
+    switchAppView('inventory');
+  } else if (DOM.inventoryMasterModal) {
+    DOM.inventoryMasterModal.classList.add('active');
+    DOM.inventoryMasterModal.style.display = 'flex';
+    resetInventoryForm();
+    renderInventoryTable();
+  }
 }
 
 function closeInventoryMasterModal() {
-  if (!DOM.inventoryMasterModal) return;
-  DOM.inventoryMasterModal.classList.remove('active');
-  DOM.inventoryMasterModal.style.display = 'none';
-  document.body.style.overflow = '';
+  if (typeof switchAppView === 'function') {
+    switchAppView('portal');
+  } else if (DOM.inventoryMasterModal) {
+    DOM.inventoryMasterModal.classList.remove('active');
+    DOM.inventoryMasterModal.style.display = 'none';
+  }
 }
 
 function resetInventoryForm() {

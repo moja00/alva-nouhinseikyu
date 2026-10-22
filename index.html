@@ -56,22 +56,37 @@
     <!-- 統合アプリスイッチャー（全専用画面へのクイック遷移） -->
     <nav class="app-switcher-nav" id="appSwitcherNav">
       <button type="button" class="app-switch-btn btn-portal-home active" data-app="portal"
-        onclick="window.switchAppView &amp;&amp; window.switchAppView('portal')" title="メインポータルMENUへ戻る">
+        onclick="window.switchAppView && window.switchAppView('portal')" title="メインポータルMENUへ戻る">
         <span class="app-switch-icon">🏠</span>
         <span class="app-switch-label">MENU</span>
       </button>
       <button type="button" class="app-switch-btn" data-app="invoice"
-        onclick="window.switchAppView &amp;&amp; window.switchAppView('invoice')" title="納品書・請求書・見積書・領収書作成">
+        onclick="window.switchAppView && window.switchAppView('invoice')" title="納品書・請求書・見積書・領収書作成">
         <span class="app-switch-icon">📄</span>
         <span class="app-switch-label">納品・請求書</span>
       </button>
+      <button type="button" class="app-switch-btn" data-app="items"
+        onclick="window.switchAppView && window.switchAppView('items')" title="商品・サービス・標準単価マスタ管理">
+        <span class="app-switch-icon">📦</span>
+        <span class="app-switch-label">商品マスタ</span>
+      </button>
+      <button type="button" class="app-switch-btn" data-app="clients"
+        onclick="window.switchAppView && window.switchAppView('clients')" title="得意先・仕入先取引先マスタ管理">
+        <span class="app-switch-icon">🏢</span>
+        <span class="app-switch-label">取引先マスタ</span>
+      </button>
+      <button type="button" class="app-switch-btn" data-app="inventory"
+        onclick="window.switchAppView && window.switchAppView('inventory')" title="在庫品目・BOM・ロット入庫・シリアル台帳">
+        <span class="app-switch-icon">🏭</span>
+        <span class="app-switch-label">在庫マスタ</span>
+      </button>
       <button type="button" class="app-switch-btn" data-app="accounting"
-        onclick="window.switchAppView &amp;&amp; window.switchAppView('accounting')" title="財務会計・収支ダッシュボード・売掛金消込">
+        onclick="window.switchAppView && window.switchAppView('accounting')" title="財務会計・収支ダッシュボード・売掛金消込">
         <span class="app-switch-icon">📊</span>
         <span class="app-switch-label">財務会計</span>
       </button>
       <button type="button" class="app-switch-btn" data-app="expenses"
-        onclick="window.switchAppView &amp;&amp; window.switchAppView('expenses')" title="経費精算・AIレシートOCR読み込み（複数枚個別確認対応）">
+        onclick="window.switchAppView && window.switchAppView('expenses')" title="経費精算・AIレシートOCR読み込み（複数枚個別確認対応）">
         <span class="app-switch-icon">📷</span>
         <span class="app-switch-label" style="display: inline-flex; align-items: center; gap: 4px;">
           経費読み込み
@@ -79,71 +94,18 @@
         </span>
       </button>
       <button type="button" class="app-switch-btn" data-app="attendance"
-        onclick="window.switchAppView &amp;&amp; window.switchAppView('attendance')" title="出退勤打刻・タイムカード・出勤簿A4">
+        onclick="window.switchAppView && window.switchAppView('attendance')" title="出退勤打刻・タイムカード・出勤簿A4">
         <span class="app-switch-icon">⏰</span>
         <span class="app-switch-label">退勤・勤怠</span>
       </button>
       <button type="button" class="app-switch-btn" data-app="payroll"
-        onclick="window.switchAppView &amp;&amp; window.switchAppView('payroll')" title="給与計算・支給明細書・勤怠連動">
+        onclick="window.switchAppView && window.switchAppView('payroll')" title="給与計算・支給明細書・勤怠連動">
         <span class="app-switch-icon">💴</span>
         <span class="app-switch-label">給与計算</span>
       </button>
     </nav>
 
     <div class="header-actions">
-
-      <button type="button" id="btnOpenCompanyProfile" class="btn btn-secondary btn-sm"
-        onclick="window.openCompanyProfileModal &amp;&amp; window.openCompanyProfileModal()"
-        title="自社名・インボイス番号・印鑑・口座設定">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M3 21h18M3 7v14M21 7v14M9 21V10M15 21V10M6 3h12v4H6z" />
-        </svg>
-        自社情報
-      </button>
-      <button type="button" id="btnOpenItemMaster" class="btn btn-secondary btn-sm"
-        onclick="window.openItemMasterModal &amp;&amp; window.openItemMasterModal()" title="商品・サービスマスタの管理">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path
-            d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-          <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
-          <line x1="12" y1="22.08" x2="12" y2="12" />
-        </svg>
-        商品マスタ
-      </button>
-      <button type="button" id="btnOpenClientMaster" class="btn btn-secondary btn-sm"
-        onclick="window.openClientMasterModal &amp;&amp; window.openClientMasterModal('customer')"
-        title="取引先（得意先・仕入先）マスタの管理">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-          <circle cx="9" cy="7" r="4" />
-          <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-          <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-        </svg>
-        取引先マスタ
-      </button>
-      <button type="button" id="btnOpenInventoryMaster" class="btn btn-secondary btn-sm"
-        onclick="window.openInventoryMasterModal &amp;&amp; window.openInventoryMasterModal()"
-        title="在庫品目・現在庫・入出庫履歴の管理">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-        </svg>
-        在庫マスタ
-      </button>
-      <button type="button" id="btnOpenBackup" class="btn btn-secondary btn-sm"
-        onclick="window.openBackupModal &amp;&amp; window.openBackupModal()" title="データの保存・復元">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-          <polyline points="17 8 12 3 7 8" />
-          <line x1="12" y1="3" x2="12" y2="15" />
-        </svg>
-        データ管理
-      </button>
-      <a href="manual.html" target="_blank" id="btnHeaderOpenManual" class="btn btn-secondary btn-sm"
-        style="background: linear-gradient(135deg, #f0fdf4, #dcfce7); border-color: #86efac; color: #166534; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 5px;"
-        title="経理初心者向け完全講義マニュアルを開く（別タブ）">
-        <span>📖</span>
-        マニュアル
-      </a>
       <button type="button" id="btnLogout" class="btn btn-secondary btn-sm" style="display: none; border-color: #ef4444; color: #ef4444;" title="ログアウト">
         🚪 ログアウト
       </button>
@@ -183,7 +145,7 @@
       <div class="portal-grid">
 
         <!-- 1. 納品・請求書 -->
-        <div class="portal-card card-invoice" onclick="window.switchAppView &amp;&amp; window.switchAppView('invoice')"
+        <div class="portal-card card-invoice" onclick="window.switchAppView && window.switchAppView('invoice')"
           title="納品・請求書作成専用画面へ">
           <div class="portal-card-header">
             <div class="portal-card-icon icon-invoice">📄</div>
@@ -196,9 +158,51 @@
           </div>
         </div>
 
-        <!-- 2. 財務会計 -->
+        <!-- 2. 商品マスタ -->
+        <div class="portal-card card-items" onclick="window.switchAppView && window.switchAppView('items')"
+          title="商品マスタ管理専用画面へ" style="border-top-color: #4f46e5; cursor: pointer;">
+          <div class="portal-card-header">
+            <div class="portal-card-icon icon-items" style="background: #eef2ff; color: #4f46e5;">📦</div>
+            <span class="portal-card-tag tag-items" style="background: #eef2ff; color: #4f46e5; font-weight: 700;">品目・単価</span>
+          </div>
+          <h3 class="portal-card-title">商品マスタ</h3>
+          <p class="portal-card-desc">販売商品・サービス・標準単価・販売店仕切り（利益20%）自動計算。伝票明細へワンクリック呼出。</p>
+          <div class="portal-card-footer">
+            <span class="portal-card-action" style="color: #4f46e5; font-weight: 700;">専用画面を開く <span class="arrow">→</span></span>
+          </div>
+        </div>
+
+        <!-- 3. 取引先マスタ -->
+        <div class="portal-card card-clients" onclick="window.switchAppView && window.switchAppView('clients')"
+          title="取引先マスタ管理専用画面へ" style="border-top-color: #0284c7; cursor: pointer;">
+          <div class="portal-card-header">
+            <div class="portal-card-icon icon-clients" style="background: #e0f2fe; color: #0284c7;">🏢</div>
+            <span class="portal-card-tag tag-clients" style="background: #e0f2fe; color: #0284c7; font-weight: 700;">顧客・仕入先</span>
+          </div>
+          <h3 class="portal-card-title">取引先マスタ</h3>
+          <p class="portal-card-desc">得意先（売上）・仕入先（支払）の宛名・敬称・インボイス登録番号（T番号）・住所・連絡先の一元管理。</p>
+          <div class="portal-card-footer">
+            <span class="portal-card-action" style="color: #0284c7; font-weight: 700;">専用画面を開く <span class="arrow">→</span></span>
+          </div>
+        </div>
+
+        <!-- 4. 在庫・シリアルマスタ -->
+        <div class="portal-card card-inventory" onclick="window.switchAppView && window.switchAppView('inventory')"
+          title="在庫・シリアルマスタ管理専用画面へ" style="border-top-color: #059669; cursor: pointer;">
+          <div class="portal-card-header">
+            <div class="portal-card-icon icon-inventory" style="background: #ecfdf5; color: #059669;">🏭</div>
+            <span class="portal-card-tag tag-inventory" style="background: #ecfdf5; color: #059669; font-weight: 700;">在庫・BOM・シリアル</span>
+          </div>
+          <h3 class="portal-card-title">在庫・シリアルマスタ</h3>
+          <p class="portal-card-desc">DP-5000輸入ロット原価按分計算・PSEバッテリーBOMセット構成・個別シリアル番号追跡台帳・在庫評価額連動。</p>
+          <div class="portal-card-footer">
+            <span class="portal-card-action" style="color: #059669; font-weight: 700;">専用画面を開く <span class="arrow">→</span></span>
+          </div>
+        </div>
+
+        <!-- 5. 財務会計 -->
         <div class="portal-card card-accounting"
-          onclick="window.switchAppView &amp;&amp; window.switchAppView('accounting')" title="財務会計専用画面へ">
+          onclick="window.switchAppView && window.switchAppView('accounting')" title="財務会計専用画面へ">
           <div class="portal-card-header">
             <div class="portal-card-icon icon-accounting">📊</div>
             <span class="portal-card-tag tag-accounting">月次決算・収支</span>
@@ -210,9 +214,9 @@
           </div>
         </div>
 
-        <!-- 3. 経費読み込み（AI OCR） -->
+        <!-- 6. 経費読み込み（AI OCR） -->
         <div class="portal-card card-expenses"
-          onclick="window.switchAppView &amp;&amp; window.switchAppView('expenses')" title="経費読み込み専用画面へ">
+          onclick="window.switchAppView && window.switchAppView('expenses')" title="経費読み込み専用画面へ">
           <div class="portal-card-header">
             <div class="portal-card-icon icon-expenses">📷</div>
             <div style="display: flex; gap: 4px; align-items: center;">
@@ -230,9 +234,9 @@
           </div>
         </div>
 
-        <!-- 4. 勤怠打刻（退勤・出退勤タイムカード） -->
+        <!-- 7. 勤怠打刻（退勤・出退勤タイムカード） -->
         <div class="portal-card card-attendance"
-          onclick="window.switchAppView &amp;&amp; window.switchAppView('attendance')" title="勤怠打刻専用画面へ">
+          onclick="window.switchAppView && window.switchAppView('attendance')" title="勤怠打刻専用画面へ">
           <div class="portal-card-header">
             <div class="portal-card-icon icon-attendance">⏰</div>
             <span class="portal-card-tag tag-attendance">出退勤・出勤簿</span>
@@ -244,8 +248,8 @@
           </div>
         </div>
 
-        <!-- 5. 給与計算（月給制・勤怠連動・明細書） -->
-        <div class="portal-card card-payroll" onclick="window.switchAppView &amp;&amp; window.switchAppView('payroll')"
+        <!-- 8. 給与計算（月給制・勤怠連動・明細書） -->
+        <div class="portal-card card-payroll" onclick="window.switchAppView && window.switchAppView('payroll')"
           title="給与計算専用画面へ" style="border-top-color: #0284c7;">
           <div class="portal-card-header">
             <div class="portal-card-icon icon-payroll" style="background: #e0f2fe; color: #0284c7;">💴</div>
@@ -258,7 +262,7 @@
           </div>
         </div>
 
-        <!-- 6. 経理・操作マニュアル（初心者対応講義スタイル） -->
+        <!-- 9. 経理・操作マニュアル（初心者対応講義スタイル） -->
         <div class="portal-card card-manual" onclick="window.open('manual.html', '_blank')"
           title="経理初心者向け完全講義マニュアル（別タブ）を開く" style="border-top-color: #059669; cursor: pointer;">
           <div class="portal-card-header">
@@ -277,35 +281,35 @@
       <!-- 補助マスタ・クイックリンクバー -->
       <div class="portal-quick-bar">
         <span class="quick-bar-label">設定・マスタ管理:</span>
-        <button type="button" class="quick-link-btn" onclick="document.getElementById('btnOpenCompanyProfile').click()"
+        <button type="button" class="quick-link-btn" onclick="window.openCompanyProfileModal && window.openCompanyProfileModal()"
           style="background: #eef2ff; border-color: #c7d2fe; color: #4338ca; font-weight: 700;">
           🏢 自社情報設定
         </button>
-        <button type="button" class="quick-link-btn" onclick="document.getElementById('btnOpenItemMaster').click()">
+        <button type="button" class="quick-link-btn" onclick="window.switchAppView && window.switchAppView('items')">
           📦 商品マスタ
         </button>
-        <button type="button" class="quick-link-btn" onclick="document.getElementById('btnOpenClientMaster').click()">
+        <button type="button" class="quick-link-btn" onclick="window.switchAppView && window.switchAppView('clients')">
           👥 取引先マスタ
         </button>
         <button type="button" class="quick-link-btn" id="btnPortalOpenInventoryMaster"
-          onclick="document.getElementById('btnOpenInventoryMaster').click()">
-          📦 在庫マスタ
+          onclick="window.switchAppView && window.switchAppView('inventory')">
+          🏭 在庫マスタ
         </button>
-        <button type="button" class="quick-link-btn" onclick="document.getElementById('btnOpenBackup').click()">
+        <button type="button" class="quick-link-btn" onclick="window.openBackupModal && window.openBackupModal()">
           💾 データ管理・バックアップ
         </button>
-        <a href="manual.html" target="_blank" class="quick-link-btn"
+        <a href="manual.html" target="_blank" class="quick-link-btn" id="btnFooterManual"
           style="background: #f0fdf4; border-color: #86efac; color: #166534; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
           📖 経理・操作マニュアル
         </a>
         <button type="button" class="quick-link-btn"
-          onclick="window.triggerServerSyncAll &amp;&amp; window.triggerServerSyncAll()"
+          onclick="window.triggerServerSyncAll && window.triggerServerSyncAll()"
           style="background: linear-gradient(135deg, #0284c7, #2563eb); color: #ffffff; border: none; font-weight: 700; box-shadow: 0 2px 6px rgba(37,99,235,0.3);">
           ☁️ サーバー全同期（端末間共有・アップロード）
         </button>
         <div style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
-          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.22-manual-lecture</span>
+          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.22-master-views</span>
         </div>
       </div>
 
@@ -1320,60 +1324,72 @@
     </div>
   </div>
 
-  <!-- 商品マスタ管理＆明細呼出モーダル -->
-  <div class="modal-overlay" id="itemMasterModal">
-    <div class="modal-card" style="max-width: 720px;">
-      <div class="modal-header">
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2">
-            <path
-              d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-            <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
-          </svg>
-          <h3 class="modal-title">商品マスタ管理・明細に追加</h3>
+  <!-- ==========================================================================
+       商品マスタ専用画面（フルスクリーン・ワークスペース）
+       ========================================================================== -->
+  <section class="app-view-screen" id="itemsViewScreen">
+
+    <!-- 専用画面トップバー -->
+    <div class="view-screen-header">
+      <div class="view-screen-header-left">
+        <div class="view-screen-icon-badge" style="background: #eef2ff; color: #4f46e5;">📦</div>
+        <div>
+          <h2 class="view-screen-title">商品マスタ管理</h2>
+          <span class="view-screen-subtitle">販売商品・サービス・標準単価・販売店仕切り（利益20%）自動計算</span>
         </div>
-        <button type="button" class="btn-icon-danger" id="btnCloseItemMasterModal" style="font-size: 1.2rem;">✕</button>
       </div>
+      <div class="view-screen-header-actions">
+        <button type="button" id="btnToggleNewItemForm" class="btn btn-primary btn-sm"
+          style="display: inline-flex; align-items: center; gap: 6px; padding: 7px 16px; font-weight: 700;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+          新規商品を登録
+        </button>
+        <button type="button" class="btn-back-to-portal" id="btnCloseItemMasterModal"
+          onclick="window.switchAppView && window.switchAppView('portal')" title="メインポータルMENUへ戻る">
+          <span>🏠</span> 業務MENUへ戻る
+        </button>
+      </div>
+    </div>
 
-      <div class="modal-body" style="padding: 16px 20px;">
+    <!-- メインコンテンツエリア -->
+    <div class="view-screen-content" style="padding: 24px 32px; overflow-y: auto;">
+      <div style="max-width: 1080px; margin: 0 auto;">
 
-        <!-- 上部アクションバー（検索 ＆ 新規商品登録展開ボタン） -->
+        <!-- 上部アクションバー（検索バー） -->
         <div
-          style="display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap;">
-          <div style="flex: 1; min-width: 200px; position: relative;">
+          style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 10px; padding: 14px 18px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;">
+          <div style="flex: 1; min-width: 260px; position: relative;">
             <input type="text" id="inputSearchItemMaster" class="form-input" placeholder="🔍 品名や備考で絞り込み検索..."
-              style="padding-left: 12px;">
+              style="padding-left: 14px; font-size: 0.9rem;">
           </div>
-          <button type="button" id="btnToggleNewItemForm" class="btn btn-primary btn-sm"
-            style="display: flex; align-items: center; gap: 4px;">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="12" y1="5" x2="12" y2="19" />
-              <line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-            新規商品を登録
-          </button>
+          <div style="font-size: 0.8rem; color: #64748b;">
+            ※登録した商品は、納品・請求書の作成時にワンクリックで明細行へ呼び出せます
+          </div>
         </div>
 
         <!-- 新規登録・編集フォーム（初期は折りたたみ、トグル可能） -->
         <div id="itemMasterFormContainer"
-          style="display: none; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 8px; padding: 14px; margin-bottom: 16px;">
-          <h4 id="itemMasterFormTitle" style="font-size: 0.9rem; margin-bottom: 12px; color: var(--text-primary);">
+          style="display: none; background: #ffffff; border: 1.5px solid #93c5fd; border-radius: 12px; padding: 20px; margin-bottom: 24px; box-shadow: 0 4px 12px rgba(37,99,235,0.08);">
+          <h4 id="itemMasterFormTitle" style="font-size: 0.95rem; margin-bottom: 14px; color: #1e293b; font-weight: 700;">
             新規商品の登録</h4>
           <input type="hidden" id="itemMasterEditId" value="">
 
-          <div class="form-group" style="margin-bottom: 10px;">
-            <label class="form-label" for="itemMasterInputName" style="font-size: 0.8rem;">品名・項目名 <span
+          <div class="form-group" style="margin-bottom: 12px;">
+            <label class="form-label" for="itemMasterInputName" style="font-size: 0.825rem; font-weight: 700;">品名・項目名 <span
                 style="color: var(--danger);">*</span></label>
             <input type="text" id="itemMasterInputName" class="form-input" placeholder="例: 製品基本セット、導入作業費 など">
           </div>
 
           <!-- ユーザー税込価格からの単価自動計算アシスト -->
           <div
-            style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px;">
+            style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 14px 16px; margin-bottom: 14px;">
             <div
-              style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
+              style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 6px;">
               <span
-                style="font-size: 0.8rem; font-weight: 700; color: #1e293b; display: flex; align-items: center; gap: 6px;">
+                style="font-size: 0.825rem; font-weight: 700; color: #1e293b; display: flex; align-items: center; gap: 6px;">
                 💡 ユーザー税込価格からの自動計算
                 <span id="badgeAutoApplied"
                   style="font-size: 11px; background: #ecfdf5; color: #059669; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px; font-weight: 600;">
@@ -1381,7 +1397,7 @@
                 </span>
               </span>
               <!-- 計算方式の切り替え -->
-              <div style="display: flex; align-items: center; gap: 12px; font-size: 0.75rem; color: #475569;">
+              <div style="display: flex; align-items: center; gap: 12px; font-size: 0.775rem; color: #475569;">
                 <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;"
                   title="税抜きユーザー ＝ 税抜き仕切り ＋ 販売店利益（税込仕切り × 20%）">
                   <input type="radio" name="calcMode" id="calcModeWholesale" value="wholesale" checked>
@@ -1426,18 +1442,18 @@
             </div>
           </div>
 
-          <div class="form-row" style="margin-bottom: 10px;">
+          <div class="form-row" style="margin-bottom: 12px;">
             <div class="form-group" style="flex: 1.2;">
-              <label class="form-label" for="itemMasterInputPrice" style="font-size: 0.8rem;">帳票の単価 (税抜) <span
+              <label class="form-label" for="itemMasterInputPrice" style="font-size: 0.8rem; font-weight: 700;">帳票の単価 (税抜) <span
                   style="color: var(--danger);">*</span></label>
               <input type="number" id="itemMasterInputPrice" class="form-input" placeholder="0" min="0">
             </div>
             <div class="form-group" style="flex: 0.8;">
-              <label class="form-label" for="itemMasterInputUnit" style="font-size: 0.8rem;">単位</label>
+              <label class="form-label" for="itemMasterInputUnit" style="font-size: 0.8rem; font-weight: 700;">単位</label>
               <input type="text" id="itemMasterInputUnit" class="form-input" placeholder="式、個、台、月 など" value="式">
             </div>
             <div class="form-group" style="flex: 1;">
-              <label class="form-label" for="itemMasterSelectTax" style="font-size: 0.8rem;">税率</label>
+              <label class="form-label" for="itemMasterSelectTax" style="font-size: 0.8rem; font-weight: 700;">税率</label>
               <select id="itemMasterSelectTax" class="form-select">
                 <option value="10">10% (標準)</option>
                 <option value="8">8% (軽減税率)</option>
@@ -1446,8 +1462,8 @@
             </div>
           </div>
 
-          <div class="form-group" style="margin-bottom: 12px;">
-            <label class="form-label" for="itemMasterInputNote" style="font-size: 0.8rem;">備考・補足（任意）</label>
+          <div class="form-group" style="margin-bottom: 14px;">
+            <label class="form-label" for="itemMasterInputNote" style="font-size: 0.8rem; font-weight: 700;">備考・補足（任意）</label>
             <input type="text" id="itemMasterInputNote" class="form-input" placeholder="型番、仕様、納期など">
           </div>
 
@@ -1458,55 +1474,73 @@
         </div>
 
         <!-- 登録済み商品一覧コンテナ -->
-        <div id="itemMasterListContainer" style="max-height: 48vh; overflow-y: auto;">
+        <div id="itemMasterListContainer">
           <!-- JSでレンダリング -->
         </div>
 
-      </div>
-
-      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
-        <span style="font-size: 0.775rem; color: var(--text-muted);">
+        <div style="margin-top: 24px; padding: 12px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 0.775rem; color: #64748b; text-align: center;">
           ※マスタの価格を変更しても、過去に作成・保存された伝票データには影響しません。
-        </span>
-        <button type="button" class="btn btn-secondary btn-sm" id="btnCloseItemMasterModal2">閉じる</button>
+        </div>
+
       </div>
     </div>
-  </div>
+  </section>
 
-  <!-- 在庫マスタ管理＆入出庫台帳モーダル -->
-  <div class="modal-overlay" id="inventoryMasterModal">
-    <div class="modal-card"
-      style="max-width: 960px; width: 95vw; max-height: 90vh; display: flex; flex-direction: column;">
-      <div class="modal-header">
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <div
-            style="width: 34px; height: 34px; border-radius: 8px; background: #ecfdf5; color: #059669; display: flex; align-items: center; justify-content: center; font-size: 1.1rem;">
-            📦
-          </div>
-          <div>
-            <h3 class="modal-title" style="margin: 0; font-size: 1.15rem;">在庫マスタ台帳（実在庫・入出庫管理）</h3>
-            <span style="font-size: 0.725rem; color: #64748b;">製品・部品の現在庫、安全在庫アラート、入出庫履歴、経費仕入連携</span>
-          </div>
+  <!-- ==========================================================================
+       在庫マスタ台帳専用画面（フルスクリーン・ワークスペース）
+       ========================================================================== -->
+  <section class="app-view-screen" id="inventoryViewScreen">
+
+    <!-- 専用画面トップバー -->
+    <div class="view-screen-header">
+      <div class="view-screen-header-left">
+        <div class="view-screen-icon-badge" style="background: #ecfdf5; color: #059669;">🏭</div>
+        <div>
+          <h2 class="view-screen-title">在庫マスタ台帳（実在庫・入出庫管理）</h2>
+          <span class="view-screen-subtitle">製品・部品の現在庫、安全在庫アラート、輸入ロット原価按分、シリアル番号追跡台帳</span>
         </div>
-        <button type="button" class="btn-icon-danger" id="btnCloseInventoryMasterModal"
-          style="font-size: 1.2rem;">✕</button>
       </div>
-
-      <!-- 在庫マスタ タブナビゲーション -->
-      <div style="display: flex; gap: 4px; padding: 0 20px; border-bottom: 1px solid #e2e8f0; background: #f8fafc;">
-        <button type="button" id="tabBtnInventoryItems" class="btn btn-sm" style="border-radius: 6px 6px 0 0; border: 1px solid #e2e8f0; border-bottom: 1px solid #ffffff; background: #ffffff; color: #0f172a; font-weight: 700; padding: 8px 16px; margin-bottom: -1px; z-index: 2;">
-          📦 在庫品目・BOM構成マスタ
+      <div class="view-screen-header-actions">
+        <button type="button" id="btnSyncInventoryWithItems" class="btn btn-secondary btn-sm"
+          style="display: inline-flex; align-items: center; gap: 6px;" title="商品マスタに登録されている商品で在庫マスタに未登録のものを一括取り込みます">
+          🔄 商品取込
         </button>
-        <button type="button" id="tabBtnInventorySerials" class="btn btn-sm" style="border-radius: 6px 6px 0 0; border: 1px solid transparent; background: transparent; color: #64748b; font-weight: 600; padding: 8px 16px;">
-          🔢 シリアル番号管理台帳
+        <button type="button" id="btnOpenInventoryLotModal" class="btn btn-success btn-sm"
+          style="display: inline-flex; align-items: center; gap: 6px; background: #059669; border-color: #059669; color: #ffffff; font-weight: 700;"
+          title="輸入・国内仕入ロットの入庫、諸費用按分(Landed Cost)、シリアル一括登録、財務会計仕訳連動">
+          📥 ロット入庫・原価計算
         </button>
-        <button type="button" id="tabBtnInventoryLots" class="btn btn-sm" style="border-radius: 6px 6px 0 0; border: 1px solid transparent; background: transparent; color: #64748b; font-weight: 600; padding: 8px 16px;">
-          📜 入荷ロット履歴
+        <button type="button" id="btnToggleNewInventoryForm" class="btn btn-primary btn-sm"
+          style="display: inline-flex; align-items: center; gap: 6px; font-weight: 700;">
+          ➕ 新規品目追加
+        </button>
+        <button type="button" class="btn-back-to-portal" id="btnCloseInventoryMasterModal"
+          onclick="window.switchAppView && window.switchAppView('portal')" title="メインポータルMENUへ戻る">
+          <span>🏠</span> 業務MENUへ戻る
         </button>
       </div>
+    </div>
 
-      <div class="modal-body" style="padding: 16px 20px; overflow-y: auto; flex: 1;">
+    <!-- 在庫マスタ サブタブナビゲーション -->
+    <div class="inventory-tabs-bar"
+      style="display: flex; gap: 4px; padding: 12px 32px 0 32px; background: #ffffff; border-bottom: 1px solid var(--border-color); overflow-x: auto;">
+      <button type="button" id="tabBtnInventoryItems" class="acc-tab-btn active" style="font-weight: 700;">
+        📦 在庫品目・BOM構成マスタ
+      </button>
+      <button type="button" id="tabBtnInventorySerials" class="acc-tab-btn" style="font-weight: 600;">
+        🔢 シリアル番号管理台帳
+      </button>
+      <button type="button" id="tabBtnInventoryLots" class="acc-tab-btn" style="font-weight: 600;">
+        📜 入荷ロット履歴
+      </button>
+      <div style="margin-left: auto; display: flex; align-items: center; font-size: 0.775rem; color: #64748b;" id="inventorySummaryStatus">
+        在庫品目数: --件 (安全在庫割れ: --件)
+      </div>
+    </div>
 
+    <!-- メインコンテンツエリア -->
+    <div class="view-screen-content" style="padding: 24px 32px; overflow-y: auto;">
+      <div style="max-width: 1200px; margin: 0 auto;">
         <!-- 1. 在庫品目・BOM構成マスタ タブ -->
         <div id="inventoryItemsTabContent">
           <!-- 上部アクションバー（検索・アラートフィルタ・商品マスタ取込・ロット入庫・新規追加） -->
@@ -1688,15 +1722,9 @@
         </div>
 
       </div>
-
-      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
-        <span style="font-size: 0.775rem; color: var(--text-muted);" id="inventorySummaryStatus">
-          在庫品目数: --件 (安全在庫割れ: --件)
-        </span>
-        <button type="button" class="btn btn-secondary btn-sm" id="btnCloseInventoryMasterModal2">閉じる</button>
       </div>
     </div>
-  </div>
+  </section>
 
   <!-- クイック入出庫調整モーダル -->
   <div class="modal-overlay" id="inventoryAdjustModal" style="z-index: 1050;">
@@ -2135,32 +2163,39 @@
     </div>
   </div>
 
-  <!-- 取引先マスタ管理＆伝票呼出モーダル -->
-  <div class="modal-overlay" id="clientMasterModal">
-    <div class="modal-card"
-      style="max-width: 800px; width: 95vw; max-height: 88vh; display: flex; flex-direction: column;">
-      <div class="modal-header">
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <div
-            style="width: 32px; height: 32px; border-radius: 8px; background: #e0f2fe; color: #0284c7; display: flex; align-items: center; justify-content: center;">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-              <circle cx="9" cy="7" r="4" />
-              <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-            </svg>
-          </div>
-          <div>
-            <h3 class="modal-title" style="margin: 0; font-size: 1.1rem;">取引先マスタ管理</h3>
-            <span style="font-size: 0.725rem; color: #64748b;">得意先・仕入先情報の一括管理・伝票宛先へのワンクリック反映</span>
-          </div>
+  <!-- ==========================================================================
+       取引先マスタ専用画面（フルスクリーン・ワークスペース）
+       ========================================================================== -->
+  <section class="app-view-screen" id="clientsViewScreen">
+
+    <!-- 専用画面トップバー -->
+    <div class="view-screen-header">
+      <div class="view-screen-header-left">
+        <div class="view-screen-icon-badge" style="background: #e0f2fe; color: #0284c7;">🏢</div>
+        <div>
+          <h2 class="view-screen-title">取引先マスタ管理</h2>
+          <span class="view-screen-subtitle">得意先（売上）・仕入先（支払）の宛名・敬称・インボイス登録番号・住所情報の一括管理</span>
         </div>
-        <button type="button" class="btn-icon-danger" id="btnCloseClientMasterModal"
-          style="font-size: 1.2rem;">✕</button>
       </div>
+      <div class="view-screen-header-actions">
+        <button type="button" id="btnToggleNewClientForm" class="btn btn-primary btn-sm"
+          style="display: inline-flex; align-items: center; gap: 6px; padding: 7px 16px; font-weight: 700;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+          新規取引先を登録
+        </button>
+        <button type="button" class="btn-back-to-portal" id="btnCloseClientMasterModal"
+          onclick="window.switchAppView && window.switchAppView('portal')" title="メインポータルMENUへ戻る">
+          <span>🏠</span> 業務MENUへ戻る
+        </button>
+      </div>
+    </div>
 
-      <div class="modal-body" style="padding: 16px 20px; overflow-y: auto; flex: 1;">
-
+    <!-- メインコンテンツエリア -->
+    <div class="view-screen-content" style="padding: 24px 32px; overflow-y: auto;">
+      <div style="max-width: 1080px; margin: 0 auto;">
         <!-- 上部アクションバー（検索 ＆ 区分フィルター ＆ 新規登録ボタン） -->
         <div
           style="display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap;">
@@ -2285,16 +2320,12 @@
         </div>
 
       </div>
-
-      <div class="modal-footer"
-        style="padding: 12px 20px; background: #ffffff; border-top: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
-        <span style="font-size: 0.775rem; color: #64748b;">
+        <div style="margin-top: 24px; padding: 12px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 0.775rem; color: #64748b; text-align: center;">
           ※マスタの取引先情報を変更しても、過去に作成・保存された伝票データには影響しません。
-        </span>
-        <button type="button" class="btn btn-secondary btn-sm" id="btnCloseClientMasterModal2">閉じる</button>
+        </div>
       </div>
     </div>
-  </div>
+  </section>
 
   <!-- 値引き追加モーダル（ユーザー価格基準 & 頻度順名目サジェスト） -->
   <div class="modal-overlay" id="discountModal">
@@ -6176,7 +6207,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261022_manual_lecture"></script>
+  <script src="js/app.bundle.js?v=20261022_master_views"></script>
 </body>
 
 </html>
