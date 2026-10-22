@@ -935,7 +935,8 @@ window.switchEditorTab = switchEditorTab;
 
 function switchAppView(viewName) {
   try {
-    const targetView = viewName || 'portal';
+    const targetView = (typeof viewName === 'string' && viewName.trim()) ? viewName.trim() : 'portal';
+    console.log(`【画面切替】switchAppView 実行開始: ${currentAppView} -> ${targetView}`);
     if (currentAppView && currentAppView !== targetView) {
       previousAppView = currentAppView;
     }
@@ -3601,6 +3602,28 @@ function setupEventListeners() {
       saveAttendanceEmployee({ empName: DOM.inputSheetEmpName.value });
     });
   }
+
+  // ==========================================================================
+  // 全専用画面・モーダル共通：業務MENUへ戻るボタンの確実なイベント委譲 (Event Delegation)
+  // ==========================================================================
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.btn-back-to-portal');
+    if (btn) {
+      e.preventDefault();
+      e.stopPropagation();
+      console.log('【業務MENUへ戻る】クリック検知 -> switchAppView("portal") 実行開始', btn);
+      try {
+        if (typeof switchAppView === 'function') {
+          switchAppView('portal');
+          console.log('【業務MENUへ戻る】switchAppView("portal") 実行完了');
+        } else {
+          console.warn('【業務MENUへ戻る】switchAppViewが未定義です');
+        }
+      } catch (err) {
+        console.error('【業務MENUへ戻る】実行時エラー:', err);
+      }
+    }
+  });
 }
 
 // ==========================================================================
@@ -4272,8 +4295,9 @@ function openItemMasterModal() {
 }
 
 function closeItemMasterModal(targetView) {
+  const next = (typeof targetView === 'string' && targetView.trim()) ? targetView.trim() : (previousAppView === 'invoice' ? 'invoice' : 'portal');
   if (typeof switchAppView === 'function') {
-    switchAppView(targetView || (previousAppView === 'invoice' ? 'invoice' : 'portal'));
+    switchAppView(next);
   } else if (DOM.itemMasterModal) {
     DOM.itemMasterModal.classList.remove('active');
   }
@@ -4536,8 +4560,9 @@ function openClientMasterModal(defaultFilter = 'customer') {
 }
 
 function closeClientMasterModal(targetView) {
+  const next = (typeof targetView === 'string' && targetView.trim()) ? targetView.trim() : (previousAppView === 'invoice' ? 'invoice' : 'portal');
   if (typeof switchAppView === 'function') {
-    switchAppView(targetView || (previousAppView === 'invoice' ? 'invoice' : 'portal'));
+    switchAppView(next);
   } else if (DOM.clientMasterModal) {
     DOM.clientMasterModal.classList.remove('active');
   }
@@ -4875,8 +4900,9 @@ function openInventoryMasterModal() {
 }
 
 function closeInventoryMasterModal(targetView) {
+  const next = (typeof targetView === 'string' && targetView.trim()) ? targetView.trim() : (previousAppView === 'invoice' ? 'invoice' : 'portal');
   if (typeof switchAppView === 'function') {
-    switchAppView(targetView || (previousAppView === 'invoice' ? 'invoice' : 'portal'));
+    switchAppView(next);
   } else if (DOM.inventoryMasterModal) {
     DOM.inventoryMasterModal.classList.remove('active');
     DOM.inventoryMasterModal.style.display = 'none';
@@ -13008,6 +13034,13 @@ function closePayrollSheetModal() {
   }
   document.body.style.overflow = '';
 }
+
+function closePayrollModal() {
+  if (typeof switchAppView === 'function') {
+    switchAppView('portal');
+  }
+}
+window.closePayrollModal = closePayrollModal;
 
 function handlePrintPayrollSheet() {
   const modalPaper = document.getElementById('payrollSheetPaper');

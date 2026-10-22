@@ -309,7 +309,7 @@
         </button>
         <div style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
-          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.22-master-full</span>
+          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.22-mobile-nav-fix</span>
         </div>
       </div>
 
@@ -324,8 +324,15 @@
 
       <!-- 書類種別セレクター ＆ ポータル復帰バー -->
       <div style="padding: 12px 20px 0 20px; background: #ffffff;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-          <label class="form-label" style="margin-bottom: 0; font-size: 0.85rem; font-weight: 700; color: #334155;">帳票の種類</label>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <button type="button" class="btn-back-to-portal" id="btnCloseInvoiceView"
+              onclick="window.switchAppView && window.switchAppView('portal')" title="メインポータルMENUへ戻る"
+              style="padding: 4px 10px; font-size: 0.775rem;">
+              <span>🏠</span> 業務MENUへ
+            </button>
+            <label class="form-label" style="margin-bottom: 0; font-size: 0.85rem; font-weight: 700; color: #334155;">帳票の種類</label>
+          </div>
           <div style="display: flex; gap: 6px; align-items: center;">
             <button type="button" id="btnVoiceInput" class="btn btn-secondary btn-xs"
               style="padding: 4px 10px; font-size: 0.775rem; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; color: #4f46e5; border-color: #c7d2fe; background: #eef2ff;"
@@ -1709,7 +1716,6 @@
         </div>
 
       </div>
-      </div>
     </div>
   </section>
 
@@ -2297,7 +2303,6 @@
           <!-- JSでレンダリング -->
         </div>
 
-      </div>
         <div style="margin-top: 24px; padding: 12px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 0.775rem; color: #64748b; text-align: center;">
           ※マスタの取引先情報を変更しても、過去に作成・保存された伝票データには影響しません。
         </div>
@@ -4227,7 +4232,7 @@
         </button>
 
         <!-- 業務MENUへ戻るボタン -->
-        <button type="button" class="btn-back-to-portal"
+        <button type="button" class="btn-back-to-portal" id="btnClosePayrollModal"
           onclick="window.switchAppView &amp;&amp; window.switchAppView('portal')" title="メインポータルMENUへ戻る">
           <span>🏠</span> 業務MENUへ戻る
         </button>
@@ -6185,7 +6190,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261022_master_full"></script>
+  <script src="js/app.bundle.js?v=20261022_mobile_nav_fix"></script>
 </body>
 
 </html>

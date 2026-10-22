@@ -2567,33 +2567,89 @@ label.form-label {
     overflow: visible !important;
   }
 
-  /* 専用画面のヘッダーのレスポンシブ化（経費・勤怠など） */
+  /* 専用画面のヘッダーのレスポンシブ化（全マスタ・会計・経費・勤怠・給与） */
   .view-screen-header {
     flex-direction: column !important;
     align-items: flex-start !important;
-    gap: 12px !important;
-    padding: 12px 14px !important;
+    gap: 10px !important;
+    padding: 10px 12px !important;
     height: auto !important;
+    box-sizing: border-box !important;
   }
   .view-screen-header-left {
     width: 100% !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 10px !important;
   }
   .view-screen-title {
     white-space: normal !important;
-    font-size: 1.1rem !important;
+    font-size: 1.05rem !important;
     line-height: 1.3 !important;
+    font-weight: 800 !important;
   }
   .view-screen-subtitle {
     display: block !important;
     white-space: normal !important;
-    line-height: 1.4 !important;
-    margin-top: 4px !important;
+    font-size: 0.72rem !important;
+    line-height: 1.35 !important;
+    margin-top: 2px !important;
+    color: #64748b !important;
   }
   .view-screen-header-actions {
     width: 100% !important;
+    display: flex !important;
     flex-wrap: wrap !important;
-    gap: 8px !important;
+    gap: 6px !important;
     justify-content: flex-start !important;
+    align-items: center !important;
+  }
+
+  /* 業務MENUへ戻るボタン：スマホで押しやすい親指サイズ＆高視認性 */
+  .btn-back-to-portal {
+    padding: 8px 14px !important;
+    font-size: 0.85rem !important;
+    font-weight: 700 !important;
+    min-height: 38px !important;
+    border-radius: 8px !important;
+    background: #f1f5f9 !important;
+    border: 1.5px solid #94a3b8 !important;
+    color: #1e293b !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05) !important;
+    touch-action: manipulation !important;
+    -webkit-tap-highlight-color: transparent !important;
+  }
+  .btn-back-to-portal:active {
+    background: #e2e8f0 !important;
+    transform: scale(0.97) !important;
+  }
+
+  /* 専用画面メインコンテンツのスマホ時パディング最適化（インラインstyle="padding: 24px 32px;"を上書き） */
+  .view-screen-content {
+    padding: 12px 10px !important;
+    flex: none !important;
+    height: auto !important;
+    min-height: auto !important;
+    overflow-y: visible !important;
+    box-sizing: border-box !important;
+  }
+
+  /* 在庫マスタ・会計サブタブバーのスマホ最適化 */
+  .inventory-tabs-bar,
+  .accounting-tabs-bar {
+    padding: 8px 10px 0 10px !important;
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+  #inventorySummaryStatus {
+    margin-left: 0 !important;
+    width: 100% !important;
+    padding: 4px 0 !important;
+    font-size: 0.72rem !important;
   }
 
   /* 勤怠管理画面：打刻ボタンのスマホサイズ調整 */
