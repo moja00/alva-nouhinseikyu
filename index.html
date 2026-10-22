@@ -309,7 +309,7 @@
         </button>
         <div style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
-          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.22-master-views</span>
+          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.22-master-full</span>
         </div>
       </div>
 
@@ -1559,19 +1559,6 @@
                 <option value="low">⚠️ 安全在庫割れアラートのみ</option>
                 <option value="zero">❌ 在庫切れ(0個)のみ</option>
               </select>
-              <button type="button" id="btnSyncInventoryWithItems" class="btn btn-secondary btn-sm"
-                style="display: flex; align-items: center; gap: 4px;" title="商品マスタに登録されている商品で在庫マスタに未登録のものを一括取り込みます">
-                🔄 商品取込
-              </button>
-              <button type="button" id="btnOpenInventoryLotModal" class="btn btn-success btn-sm"
-                style="display: flex; align-items: center; gap: 4px; background: #059669; border-color: #059669; color: #ffffff;"
-                title="輸入・国内仕入ロットの入庫、諸費用按分(Landed Cost)、シリアル一括登録、財務会計仕訳連動">
-                📥 ロット入庫・原価計算
-              </button>
-              <button type="button" id="btnToggleNewInventoryForm" class="btn btn-primary btn-sm"
-                style="display: flex; align-items: center; gap: 4px;">
-                ➕ 新規品目追加
-              </button>
             </div>
           </div>
 
@@ -2212,15 +2199,6 @@
             <button type="button" class="btn btn-secondary btn-xs client-filter-btn"
               data-filter="vendor">仕入・支払先のみ</button>
           </div>
-
-          <button type="button" id="btnToggleNewClientForm" class="btn btn-primary btn-sm"
-            style="display: flex; align-items: center; gap: 4px;">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="12" y1="5" x2="12" y2="19" />
-              <line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-            新規取引先を登録
-          </button>
         </div>
 
         <!-- 新規登録・編集フォーム（初期非表示） -->
@@ -6207,7 +6185,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261022_master_views"></script>
+  <script src="js/app.bundle.js?v=20261022_master_full"></script>
 </body>
 
 </html>

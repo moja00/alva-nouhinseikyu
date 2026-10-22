@@ -9008,6 +9008,7 @@ function initApp() {
 // ポップアップ（モーダル）ではなく独立した広大な専用ワークスペースとして切替
 // ==========================================================================
 let currentAppView = 'portal';
+let previousAppView = 'portal';
 
 function switchEditorTab(targetId) {
   try {
@@ -9032,7 +9033,11 @@ window.switchEditorTab = switchEditorTab;
 
 function switchAppView(viewName) {
   try {
-    currentAppView = viewName || 'portal';
+    const targetView = viewName || 'portal';
+    if (currentAppView && currentAppView !== targetView) {
+      previousAppView = currentAppView;
+    }
+    currentAppView = targetView;
 
     // 1. スイッチャーボタンのactive状態を更新
     const switchBtns = document.querySelectorAll('.app-switch-btn');
@@ -12364,9 +12369,9 @@ function openItemMasterModal() {
   }
 }
 
-function closeItemMasterModal() {
+function closeItemMasterModal(targetView) {
   if (typeof switchAppView === 'function') {
-    switchAppView('portal');
+    switchAppView(targetView || (previousAppView === 'invoice' ? 'invoice' : 'portal'));
   } else if (DOM.itemMasterModal) {
     DOM.itemMasterModal.classList.remove('active');
   }
@@ -12571,7 +12576,10 @@ function renderItemMasterList(searchQuery = '') {
       });
       renderItemInputCards();
       renderAll();
-      closeItemMasterModal();
+      if (typeof switchEditorTab === 'function') {
+        switchEditorTab('tab-items');
+      }
+      closeItemMasterModal('invoice');
       showToast(`「${item.name}」を明細に追加しました！`, 'success');
     });
 
@@ -12625,9 +12633,9 @@ function openClientMasterModal(defaultFilter = 'customer') {
   }
 }
 
-function closeClientMasterModal() {
+function closeClientMasterModal(targetView) {
   if (typeof switchAppView === 'function') {
-    switchAppView('portal');
+    switchAppView(targetView || (previousAppView === 'invoice' ? 'invoice' : 'portal'));
   } else if (DOM.clientMasterModal) {
     DOM.clientMasterModal.classList.remove('active');
   }
@@ -12859,7 +12867,10 @@ function applyClientToDocument(client) {
   renderAll();
   saveActiveDoc(currentDoc);
 
-  closeClientMasterModal();
+  if (typeof switchEditorTab === 'function') {
+    switchEditorTab('tab-basic');
+  }
+  closeClientMasterModal('invoice');
   showToast(`取引先「${client.name}」を伝票宛先に反映しました！`, 'success');
 }
 
@@ -12961,9 +12972,9 @@ function openInventoryMasterModal() {
   }
 }
 
-function closeInventoryMasterModal() {
+function closeInventoryMasterModal(targetView) {
   if (typeof switchAppView === 'function') {
-    switchAppView('portal');
+    switchAppView(targetView || (previousAppView === 'invoice' ? 'invoice' : 'portal'));
   } else if (DOM.inventoryMasterModal) {
     DOM.inventoryMasterModal.classList.remove('active');
     DOM.inventoryMasterModal.style.display = 'none';
