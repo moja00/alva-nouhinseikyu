@@ -138,6 +138,12 @@
         </svg>
         データ管理
       </button>
+      <a href="manual.html" target="_blank" id="btnHeaderOpenManual" class="btn btn-secondary btn-sm"
+        style="background: linear-gradient(135deg, #f0fdf4, #dcfce7); border-color: #86efac; color: #166534; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 5px;"
+        title="経理初心者向け完全講義マニュアルを開く（別タブ）">
+        <span>📖</span>
+        マニュアル
+      </a>
       <button type="button" id="btnLogout" class="btn btn-secondary btn-sm" style="display: none; border-color: #ef4444; color: #ef4444;" title="ログアウト">
         🚪 ログアウト
       </button>
@@ -252,6 +258,20 @@
           </div>
         </div>
 
+        <!-- 6. 経理・操作マニュアル（初心者対応講義スタイル） -->
+        <div class="portal-card card-manual" onclick="window.open('manual.html', '_blank')"
+          title="経理初心者向け完全講義マニュアル（別タブ）を開く" style="border-top-color: #059669; cursor: pointer;">
+          <div class="portal-card-header">
+            <div class="portal-card-icon icon-manual" style="background: #ecfdf5; color: #059669;">📖</div>
+            <span class="portal-card-tag tag-manual" style="background: #ecfdf5; color: #059669; font-weight: 700;">初心者講義</span>
+          </div>
+          <h3 class="portal-card-title">経理・操作マニュアル</h3>
+          <p class="portal-card-desc">簿記不要！実画面スクショ13枚付きの完全講義。DP-5000輸入原価・シリアル引当・レシートAI精算・給与仕訳から月次決算までやさしく解説。</p>
+          <div class="portal-card-footer">
+            <span class="portal-card-action" style="color: #059669; font-weight: 700;">マニュアルを開く（別タブ） <span class="arrow">→</span></span>
+          </div>
+        </div>
+
       </div>
 
       <!-- 補助マスタ・クイックリンクバー -->
@@ -274,6 +294,10 @@
         <button type="button" class="quick-link-btn" onclick="document.getElementById('btnOpenBackup').click()">
           💾 データ管理・バックアップ
         </button>
+        <a href="manual.html" target="_blank" class="quick-link-btn"
+          style="background: #f0fdf4; border-color: #86efac; color: #166534; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
+          📖 経理・操作マニュアル
+        </a>
         <button type="button" class="quick-link-btn"
           onclick="window.triggerServerSyncAll &amp;&amp; window.triggerServerSyncAll()"
           style="background: linear-gradient(135deg, #0284c7, #2563eb); color: #ffffff; border: none; font-weight: 700; box-shadow: 0 2px 6px rgba(37,99,235,0.3);">
@@ -281,7 +305,7 @@
         </button>
         <div style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
-          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.21-sync-tombstone-fix</span>
+          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.22-manual-lecture</span>
         </div>
       </div>
 
@@ -6152,7 +6176,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261021_sync_tombstone_fix"></script>
+  <script src="js/app.bundle.js?v=20261022_manual_lecture"></script>
 </body>
 
 </html>

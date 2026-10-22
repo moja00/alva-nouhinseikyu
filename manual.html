@@ -1,0 +1,1508 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>経理初心者向け Alva-works ERP 完全講義マニュアル | 株式会社アルバワークス</title>
+  <meta name="description" content="簿記・会計初心者でも日々の請求書発行・DP-5000輸入原価・シリアル管理・レシートAI精算・給与仕訳から月次決算まで完璧にマスターできる完全講義マニュアル">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=Noto+Sans+JP:wght@400;500;700;900&family=Fira+Code:wght@500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #2563eb;
+      --primary-dark: #1d4ed8;
+      --primary-light: #eff6ff;
+      --primary-border: #bfdbfe;
+      --accent: #059669;
+      --accent-light: #ecfdf5;
+      --accent-border: #a7f3d0;
+      --warning: #d97706;
+      --warning-light: #fffbeb;
+      --warning-border: #fde68a;
+      --danger: #dc2626;
+      --danger-light: #fef2f2;
+      --danger-border: #fecaca;
+      --purple: #7c3aed;
+      --purple-light: #f5f3ff;
+      --purple-border: #ddd6fe;
+      --slate-900: #0f172a;
+      --slate-800: #1e293b;
+      --slate-700: #334155;
+      --slate-600: #475569;
+      --slate-500: #64748b;
+      --slate-200: #e2e8f0;
+      --slate-100: #f1f5f9;
+      --slate-50: #f8fafc;
+      --sidebar-width: 300px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Noto Sans JP', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--slate-50);
+      color: var(--slate-800);
+      line-height: 1.8;
+      font-size: 15.5px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* レイアウト構造 */
+    .manual-layout {
+      display: flex;
+      min-height: 100vh;
+    }
+
+    /* 左サイドバー（目次・固定ナビ） */
+    .manual-sidebar {
+      width: var(--sidebar-width);
+      background: #ffffff;
+      border-right: 1px solid var(--slate-200);
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      padding: 24px 18px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .sidebar-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding-bottom: 18px;
+      border-bottom: 2px solid var(--slate-100);
+      margin-bottom: 18px;
+    }
+
+    .sidebar-brand-icon {
+      width: 36px;
+      height: 36px;
+      background: linear-gradient(135deg, var(--primary) 0%, var(--purple) 100%);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 10px;
+      font-weight: 900;
+      font-size: 1.1rem;
+      box-shadow: 0 4px 10px rgba(37, 99, 235, 0.25);
+    }
+
+    .sidebar-brand-title {
+      font-size: 0.95rem;
+      font-weight: 800;
+      color: var(--slate-900);
+      line-height: 1.25;
+    }
+
+    .sidebar-brand-sub {
+      font-size: 0.7rem;
+      color: var(--slate-500);
+      font-weight: 600;
+    }
+
+    .nav-group-title {
+      font-size: 0.725rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--slate-500);
+      margin: 16px 0 8px 8px;
+    }
+
+    .toc-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .toc-item a {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      color: var(--slate-700);
+      text-decoration: none;
+      font-size: 0.825rem;
+      font-weight: 600;
+      transition: all 0.15s ease;
+    }
+
+    .toc-item a:hover {
+      background: var(--primary-light);
+      color: var(--primary);
+    }
+
+    .toc-item.active a {
+      background: var(--primary);
+      color: #ffffff;
+      box-shadow: 0 2px 6px rgba(37, 99, 235, 0.2);
+    }
+
+    .toc-badge {
+      font-size: 0.65rem;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: var(--slate-100);
+      color: var(--slate-600);
+      font-weight: 700;
+    }
+
+    .toc-item.active .toc-badge {
+      background: rgba(255, 255, 255, 0.25);
+      color: #ffffff;
+    }
+
+    .sidebar-footer {
+      margin-top: auto;
+      padding-top: 16px;
+      border-top: 1px solid var(--slate-100);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .btn-return-app {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 14px;
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+      color: #ffffff;
+      border-radius: 8px;
+      font-size: 0.825rem;
+      font-weight: 700;
+      text-decoration: none;
+      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
+      transition: all 0.2s ease;
+    }
+
+    .btn-return-app:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
+    }
+
+    /* 右メインコンテンツ */
+    .manual-content {
+      flex: 1;
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 40px 48px 100px;
+    }
+
+    /* ヒーローヘッダー */
+    .manual-hero {
+      background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+      color: #ffffff;
+      border-radius: 20px;
+      padding: 44px 40px;
+      margin-bottom: 44px;
+      box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.3);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .manual-hero::before {
+      content: '';
+      position: absolute;
+      top: -60px;
+      right: -60px;
+      width: 240px;
+      height: 240px;
+      background: radial-gradient(circle, rgba(37, 99, 235, 0.4) 0%, transparent 70%);
+      border-radius: 50%;
+    }
+
+    .hero-badge-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(37, 99, 235, 0.3);
+      border: 1px solid rgba(147, 197, 253, 0.4);
+      padding: 4px 12px;
+      border-radius: 9999px;
+      font-size: 0.775rem;
+      font-weight: 700;
+      color: #93c5fd;
+      letter-spacing: 0.03em;
+    }
+
+    .hero-title {
+      font-size: 2.1rem;
+      font-weight: 900;
+      line-height: 1.3;
+      margin-bottom: 14px;
+      letter-spacing: -0.02em;
+    }
+
+    .hero-desc {
+      font-size: 0.975rem;
+      color: #94a3b8;
+      line-height: 1.7;
+      max-width: 800px;
+    }
+
+    .hero-meta {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      margin-top: 24px;
+      padding-top: 20px;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      font-size: 0.8rem;
+      color: #cbd5e1;
+    }
+
+    /* 章セクション */
+    .chapter-section {
+      background: #ffffff;
+      border: 1px solid var(--slate-200);
+      border-radius: 16px;
+      padding: 36px 36px 42px;
+      margin-bottom: 40px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.03);
+      scroll-margin-top: 24px;
+    }
+
+    .chapter-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      padding-bottom: 20px;
+      border-bottom: 2px solid var(--slate-100);
+      margin-bottom: 28px;
+    }
+
+    .chapter-num {
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+      color: #ffffff;
+      font-size: 1rem;
+      font-weight: 900;
+      padding: 6px 14px;
+      border-radius: 10px;
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+      box-shadow: 0 3px 8px rgba(37, 99, 235, 0.25);
+    }
+
+    .chapter-title-wrap h2 {
+      font-size: 1.5rem;
+      font-weight: 800;
+      color: var(--slate-900);
+      line-height: 1.35;
+      margin-bottom: 6px;
+    }
+
+    .chapter-subtitle {
+      font-size: 0.875rem;
+      color: var(--slate-500);
+      font-weight: 500;
+    }
+
+    /* 見出し階層 */
+    h3 {
+      font-size: 1.2rem;
+      font-weight: 800;
+      color: var(--slate-900);
+      margin: 32px 0 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      position: relative;
+    }
+
+    h3::before {
+      content: '';
+      display: inline-block;
+      width: 4px;
+      height: 1.15em;
+      background: var(--primary);
+      border-radius: 2px;
+    }
+
+    h4 {
+      font-size: 1.025rem;
+      font-weight: 700;
+      color: var(--slate-800);
+      margin: 22px 0 10px;
+    }
+
+    p {
+      margin-bottom: 16px;
+      color: var(--slate-700);
+    }
+
+    /* 画像表示コンポーネント */
+    .screen-figure {
+      margin: 24px 0 32px;
+      border: 1px solid var(--slate-200);
+      border-radius: 12px;
+      overflow: hidden;
+      background: #ffffff;
+      box-shadow: 0 8px 20px -4px rgba(0, 0, 0, 0.08);
+      transition: transform 0.2s ease;
+    }
+
+    .screen-figure:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 28px -4px rgba(0, 0, 0, 0.12);
+    }
+
+    .screen-img {
+      width: 100%;
+      height: auto;
+      display: block;
+      border-bottom: 1px solid var(--slate-100);
+    }
+
+    .screen-caption {
+      padding: 12px 18px;
+      background: var(--slate-50);
+      font-size: 0.825rem;
+      font-weight: 700;
+      color: var(--slate-700);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .screen-caption-badge {
+      background: var(--primary);
+      color: #ffffff;
+      font-size: 0.7rem;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      font-weight: 800;
+    }
+
+    /* 講義・解説ボックス（吹き出し・コールアウト） */
+    .callout {
+      border-radius: 12px;
+      padding: 20px 22px;
+      margin: 24px 0;
+      border-left: 5px solid;
+    }
+
+    .callout-lecture {
+      background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%);
+      border-color: var(--accent);
+      border: 1px solid var(--accent-border);
+      border-left: 5px solid var(--accent);
+    }
+
+    .callout-warning {
+      background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+      border: 1px solid var(--warning-border);
+      border-left: 5px solid var(--warning);
+    }
+
+    .callout-money {
+      background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+      border: 1px solid var(--primary-border);
+      border-left: 5px solid var(--primary);
+    }
+
+    .callout-purple {
+      background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%);
+      border: 1px solid var(--purple-border);
+      border-left: 5px solid var(--purple);
+    }
+
+    .callout-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.95rem;
+      font-weight: 800;
+      margin-bottom: 10px;
+    }
+
+    .callout-lecture .callout-header { color: #065f46; }
+    .callout-warning .callout-header { color: #92400e; }
+    .callout-money .callout-header { color: #1e40af; }
+    .callout-purple .callout-header { color: #5b21b6; }
+
+    .callout-body {
+      font-size: 0.9rem;
+      line-height: 1.75;
+      color: var(--slate-700);
+    }
+
+    .callout-body ul {
+      padding-left: 20px;
+      margin: 8px 0;
+    }
+
+    .callout-body li {
+      margin-bottom: 6px;
+    }
+
+    /* 表組み */
+    .data-table-wrap {
+      overflow-x: auto;
+      margin: 20px 0 28px;
+      border: 1px solid var(--slate-200);
+      border-radius: 10px;
+      background: #ffffff;
+    }
+
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+      text-align: left;
+    }
+
+    .data-table th {
+      background: var(--slate-100);
+      color: var(--slate-700);
+      font-weight: 700;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--slate-200);
+      white-space: nowrap;
+    }
+
+    .data-table td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--slate-100);
+      color: var(--slate-700);
+      vertical-align: middle;
+    }
+
+    .data-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .data-table tr:hover td {
+      background: var(--slate-50);
+    }
+
+    .account-code {
+      font-family: 'Fira Code', monospace;
+      font-weight: 700;
+      background: var(--slate-100);
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: var(--primary-dark);
+    }
+
+    .amount-text {
+      font-family: 'Fira Code', monospace;
+      font-weight: 700;
+      text-align: right;
+    }
+
+    /* 手順ステップバッジ */
+    .step-list {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      margin: 20px 0 28px;
+    }
+
+    .step-card {
+      display: flex;
+      gap: 16px;
+      background: var(--slate-50);
+      border: 1px solid var(--slate-200);
+      border-radius: 12px;
+      padding: 18px 20px;
+      align-items: flex-start;
+    }
+
+    .step-badge {
+      background: var(--primary);
+      color: #ffffff;
+      font-weight: 900;
+      font-size: 0.85rem;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    .step-content {
+      flex: 1;
+    }
+
+    .step-title {
+      font-size: 0.95rem;
+      font-weight: 800;
+      color: var(--slate-900);
+      margin-bottom: 4px;
+    }
+
+    .step-desc {
+      font-size: 0.875rem;
+      color: var(--slate-600);
+      margin: 0;
+    }
+
+    /* 比較グリッド */
+    .compare-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+      margin: 20px 0 28px;
+    }
+
+    .compare-card {
+      background: #ffffff;
+      border: 1.5px solid var(--slate-200);
+      border-radius: 12px;
+      padding: 20px;
+    }
+
+    .compare-card.pl {
+      border-color: #93c5fd;
+      background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
+    }
+
+    .compare-card.bs {
+      border-color: #a7f3d0;
+      background: linear-gradient(180deg, #ecfdf5 0%, #ffffff 100%);
+    }
+
+    .compare-header {
+      font-size: 1rem;
+      font-weight: 800;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .compare-card.pl .compare-header { color: #1e40af; }
+    .compare-card.bs .compare-header { color: #065f46; }
+
+    /* ルーティンタイムライン */
+    .routine-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px;
+      margin: 20px 0 28px;
+    }
+
+    .routine-card {
+      background: #ffffff;
+      border: 1px solid var(--slate-200);
+      border-radius: 10px;
+      padding: 16px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+    }
+
+    .routine-tag {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 800;
+      padding: 2px 8px;
+      border-radius: 4px;
+      margin-bottom: 8px;
+    }
+
+    .tag-daily { background: #e0f2fe; color: #0369a1; }
+    .tag-mid { background: #fef3c7; color: #92400e; }
+    .tag-pay { background: #fce7f3; color: #9d174d; }
+    .tag-month { background: #dcfce7; color: #166534; }
+
+    .routine-title {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: var(--slate-900);
+      margin-bottom: 6px;
+    }
+
+    .routine-items {
+      font-size: 0.8rem;
+      color: var(--slate-600);
+      padding-left: 16px;
+      margin: 0;
+    }
+
+    .routine-items li {
+      margin-bottom: 4px;
+    }
+
+    /* 印刷スタイル */
+    @media print {
+      body {
+        background: #ffffff;
+        font-size: 12pt;
+        color: #000000;
+      }
+
+      .manual-sidebar,
+      .btn-return-app {
+        display: none !important;
+      }
+
+      .manual-content {
+        max-width: 100% !important;
+        padding: 0 !important;
+        margin: 0 !important;
+      }
+
+      .manual-hero {
+        background: #f1f5f9 !important;
+        color: #000000 !important;
+        box-shadow: none !important;
+        border: 1px solid #cbd5e1 !important;
+        page-break-after: always;
+      }
+
+      .hero-title {
+        color: #000000 !important;
+      }
+
+      .chapter-section {
+        box-shadow: none !important;
+        border: none !important;
+        padding: 0 !important;
+        margin-bottom: 40px !important;
+        page-break-before: always;
+      }
+
+      .screen-figure {
+        box-shadow: none !important;
+        border: 1px solid #cbd5e1 !important;
+        page-break-inside: avoid;
+      }
+
+      .callout {
+        page-break-inside: avoid;
+      }
+    }
+
+    /* レスポンシブ */
+    @media (max-width: 900px) {
+      .manual-layout {
+        flex-direction: column;
+      }
+
+      .manual-sidebar {
+        width: 100%;
+        height: auto;
+        position: relative;
+        border-right: none;
+        border-bottom: 1px solid var(--slate-200);
+      }
+
+      .manual-content {
+        padding: 24px 18px 60px;
+      }
+
+      .compare-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="manual-layout">
+
+    <!-- 左サイドバー目次 -->
+    <aside class="manual-sidebar">
+      <div class="sidebar-brand">
+        <div class="sidebar-brand-icon">A</div>
+        <div>
+          <div class="sidebar-brand-title">Alva-works ERP</div>
+          <div class="sidebar-brand-sub">完全講義マニュアル（初心者対応）</div>
+        </div>
+      </div>
+
+      <div class="nav-group-title">講義カリキュラム（全8章）</div>
+      <ul class="toc-list">
+        <li class="toc-item"><a href="#ch0"><span class="toc-badge">第0章</span> はじめに：経理ってなに？</a></li>
+        <li class="toc-item"><a href="#ch1"><span class="toc-badge">第1章</span> 初期設定：年度と口座残高</a></li>
+        <li class="toc-item"><a href="#ch2"><span class="toc-badge">第2章</span> DP-5000輸入原価・シリアル</a></li>
+        <li class="toc-item"><a href="#ch3"><span class="toc-badge">第3章</span> 売上計上：請求書と出荷</a></li>
+        <li class="toc-item"><a href="#ch4"><span class="toc-badge">第4章</span> 入金確認：売掛金消込</a></li>
+        <li class="toc-item"><a href="#ch5"><span class="toc-badge">第5章</span> 日々経費：レシートAIと立替</a></li>
+        <li class="toc-item"><a href="#ch6"><span class="toc-badge">第6章</span> 勤怠・給料日：給与仕訳連携</a></li>
+        <li class="toc-item"><a href="#ch7"><span class="toc-badge">第7章</span> 月次チェック・月次締め</a></li>
+      </ul>
+
+      <div class="sidebar-footer">
+        <a href="/" class="btn-return-app" target="_self">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M19 12H5M12 19l-7-7 7-7" />
+          </svg>
+          ERPアプリ画面へ戻る
+        </a>
+        <div style="font-size: 0.7rem; color: var(--slate-500); text-align: center;">
+          株式会社アルバワークス 経理部・業務部用<br>
+          版数: 2026年度版 (v2026.10.22)
+        </div>
+      </div>
+    </aside>
+
+    <!-- メインコンテンツ -->
+    <main class="manual-content">
+
+      <!-- ヒーローヘッダー -->
+      <section class="manual-hero">
+        <div class="hero-badge-wrap">
+          <span class="hero-badge">🎓 初心者歓迎・簿記不要のやさしい実務講義</span>
+          <span class="hero-badge" style="background: rgba(16, 185, 129, 0.2); border-color: rgba(52, 211, 153, 0.4); color: #6ee7b7;">実操作画面スクリーンショット 13枚収録</span>
+        </div>
+        <h1 class="hero-title">Alva-works ERP 完全講義マニュアル</h1>
+        <p class="hero-desc">
+          「経理の資格もないし、簿記の『借方』『貸方』すらよく分からない…」という新任担当者の方でも大丈夫です。
+          本マニュアルは、ベテランの経理講師が隣に座って語りかけるように、<strong>「なぜこの操作をするのか」「裏側でお金はどう動いているのか」</strong>を1つひとつ丁寧に解説します。
+          日々の請求書発行から、アルバワークス固有の「DP-5000輸入原価・シリアル管理」、そして月末の決算まで、すべてこの一冊で迷わず進められます！
+        </p>
+        <div class="hero-meta">
+          <div>🏢 対象: <strong>株式会社アルバワークス 経理・管理・営業担当者</strong></div>
+          <div>📖 カリキュラム: <strong>全8章・図解＋実画面解説</strong></div>
+          <div>🖨️ A4印刷 / PDF出力最適化済み</div>
+        </div>
+      </section>
+
+      <!-- 【第0章】はじめに：経理ってなに？（5分でわかる超入門） -->
+      <section class="chapter-section" id="ch0">
+        <div class="chapter-header">
+          <div class="chapter-num">第 0 章</div>
+          <div class="chapter-title-wrap">
+            <h2>はじめに：経理ってなに？（5分でわかる超入門）</h2>
+            <div class="chapter-subtitle">会社の「成績表」と「財産リスト」の仕組みを知れば、もう経理は怖くありません</div>
+          </div>
+        </div>
+
+        <h3>1. 経理のゴールは「P/L」と「B/S」の2つだけ！</h3>
+        <p>
+          経理の仕事を一言でいうと、<strong>「会社のお金の動きを記録して、2枚のレポートを作ること」</strong>です。
+          世の中にはたくさんの会計用語がありますが、覚えるべき基本レポートはこの2つしかありません。
+        </p>
+
+        <div class="compare-grid">
+          <div class="compare-card pl">
+            <div class="compare-header">
+              <span>📈</span> 損益計算書（P/L : Profit & Loss）
+            </div>
+            <p style="font-weight: 700; color: #1e3a8a; margin-bottom: 8px;">「1年間の成績表（いくら儲かったか？）」</p>
+            <p style="font-size: 0.85rem; color: var(--slate-600); margin: 0;">
+              学校の通信簿と同じです。「売上がいくらあって（収入）」、「商品の仕入れや経費でいくら使って（支出）」、最終的に「手元にいくら利益が残ったか」を1年間の合計で示します。
+            </p>
+          </div>
+
+          <div class="compare-card bs">
+            <div class="compare-header">
+              <span>🏥</span> 貸借対照表（B/S : Balance Sheet）
+            </div>
+            <p style="font-weight: 700; color: #065f46; margin-bottom: 8px;">「会社の健康診断書・財産リスト（いま何があるか？）」</p>
+            <p style="font-size: 0.85rem; color: var(--slate-600); margin: 0;">
+              今日の時点で、「銀行口座に現金がいくらあるか」「まだ振り込まれていない売掛金がいくらあるか」「借金がいくらあるか」という、会社の財産と借金の“いまの残高”を示します。
+            </p>
+          </div>
+        </div>
+
+        <div class="callout callout-lecture">
+          <div class="callout-header">
+            <span>💡</span> 講師のワンポイント！「借方・貸方を覚えなくても大丈夫」
+          </div>
+          <div class="callout-body">
+            昔ながらの簿記では「借方・貸方」を丸暗記させられますが、<strong>Alva-works ERPでは一切覚える必要はありません！</strong><br>
+            あなたが画面で「請求書を発行する」「レシートをAIで読み込む」「給料を計算する」という普段の業務操作を行うだけで、アプリが裏側で自動的に正しい会計仕訳へ変換し、P/LとB/Sへリアルタイムに数字を流し込んでくれます。
+          </div>
+        </div>
+
+        <h3>2. 経理担当者の「1ヶ月のルーティンカレンダー」</h3>
+        <p>日々の仕事は、決まったリズムで進みます。いつ何をすればよいのか、全体像を頭に入れておきましょう。</p>
+
+        <div class="routine-grid">
+          <div class="routine-card">
+            <span class="routine-tag tag-daily">毎日（日次業務）</span>
+            <div class="routine-title">レシート読込・納品</div>
+            <ul class="routine-items">
+              <li>もらった領収書・レシートをスマホやPCから「AI OCR」でパシャリと読み込む</li>
+              <li>商品（DP-5000等）が出荷されたら、請求書を発行してシリアル番号を紐付ける</li>
+            </ul>
+          </div>
+
+          <div class="routine-card">
+            <span class="routine-tag tag-mid">随時 / 毎月五十日</span>
+            <div class="routine-title">入金の確認・消込</div>
+            <ul class="routine-items">
+              <li>銀行口座の通帳をオンラインでチェック</li>
+              <li>お客様から請求代金が振り込まれていたら、「売上・入金消込」ボタンを押す</li>
+            </ul>
+          </div>
+
+          <div class="routine-card">
+            <span class="routine-tag tag-pay">毎月20日〜25日頃</span>
+            <div class="routine-title">給料の計算と計上</div>
+            <ul class="routine-items">
+              <li>社員の勤怠打刻を確認して給与明細を発行</li>
+              <li>「💼 給与仕訳を財務会計へ計上」ボタンを1クリックして会計へ連動</li>
+            </ul>
+          </div>
+
+          <div class="routine-card">
+            <span class="routine-tag tag-month">月末・月初</span>
+            <div class="routine-title">月次締めと健康診断</div>
+            <ul class="routine-items">
+              <li>社員が立て替えた経費をまとめて精算振込</li>
+              <li>B/Sの預金残高と銀行通帳の残高が1円単位で合っているか確認</li>
+              <li>「月次締め（ロック）」をかけて数字を確定</li>
+            </ul>
+          </div>
+        </div>
+
+        <figure class="screen-figure">
+          <img src="docs/images/01_portal.png" alt="メイン業務ポータル画面" class="screen-img">
+          <figcaption class="screen-caption">
+            <span class="screen-caption-badge">画面①</span>
+            メイン業務ポータル画面：請求書・経費・給与・在庫・財務会計のすべての業務へワンクリックでアクセスできます
+          </figcaption>
+        </figure>
+      </section>
+
+      <!-- 【第1章】初期設定：会計年度とスタート時の口座残高を合わせよう -->
+      <section class="chapter-section" id="ch1">
+        <div class="chapter-header">
+          <div class="chapter-num">第 1 章</div>
+          <div class="chapter-title-wrap">
+            <h2>初期設定：会計年度とスタート時の口座残高を合わせよう</h2>
+            <div class="chapter-subtitle">一番最初だけ行う「スタート地点」の設定。ここを合わせると通帳とERPが完全に同期します</div>
+          </div>
+        </div>
+
+        <h3>1. 自社情報と決算期（期首月）の確認</h3>
+        <p>
+          会社には「1年の区切り（事業年度・決算期）」があります。アルバワークスは <strong>4月始まり〜翌年3月終わり（4月期首 / 3月決算）</strong> です。
+          画面右上の「自社情報」アイコンから確認できます。
+        </p>
+
+        <figure class="screen-figure">
+          <img src="docs/images/02_company_fiscal_settings.png" alt="自社情報・会計年度設定モーダル" class="screen-img">
+          <figcaption class="screen-caption">
+            <span class="screen-caption-badge">画面②</span>
+            自社情報設定モーダル：社名・インボイス登録番号（T番号）・振込先口座・会計年度（4月期首）を設定します
+          </figcaption>
+        </figure>
+
+        <h3>2. 「期首残高設定」のやり方：なぜこれが必要なの？</h3>
+        <p>
+          新しい年度がスタートした日の朝、会社の銀行口座にはすでに「前期からの繰越金（例: 500万円）」がありますよね。
+          ERPの貸借対照表（B/S）にこの金額が入っていないと、B/Sの預金残高と実際の銀行通帳の残高がズレてしまいます。
+        </p>
+
+        <div class="step-list">
+          <div class="step-card">
+            <div class="step-badge">1</div>
+            <div class="step-content">
+              <div class="step-title">財務会計メニューの「勘定科目・期首設定」タブを開く</div>
+              <p class="step-desc">左カラムに「期首残高設定（貸借バランス）」の入力フォームが表示されます。</p>
+            </div>
+          </div>
+
+          <div class="step-card">
+            <div class="step-badge">2</div>
+            <div class="step-content">
+              <div class="step-title">期首日（4月1日）時点の「普通預金」や「現金」の金額を入力</div>
+              <p class="step-desc">通帳の4月1日朝の残高をそのまま「102 普通預金」の借方（資産）に入力します。</p>
+            </div>
+          </div>
+
+          <div class="step-card">
+            <div class="step-badge">3</div>
+            <div class="step-content">
+              <div class="step-title">貸方の「元入金・繰越利益剰余金」に同額を入れてバランスをとる</div>
+              <p class="step-desc">
+                会計の鉄則として「左側（資産）＝ 右側（負債＋純資産）」が常に一致していなければなりません。
+                差額が0円になると、画面のバッジが「<span style="color: #059669; font-weight: 700;">✅ 貸借一致 (差額 0円)</span>」に変わります。
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <figure class="screen-figure">
+          <img src="docs/images/13_accounting_opening_balance.png" alt="勘定科目・期首残高設定画面" class="screen-img">
+          <figcaption class="screen-caption">
+            <span class="screen-caption-badge">画面⑬</span>
+            期首残高設定画面：差額がリアルタイムに計算され、貸借一致しているか一目で分かります
+          </figcaption>
+        </figure>
+      </section>
+
+      <!-- 【第2章】DP-5000の仕入れ・輸入原価・シリアル管理（アルバワークス固有業務） -->
+      <section class="chapter-section" id="ch2">
+        <div class="chapter-header">
+          <div class="chapter-num">第 2 章</div>
+          <div class="chapter-title-wrap">
+            <h2>DP-5000の仕入れ・輸入原価・シリアル管理（アルバワークス固有業務）</h2>
+            <div class="chapter-subtitle">海外からの輸入仕入れ・関税・国内付属品のセット組（BOM）と個別シリアル追跡を完全攻略</div>
+          </div>
+        </div>
+
+        <h3>1. なぜ「輸入にかかった費用」を全部合算するの？（原価按分の講義）</h3>
+        <p>
+          アルバワークスの主力製品「AI自動追尾カメラ DP-5000」は、中国の工場から輸入しています。
+          ここで初心者が一番迷うのが、<strong>「1台あたりの仕入れ値（原価）をいくらで計算すればいいの？」</strong>という点です。
+        </p>
+
+        <div class="callout callout-money">
+          <div class="callout-header">
+            <span>💰</span> お金の動き講義：「海外仕入れは本体代金だけではない！」
+          </div>
+          <div class="callout-body">
+            たとえば本体代金が1台65,000円だったとします。でも実際は、運ぶための「国際送料」や「関税」、通関手配の「コンサル料」、成田空港から倉庫までの「国内送料」がかかっていますよね？<br>
+            もし本体代金だけで原価を計算してしまうと、<strong>「本当は経費がたくさんかかっているのに、儲かっているように見えてしまう（見かけの利益の罠）」</strong>に陥ります。<br>
+            だから、<strong>輸入にかかったすべての付随費用を本体代金に足し算して、入荷した台数で割り算する</strong>必要があります。これを「原価按分（あんぶん）」と呼びます。
+          </div>
+        </div>
+
+        <div class="callout callout-warning">
+          <div class="callout-header">
+            <span>⚠️</span> ここだけ注意！「関税」と「輸入消費税」の違い
+          </div>
+          <div class="callout-body">
+            税関から届く納付書には「関税」と「輸入消費税」が書いてあります。ここは経理の超重要ポイントです！
+            <ul>
+              <li><strong>関税</strong>: 税金ですが商品の「原価」に含めます（本体代金に合算してOK）。</li>
+              <li><strong>輸入消費税</strong>: 原価には<strong>含めません！</strong> あとで国に納める消費税から引いてもらえる（仮払消費税になる）ため、別枠で入力します。</li>
+            </ul>
+            Alva-works ERPの「輸入ロット原価計算モーダル」は、この計算を全自動で行ってくれます！
+          </div>
+        </div>
+
+        <figure class="screen-figure">
+          <img src="docs/images/04_lot_cost_modal.png" alt="輸入ロット原価計算モーダル" class="screen-img">
+          <figcaption class="screen-caption">
+            <span class="screen-caption-badge">画面④</span>
+            輸入ロット原価計算モーダル：仕入代金・コンサル料・送料・関税を入れると、1台あたりの原価が自動計算されます
+          </figcaption>
+        </figure>
+
+        <h3>2. セット品（BOM）の仕組み：PSEバッテリー2個＋充電器1個</h3>
+        <p>
+          DP-5000は、中国からの本体だけではお客様へ出荷できません。
+          日本の安全基準（PSEマーク）を取得した「専用バッテリー（2個）」と「急速充電器（1個）」を国内で調達し、セットにして販売しています。
+        </p>
+        <p>
+          ERPの「在庫マスタ」では、このセット構成（BOM : 部品表）が最初から登録されています。
+        </p>
+
+        <div class="data-table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>セット品名</th>
+                <th>構成部品（中身）</th>
+                <th>必要数量</th>
+                <th>部品原価（目安）</th>
+                <th>セット合計原価</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td rowspan="3" style="font-weight: 700; color: var(--primary);">DP-5000 基本セット<br><span style="font-size: 0.75rem; color: var(--slate-500);">（販売単価: ¥88,000）</span></td>
+                <td>DP-5000 本体（輸入・ロット原価按分済）</td>
+                <td>1 台</td>
+                <td class="amount-text">¥45,000</td>
+                <td rowspan="3" class="amount-text" style="font-size: 1.1rem; color: #059669; font-weight: 800;">¥52,500<br><span style="font-size: 0.75rem; color: #059669; font-weight: normal;">（粗利益: ¥35,500）</span></td>
+              </tr>
+              <tr>
+                <td>PSE認証 高容量バッテリーパック</td>
+                <td>2 個</td>
+                <td class="amount-text">¥2,500 × 2 = ¥5,000</td>
+              </tr>
+              <tr>
+                <td>専用急速AC充電器</td>
+                <td>1 個</td>
+                <td class="amount-text">¥2,500</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <figure class="screen-figure">
+          <img src="docs/images/03_inventory_master.png" alt="在庫マスタ・構成部品一覧" class="screen-img">
+          <figcaption class="screen-caption">
+            <span class="screen-caption-badge">画面③</span>
+            在庫マスタ一覧：基本セットと構成部品の在庫数・理論在庫評価額がリアルタイムに集計されます
+          </figcaption>
+        </figure>
+
+        <h3>3. シリアル番号の登録と台帳追跡</h3>
+        <p>
+          精密機械やバッテリーは、万が一の初期不良や保証修理の対応ができるよう、製品1つひとつに振られた「シリアル番号（製造番号）」を台帳で管理しています。
+          「シリアル番号管理台帳」タブを開くと、どの本体とバッテリーが現在在庫にあり、どのシリアルがお客様へ出荷されたかを一瞬で検索・追跡できます。
+        </p>
+
+        <figure class="screen-figure">
+          <img src="docs/images/05_serial_ledger.png" alt="シリアル番号管理台帳" class="screen-img">
+          <figcaption class="screen-caption">
+            <span class="screen-caption-badge">画面⑤</span>
+            シリアル番号管理台帳：在庫中（利用可能）なシリアル番号と出荷済みシリアルが色分けで管理されます
+          </figcaption>
+        </figure>
+      </section>
+
+      <!-- 【第3章】売上の計上：納品書・請求書を作ってDP-5000を出荷しよう -->
+      <section class="chapter-section" id="ch3">
+        <div class="chapter-header">
+          <div class="chapter-num">第 3 章</div>
+          <div class="chapter-title-wrap">
+            <h2>売上の計上：納品書・請求書を作ってDP-5000を出荷しよう</h2>
+            <div class="chapter-subtitle">請求書を作ると裏側でお金はどう動く？ 「発生主義」とシリアル引当の全手順</div>
+          </div>
+        </div>
+
+        <h3>1. 請求書を作った瞬間に起きる「裏側の会計マジック」（発生主義）</h3>
+        <p>
+          「まだお金が銀行口座に振り込まれていないのに、売上にしていいの？」と初心者は疑問に思いますよね。
+          日本の会計ルール（企業会計原則）では、<strong>「商品を出荷・納品してお客様に請求書を出した日」に売上を記録するルール</strong>になっています。これを専門用語で「発生主義」と呼びます。
+        </p>
+
+        <div class="callout callout-lecture">
+          <div class="callout-header">
+            <span>💡</span> 講師の講義：「売掛金（うりかけきん）」ってなに？
+          </div>
+          <div class="callout-body">
+            請求書を発行すると、ERPの裏側では自動的に以下の仕訳が立ち上がります：<br>
+            <div style="background: #ffffff; padding: 10px 14px; border-radius: 8px; margin: 8px 0; font-family: 'Fira Code', monospace; font-size: 0.85rem; border: 1px solid var(--slate-200);">
+              （借方）112 売掛金  88,000円  ／  （貸方）401 売上高  80,000円<br>
+              &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;（貸方）213 仮受消費税等  8,000円
+            </div>
+            <strong>売掛金とは「あとでお金をもらう権利」のことです。</strong> 現金はまだ入ってきていませんが、「88,000円分の財産を持っているのと同じ」なので、B/Sの「資産」にプラスされます。
+          </div>
+        </div>
+
+        <h3>2. 納品・請求書の作成と「シリアル番号引当」の手順</h3>
+
+        <div class="step-list">
+          <div class="step-card">
+            <div class="step-badge">1</div>
+            <div class="step-content">
+              <div class="step-title">取引先（お客様）を選択し、品目に「DP-5000 基本セット」を選ぶ</div>
+              <p class="step-desc">数量「1」、単価「88,000円」を入力します。</p>
+            </div>
+          </div>
+
+          <div class="step-card">
+            <div class="step-badge">2</div>
+            <div class="step-content">
+              <div class="step-title">「シリアル番号を選択」ボタンを押す</div>
+              <p class="step-desc">
+                在庫にある本体シリアル（1つ）とバッテリーシリアル（2つ）のチェックボックスをONにして「確定」します。
+              </p>
+            </div>
+          </div>
+
+          <div class="step-card">
+            <div class="step-badge">3</div>
+            <div class="step-content">
+              <div class="step-title">保存またはPDF発行を押す</div>
+              <p class="step-desc">
+                これで完了です！裏側で自動的に以下の3つが同時に実行されます：<br>
+                ① 在庫マスタから本体1台・バッテリー2個・充電器1個が自動で減る<br>
+                ② 財務会計の売上高に88,000円（税抜80,000円）が計上される<br>
+                ③ 売上原価（52,500円）が計上され、当月の粗利益が自動計算される
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <figure class="screen-figure">
+          <img src="docs/images/06_invoice_editor.png" alt="納品・請求書作成画面" class="screen-img">
+          <figcaption class="screen-caption">
+            <span class="screen-caption-badge">画面⑥</span>
+            納品・請求書作成画面：品目を選ぶだけで右側に美しいリアルタイムプレビューが表示されます
+          </figcaption>
+        </figure>
+      </section>
+
+      <!-- 【第4章】入金の確認：銀行に振り込まれたら「売掛金消込」をしよう -->
+      <section class="chapter-section" id="ch4">
+        <div class="chapter-header">
+          <div class="chapter-num">第 4 章</div>
+          <div class="chapter-title-wrap">
+            <h2>入金の確認：銀行に振り込まれたら「売掛金消込」をしよう</h2>
+            <div class="chapter-subtitle">銀行口座にお金が入ったらやる操作。振込手数料を引かれていた場合の対処法も完全解説</div>
+          </div>
+        </div>
+
+        <h3>1. 売掛金消込（けしこみ）の基本手順</h3>
+        <p>
+          請求書を出したあと、月末や翌月末にお客様から銀行口座へお金が振り込まれます。
+          通帳でお金を確認したら、ERPの「売上・入金消込」タブを開きます。
+        </p>
+        <p>
+          該当する請求書の横にある「<strong>入金済みにする</strong>」ボタンを押すだけで、第3章で作った「売掛金（お金をもらう権利）」が消えて、代わりに「普通預金（実際の現金）」へと入れ替わります。
+        </p>
+
+        <h3>2. 【超頻出】「請求額より少ない金額」が振り込まれたら？（振込手数料の差引）</h3>
+        <p>
+          実務で最もよくあるのが、<strong>「86,240円の請求書を出したのに、通帳を見たら85,800円しか振り込まれていない！」</strong>というケースです。
+          これは相手が「銀行の振込手数料（440円）」を差し引いて振り込んできたためです。
+        </p>
+
+        <div class="callout callout-warning">
+          <div class="callout-header">
+            <span>⚠️</span> ここだけ注意！そのまま入金完了にしてはいけません
+          </div>
+          <div class="callout-body">
+            もし「85,800円しか入っていないから」と放置すると、ERP上には「差額の440円がずっと未払いのまま残る」ことになってしまいます。<br>
+            また、差額の440円は会社が負担した「経費（支払手数料）」として計上できるので、きちんと処理しないと余分に税金を払うことになってしまいます！
+          </div>
+        </div>
+
+        <div class="step-list">
+          <div class="step-card">
+            <div class="step-badge">1</div>
+            <div class="step-content">
+              <div class="step-title">入金操作欄の「手数料差引」ボタンを押す</div>
+              <p class="step-desc">手数料入力用のミニモーダルが開きます。</p>
+            </div>
+          </div>
+
+          <div class="step-card">
+            <div class="step-badge">2</div>
+            <div class="step-content">
+              <div class="step-title">引かれた手数料の金額（例: 440円）を入力して確定</div>
+              <p class="step-desc">
+                これだけで、裏側で以下の美しい複合仕訳が自動生成されます：<br>
+                <div style="background: #ffffff; padding: 8px 12px; border-radius: 6px; margin-top: 6px; font-family: 'Fira Code', monospace; font-size: 0.85rem; border: 1px solid var(--slate-200);">
+                  （借方）102 普通預金    85,800円  ／  （貸方）112 売掛金  86,240円<br>
+                  （借方）615 支払手数料     440円
+                </div>
+                売掛金はキレイに0円になって消え、440円は自動的に会社の経費になり、B/Sの預金残高も通帳と1円の狂いもなくピタッと合致します！
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <figure class="screen-figure">
+          <img src="docs/images/11_accounting_settlement.png" alt="売上・入金消込画面" class="screen-img">
+          <figcaption class="screen-caption">
+            <span class="screen-caption-badge">画面⑪</span>
+            売上・入金消込画面：未入金の請求書が一覧表示され、ワンクリックで全額消込または手数料差引が可能です
+          </figcaption>
+        </figure>
+      </section>
+
+      <!-- 【第5章】日々の経費と精算：レシートAI読込と社員の立替精算 -->
+      <section class="chapter-section" id="ch5">
+        <div class="chapter-header">
+          <div class="chapter-num">第 5 章</div>
+          <div class="chapter-title-wrap">
+            <h2>日々の経費と精算：レシートAI読込と社員の立替精算</h2>
+            <div class="chapter-subtitle">スマホでレシートを撮るだけ！ 決済方法の選び方と月末の立替一括精算ルール</div>
+          </div>
+        </div>
+
+        <h3>1. AI OCRでレシートを読み込む手順</h3>
+        <p>
+          ガソリンスタンド、コインパーキング、コンビニ、事務用品などのレシートは、手で入力する必要はありません。
+          「AIレシート読み込み」画面で画像をアップロードするだけで、<strong>「日付・支払先店名・金額・税率（10%/8%）・適格請求書（T番号）」</strong>をGemini AIが瞬時に読み取って自動入力してくれます。
+        </p>
+
+        <h3>2. 決済方法（お金の出どころ）の選び方講座</h3>
+        <p>
+          初心者がレシート登録で一番迷うのが「決済方法」です。以下の表のルール通りに選べば100%間違いません。
+        </p>
+
+        <div class="data-table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>実際のお金の払い方</th>
+                <th>選ぶべき決済方法</th>
+                <th>会計上の意味（裏側の動き）</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>会社のレジ・金庫の現金で支払った</td>
+                <td><span class="account-code">101 現金</span></td>
+                <td>会社の現金残高がマイナスされる</td>
+              </tr>
+              <tr>
+                <td>会社の銀行口座からデビットや振込で支払った</td>
+                <td><span class="account-code">102 普通預金</span></td>
+                <td>通帳の預金残高が直接マイナスされる</td>
+              </tr>
+              <tr>
+                <td>会社名義のクレジットカードで支払った</td>
+                <td><span class="account-code">212 未払金（法人カード）</span></td>
+                <td>今はお金が出ず、翌月口座から引き落とされる負債になる</td>
+              </tr>
+              <tr style="background: #f0fdf4;">
+                <td style="font-weight: 700; color: #166534;">社員（小林さん・宮崎さん）が自分の財布や個人カードで立て替えた</td>
+                <td><span class="account-code" style="color: #059669; background: #ecfdf5;">立替者（社員名）を選択</span></td>
+                <td>「会社が社員に借金している状態（未払金）」として集計され、月末に一括精算できる</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>3. 月末の「社員立替経費の一括精算」手順</h3>
+        <p>
+          営業活動などで社員が自腹で立て替えた経費は、月末にまとめて会社から社員個人の銀行口座へ振り込みます。
+        </p>
+
+        <div class="step-list">
+          <div class="step-card">
+            <div class="step-badge">1</div>
+            <div class="step-content">
+              <div class="step-title">経費画面の上部にある「社員別 立替経費・未精算状況」バーを見る</div>
+              <p class="step-desc">「小林さん: 3件 ¥14,280」「宮崎さん: 5件 ¥32,500」のように未精算額がリアルタイム表示されています。</p>
+            </div>
+          </div>
+
+          <div class="step-card">
+            <div class="step-badge">2</div>
+            <div class="step-content">
+              <div class="step-title">「選択した社員の未精算経費を一括精算する」ボタンを押す</div>
+              <p class="step-desc">
+                会社のネットバンキングから社員の口座へお金を振り込んだあと、このボタンを押します。
+                対象の経費が一括で「精算済み」に切り替わり、財務会計の預金口座から精算額がマイナスされます。
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <figure class="screen-figure">
+          <img src="docs/images/07_expense_receipt_ai.png" alt="AI OCR経費読み込み画面" class="screen-img">
+          <figcaption class="screen-caption">
+            <span class="screen-caption-badge">画面⑦</span>
+            AI OCR経費画面：レシート画像、インボイス登録番号の適格判定、社員別立替サマリーが一元管理されています
+          </figcaption>
+        </figure>
+      </section>
+
+      <!-- 【第6章】勤怠と給料日：給与明細の発行と会計へのワンクリック連携 -->
+      <section class="chapter-section" id="ch6">
+        <div class="chapter-header">
+          <div class="chapter-num">第 6 章</div>
+          <div class="chapter-title-wrap">
+            <h2>勤怠と給料日：給与明細の発行と会計へのワンクリック連携</h2>
+            <div class="chapter-subtitle">複雑な「預り金」の正体を理解して、給与仕訳ボタンを1クリックするだけ！</div>
+          </div>
+        </div>
+
+        <h3>1. なぜ給料の仕訳は複雑なの？（「預り金」のやさしい解説）</h3>
+        <p>
+          給料日になると、初心者が一番混乱するのが「給与天引き（源泉所得税・住民税・社会保険料）」です。
+        </p>
+
+        <div class="callout callout-money">
+          <div class="callout-header">
+            <span>💰</span> お金の動き講義：「会社は税金を一時的に預かっているだけ」
+          </div>
+          <div class="callout-body">
+            たとえば基本給（総支給額）が <strong>300,000円</strong> の社員がいるとします。でも通帳から振り込む金額（差引支給額）は <strong>245,000円</strong> だったりしますよね？<br>
+            差額の55,000円はどこへ行ったのでしょう？ 会社がネコババしたわけではありません！<br>
+            会社は、社員が国や自治体に納めるべき「健康保険料・厚生年金・所得税」を給料から天引きして、<strong>「一時的に会社が預かっていて（預り金）、あとで税務署や年金事務所にまとめて納付する」</strong>という仕組みになっています。<br>
+            だから会計では、「給料は30万円払ったけれど、手元に5万5千円の預り金が残り、銀行から出たのは24万5千円」という記録をしなければなりません。
+          </div>
+        </div>
+
+        <h3>2. 「💼 給与仕訳を財務会計へ計上」ボタンの使い方</h3>
+        <p>
+          この複雑な計算と仕訳も、手作業でする必要は一切ありません！
+        </p>
+
+        <div class="step-list">
+          <div class="step-card">
+            <div class="step-badge">1</div>
+            <div class="step-content">
+              <div class="step-title">「勤怠・給与」メニューを開き、対象月の打刻データを確認</div>
+              <p class="step-desc">基本給・残業代・控除額が自動計算されて給与明細が完成します。</p>
+            </div>
+          </div>
+
+          <div class="step-card">
+            <div class="step-badge">2</div>
+            <div class="step-content">
+              <div class="step-title">画面上部の「💼 給与仕訳を財務会計へ計上」ボタンを押す</div>
+              <p class="step-desc">
+                確認ダイアログで「計上する」を押すだけで、役員報酬・給料手当・法定福利費・預り金・普通預金の複合仕訳が財務会計の仕訳帳へ瞬時に起票されます。
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <figure class="screen-figure">
+          <img src="docs/images/08_payroll_accounting.png" alt="勤怠打刻・給与計算画面" class="screen-img">
+          <figcaption class="screen-caption">
+            <span class="screen-caption-badge">画面⑧</span>
+            勤怠・給与計算画面：給与明細の発行と、財務会計へのワンクリック仕訳連携ボタンが備わっています
+          </figcaption>
+        </figure>
+      </section>
+
+      <!-- 【第7章】応用と月次チェック：振替伝票・帳簿の見方・月次締め -->
+      <section class="chapter-section" id="ch7">
+        <div class="chapter-header">
+          <div class="chapter-num">第 7 章</div>
+          <div class="chapter-title-wrap">
+            <h2>応用と月次チェック：振替伝票・帳簿の見方・月次締め</h2>
+            <div class="chapter-subtitle">毎月末の「3分健康診断」で数字のズレを発見！ 税理士さんへCSVを渡すまでの完全ガイド</div>
+          </div>
+        </div>
+
+        <h3>1. 「振替伝票（手動仕訳）」はどんなときに使うの？</h3>
+        <p>
+          請求書やレシート以外の、特殊なお金の動きがあったときだけ「振替伝票」を使います。
+          実務で使うパターンは主に以下の4つだけです。
+        </p>
+
+        <div class="data-table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>どんな取引のとき？</th>
+                <th>借方（左）</th>
+                <th>貸方（右）</th>
+                <th>具体例</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>銀行口座から現金を引き出して手元金庫に入れた</td>
+                <td><span class="account-code">101 現金</span></td>
+                <td><span class="account-code">102 普通預金</span></td>
+                <td>口座から10万円出金して会社の財布に入れた</td>
+              </tr>
+              <tr>
+                <td>銀行から借りたお金（借入金）の元本と利息を返済した</td>
+                <td><span class="account-code">221 短期借入金</span><br><span class="account-code">621 支払利息</span></td>
+                <td><span class="account-code">102 普通預金</span></td>
+                <td>元本50,000円＋利息2,000円が口座から引き落とされた</td>
+              </tr>
+              <tr>
+                <td>給料から天引きしていた源泉所得税を税務署に納めた</td>
+                <td><span class="account-code">214 預り金</span></td>
+                <td><span class="account-code">102 普通預金</span></td>
+                <td>納付書で預かっていた税金30,000円を支払った</td>
+              </tr>
+              <tr>
+                <td>決算で減価償却費を計上した</td>
+                <td><span class="account-code">618 減価償却費</span></td>
+                <td><span class="account-code">141 工具器具備品</span></td>
+                <td>パソコンなどの固定資産の価値を減らす</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <figure class="screen-figure">
+          <img src="docs/images/12_accounting_journal_transfer.png" alt="振替伝票作成モーダル" class="screen-img">
+          <figcaption class="screen-caption">
+            <span class="screen-caption-badge">画面⑫</span>
+            振替伝票作成モーダル：複数行の借方・貸方を入力でき、貸借バランスが一致しているか自動検証されます
+          </figcaption>
+        </figure>
+
+        <h3>2. 月末の「3分健康診断（数字チェック）」</h3>
+        <p>
+          月末になったら、財務会計画面を開いて以下の3点だけをチェックしてください。これで会社の数字は完璧に守られます！
+        </p>
+
+        <div class="step-list">
+          <div class="step-card">
+            <div class="step-badge">✓</div>
+            <div class="step-content">
+              <div class="step-title">チェック①：貸借対照表（B/S）の「貸借完全一致」を確認する</div>
+              <p class="step-desc">
+                B/Sタブを開いて、上部のバッジが「<span style="color: #059669; font-weight: 700;">✅ 貸借完全一致 (差額 0円)</span>」になっているか確認します。
+                これが0円なら、計算の矛盾が一切ない証拠です。
+              </p>
+            </div>
+          </div>
+
+          <div class="step-card">
+            <div class="step-badge">✓</div>
+            <div class="step-content">
+              <div class="step-title">チェック②：B/Sの「普通預金」と銀行通帳の残高を見比べる</div>
+              <p class="step-desc">
+                B/Sに表示されている「102 普通預金」の金額と、月末時点の銀行通帳の残高が1円単位で一致しているか確認します。<br>
+                ※もし1,000円ズレていたら？ → 「総勘定元帳」タブで「普通預金」を選べば、何日のどの出入金が漏れているかが一発で分かります！
+              </p>
+            </div>
+          </div>
+
+          <div class="step-card">
+            <div class="step-badge">✓</div>
+            <div class="step-content">
+              <div class="step-title">チェック③：消費税集計パネルで「納付予測額」を確認する</div>
+              <p class="step-desc">
+                損益ダッシュボードの下部にある消費税パネルを見ます。
+                「お客様から預かった消費税（仮受）」から「仕入れや経費で払った消費税（仮払）」を引いた「差引納付予測額」が表示されます。
+                「次の決算でだいたい何十万円くらい税金を払うことになりそうか」が事前に分かるので、資金繰りに慌てずに済みます。
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <figure class="screen-figure">
+          <img src="docs/images/09_accounting_dashboard_pl_tax.png" alt="財務会計ダッシュボード・P/L・消費税パネル" class="screen-img">
+          <figcaption class="screen-caption">
+            <span class="screen-caption-badge">画面⑨</span>
+            財務会計ダッシュボード：売上・粗利益・経費・純利益の推移と、消費税の差引納付予測額がリアルタイム表示されます
+          </figcaption>
+        </figure>
+
+        <figure class="screen-figure">
+          <img src="docs/images/10_accounting_bs.png" alt="貸借対照表 B/S" class="screen-img">
+          <figcaption class="screen-caption">
+            <span class="screen-caption-badge">画面⑩</span>
+            貸借対照表（B/S）：資産・負債・純資産が整理され、預金残高や売掛金の総額が通帳と完全一致します
+          </figcaption>
+        </figure>
+
+        <h3>3. 確認が終わったら「月次締め（ロック）」をかけよう</h3>
+        <p>
+          月末のチェックが終わって数字が確定したら、画面上部の「月次締め」ボタンを押してその月をロックします。
+          ロックをかけると、過去の請求書や経費がうっかり誤って書き換えられたり削除されたりするのを防ぐことができます。
+        </p>
+
+        <h3>4. 決算時に税理士さんへ「仕訳データCSV」を渡す方法</h3>
+        <p>
+          決算期が来たら、提携している税理士の先生にデータを提出します。
+          「仕訳帳・振替伝票」タブを開いて「<strong>税理士用 仕訳データCSVダウンロード</strong>」ボタンを押すだけで、弥生会計やfreee、マネーフォワード等の主要な会計ソフトへそのままインポートできる汎用CSVファイルが出力されます。
+        </p>
+
+        <div class="callout callout-lecture">
+          <div class="callout-header">
+            <span>🎉</span> 講義修了！ お疲れ様でした！
+          </div>
+          <div class="callout-body">
+            おめでとうございます！これであなたはAlva-works ERPの操作と経理実務の基礎をすべて修了しました。<br>
+            最初は不安な操作もあるかもしれませんが、困ったときはいつでもこのマニュアルを読み返してください。
+            Alva-works ERPが、あなたの毎日の経理・バックオフィス業務を強力にサポートします！
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</body>
+
+</html>
