@@ -1052,7 +1052,7 @@ label.form-label {
 }
 
 /* レスポンシブ対応 */
-@media (max-width: 1024px) {
+@media screen and (max-width: 1024px) {
   .app-layout {
     flex-direction: column;
     height: auto;
@@ -2522,7 +2522,7 @@ label.form-label {
    2. ヘッダーのごちゃごちゃ解消（横フリック型タブバー）
    3. ポップアップ（商品・取引先・在庫マスタ）の劇的視認性＆操作性改善
    ========================================================================== */
-@media (max-width: 768px) {
+@media screen and (max-width: 768px) {
   /* 1. スクロール不全の完全解消 */
   html, body {
     height: auto !important;

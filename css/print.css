@@ -42,6 +42,26 @@
   }
 
   /* ========================================================================
+     0. 全帳票用紙の transform / scale / margin の強制リセット
+     （画面用レスポンシブ scale(0.46) などの縮小変形を完全に解除しA4実寸化）
+     ======================================================================== */
+  #previewWrapper,
+  .preview-wrapper,
+  #invoiceSheet,
+  .invoice-sheet,
+  #attendanceSheetPaper,
+  .attendance-sheet-paper,
+  #payrollSheetPaper,
+  .payroll-sheet-paper,
+  #expenseSettlementSheetPrintArea,
+  .settlement-a4-sheet {
+    transform: none !important;
+    -webkit-transform: none !important;
+    transform-origin: initial !important;
+    margin-bottom: 0 !important;
+  }
+
+  /* ========================================================================
      1. 納品書・請求書・見積書・領収書 (デフォルト印刷 or body.printing-invoice)
      ======================================================================== */
   body:not(.printing-attendance-sheet):not(.printing-payroll-sheet):not(.printing-expense-settlement) .modal-overlay,
@@ -49,24 +69,48 @@
     display: none !important;
   }
 
+  /* 納品請求書画面の position: fixed を解除し、印刷可能領域いっぱいにブロック展開 */
+  #appLayoutInvoice.app-view-screen,
+  #appLayoutInvoice.app-view-screen.active,
   .app-layout {
     display: block !important;
+    position: static !important;
+    top: auto !important;
+    left: auto !important;
+    right: auto !important;
+    bottom: auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
     height: auto !important;
+    min-height: auto !important;
     overflow: visible !important;
     padding: 0 !important;
     margin: 0 !important;
+    background: #ffffff !important;
   }
 
+  #appLayoutInvoice .editor-sidebar,
+  .editor-sidebar {
+    display: none !important;
+  }
+
+  #appLayoutInvoice .preview-container,
   .preview-container {
+    display: block !important;
+    position: static !important;
     padding: 0 !important;
     margin: 0 !important;
     background: transparent !important;
     overflow: visible !important;
     height: auto !important;
+    min-height: auto !important;
     width: 100% !important;
+    max-width: 100% !important;
   }
 
+  #previewWrapper,
   .preview-wrapper {
+    display: block !important;
     box-shadow: none !important;
     border: none !important;
     border-radius: 0 !important;
@@ -74,9 +118,12 @@
     margin: 0 !important;
     width: 100% !important;
     max-width: 100% !important;
+    height: auto !important;
   }
 
+  #invoiceSheet,
   .invoice-sheet {
+    display: block !important;
     width: 100% !important;
     max-width: 100% !important;
     min-height: auto !important;
