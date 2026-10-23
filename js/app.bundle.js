@@ -9522,6 +9522,41 @@ function renderAll() {
 }
 
 /**
+ * A4印刷・PDF出力セーフ実行ヘルパー
+ * ポップアップブロックを完全回避し、印刷用CSSクラスを付与してwindow.print()を起動します。
+ * 印刷完了またはキャンセル後に自動でクリーンアップします。
+ * @param {string} printClass - 付与する印刷用CSSクラス名（例: 'printing-attendance-sheet'）
+ */
+function triggerSafePrint(printClass) {
+  if (printClass) {
+    document.body.classList.add(printClass);
+  }
+
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    if (printClass) {
+      document.body.classList.remove(printClass);
+    }
+    window.removeEventListener('afterprint', cleanup);
+  };
+
+  window.addEventListener('afterprint', cleanup);
+
+  setTimeout(() => {
+    try {
+      window.print();
+    } catch (e) {
+      console.error('印刷ダイアログの起動に失敗しました:', e);
+    }
+    // afterprintがブラウザによって遅延または発火しない場合のためのセーフティフォールバック
+    setTimeout(cleanup, 2500);
+  }, 100);
+}
+window.triggerSafePrint = triggerSafePrint;
+
+/**
  * 納品書・請求書・領収書の確定発行 ＆ 財務会計への即時同期
  * @param {object} options { isPrint: boolean, isExplicitIssue: boolean }
  */
@@ -9644,9 +9679,7 @@ function issueAndSyncAccountingDocument(options = {}) {
 
   // 7. 印刷が指定されている場合は印刷ダイアログを起動
   if (isPrint) {
-    setTimeout(() => {
-      window.print();
-    }, 200);
+    triggerSafePrint('printing-invoice');
   }
 
   return true;
@@ -19173,7 +19206,7 @@ function renderExpenseSettlementSheet() {
 }
 
 function handlePrintExpenseSettlement() {
-  window.print();
+  triggerSafePrint('printing-expense-settlement');
 }
 
 function handleMarkExpensesSettled() {
@@ -20299,57 +20332,11 @@ window.__quickEditAttendanceDate = function(date) {
 
 function handlePrintAttendanceSheet() {
   const modalPaper = document.getElementById('attendanceSheetPaper');
-  if (!modalPaper) return;
-
-  const htmlContent = modalPaper.outerHTML;
-  const printWindow = window.open('', '_blank', 'width=1000,height=800');
-  if (!printWindow) {
-    alert('ポップアップがブロックされました。ブラウザの設定で許可してください。');
+  if (!modalPaper) {
+    alert('出勤簿データが読み込まれていません。');
     return;
   }
-
-  const doc = printWindow.document;
-  doc.open();
-  doc.write(`
-    <!DOCTYPE html>
-    <html lang="ja">
-    <head>
-      <meta charset="UTF-8">
-      <title>出勤簿 印刷</title>
-      <link rel="stylesheet" href="css/style.css">
-      <link rel="stylesheet" href="css/print.css">
-      <style>
-        body { margin: 0; padding: 20px; background: #fff; }
-        .no-print { display: none !important; }
-        @media print {
-          body { padding: 0; }
-          .attendance-sheet-paper {
-            margin: 0 auto !important;
-            padding: 0 !important;
-            box-shadow: none !important;
-            border: none !important;
-            page-break-after: avoid !important;
-            break-inside: avoid !important;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-        }
-      </style>
-    </head>
-    <body>
-      ${htmlContent}
-      <script>
-        window.onload = function() {
-          setTimeout(function() {
-            window.print();
-            window.close();
-          }, 500);
-        };
-      </script>
-    </body>
-    </html>
-  `);
-  doc.close();
+  triggerSafePrint('printing-attendance-sheet');
 }
 
 // ==========================================================================
@@ -21142,57 +21129,11 @@ window.closePayrollModal = closePayrollModal;
 
 function handlePrintPayrollSheet() {
   const modalPaper = document.getElementById('payrollSheetPaper');
-  if (!modalPaper) return;
-
-  const htmlContent = modalPaper.outerHTML;
-  const printWindow = window.open('', '_blank', 'width=1000,height=800');
-  if (!printWindow) {
-    alert('ポップアップがブロックされました。ブラウザの設定で許可してください。');
+  if (!modalPaper) {
+    alert('給与明細データが読み込まれていません。');
     return;
   }
-
-  const doc = printWindow.document;
-  doc.open();
-  doc.write(`
-    <!DOCTYPE html>
-    <html lang="ja">
-    <head>
-      <meta charset="UTF-8">
-      <title>給与支給明細書 印刷</title>
-      <link rel="stylesheet" href="css/style.css">
-      <link rel="stylesheet" href="css/print.css">
-      <style>
-        body { margin: 0; padding: 20px; background: #fff; }
-        .no-print { display: none !important; }
-        @media print {
-          body { padding: 0; }
-          .payroll-sheet-paper {
-            margin: 0 auto !important;
-            padding: 0 !important;
-            box-shadow: none !important;
-            border: none !important;
-            page-break-after: avoid !important;
-            break-inside: avoid !important;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-        }
-      </style>
-    </head>
-    <body>
-      ${htmlContent}
-      <script>
-        window.onload = function() {
-          setTimeout(function() {
-            window.print();
-            window.close();
-          }, 500);
-        };
-      </script>
-    </body>
-    </html>
-  `);
-  doc.close();
+  triggerSafePrint('printing-payroll-sheet');
 }
 
 // ==========================================================================
