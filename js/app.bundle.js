@@ -3770,6 +3770,35 @@ const SAMPLE_ITEM_KEYS = new Set([
 /**
  * サンプル品目かどうかを判定
  */
+/**
+ * 修理・オーバーホール・中古部品等の修理項目かどうかを判定
+ * （商品マスタ・在庫マスタから完全排除・非表示）
+ * @param {string|object} item
+ * @returns {boolean}
+ */
+function isRepairItem(item) {
+  if (!item) return false;
+  const name = typeof item === 'string' ? item : (item.name || '');
+  if (!name) return false;
+  const n = String(name).trim();
+
+  // 1. 具体的な指定修理品目パターン
+  if (/オーバーホール|研磨機|クラッチ用|スイッチング|電源基盤|モーター及び電源関係|本体交換部品|バイト台/i.test(n)) {
+    return true;
+  }
+
+  // 2. 「（中古）」、「中古部品使用」等の修理用中古パーツ
+  if (/中古部品使用|（中古）|\(中古\)|（中古部品/i.test(n)) {
+    return true;
+  }
+
+  // 3. 修理役務・工賃・点検
+  if (/修理料金|修理費用|修理基本料金|点検費用|分解点検|修理工賃|作業工賃|修理作業/i.test(n)) {
+    return true;
+  }
+
+  return false;
+}
 function isSampleItem(item) {
   if (!item) return false;
   const name = typeof item === 'string' ? item : (item.name || '');
@@ -4134,6 +4163,9 @@ function deduplicateItemMasterList(list) {
 
     // サンプル商品は自動パージ（完全排除）
     if (SAMPLE_ITEM_KEYS.has(key)) continue;
+
+    // 修理・オーバーホール項目は商品マスタから完全排除（非表示）
+    if (isRepairItem(item)) continue;
 
     if (!map.has(key)) {
       map.set(key, { ...item });
@@ -6872,6 +6904,9 @@ function deduplicateInventoryList(rawList) {
     // 1. サンプル品目の完全排除
     if (isSampleItem(inv)) continue;
 
+    // 2. 修理・オーバーホール項目の完全排除（在庫マスタ非表示）
+    if (isRepairItem(inv)) continue;
+
     const key = getMasterKey(inv.name);
     if (!key) continue;
 
@@ -6951,6 +6986,7 @@ function getInventoryList() {
     let modified = (list.length !== beforeLen);
 
     cleanItems.forEach(prod => {
+      if (isRepairItem(prod)) return; // 修理項目は在庫マスタに追加しない
       const prodKey = getMasterKey(prod.name);
       const existing = list.find(inv => (inv.itemId && inv.itemId === prod.id) || (getMasterKey(inv.name) === prodKey));
       if (existing) {
@@ -13177,7 +13213,7 @@ function handleSaveItemMaster() {
 
 function renderItemMasterList(searchQuery = '') {
   // 頻度の多い順にソートされた商品マスタを取得
-  const allItems = getItemMasterList(true);
+  const allItems = getItemMasterList(true).filter(item => !isRepairItem(item));
   const q = (searchQuery || '').trim().toLowerCase();
 
   const filtered = q
@@ -13813,7 +13849,7 @@ function renderInventoryTable() {
   const q = DOM.inputSearchInventory ? DOM.inputSearchInventory.value.trim().toLowerCase() : '';
   const filter = DOM.selectInventoryFilter ? DOM.selectInventoryFilter.value : currentInventoryFilter;
 
-  let filtered = list;
+  let filtered = list.filter(item => !isRepairItem(item));
   if (q) {
     filtered = filtered.filter(item => 
       (item.name && item.name.toLowerCase().includes(q)) ||
@@ -23066,5 +23102,7 @@ if (document.readyState === 'loading') {
 }
 
 window.syncInventoryStockFromSerials = syncInventoryStockFromSerials;
+
+window.isRepairItem = isRepairItem;
 
 })();

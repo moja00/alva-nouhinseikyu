@@ -94,7 +94,8 @@ import {
   updateSerialStatus,
   getAvailableSerialsByItem,
   calculateBundleStockAndCost,
-  syncInventoryStockFromSerials
+  syncInventoryStockFromSerials,
+  isRepairItem
 } from './storage.js';
 
 import {
@@ -4785,7 +4786,7 @@ function handleSaveItemMaster() {
 
 function renderItemMasterList(searchQuery = '') {
   // 頻度の多い順にソートされた商品マスタを取得
-  const allItems = getItemMasterList(true);
+  const allItems = getItemMasterList(true).filter(item => !isRepairItem(item));
   const q = (searchQuery || '').trim().toLowerCase();
 
   const filtered = q
@@ -5421,7 +5422,7 @@ function renderInventoryTable() {
   const q = DOM.inputSearchInventory ? DOM.inputSearchInventory.value.trim().toLowerCase() : '';
   const filter = DOM.selectInventoryFilter ? DOM.selectInventoryFilter.value : currentInventoryFilter;
 
-  let filtered = list;
+  let filtered = list.filter(item => !isRepairItem(item));
   if (q) {
     filtered = filtered.filter(item => 
       (item.name && item.name.toLowerCase().includes(q)) ||
@@ -14674,3 +14675,5 @@ if (document.readyState === 'loading') {
 }
 
 window.syncInventoryStockFromSerials = syncInventoryStockFromSerials;
+
+window.isRepairItem = isRepairItem;
