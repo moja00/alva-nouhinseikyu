@@ -3989,7 +3989,7 @@ const DEFAULT_INVENTORY = [
     name: 'DP-MS　スプレッダー',
     sku: 'DP-MS-01',
     type: 'single',
-    hasSerial: false,
+    hasSerial: true,
     currentStock: 3,
     safetyStock: 1,
     unit: '個',
@@ -4009,6 +4009,9 @@ const DEFAULT_INVENTORY_SERIALS = [
   { id: 'sn_DP5K_1003', serialNumber: 'DP5K-2026-1003', inventoryId: 'inv_dp5000_body', itemName: 'DP-5000 本体', itemType: 'body', lotId: 'lot_202610_01', lotNumber: 'LOT-202610-01', inDate: '2026-10-21', unitCost: 152000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
   { id: 'sn_DP5K_1004', serialNumber: 'DP5K-2026-1004', inventoryId: 'inv_dp5000_body', itemName: 'DP-5000 本体', itemType: 'body', lotId: 'lot_202610_01', lotNumber: 'LOT-202610-01', inDate: '2026-10-21', unitCost: 152000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
   { id: 'sn_DP5K_1005', serialNumber: 'DP5K-2026-1005', inventoryId: 'inv_dp5000_body', itemName: 'DP-5000 本体', itemType: 'body', lotId: 'lot_202610_01', lotNumber: 'LOT-202610-01', inDate: '2026-10-21', unitCost: 152000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
+  { id: 'sn_DPMS_001', serialNumber: 'DPMS-2026-001', inventoryId: 'inv_2', itemName: 'DP-MS　スプレッダー', itemType: 'body', lotId: 'lot_dpms_01', lotNumber: 'LOT-DPMS-01', inDate: '2026-09-25', unitCost: 40000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
+  { id: 'sn_DPMS_002', serialNumber: 'DPMS-2026-002', inventoryId: 'inv_2', itemName: 'DP-MS　スプレッダー', itemType: 'body', lotId: 'lot_dpms_01', lotNumber: 'LOT-DPMS-01', inDate: '2026-09-25', unitCost: 40000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
+  { id: 'sn_DPMS_003', serialNumber: 'DPMS-2026-003', inventoryId: 'inv_2', itemName: 'DP-MS　スプレッダー', itemType: 'body', lotId: 'lot_dpms_01', lotNumber: 'LOT-DPMS-01', inDate: '2026-09-25', unitCost: 40000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
   { id: 'sn_BAT_001', serialNumber: 'BAT-2026-001', inventoryId: 'inv_dp5000_bat', itemName: 'PSE認証 リチウムイオンバッテリー', itemType: 'battery', lotId: 'lot_dom_bat_01', lotNumber: 'LOT-DOM-BAT-01', inDate: '2026-10-21', unitCost: 8000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
   { id: 'sn_BAT_002', serialNumber: 'BAT-2026-002', inventoryId: 'inv_dp5000_bat', itemName: 'PSE認証 リチウムイオンバッテリー', itemType: 'battery', lotId: 'lot_dom_bat_01', lotNumber: 'LOT-DOM-BAT-01', inDate: '2026-10-21', unitCost: 8000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
   { id: 'sn_BAT_003', serialNumber: 'BAT-2026-003', inventoryId: 'inv_dp5000_bat', itemName: 'PSE認証 リチウムイオンバッテリー', itemType: 'battery', lotId: 'lot_dom_bat_01', lotNumber: 'LOT-DOM-BAT-01', inDate: '2026-10-21', unitCost: 8000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
@@ -9814,6 +9817,103 @@ async function cancelCurrentDocIssue() {
 window.cancelCurrentDocIssue = cancelCurrentDocIssue;
 
 // ==========================================================================
+// ==========================================================================
+// シリアル番号管理・若番自動割当ヘルパー (DP-5000 / DP-MS)
+// ==========================================================================
+/**
+ * 対象品目がシリアル番号管理品（DP-5000 / DP-MS）か判定
+ * @param {string} name 品名
+ * @returns {boolean}
+ */
+function isSerialTargetItem(name = '') {
+  if (!name) return false;
+  return /(DP-5000|DP-MS|DP5000|DPMS)/i.test(name);
+}
+window.isSerialTargetItem = isSerialTargetItem;
+
+/**
+ * 在庫シリアル台帳から若番（昇順）の未引当シリアルを取得
+ * @param {string} itemName 品名（DP-5000 / DP-MS）
+ * @param {number} count 必要な台数
+ * @param {Array<string>} excludeSerials すでに他明細等で引当済のシリアル番号
+ * @returns {Array<object>} 若番順のシリアルレコード配列
+ */
+function getYoungestAvailableSerials(itemName = '', count = 1, excludeSerials = []) {
+  if (!itemName) return [];
+  const serialList = typeof getInventorySerialList === 'function' ? getInventorySerialList() : [];
+  const isDp5000 = /(DP-5000|DP5000)/i.test(itemName);
+  const isDpMs = /(DP-MS|DPMS)/i.test(itemName);
+
+  const matched = serialList.filter(s => {
+    if (s.status !== 'in_stock') return false;
+    if (excludeSerials.includes(s.serialNumber)) return false;
+
+    if (isDp5000) {
+      return (s.inventoryId === 'inv_dp5000_body' || 
+              (s.itemName && s.itemName.includes('DP-5000')) ||
+              (s.serialNumber && s.serialNumber.startsWith('DP5K')));
+    }
+    if (isDpMs) {
+      return (s.inventoryId === 'inv_2' || 
+              (s.itemName && s.itemName.includes('DP-MS')) ||
+              (s.serialNumber && s.serialNumber.startsWith('DPMS')));
+    }
+    return false;
+  });
+
+  // 若番順（自然昇順ソート: DP5K-2026-1001 < DP5K-2026-1002）
+  matched.sort((a, b) => {
+    return (a.serialNumber || '').localeCompare(b.serialNumber || '', undefined, { numeric: true, sensitivity: 'base' });
+  });
+
+  return matched.slice(0, count);
+}
+window.getYoungestAvailableSerials = getYoungestAvailableSerials;
+
+/**
+ * DP-5000 / DP-MS 明細に対して未設定なら在庫シリアルの若番を自動割り当て
+ * @param {object} item 明細アイテムオブジェクト
+ * @param {Array<object>} docItems 伝票内全明細アイテム
+ */
+function autoAssignYoungestSerialIfNeeded(item, docItems = []) {
+  if (!item || !isSerialTargetItem(item.name)) return;
+  // すでにシリアル番号が設定されている場合は既存設定を尊重
+  if (item.serialNumber && String(item.serialNumber).trim()) return;
+  if (item.assignedSerials && item.assignedSerials.length > 0) {
+    item.serialNumber = item.assignedSerials.map(s => s.serialNumber).join(', ');
+    return;
+  }
+
+  // 他の明細ですでに引当済のシリアルを収集
+  const usedSerials = [];
+  (docItems || []).forEach(it => {
+    if (it !== item) {
+      if (it.serialNumber) {
+        String(it.serialNumber).split(/[,、\s]+/).forEach(s => s.trim() && usedSerials.push(s.trim()));
+      }
+      if (Array.isArray(it.assignedSerials)) {
+        it.assignedSerials.forEach(s => s.serialNumber && usedSerials.push(s.serialNumber));
+      }
+    }
+  });
+
+  const qty = Math.max(1, Math.round(Number(item.quantity) || 1));
+  const available = getYoungestAvailableSerials(item.name, qty, usedSerials);
+
+  if (available.length > 0) {
+    item.assignedSerials = available.map(s => ({
+      serialNumber: s.serialNumber,
+      itemId: s.inventoryId,
+      itemName: s.itemName,
+      costPrice: s.unitCost || 0
+    }));
+    item.serialNumber = available.map(s => s.serialNumber).join(', ');
+    item.assignedCogs = available.reduce((acc, s) => acc + (Number(s.unitCost) || 0), 0);
+    if (!item.costPrice) item.costPrice = item.assignedCogs;
+  }
+}
+window.autoAssignYoungestSerialIfNeeded = autoAssignYoungestSerialIfNeeded;
+
 // プレビュー用明細テーブルのレンダリング
 // ==========================================================================
 function renderSheetItemsTable(items = []) {
@@ -9842,7 +9942,6 @@ function renderSheetItemsTable(items = []) {
       taxBadge = '<span class="tax-badge-pill" style="color:#64748b;">10%</span>';
     }
 
-    // 各明細の参考ユーザー価格の算出（手動設定値または仕切りから逆算）
     // 各明細の参考ユーザー価格の算出（手動設定値または仕切りから逆算）
     let userPriceInc = Number(item.userPrice) || 0;
     if (!userPriceInc && price > 0) {
@@ -9873,6 +9972,37 @@ function renderSheetItemsTable(items = []) {
       ? `<div style="font-size: 0.775rem; color: #047857; font-weight: 600; margin-top: 2px;">👤 ${escapeHtml(cleanItemEndUser)} 様分</div>`
       : '';
 
+    // 備考欄（シリアル表記 ＆ 別備考の改行表示）
+    // DP-5000 / DP-MS またはシリアル番号入力がある場合
+    const isSerialTarget = isSerialTargetItem(item.name) || !!(item.serialNumber && String(item.serialNumber).trim());
+    let serialText = '';
+    if (isSerialTarget) {
+      const rawSn = (item.serialNumber || (item.assignedSerials && item.assignedSerials.map(s => s.serialNumber).join(', ')) || '').trim();
+      if (rawSn) {
+        if (/^(S\/N|本体S\/N|SN|シリアル)/i.test(rawSn)) {
+          serialText = rawSn;
+        } else {
+          serialText = `S/N: ${rawSn}`;
+        }
+      }
+    }
+
+    // ユーザーが別に入力した備考
+    const userNote = (item.note || '').trim();
+    const noteLines = [];
+    if (serialText) {
+      noteLines.push(serialText);
+    }
+    if (userNote) {
+      const cleanSn = (item.serialNumber || '').trim();
+      // ユーザー備考がシリアル番号そのもの（またはS/Nプレフィックス付き）と重複していない場合に追加
+      const isDuplicate = cleanSn && (userNote === cleanSn || userNote === `S/N: ${cleanSn}` || userNote.includes(cleanSn));
+      if (!isDuplicate) {
+        noteLines.push(userNote);
+      }
+    }
+    const finalNoteHtml = noteLines.map(line => escapeHtml(line)).join('<br>\n');
+
     tr.innerHTML = `
       <td class="td-num">${index + 1}</td>
       <td class="td-item-name">
@@ -9886,7 +10016,7 @@ function renderSheetItemsTable(items = []) {
       <td class="td-price">${formatCurrency(price)}</td>
       <td class="td-right" style="font-weight: 700; font-size: 0.95rem;">${formatCurrency(lineTotal)}</td>
       <td style="text-align: center;">${taxBadge}</td>
-      <td class="td-item-note">${escapeHtml(item.note || '')}</td>
+      <td class="td-item-note" style="white-space: pre-line; line-height: 1.35;">${finalNoteHtml}</td>
     `;
     DOM.sheetItemsTableBody.appendChild(tr);
   });
@@ -9900,6 +10030,9 @@ function renderItemInputCards() {
   updateItemCountBadge();
 
   currentDoc.items.forEach((item, index) => {
+    // DP-5000 / DP-MS の場合、未設定なら在庫シリアルの若番を自動割り当て
+    autoAssignYoungestSerialIfNeeded(item, currentDoc.items);
+
     const isDiscount = Number(item.unitPrice) < 0;
     const card = document.createElement('div');
     card.className = isDiscount ? 'item-card is-discount' : 'item-card';
@@ -9934,6 +10067,30 @@ function renderItemInputCards() {
     const historyOptionsHtml = userPriceHistories.map(h => 
       `<option value="${h.price}">${formatCurrency(h.price)} (${h.count}回)</option>`
     ).join('');
+
+    // DP-5000 または DP-MS の場合のシリアル記入欄HTML
+    const isSerialTarget = isSerialTargetItem(item.name);
+    const serialFieldHtml = isSerialTarget ? `
+      <!-- 🔢 DP-5000 / DP-MS シリアル番号記入欄 -->
+      <div class="item-serial-field-wrapper" style="margin-bottom: 10px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 8px 10px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+          <label style="font-size: 0.75rem; font-weight: 700; color: #1e40af; display: flex; align-items: center; gap: 4px; margin: 0;">
+            <span>🔢 シリアル番号 (S/N)</span>
+            <span style="font-size: 0.68rem; font-weight: 600; background: #dbeafe; color: #1d4ed8; padding: 1px 6px; border-radius: 4px;">若番自動割当</span>
+          </label>
+          <button type="button" class="btn-assign-serial-inline" data-index="${index}" style="display: inline-flex; align-items: center; gap: 4px; font-size: 0.725rem; font-weight: 700; color: #1d4ed8; background: #ffffff; border: 1px solid #93c5fd; padding: 2px 8px; border-radius: 4px; cursor: pointer;" title="別のシリアル番号を選択">
+            シリアル引当から選択 ▾
+          </button>
+        </div>
+        <div style="position: relative;">
+          <input type="text" class="form-input item-input-serial" placeholder="シリアル番号（例: DP5K-2026-1001 ※直接入力・変更可能）" value="${escapeHtml(item.serialNumber || '')}" style="font-size: 0.85rem; font-family: monospace; font-weight: 700; color: #1e3a8a; background: #ffffff; border-color: #93c5fd; padding-left: 28px;">
+          <span style="position: absolute; left: 8px; top: 50%; transform: translateY(-50%); font-size: 13px; pointer-events: none;">🔢</span>
+        </div>
+        <div style="font-size: 0.68rem; color: #3b82f6; margin-top: 3px;">
+          ※ 帳票の備考欄に印字されます。違うシリアルを出荷する場合は「シリアル引当」から選択してください。
+        </div>
+      </div>
+    ` : '';
 
     card.innerHTML = `
       <div class="item-card-header">
@@ -9971,6 +10128,9 @@ function renderItemInputCards() {
           <span style="position: absolute; left: 8px; top: 50%; transform: translateY(-50%); font-size: 13px; pointer-events: none;">👤</span>
         </div>
       </div>
+
+      <!-- 🔢 シリアル番号記入欄 (DP-5000 / DP-MS の場合に表示) -->
+      ${serialFieldHtml}
 
       <!-- 💡 各明細内で完結する ユーザー価格アシストパネル -->
       ${!isDiscount ? `
@@ -10246,9 +10406,45 @@ function renderItemInputCards() {
       renderAll();
     };
 
-    inputName.addEventListener('input', handleItemChange);
+    // シリアル記入欄内の「シリアル引当から選択」ボタンイベント
+    const btnAssignInline = card.querySelector('.btn-assign-serial-inline');
+    if (btnAssignInline) {
+      btnAssignInline.addEventListener('click', () => {
+        openSerialAssignModal(index);
+      });
+    }
+
+    // シリアル手入力リスナー
+    const inputSerial = card.querySelector('.item-input-serial');
+    if (inputSerial) {
+      inputSerial.addEventListener('input', () => {
+        item.serialNumber = inputSerial.value;
+        renderAll();
+      });
+    }
+
+    inputName.addEventListener('input', () => {
+      const prevIsTarget = isSerialTargetItem(item.name);
+      item.name = inputName.value;
+      const nowIsTarget = isSerialTargetItem(item.name);
+      if (nowIsTarget && !item.serialNumber) {
+        autoAssignYoungestSerialIfNeeded(item, currentDoc.items);
+      }
+      if (prevIsTarget !== nowIsTarget) {
+        // シリアル記入欄の表示トグルのためカードを再描画
+        renderItemInputCards();
+      }
+      handleItemChange();
+    });
+
     if (inputDescription) inputDescription.addEventListener('input', handleItemChange);
-    inputQty.addEventListener('input', handleItemChange);
+    inputQty.addEventListener('input', () => {
+      item.quantity = Number(inputQty.value) || 0;
+      if (isSerialTargetItem(item.name)) {
+        autoAssignYoungestSerialIfNeeded(item, currentDoc.items);
+      }
+      handleItemChange();
+    });
     inputUnit.addEventListener('input', handleItemChange);
     inputPrice.addEventListener('input', handleItemChange);
     selectTax.addEventListener('change', () => {
@@ -12712,7 +12908,7 @@ function renderItemMasterList(searchQuery = '') {
       // マスタの使用回数を記録
       recordItemMasterUsage(item.id, item.name);
 
-      currentDoc.items.push({
+      const newItem = {
         id: 'item_' + Date.now() + Math.random().toString(36).substr(2, 4),
         name: item.name,
         quantity: 1,
@@ -12721,7 +12917,11 @@ function renderItemMasterList(searchQuery = '') {
         userPrice: estUserPriceInc,
         taxRate: item.taxRate !== undefined ? item.taxRate : 10,
         note: item.note || ''
-      });
+      };
+      if (isSerialTargetItem(newItem.name)) {
+        autoAssignYoungestSerialIfNeeded(newItem, currentDoc.items);
+      }
+      currentDoc.items.push(newItem);
       renderItemInputCards();
       renderAll();
       if (typeof switchEditorTab === 'function') {
@@ -14091,8 +14291,8 @@ function openSerialAssignModal(itemIndex) {
       container.appendChild(card);
     });
   } else {
-    // 単品でシリアル管理品の場合
-    const comp = invList.find(c => c.name === item.name || c.id === item.itemId);
+    // 単品でシリアル管理品の場合 (DP-MS 等含む)
+    const comp = invList.find(c => c.name === item.name || c.id === item.itemId || ((item.name || '').includes('DP-MS') && (c.id === 'inv_2' || c.name.includes('DP-MS'))));
     const needQty = qty;
     const availableSerials = comp ? getAvailableSerialsByItem(comp.id) : [];
 
@@ -14276,22 +14476,18 @@ function confirmSerialAssign() {
   item.assignedCogs = totalCost;
   item.costPrice = totalCost; // 売上原価に反映
 
-  // 明細摘要欄への自動印字
-  if (DOM.serialAssignCheckPrintNote && DOM.serialAssignCheckPrintNote.checked && assigned.length > 0) {
-    const parts = [];
-    if (bodySerials.length > 0) parts.push(`本体S/N: ${bodySerials.join(', ')}`);
-    if (batSerials.length > 0) parts.push(`バッテリーS/N: ${batSerials.join(', ')}`);
-    if (otherSerials.length > 0) parts.push(`S/N: ${otherSerials.join(', ')}`);
-    const snText = `（${parts.join(' / ')}）`;
-
-    // 既存の摘要があれば更新、無ければ追加
-    if (item.description) {
-      // 過去のS/N印字部分を除去してから再付加
-      const cleanDesc = item.description.replace(/（(本体S\/N|バッテリーS\/N|S\/N)[^）]*）/g, '').trim();
-      item.description = cleanDesc ? `${cleanDesc} ${snText}` : snText;
+  // 選択されたシリアル番号を明細の serialNumber にセット（本体S/N優先、複数ならカンマ連結）
+  if (assigned.length > 0) {
+    if (bodySerials.length > 0) {
+      item.serialNumber = bodySerials.join(', ');
     } else {
-      item.description = snText;
+      item.serialNumber = assigned.map(s => s.serialNumber).join(', ');
     }
+  }
+
+  // 摘要欄への余計な二重S/N印字をクリーンアップ（備考欄へ統一印字されるため）
+  if (item.description) {
+    item.description = item.description.replace(/（(本体S\/N|バッテリーS\/N|S\/N)[^）]*）/g, '').trim();
   }
 
   closeSerialAssignModal();
