@@ -662,24 +662,36 @@ export const DEFAULT_INVENTORY = [
 ];
 
 export const DEFAULT_INVENTORY_SERIALS = [
-  { id: 'sn_DP5K_1001', serialNumber: 'DP5K-2026-1001', inventoryId: 'inv_dp5000_body', itemName: 'DP-5000 本体', itemType: 'body', lotId: 'lot_202610_01', lotNumber: 'LOT-202610-01', inDate: '2026-10-21', unitCost: 152000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
-  { id: 'sn_DP5K_1002', serialNumber: 'DP5K-2026-1002', inventoryId: 'inv_dp5000_body', itemName: 'DP-5000 本体', itemType: 'body', lotId: 'lot_202610_01', lotNumber: 'LOT-202610-01', inDate: '2026-10-21', unitCost: 152000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
-  { id: 'sn_DP5K_1003', serialNumber: 'DP5K-2026-1003', inventoryId: 'inv_dp5000_body', itemName: 'DP-5000 本体', itemType: 'body', lotId: 'lot_202610_01', lotNumber: 'LOT-202610-01', inDate: '2026-10-21', unitCost: 152000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
-  { id: 'sn_DP5K_1004', serialNumber: 'DP5K-2026-1004', inventoryId: 'inv_dp5000_body', itemName: 'DP-5000 本体', itemType: 'body', lotId: 'lot_202610_01', lotNumber: 'LOT-202610-01', inDate: '2026-10-21', unitCost: 152000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
-  { id: 'sn_DP5K_1005', serialNumber: 'DP5K-2026-1005', inventoryId: 'inv_dp5000_body', itemName: 'DP-5000 本体', itemType: 'body', lotId: 'lot_202610_01', lotNumber: 'LOT-202610-01', inDate: '2026-10-21', unitCost: 152000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
-  { id: 'sn_DPMS_001', serialNumber: 'DPMS-2026-001', inventoryId: 'inv_2', itemName: 'DP-MS　スプレッダー', itemType: 'body', lotId: 'lot_dpms_01', lotNumber: 'LOT-DPMS-01', inDate: '2026-09-25', unitCost: 40000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
-  { id: 'sn_DPMS_002', serialNumber: 'DPMS-2026-002', inventoryId: 'inv_2', itemName: 'DP-MS　スプレッダー', itemType: 'body', lotId: 'lot_dpms_01', lotNumber: 'LOT-DPMS-01', inDate: '2026-09-25', unitCost: 40000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
-  { id: 'sn_DPMS_003', serialNumber: 'DPMS-2026-003', inventoryId: 'inv_2', itemName: 'DP-MS　スプレッダー', itemType: 'body', lotId: 'lot_dpms_01', lotNumber: 'LOT-DPMS-01', inDate: '2026-09-25', unitCost: 40000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
-  { id: 'sn_BAT_001', serialNumber: 'BAT-2026-001', inventoryId: 'inv_dp5000_bat', itemName: 'PSE認証 リチウムイオンバッテリー', itemType: 'battery', lotId: 'lot_dom_bat_01', lotNumber: 'LOT-DOM-BAT-01', inDate: '2026-10-21', unitCost: 8000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
-  { id: 'sn_BAT_002', serialNumber: 'BAT-2026-002', inventoryId: 'inv_dp5000_bat', itemName: 'PSE認証 リチウムイオンバッテリー', itemType: 'battery', lotId: 'lot_dom_bat_01', lotNumber: 'LOT-DOM-BAT-01', inDate: '2026-10-21', unitCost: 8000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
-  { id: 'sn_BAT_003', serialNumber: 'BAT-2026-003', inventoryId: 'inv_dp5000_bat', itemName: 'PSE認証 リチウムイオンバッテリー', itemType: 'battery', lotId: 'lot_dom_bat_01', lotNumber: 'LOT-DOM-BAT-01', inDate: '2026-10-21', unitCost: 8000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
-  { id: 'sn_BAT_004', serialNumber: 'BAT-2026-004', inventoryId: 'inv_dp5000_bat', itemName: 'PSE認証 リチウムイオンバッテリー', itemType: 'battery', lotId: 'lot_dom_bat_01', lotNumber: 'LOT-DOM-BAT-01', inDate: '2026-10-21', unitCost: 8000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
-  { id: 'sn_BAT_005', serialNumber: 'BAT-2026-005', inventoryId: 'inv_dp5000_bat', itemName: 'PSE認証 リチウムイオンバッテリー', itemType: 'battery', lotId: 'lot_dom_bat_01', lotNumber: 'LOT-DOM-BAT-01', inDate: '2026-10-21', unitCost: 8000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
-  { id: 'sn_BAT_006', serialNumber: 'BAT-2026-006', inventoryId: 'inv_dp5000_bat', itemName: 'PSE認証 リチウムイオンバッテリー', itemType: 'battery', lotId: 'lot_dom_bat_01', lotNumber: 'LOT-DOM-BAT-01', inDate: '2026-10-21', unitCost: 8000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
-  { id: 'sn_BAT_007', serialNumber: 'BAT-2026-007', inventoryId: 'inv_dp5000_bat', itemName: 'PSE認証 リチウムイオンバッテリー', itemType: 'battery', lotId: 'lot_dom_bat_01', lotNumber: 'LOT-DOM-BAT-01', inDate: '2026-10-21', unitCost: 8000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
-  { id: 'sn_BAT_008', serialNumber: 'BAT-2026-008', inventoryId: 'inv_dp5000_bat', itemName: 'PSE認証 リチウムイオンバッテリー', itemType: 'battery', lotId: 'lot_dom_bat_01', lotNumber: 'LOT-DOM-BAT-01', inDate: '2026-10-21', unitCost: 8000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
-  { id: 'sn_BAT_009', serialNumber: 'BAT-2026-009', inventoryId: 'inv_dp5000_bat', itemName: 'PSE認証 リチウムイオンバッテリー', itemType: 'battery', lotId: 'lot_dom_bat_01', lotNumber: 'LOT-DOM-BAT-01', inDate: '2026-10-21', unitCost: 8000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() },
-  { id: 'sn_BAT_010', serialNumber: 'BAT-2026-010', inventoryId: 'inv_dp5000_bat', itemName: 'PSE認証 リチウムイオンバッテリー', itemType: 'battery', lotId: 'lot_dom_bat_01', lotNumber: 'LOT-DOM-BAT-01', inDate: '2026-10-21', unitCost: 8000, status: 'in_stock', clientName: '', docNumber: '', docId: '', updatedAt: new Date().toISOString() }
+  // 1. DP-5000（セット品・本体共通シリアル）
+  { id: 'sn_N10930', serialNumber: 'N10930', inventoryId: 'inv_dp5000_body', itemName: 'DP-5000', itemType: 'body', status: 'shipped', clientName: '株式会社ヤマダデンキ', endUserName: '戸倉 様', shipDate: '2026-10-25', docNumber: 'INV-202610-001', docId: 'doc_sample_01', note: '初期設定・保守契約A加入', inDate: '2026-10-21', unitCost: 152000, updatedAt: new Date().toISOString() },
+  { id: 'sn_N10931', serialNumber: 'N10931', inventoryId: 'inv_dp5000_body', itemName: 'DP-5000', itemType: 'body', status: 'shipped', clientName: '株式会社ノジマ', endUserName: '佐藤 様', shipDate: '2026-10-26', docNumber: 'INV-202610-002', docId: 'doc_sample_02', note: '延長保証3年付帯', inDate: '2026-10-21', unitCost: 152000, updatedAt: new Date().toISOString() },
+  { id: 'sn_N10932', serialNumber: 'N10932', inventoryId: 'inv_dp5000_body', itemName: 'DP-5000', itemType: 'body', status: 'in_stock', clientName: '', endUserName: '', shipDate: '', docNumber: '', docId: '', note: '', inDate: '2026-10-21', unitCost: 152000, updatedAt: new Date().toISOString() },
+  { id: 'sn_N10933', serialNumber: 'N10933', inventoryId: 'inv_dp5000_body', itemName: 'DP-5000', itemType: 'body', status: 'in_stock', clientName: '', endUserName: '', shipDate: '', docNumber: '', docId: '', note: '', inDate: '2026-10-21', unitCost: 152000, updatedAt: new Date().toISOString() },
+  { id: 'sn_N10934', serialNumber: 'N10934', inventoryId: 'inv_dp5000_body', itemName: 'DP-5000', itemType: 'body', status: 'in_stock', clientName: '', endUserName: '', shipDate: '', docNumber: '', docId: '', note: '', inDate: '2026-10-21', unitCost: 152000, updatedAt: new Date().toISOString() },
+  { id: 'sn_N10935', serialNumber: 'N10935', inventoryId: 'inv_dp5000_body', itemName: 'DP-5000', itemType: 'body', status: 'in_stock', clientName: '', endUserName: '', shipDate: '', docNumber: '', docId: '', note: '', inDate: '2026-10-21', unitCost: 152000, updatedAt: new Date().toISOString() },
+  { id: 'sn_N10936', serialNumber: 'N10936', inventoryId: 'inv_dp5000_body', itemName: 'DP-5000', itemType: 'body', status: 'in_stock', clientName: '', endUserName: '', shipDate: '', docNumber: '', docId: '', note: '', inDate: '2026-10-21', unitCost: 152000, updatedAt: new Date().toISOString() },
+  { id: 'sn_N10937', serialNumber: 'N10937', inventoryId: 'inv_dp5000_body', itemName: 'DP-5000', itemType: 'body', status: 'in_stock', clientName: '', endUserName: '', shipDate: '', docNumber: '', docId: '', note: '', inDate: '2026-10-21', unitCost: 152000, updatedAt: new Date().toISOString() },
+  { id: 'sn_N10938', serialNumber: 'N10938', inventoryId: 'inv_dp5000_body', itemName: 'DP-5000', itemType: 'body', status: 'in_stock', clientName: '', endUserName: '', shipDate: '', docNumber: '', docId: '', note: '', inDate: '2026-10-21', unitCost: 152000, updatedAt: new Date().toISOString() },
+  { id: 'sn_N10939', serialNumber: 'N10939', inventoryId: 'inv_dp5000_body', itemName: 'DP-5000', itemType: 'body', status: 'in_stock', clientName: '', endUserName: '', shipDate: '', docNumber: '', docId: '', note: '', inDate: '2026-10-21', unitCost: 152000, updatedAt: new Date().toISOString() },
+
+  // 2. DP-MS（スプレッダー）
+  { id: 'sn_N2001', serialNumber: 'N2001', inventoryId: 'inv_2', itemName: 'DP-MS', itemType: 'spreader', status: 'shipped', clientName: '株式会社ヤマダデンキ', endUserName: '戸倉 様', shipDate: '2026-10-25', docNumber: 'INV-202610-001', docId: 'doc_sample_01', note: '本体セットと同時出荷', inDate: '2026-09-25', unitCost: 40000, updatedAt: new Date().toISOString() },
+  { id: 'sn_N2002', serialNumber: 'N2002', inventoryId: 'inv_2', itemName: 'DP-MS', itemType: 'spreader', status: 'in_stock', clientName: '', endUserName: '', shipDate: '', docNumber: '', docId: '', note: '', inDate: '2026-09-25', unitCost: 40000, updatedAt: new Date().toISOString() },
+  { id: 'sn_N2003', serialNumber: 'N2003', inventoryId: 'inv_2', itemName: 'DP-MS', itemType: 'spreader', status: 'in_stock', clientName: '', endUserName: '', shipDate: '', docNumber: '', docId: '', note: '', inDate: '2026-09-25', unitCost: 40000, updatedAt: new Date().toISOString() },
+  { id: 'sn_N2004', serialNumber: 'N2004', inventoryId: 'inv_2', itemName: 'DP-MS', itemType: 'spreader', status: 'in_stock', clientName: '', endUserName: '', shipDate: '', docNumber: '', docId: '', note: '', inDate: '2026-09-25', unitCost: 40000, updatedAt: new Date().toISOString() },
+  { id: 'sn_N2005', serialNumber: 'N2005', inventoryId: 'inv_2', itemName: 'DP-MS', itemType: 'spreader', status: 'in_stock', clientName: '', endUserName: '', shipDate: '', docNumber: '', docId: '', note: '', inDate: '2026-09-25', unitCost: 40000, updatedAt: new Date().toISOString() },
+
+  // 3. PSE認証リチウムイオンバッテリー（社内把握用）
+  { id: 'sn_N8001', serialNumber: 'N8001', inventoryId: 'inv_dp5000_bat', itemName: 'PSE認証リチウムイオンバッテリー', itemType: 'battery', status: 'in_stock', isCompanyOnly: true, clientName: '', endUserName: '', shipDate: '', docNumber: '', docId: '', note: '社内管理用セルチェック済', inDate: '2026-10-21', unitCost: 8000, updatedAt: new Date().toISOString() },
+  { id: 'sn_N8002', serialNumber: 'N8002', inventoryId: 'inv_dp5000_bat', itemName: 'PSE認証リチウムイオンバッテリー', itemType: 'battery', status: 'in_stock', isCompanyOnly: true, clientName: '', endUserName: '', shipDate: '', docNumber: '', docId: '', note: '社内管理用セルチェック済', inDate: '2026-10-21', unitCost: 8000, updatedAt: new Date().toISOString() },
+  { id: 'sn_N8003', serialNumber: 'N8003', inventoryId: 'inv_dp5000_bat', itemName: 'PSE認証リチウムイオンバッテリー', itemType: 'battery', status: 'in_stock', isCompanyOnly: true, clientName: '', endUserName: '', shipDate: '', docNumber: '', docId: '', note: '社内管理用', inDate: '2026-10-21', unitCost: 8000, updatedAt: new Date().toISOString() },
+  { id: 'sn_N8004', serialNumber: 'N8004', inventoryId: 'inv_dp5000_bat', itemName: 'PSE認証リチウムイオンバッテリー', itemType: 'battery', status: 'in_stock', isCompanyOnly: true, clientName: '', endUserName: '', shipDate: '', docNumber: '', docId: '', note: '社内管理用', inDate: '2026-10-21', unitCost: 8000, updatedAt: new Date().toISOString() },
+  { id: 'sn_N8005', serialNumber: 'N8005', inventoryId: 'inv_dp5000_bat', itemName: 'PSE認証リチウムイオンバッテリー', itemType: 'battery', status: 'in_stock', isCompanyOnly: true, clientName: '', endUserName: '', shipDate: '', docNumber: '', docId: '', note: '社内管理用', inDate: '2026-10-21', unitCost: 8000, updatedAt: new Date().toISOString() },
+  { id: 'sn_N8006', serialNumber: 'N8006', inventoryId: 'inv_dp5000_bat', itemName: 'PSE認証リチウムイオンバッテリー', itemType: 'battery', status: 'in_stock', isCompanyOnly: true, clientName: '', endUserName: '', shipDate: '', docNumber: '', docId: '', note: '社内管理用', inDate: '2026-10-21', unitCost: 8000, updatedAt: new Date().toISOString() },
+  { id: 'sn_N8007', serialNumber: 'N8007', inventoryId: 'inv_dp5000_bat', itemName: 'PSE認証リチウムイオンバッテリー', itemType: 'battery', status: 'in_stock', isCompanyOnly: true, clientName: '', endUserName: '', shipDate: '', docNumber: '', docId: '', note: '社内管理用', inDate: '2026-10-21', unitCost: 8000, updatedAt: new Date().toISOString() },
+  { id: 'sn_N8008', serialNumber: 'N8008', inventoryId: 'inv_dp5000_bat', itemName: 'PSE認証リチウムイオンバッテリー', itemType: 'battery', status: 'in_stock', isCompanyOnly: true, clientName: '', endUserName: '', shipDate: '', docNumber: '', docId: '', note: '社内管理用', inDate: '2026-10-21', unitCost: 8000, updatedAt: new Date().toISOString() },
+  { id: 'sn_N8009', serialNumber: 'N8009', inventoryId: 'inv_dp5000_bat', itemName: 'PSE認証リチウムイオンバッテリー', itemType: 'battery', status: 'in_stock', isCompanyOnly: true, clientName: '', endUserName: '', shipDate: '', docNumber: '', docId: '', note: '社内管理用', inDate: '2026-10-21', unitCost: 8000, updatedAt: new Date().toISOString() },
+  { id: 'sn_N8010', serialNumber: 'N8010', inventoryId: 'inv_dp5000_bat', itemName: 'PSE認証リチウムイオンバッテリー', itemType: 'battery', status: 'in_stock', isCompanyOnly: true, clientName: '', endUserName: '', shipDate: '', docNumber: '', docId: '', note: '社内管理用', inDate: '2026-10-21', unitCost: 8000, updatedAt: new Date().toISOString() }
 ];
 
 export const DEFAULT_INVENTORY_LOTS = [
@@ -4755,7 +4767,16 @@ export function getInventorySerialList() {
     const raw = localStorage.getItem(KEYS.INVENTORY_SERIALS);
     if (!raw) return [...DEFAULT_INVENTORY_SERIALS];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : [...DEFAULT_INVENTORY_SERIALS];
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      return [...DEFAULT_INVENTORY_SERIALS];
+    }
+    // 旧シリアル体系（DP5K- や BAT- のみで N始まりのシリアルが1件もない場合）は新デフォルトに刷新
+    const hasNSerial = parsed.some(s => s && s.serialNumber && /^N\s*\d{4,5}$/i.test(String(s.serialNumber).trim()));
+    if (!hasNSerial) {
+      localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(DEFAULT_INVENTORY_SERIALS));
+      return [...DEFAULT_INVENTORY_SERIALS];
+    }
+    return parsed;
   } catch (e) {
     return [...DEFAULT_INVENTORY_SERIALS];
   }
@@ -4765,18 +4786,25 @@ export function saveInventorySerial(serialData) {
   try {
     if (!serialData || !serialData.serialNumber) return false;
     const list = getInventorySerialList();
-    const sn = serialData.serialNumber.trim();
+    const sn = String(serialData.serialNumber).trim().toUpperCase();
     const entryId = serialData.id || `sn_${sn.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
     const newSerial = {
       ...serialData,
       id: entryId,
       serialNumber: sn,
+      status: serialData.status || 'in_stock',
+      clientName: serialData.clientName || '',
+      endUserName: serialData.endUserName || '',
+      shipDate: serialData.shipDate || serialData.shippedDate || '',
+      docNumber: serialData.docNumber || serialData.invoiceNumber || '',
+      docId: serialData.docId || serialData.invoiceId || '',
+      note: serialData.note || '',
       updatedAt: new Date().toISOString()
     };
 
     const existingIndex = list.findIndex(s => s.id === entryId || s.serialNumber === sn);
     if (existingIndex >= 0) {
-      list[existingIndex] = newSerial;
+      list[existingIndex] = { ...list[existingIndex], ...newSerial };
     } else {
       list.push(newSerial);
     }
@@ -4786,6 +4814,79 @@ export function saveInventorySerial(serialData) {
     return entryId;
   } catch (e) {
     console.error('Failed to save inventory serial:', e);
+    return false;
+  }
+}
+
+export function deleteInventorySerial(serialIdOrNumber) {
+  try {
+    if (!serialIdOrNumber) return false;
+    const list = getInventorySerialList();
+    const updated = list.filter(s => s.id !== serialIdOrNumber && s.serialNumber !== serialIdOrNumber);
+    if (updated.length === list.length) return false;
+    localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(updated));
+    saveServerInventorySerials(updated).catch(() => {});
+    return true;
+  } catch (e) {
+    console.error('Failed to delete inventory serial:', e);
+    return false;
+  }
+}
+
+export function updateSerialStatus(serialNumber, newStatus, details = {}) {
+  try {
+    if (!serialNumber) return false;
+    const list = getInventorySerialList();
+    const target = list.find(s => s.serialNumber === serialNumber);
+    if (!target) return false;
+
+    target.status = newStatus;
+    target.updatedAt = new Date().toISOString();
+
+    if (newStatus === 'in_stock') {
+      target.clientName = '';
+      target.endUserName = '';
+      target.shipDate = '';
+      target.shippedDate = '';
+      target.docNumber = '';
+      target.docId = '';
+      target.bundleItemId = '';
+    } else {
+      if (details.clientName !== undefined) target.clientName = details.clientName;
+      if (details.customerName !== undefined) target.clientName = details.customerName;
+      if (details.endUserName !== undefined) target.endUserName = details.endUserName;
+      if (details.shipDate !== undefined) target.shipDate = details.shipDate;
+      if (details.shippedDate !== undefined) { target.shipDate = details.shippedDate; target.shippedDate = details.shippedDate; }
+      if (details.docNumber !== undefined) target.docNumber = details.docNumber;
+      if (details.invoiceNumber !== undefined) target.docNumber = details.invoiceNumber;
+      if (details.docId !== undefined) target.docId = details.docId;
+      if (details.invoiceId !== undefined) target.docId = details.invoiceId;
+      if (details.bundleItemId !== undefined) target.bundleItemId = details.bundleItemId;
+      if (details.note !== undefined) target.note = details.note;
+    }
+
+    localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(list));
+    saveServerInventorySerials(list).catch(() => {});
+    return true;
+  } catch (e) {
+    console.error('Failed to update serial status:', e);
+    return false;
+  }
+}
+
+export function updateSerialDetails(serialNumber, updates = {}) {
+  try {
+    if (!serialNumber) return false;
+    const list = getInventorySerialList();
+    const target = list.find(s => s.serialNumber === serialNumber || s.id === serialNumber);
+    if (!target) return false;
+
+    Object.assign(target, updates, { updatedAt: new Date().toISOString() });
+    localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(list));
+    saveServerInventorySerials(list).catch(() => {});
+    return true;
+  } catch (e) {
+    console.error('Failed to update serial details:', e);
     return false;
   }
 }
@@ -4800,12 +4901,19 @@ export function saveBatchInventorySerials(serialsArray = []) {
     let addedCount = 0;
     serialsArray.forEach(item => {
       if (!item || !item.serialNumber) return;
-      const sn = item.serialNumber.trim();
+      const sn = String(item.serialNumber).trim().toUpperCase();
       const entryId = item.id || `sn_${sn.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
       const newObj = {
         ...item,
         id: entryId,
         serialNumber: sn,
+        status: item.status || 'in_stock',
+        clientName: item.clientName || '',
+        endUserName: item.endUserName || '',
+        shipDate: item.shipDate || item.shippedDate || '',
+        docNumber: item.docNumber || item.invoiceNumber || '',
+        docId: item.docId || item.invoiceId || '',
+        note: item.note || '',
         updatedAt: new Date().toISOString()
       };
       snMap.set(sn, newObj);
@@ -4819,30 +4927,6 @@ export function saveBatchInventorySerials(serialsArray = []) {
   } catch (e) {
     console.error('Failed to batch save inventory serials:', e);
     return 0;
-  }
-}
-
-export function updateSerialStatus(serialNumber, newStatus, details = {}) {
-  try {
-    if (!serialNumber) return false;
-    const list = getInventorySerialList();
-    const target = list.find(s => s.serialNumber === serialNumber);
-    if (!target) return false;
-
-    target.status = newStatus;
-    target.updatedAt = new Date().toISOString();
-    if (details.clientName !== undefined) target.clientName = details.clientName;
-    if (details.shippedDate !== undefined) target.shippedDate = details.shippedDate;
-    if (details.docNumber !== undefined) target.docNumber = details.docNumber;
-    if (details.docId !== undefined) target.docId = details.docId;
-    if (details.bundleItemId !== undefined) target.bundleItemId = details.bundleItemId;
-
-    localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(list));
-    saveServerInventorySerials(list).catch(() => {});
-    return true;
-  } catch (e) {
-    console.error('Failed to update serial status:', e);
-    return false;
   }
 }
 
@@ -4892,6 +4976,8 @@ if (typeof window !== 'undefined') {
   window.getInventorySerialList = getInventorySerialList;
   window.saveInventorySerial = saveInventorySerial;
   window.saveBatchInventorySerials = saveBatchInventorySerials;
+  window.deleteInventorySerial = deleteInventorySerial;
+  window.updateSerialDetails = updateSerialDetails;
   window.updateSerialStatus = updateSerialStatus;
   window.calculateBundleStockAndCost = calculateBundleStockAndCost;
   window.getInventoryList = getInventoryList;
