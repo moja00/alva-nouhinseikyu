@@ -28,7 +28,8 @@ const KEYS = {
   LOCKED_MONTHS: 'billcraft_locked_months',
   DELETED_DOC_IDS: 'quickdoc_deleted_doc_ids',
   DELETED_EXPENSE_IDS: 'billcraft_deleted_expense_ids',
-  TRASH_HISTORY: 'quickdoc_trash_history'
+  TRASH_HISTORY: 'quickdoc_trash_history',
+  DELETED_SERIALS: 'billcraft_deleted_serials'
 };
 
 /**
@@ -51,6 +52,47 @@ export function getDeletedExpenseIds() {
  * 経費IDを削除済みリストに永続記録
  * @param {string} id
  */
+
+/**
+ * 削除済みシリアル番号セットを取得（台帳からの完全削除・ゾンビ復活防止用）
+ * @returns {Set<string>}
+ */
+export function getDeletedSerialNumbers() {
+  try {
+    const raw = localStorage.getItem(KEYS.DELETED_SERIALS);
+    const arr = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(arr) ? arr.map(s => String(s).trim().toUpperCase()) : []);
+  } catch (e) {
+    return new Set();
+  }
+}
+
+/**
+ * シリアル番号を削除済みリストに永続記録
+ * @param {string} sn
+ */
+export function recordDeletedSerial(sn) {
+  if (!sn) return;
+  try {
+    const set = getDeletedSerialNumbers();
+    set.add(String(sn).trim().toUpperCase());
+    localStorageSetItemAndSync(KEYS.DELETED_SERIALS, JSON.stringify(Array.from(set)));
+  } catch (e) { }
+}
+
+/**
+ * シリアル番号を削除済みリストから除外（再登録時）
+ * @param {string} sn
+ */
+export function removeDeletedSerial(sn) {
+  if (!sn) return;
+  try {
+    const set = getDeletedSerialNumbers();
+    set.delete(String(sn).trim().toUpperCase());
+    localStorageSetItemAndSync(KEYS.DELETED_SERIALS, JSON.stringify(Array.from(set)));
+  } catch (e) { }
+}
+
 export function recordDeletedExpenseId(id) {
   if (!id) return;
   try {
@@ -4769,32 +4811,128 @@ export async function saveServerInventoryLots(lots) {
 }
 
 // ==========================================================================
-// シリアル番号台帳（Inventory Serials）管理
+// シリアル番号台帳（Inventory Serials）管理 & 在庫マスタ連動
 // ==========================================================================
+
+/**
+ * シリアル台帳（Inventory Serials）の在庫中件数を在庫マスタ（Inventory Master）へ完全連動同期
+ */
+export function syncInventoryStockFromSerials() {
+  try {
+    const serials = getInventorySerialList();
+    const raw = localStorage.getItem(KEYS.INVENTORY);
+    if (!raw) return;
+    let invList = JSON.parse(raw);
+    if (!Array.isArray(invList) || invList.length === 0) return;
+    let modified = false;
+
+    // 品目ごとの「在庫中 (in_stock)」件数を集計
+    const inStockCounts = {
+      'inv_dp5000_body': 0,
+      'inv_2': 0,
+      'inv_dp5000_bat': 0
+    };
+
+    serials.forEach(s => {
+      if (!s || s.status !== 'in_stock') return;
+      const itemName = String(s.itemName || '').toUpperCase();
+      if (s.inventoryId === 'inv_dp5000_body' || (itemName.includes('DP-5000') && !itemName.includes('MS'))) {
+        inStockCounts['inv_dp5000_body']++;
+      } else if (s.inventoryId === 'inv_2' || itemName.includes('DP-MS')) {
+        inStockCounts['inv_2']++;
+      } else if (s.inventoryId === 'inv_dp5000_bat' || s.itemType === 'battery' || itemName.includes('バッテリー')) {
+        inStockCounts['inv_dp5000_bat']++;
+      }
+    });
+
+    invList.forEach(item => {
+      const itemName = String(item.name || '').toUpperCase();
+      if (item.id === 'inv_dp5000_body' || (itemName.includes('DP-5000') && item.type !== 'bundle')) {
+        if (item.currentStock !== inStockCounts['inv_dp5000_body']) {
+          item.currentStock = inStockCounts['inv_dp5000_body'];
+          modified = true;
+        }
+      } else if (item.id === 'inv_2' || itemName.includes('DP-MS')) {
+        if (item.currentStock !== inStockCounts['inv_2']) {
+          item.currentStock = inStockCounts['inv_2'];
+          modified = true;
+        }
+      } else if (item.id === 'inv_dp5000_bat' || itemName.includes('バッテリー')) {
+        if (item.currentStock !== inStockCounts['inv_dp5000_bat']) {
+          item.currentStock = inStockCounts['inv_dp5000_bat'];
+          modified = true;
+        }
+      }
+    });
+
+    // セット品（DP-5000 ベーシックセット）の理論構成可能在庫数を再計算連動
+    const bodyItem = invList.find(it => it.id === 'inv_dp5000_body');
+    const batItem = invList.find(it => it.id === 'inv_dp5000_bat');
+    const chgItem = invList.find(it => it.id === 'inv_dp5000_chg');
+    const bundleItem = invList.find(it => it.id === 'inv_1' || (it.name && it.name.includes('ベーシックセット')));
+
+    if (bundleItem && bodyItem && batItem) {
+      const chgStock = chgItem ? Number(chgItem.currentStock || 0) : 999;
+      const possibleSets = Math.min(
+        Number(bodyItem.currentStock || 0),
+        Math.floor(Number(batItem.currentStock || 0) / 2),
+        chgStock
+      );
+      if (bundleItem.currentStock !== possibleSets) {
+        bundleItem.currentStock = possibleSets;
+        modified = true;
+      }
+    }
+
+    if (modified) {
+      localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(invList));
+      saveServerInventory(invList).catch(() => {});
+      console.log('【在庫マスタ連動】シリアル台帳から現在庫数を同期更新しました:', inStockCounts);
+    }
+    return inStockCounts;
+  } catch (e) {
+    console.error('Failed to sync inventory from serials:', e);
+  }
+}
 
 export function getInventorySerialList() {
   try {
+    const deletedSerials = getDeletedSerialNumbers();
     const raw = localStorage.getItem(KEYS.INVENTORY_SERIALS);
     if (!raw) {
-      localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(DEFAULT_INVENTORY_SERIALS));
-      return [...DEFAULT_INVENTORY_SERIALS];
+      const filteredDefaults = DEFAULT_INVENTORY_SERIALS.filter(s => !deletedSerials.has(String(s.serialNumber).trim().toUpperCase()));
+      localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(filteredDefaults));
+      return [...filteredDefaults];
     }
     let parsed = JSON.parse(raw);
     if (!Array.isArray(parsed) || parsed.length === 0) {
-      localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(DEFAULT_INVENTORY_SERIALS));
-      return [...DEFAULT_INVENTORY_SERIALS];
+      const filteredDefaults = DEFAULT_INVENTORY_SERIALS.filter(s => !deletedSerials.has(String(s.serialNumber).trim().toUpperCase()));
+      localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(filteredDefaults));
+      return [...filteredDefaults];
     }
+
+    // 削除済みシリアルが万が一残っていたら除外
+    const initLen = parsed.length;
+    parsed = parsed.filter(s => s && s.serialNumber && !deletedSerials.has(String(s.serialNumber).trim().toUpperCase()));
+    let updated = (parsed.length !== initLen);
+
     // 旧シリアル体系（DP5K- や BAT- のみで N始まりのシリアルが1件もない場合）は新デフォルトに刷新
     const hasNSerial = parsed.some(s => s && s.serialNumber && /^N\s*\d{4,5}$/i.test(String(s.serialNumber).trim()));
     if (!hasNSerial) {
-      localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(DEFAULT_INVENTORY_SERIALS));
-      return [...DEFAULT_INVENTORY_SERIALS];
+      const filteredDefaults = DEFAULT_INVENTORY_SERIALS.filter(s => !deletedSerials.has(String(s.serialNumber).trim().toUpperCase()));
+      localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(filteredDefaults));
+      return [...filteredDefaults];
     }
 
     // 伝票から判明した実シリアル（N8460系、N10411系等）および最新マスタを自動マージ・補完
-    let updated = false;
+    // ※ただしユーザーがゴミ箱で削除したシリアル（deletedSerials）は絶対に復活させない
     for (const def of DEFAULT_INVENTORY_SERIALS) {
-      const idx = parsed.findIndex(s => s && s.serialNumber && String(s.serialNumber).trim().toUpperCase() === String(def.serialNumber).trim().toUpperCase());
+      const defSn = String(def.serialNumber).trim().toUpperCase();
+      if (deletedSerials.has(defSn)) {
+        continue; // 削除済みはスキップ！
+      }
+
+      const idx = parsed.findIndex(s => s && s.serialNumber && String(s.serialNumber).trim().toUpperCase() === defSn);
       if (idx === -1) {
         parsed.push({ ...def });
         updated = true;
@@ -4826,6 +4964,10 @@ export function saveInventorySerial(serialData) {
     if (!serialData || !serialData.serialNumber) return false;
     const list = getInventorySerialList();
     const sn = String(serialData.serialNumber).trim().toUpperCase();
+    
+    // 再登録時は削除済みリストから解除
+    removeDeletedSerial(sn);
+
     const entryId = serialData.id || `sn_${sn.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
     const newSerial = {
       ...serialData,
@@ -4850,6 +4992,9 @@ export function saveInventorySerial(serialData) {
 
     localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(list));
     saveServerInventorySerials(list).catch(() => {});
+    
+    // 在庫マスタ連動
+    syncInventoryStockFromSerials();
     return entryId;
   } catch (e) {
     console.error('Failed to save inventory serial:', e);
@@ -4861,10 +5006,20 @@ export function deleteInventorySerial(serialIdOrNumber) {
   try {
     if (!serialIdOrNumber) return false;
     const list = getInventorySerialList();
+    const target = list.find(s => s.id === serialIdOrNumber || s.serialNumber === serialIdOrNumber);
+    const targetSn = target ? target.serialNumber : (String(serialIdOrNumber).startsWith('N') ? serialIdOrNumber : '');
+    
+    // 削除済みリストへ永続記録（ゾンビ復活防止）
+    if (targetSn) {
+      recordDeletedSerial(targetSn);
+    }
+
     const updated = list.filter(s => s.id !== serialIdOrNumber && s.serialNumber !== serialIdOrNumber);
-    if (updated.length === list.length) return false;
     localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(updated));
     saveServerInventorySerials(updated).catch(() => {});
+    
+    // 在庫マスタ連動（現在庫数を即座に再計算）
+    syncInventoryStockFromSerials();
     return true;
   } catch (e) {
     console.error('Failed to delete inventory serial:', e);
@@ -4906,6 +5061,9 @@ export function updateSerialStatus(serialNumber, newStatus, details = {}) {
 
     localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(list));
     saveServerInventorySerials(list).catch(() => {});
+    
+    // 在庫マスタ連動
+    syncInventoryStockFromSerials();
     return true;
   } catch (e) {
     console.error('Failed to update serial status:', e);
@@ -4923,6 +5081,9 @@ export function updateSerialDetails(serialNumber, updates = {}) {
     Object.assign(target, updates, { updatedAt: new Date().toISOString() });
     localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(list));
     saveServerInventorySerials(list).catch(() => {});
+    
+    // 在庫マスタ連動
+    syncInventoryStockFromSerials();
     return true;
   } catch (e) {
     console.error('Failed to update serial details:', e);
@@ -4941,6 +5102,10 @@ export function saveBatchInventorySerials(serialsArray = []) {
     serialsArray.forEach(item => {
       if (!item || !item.serialNumber) return;
       const sn = String(item.serialNumber).trim().toUpperCase();
+      
+      // 再登録時は削除フラグ解除
+      removeDeletedSerial(sn);
+
       const entryId = item.id || `sn_${sn.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
       const newObj = {
         ...item,
@@ -4962,12 +5127,16 @@ export function saveBatchInventorySerials(serialsArray = []) {
     const updatedList = Array.from(snMap.values());
     localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(updatedList));
     saveServerInventorySerials(updatedList).catch(() => {});
+    
+    // 在庫マスタ連動
+    syncInventoryStockFromSerials();
     return addedCount;
   } catch (e) {
     console.error('Failed to batch save inventory serials:', e);
     return 0;
   }
 }
+
 
 export function getAvailableSerialsByItem(inventoryIdOrName) {
   const list = getInventorySerialList();

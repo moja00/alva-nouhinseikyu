@@ -93,7 +93,8 @@ import {
   updateSerialDetails,
   updateSerialStatus,
   getAvailableSerialsByItem,
-  calculateBundleStockAndCost
+  calculateBundleStockAndCost,
+  syncInventoryStockFromSerials
 } from './storage.js';
 
 import {
@@ -5413,6 +5414,9 @@ function saveInventoryItemHandler() {
 
 function renderInventoryTable() {
   if (!DOM.inventoryTableContainer) return;
+  if (typeof syncInventoryStockFromSerials === 'function') {
+    syncInventoryStockFromSerials();
+  }
   const list = getInventoryList();
   const q = DOM.inputSearchInventory ? DOM.inputSearchInventory.value.trim().toLowerCase() : '';
   const filter = DOM.selectInventoryFilter ? DOM.selectInventoryFilter.value : currentInventoryFilter;
@@ -6013,7 +6017,9 @@ function renderSerialsManagementTable() {
       if (!sn) return;
       updateSerialStatus(sn, newStatus);
       renderSerialsManagementTable();
-      showToast(`シリアル「${sn}」のステータスを更新しました`, 'info');
+      if (typeof renderInventoryTable === 'function') renderInventoryTable();
+      if (typeof renderInventorySerialTable === 'function') renderInventorySerialTable();
+      showToast(`シリアル「${sn}」のステータスを更新し、在庫マスタと連動しました`, 'info');
     });
   });
 }
@@ -6203,8 +6209,9 @@ function saveSerialSingleModal() {
   saveInventorySerial(serialData);
   closeSerialSingleModal();
   renderSerialsManagementTable();
+  if (typeof renderInventoryTable === 'function') renderInventoryTable();
   if (typeof renderInventorySerialTable === 'function') renderInventorySerialTable();
-  showToast(`シリアル番号「${normSn}」を保存しました！`, 'success');
+  showToast(`シリアル番号「${normSn}」を保存し、在庫マスタと連動しました！`, 'success');
 }
 window.saveSerialSingleModal = saveSerialSingleModal;
 
@@ -6326,8 +6333,9 @@ function executeSerialBatchModal() {
   const added = saveBatchInventorySerials(batchArray);
   closeSerialBatchModal();
   renderSerialsManagementTable();
+  if (typeof renderInventoryTable === 'function') renderInventoryTable();
   if (typeof renderInventorySerialTable === 'function') renderInventorySerialTable();
-  showToast(`「${itemType}」のシリアル ${added}台（N${startVal}〜N${endVal}）を一括登録しました！`, 'success');
+  showToast(`「${itemType}」のシリアル ${added}台（N${startVal}〜N${endVal}）を一括登録し、在庫マスタと連動しました！`, 'success');
 }
 window.executeSerialBatchModal = executeSerialBatchModal;
 
@@ -6338,8 +6346,9 @@ function deleteSerialEntry(sn) {
   if (!confirm(`シリアル番号「${sn}」を台帳から完全に削除しますか？`)) return;
   deleteInventorySerial(sn);
   renderSerialsManagementTable();
+  if (typeof renderInventoryTable === 'function') renderInventoryTable();
   if (typeof renderInventorySerialTable === 'function') renderInventorySerialTable();
-  showToast(`シリアル「${sn}」を台帳から削除しました`, 'info');
+  showToast(`シリアル「${sn}」を台帳から削除し、在庫マスタの現在庫を連動更新しました`, 'info');
 }
 window.deleteSerialEntry = deleteSerialEntry;
 
@@ -14663,3 +14672,5 @@ if (document.readyState === 'loading') {
 } else {
   bootstrapApp();
 }
+
+window.syncInventoryStockFromSerials = syncInventoryStockFromSerials;
