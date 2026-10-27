@@ -309,7 +309,7 @@
         </button>
         <div style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
-          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.27-enduser-field</span>
+          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.27-enduser-below-title</span>
         </div>
       </div>
 
@@ -530,11 +530,11 @@
                 <label class="form-label" for="inputEndUserName" style="margin-bottom: 0; color: #166534; font-weight: 700; font-size: 0.8rem;">
                   👤 ユーザー名記入欄（販売店経由のエンドユーザー様）
                 </label>
-                <span style="font-size: 0.72rem; color: #15803d; font-weight: 600;">※タイトル上に「○○ 様分」と表示</span>
+                <span style="font-size: 0.72rem; color: #15803d; font-weight: 600;">※タイトル下に「○○ 様分」と表示</span>
               </div>
               <input type="text" id="inputEndUserName" class="form-input" placeholder="例: 山田太郎、○○クリニック（未入力時は非表示）" style="background: #ffffff;">
               <div style="font-size: 0.7rem; color: #4b5563; margin-top: 4px; line-height: 1.4;">
-                ※未入力の場合は「様分」を含め完全に非表示となり、帳票タイトルが自動的に繰り上がります。
+                ※未入力の場合は「様分」を含め完全に非表示となり、件名が自動的に繰り上がります。
               </div>
             </div>
           </div>
@@ -721,10 +721,10 @@
           <!-- シートヘッダー -->
           <header class="sheet-header">
             <div class="sheet-title-box">
+              <h2 class="sheet-title" id="sheetDocTitle">御 請 求 書</h2>
               <div class="sheet-enduser-row" id="sheetEndUserRow" style="display: none;">
                 <span class="sheet-enduser-name" id="sheetEndUserName"></span><span class="sheet-enduser-suffix"> 様分</span>
               </div>
-              <h2 class="sheet-title" id="sheetDocTitle">御 請 求 書</h2>
               <div style="font-size: 0.95rem; font-weight: 600; color: #475569; margin-top: 6px;" id="sheetDocSubject">
                 Webサイト制作および運用保守業務
               </div>
@@ -6218,7 +6218,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261027_enduser_field"></script>
+  <script src="js/app.bundle.js?v=20261027_enduser_below_title"></script>
 </body>
 
 </html>

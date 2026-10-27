@@ -511,26 +511,21 @@ label.form-label {
 
 .sheet-enduser-row {
   display: none; /* JSで値がある場合のみ block に変更 */
-  font-size: 1.15rem;
-  font-weight: 700;
-  color: #1e293b;
-  letter-spacing: 0.04em;
-  margin-bottom: 5px;
-  line-height: 1.35;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #475569;
+  margin-top: 6px;
+  line-height: 1.4;
   word-break: break-all;
 }
 
 .sheet-enduser-name {
-  color: #0f172a;
-  border-bottom: 1.5px solid #94a3b8;
-  padding-bottom: 1px;
+  color: inherit;
 }
 
 .sheet-enduser-suffix {
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: #475569;
-  margin-left: 4px;
+  color: inherit;
+  margin-left: 2px;
 }
 
 .sheet-title {

@@ -1236,7 +1236,7 @@ function renderAll() {
     spacedTitle = spacedTitle[0] + ' ' + spacedTitle[1] + ' ' + spacedTitle[2] + ' ' + spacedTitle[3];
   }
 
-  // エンドユーザー名（販売店経由での購入者・納品先: タイトルの上の行に表示）
+  // エンドユーザー名（販売店経由での購入者・納品先: タイトルの下の行に表示）
   const rawEndUser = (currentDoc.endUserName || currentDoc.client?.endUserName || '').trim();
   // 「様」「様分」の重複入力を自動サニタイズ
   const cleanEndUser = rawEndUser.replace(/(様分|様|様\s*分)\s*$/, '').trim();
