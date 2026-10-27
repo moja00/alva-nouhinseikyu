@@ -1237,16 +1237,44 @@ function renderAll() {
   }
 
   // エンドユーザー名（販売店経由での購入者・納品先: タイトルの下の行に表示）
-  const rawEndUser = (currentDoc.endUserName || currentDoc.client?.endUserName || '').trim();
-  // 「様」「様分」の重複入力を自動サニタイズ
-  const cleanEndUser = rawEndUser.replace(/(様分|様|様\s*分)\s*$/, '').trim();
+  // 1. 各明細行に入力されたユーザー名を収集
+  const itemEndUsers = (currentDoc.items || [])
+    .map(it => (it.endUserName || '').trim().replace(/(様分|様|様\s*分)\s*$/, '').trim())
+    .filter(Boolean);
+
+  // 重複排除（例: 複数商品が同一ユーザーなら1つに集約）
+  const uniqueItemUsers = Array.from(new Set(itemEndUsers));
+
+  // 2. 伝票全体のユーザー名（カンマや空白・スラッシュ区切りでも分割抽出）
+  const rawDocEndUser = (currentDoc.endUserName || currentDoc.client?.endUserName || '').trim();
+  const splitDocUsers = rawDocEndUser
+    ? rawDocEndUser.split(/[,、/／\s　]+/).map(u => u.replace(/(様分|様|様\s*分)\s*$/, '').trim()).filter(Boolean)
+    : [];
+
+  // 明細側にユーザー名があればそれを優先、なければ伝票全体のユーザー名を採用
+  let displayUsers = [];
+  if (uniqueItemUsers.length > 0) {
+    displayUsers = uniqueItemUsers;
+  } else if (splitDocUsers.length > 0) {
+    displayUsers = Array.from(new Set(splitDocUsers));
+  }
+
+  // 連名フォーマット構築:
+  // 1名: "戸倉" (HTML末尾の " 様分" と合わさり "戸倉 様分")
+  // 複数名: "戸倉 様、佐藤" (HTML末尾の " 様分" と合わさり "戸倉 様、佐藤 様分")
+  let endUserNamePart = '';
+  if (displayUsers.length === 1) {
+    endUserNamePart = displayUsers[0];
+  } else if (displayUsers.length > 1) {
+    endUserNamePart = displayUsers.map((u, i) => i === displayUsers.length - 1 ? u : `${u} 様`).join('、');
+  }
 
   if (DOM.sheetEndUserRow && DOM.sheetEndUserName) {
-    if (cleanEndUser) {
-      DOM.sheetEndUserName.textContent = cleanEndUser;
+    if (endUserNamePart) {
+      DOM.sheetEndUserName.textContent = endUserNamePart;
       DOM.sheetEndUserRow.style.display = 'block';
-      DOM.sheetEndUserRow.setAttribute('data-end-user', cleanEndUser);
-      if (DOM.invoiceSheet) DOM.invoiceSheet.setAttribute('data-end-user', cleanEndUser);
+      DOM.sheetEndUserRow.setAttribute('data-end-user', displayUsers.join(', '));
+      if (DOM.invoiceSheet) DOM.invoiceSheet.setAttribute('data-end-user', displayUsers.join(', '));
     } else {
       DOM.sheetEndUserName.textContent = '';
       DOM.sheetEndUserRow.style.display = 'none';
@@ -1733,14 +1761,17 @@ function renderSheetItemsTable(items = []) {
     if (!descText && (item.discountReason || (item.discount && item.discount.reason))) {
       descText = item.discountReason || (item.discount && item.discount.reason);
     }
-    const descHtml = descText
-      ? `<div class="sheet-item-subnote">${escapeHtml(descText)}</div>`
+    // 明細ごとのエンドユーザー名表示（複数ユーザー時の判別用）
+    const cleanItemEndUser = (item.endUserName || '').trim().replace(/(様分|様|様\s*分)\s*$/, '').trim();
+    const itemEndUserHtml = cleanItemEndUser
+      ? `<div style="font-size: 0.775rem; color: #047857; font-weight: 600; margin-top: 2px;">👤 ${escapeHtml(cleanItemEndUser)} 様分</div>`
       : '';
 
     tr.innerHTML = `
       <td class="td-num">${index + 1}</td>
       <td class="td-item-name">
         <div style="font-weight: 600; line-height: 1.35;">${escapeHtml(item.name || '')}</div>
+        ${itemEndUserHtml}
         ${descHtml}
         ${userPriceBadge}
       </td>
@@ -1828,6 +1859,10 @@ function renderItemInputCards() {
         <div style="position: relative;">
           <input type="text" class="form-input item-input-description" placeholder="📝 摘要（例: 出精値引き、特別割引き、仕様・対象期間 等 ※品名欄に一緒に印字されます）" value="${escapeHtml(item.description || item.discountReason || '')}" style="font-size: 0.825rem; background: #f8fafc; border-color: #cbd5e1; color: #334155; padding-left: 28px;">
           <span style="position: absolute; left: 8px; top: 50%; transform: translateY(-50%); font-size: 13px; opacity: 0.65; pointer-events: none;">📝</span>
+        </div>
+        <div style="position: relative;">
+          <input type="text" class="form-input item-input-end-user" placeholder="👤 ユーザー名（例: 戸倉、佐藤 ※商品ごとにユーザーが異なる場合に入力）" value="${escapeHtml(item.endUserName || '')}" style="font-size: 0.825rem; background: #f0fdf4; border-color: #bbf7d0; color: #166534; padding-left: 28px;">
+          <span style="position: absolute; left: 8px; top: 50%; transform: translateY(-50%); font-size: 13px; pointer-events: none;">👤</span>
         </div>
       </div>
 
@@ -2118,6 +2153,14 @@ function renderItemInputCards() {
       }
     });
     if (inputNote) inputNote.addEventListener('input', handleItemChange);
+
+    const inputEndUser = card.querySelector('.item-input-end-user');
+    if (inputEndUser) {
+      inputEndUser.addEventListener('input', () => {
+        item.endUserName = inputEndUser.value;
+        renderAll();
+      });
+    }
 
     DOM.itemsContainer.appendChild(card);
   });
@@ -7878,7 +7921,7 @@ function renderIqeItemsTable() {
 
   if (currentIqeItems.length === 0) {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td colspan="7" style="text-align: center; color: #94a3b8; padding: 20px;">明細がありません。「＋ 行を追加」ボタンで追加してください。</td>`;
+    tr.innerHTML = `<td colspan="8" style="text-align: center; color: #94a3b8; padding: 20px;">明細がありません。「＋ 行を追加」ボタンで追加してください。</td>`;
     DOM.iqeItemsTableBody.appendChild(tr);
     recalcIqeTotals();
     return;
@@ -7891,6 +7934,9 @@ function renderIqeItemsTable() {
     tr.innerHTML = `
       <td>
         <input type="text" class="form-input iqe-item-name" value="${escapeHtml(it.name || '')}" style="font-size: 0.8rem; padding: 4px 6px;" placeholder="品名・項目">
+      </td>
+      <td>
+        <input type="text" class="form-input iqe-item-enduser" value="${escapeHtml(it.endUserName || '')}" style="font-size: 0.8rem; padding: 4px 6px; background: #f0fdf4; border-color: #bbf7d0; color: #166534;" placeholder="ユーザー名 (任意)">
       </td>
       <td>
         <input type="number" class="form-input iqe-item-qty" value="${it.quantity !== undefined ? it.quantity : 1}" style="font-size: 0.8rem; padding: 4px 6px; text-align: right;" min="0" step="any">
@@ -7918,6 +7964,7 @@ function renderIqeItemsTable() {
 
     // 入力イベントで即時再計算
     const nameInput = tr.querySelector('.iqe-item-name');
+    const endUserInput = tr.querySelector('.iqe-item-enduser');
     const qtyInput = tr.querySelector('.iqe-item-qty');
     const unitInput = tr.querySelector('.iqe-item-unit');
     const priceInput = tr.querySelector('.iqe-item-price');
@@ -7925,6 +7972,9 @@ function renderIqeItemsTable() {
     const delBtn = tr.querySelector('.iqe-btn-del');
 
     nameInput.addEventListener('input', e => { it.name = e.target.value; });
+    if (endUserInput) {
+      endUserInput.addEventListener('input', e => { it.endUserName = e.target.value; });
+    }
     qtyInput.addEventListener('input', e => {
       it.quantity = Number(e.target.value) || 0;
       recalcIqeTotals();
@@ -13335,7 +13385,7 @@ function extractEndUser() {
 window.extractEndUser = extractEndUser;
 
 /**
- * 過去履歴データからエンドユーザー名と伝票一覧を抽出
+ * 過去履歴データからエンドユーザー名と明細一覧を抽出
  * @returns {Array<object>}
  */
 function getAllEndUsers() {
@@ -13343,16 +13393,51 @@ function getAllEndUsers() {
   const results = [];
   history.forEach(item => {
     const full = item.fullDoc || item;
-    const raw = (item.endUserName || full.endUserName || item.client?.endUserName || full.client?.endUserName || '').trim();
-    const clean = raw.replace(/(様分|様|様\s*分)\s*$/, '').trim();
-    if (clean) {
+    const headerRaw = (item.endUserName || full.endUserName || item.client?.endUserName || full.client?.endUserName || '').trim();
+    const cleanHeader = headerRaw.replace(/(様分|様|様\s*分)\s*$/, '').trim();
+
+    const items = full.items || item.items || [];
+    let hasItemUser = false;
+
+    // 明細単位のエンドユーザーを走査
+    items.forEach(it => {
+      const itRaw = (it.endUserName || '').trim();
+      const itClean = itRaw.replace(/(様分|様|様\s*分)\s*$/, '').trim();
+      if (itClean) {
+        hasItemUser = true;
+        const qty = Number(it.quantity) || 1;
+        const price = Number(it.unitPrice) || 0;
+        results.push({
+          id: item.id,
+          docNumber: item.docNumber || full.docNumber || '',
+          docType: item.docType || full.docType || '',
+          issueDate: item.issueDate || full.issueDate || '',
+          clientName: item.clientName || item.client?.name || full.client?.name || '',
+          endUserName: itClean,
+          itemName: it.name || '',
+          quantity: qty,
+          unitPrice: price,
+          lineTotal: qty * price,
+          title: item.title || full.title || '',
+          grandTotal: item.grandTotal || full.grandTotal || 0,
+          isIssued: !!(item.isIssued || full.isIssued)
+        });
+      }
+    });
+
+    // 明細単位にユーザー名がない場合、伝票ヘッダーのユーザー名を使用
+    if (!hasItemUser && cleanHeader) {
       results.push({
         id: item.id,
         docNumber: item.docNumber || full.docNumber || '',
         docType: item.docType || full.docType || '',
         issueDate: item.issueDate || full.issueDate || '',
         clientName: item.clientName || item.client?.name || full.client?.name || '',
-        endUserName: clean,
+        endUserName: cleanHeader,
+        itemName: '(伝票全体)',
+        quantity: '-',
+        unitPrice: '-',
+        lineTotal: item.grandTotal || full.grandTotal || 0,
         title: item.title || full.title || '',
         grandTotal: item.grandTotal || full.grandTotal || 0,
         isIssued: !!(item.isIssued || full.isIssued)
@@ -13373,7 +13458,7 @@ function exportEndUsersCSV() {
     return;
   }
 
-  const headers = ['書類番号', '書類種別', '発行日', '販売店・取引先名', 'エンドユーザー名', '件名', '合計金額(税込)', '確定発行状況'];
+  const headers = ['書類番号', '書類種別', '発行日', '販売店・取引先名', 'エンドユーザー名', '品名・内容', '数量', '単価', '金額', '伝票合計(税込)', '確定発行状況'];
   const docTypeLabels = { invoice: '請求書', delivery: '納品書', estimate: '見積書', receipt: '領収書' };
 
   const rows = users.map(u => [
@@ -13382,7 +13467,10 @@ function exportEndUsersCSV() {
     `"${(u.issueDate || '').replace(/"/g, '""')}"`,
     `"${(u.clientName || '').replace(/"/g, '""')}"`,
     `"${(u.endUserName || '').replace(/"/g, '""')}"`,
-    `"${(u.title || '').replace(/"/g, '""')}"`,
+    `"${(u.itemName || '').replace(/"/g, '""')}"`,
+    `"${u.quantity}"`,
+    `${Number(u.unitPrice) || 0}`,
+    `${Number(u.lineTotal) || 0}`,
     `${Number(u.grandTotal) || 0}`,
     `"${u.isIssued ? '確定発行済' : '下書き'}"`
   ]);
@@ -13392,13 +13480,13 @@ function exportEndUsersCSV() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `ユーザー名一覧抽出_${new Date().toISOString().split('T')[0]}.csv`;
+  a.download = `ユーザー名別明細抽出_${new Date().toISOString().split('T')[0]}.csv`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
   if (typeof showToast === 'function') {
-    showToast(`👤 エンドユーザー名一覧（${users.length}件）をCSV抽出しました`, 'success');
+    showToast(`👤 エンドユーザー別明細（${users.length}件）をCSV抽出しました`, 'success');
   }
 }
 window.exportEndUsersCSV = exportEndUsersCSV;
