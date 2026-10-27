@@ -1761,6 +1761,10 @@ function renderSheetItemsTable(items = []) {
     if (!descText && (item.discountReason || (item.discount && item.discount.reason))) {
       descText = item.discountReason || (item.discount && item.discount.reason);
     }
+    const descHtml = descText
+      ? `<div class="sheet-item-subnote">${escapeHtml(descText)}</div>`
+      : '';
+
     // 明細ごとのエンドユーザー名表示（複数ユーザー時の判別用）
     const cleanItemEndUser = (item.endUserName || '').trim().replace(/(様分|様|様\s*分)\s*$/, '').trim();
     const itemEndUserHtml = cleanItemEndUser
