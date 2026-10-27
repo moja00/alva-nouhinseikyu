@@ -328,7 +328,7 @@
         </button>
         <div style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
-          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.27-item-freq-doc-sync</span>
+          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.27-client-code-duplicate-warn</span>
         </div>
       </div>
 
@@ -523,8 +523,9 @@
 
             <div class="form-row">
               <div class="form-group">
-                <label class="form-label" for="inputClientCode">得意先コード (任意)</label>
+                <label class="form-label" for="inputClientCode">販売店コード (任意)</label>
                 <input type="text" id="inputClientCode" class="form-input" placeholder="例: C001, V002" style="font-family: monospace;">
+                <div id="docClientCodeWarn" style="display: none; color: #dc2626; font-size: 0.75rem; font-weight: 600; margin-top: 3px; line-height: 1.3;"></div>
               </div>
               <div class="form-group">
                 <label class="form-label" for="inputClientZip">郵便番号</label>
@@ -2620,8 +2621,9 @@
 
           <div class="form-row" style="margin-bottom: 10px;">
             <div class="form-group" style="flex: 0.9;">
-              <label class="form-label" for="clientMasterInputCode" style="font-size: 0.8rem;">得意先コード (任意)</label>
+              <label class="form-label" for="clientMasterInputCode" style="font-size: 0.8rem;">販売店コード (任意)</label>
               <input type="text" id="clientMasterInputCode" class="form-input" placeholder="例: C001, V002" style="font-family: monospace;">
+              <div id="clientMasterCodeWarn" style="display: none; color: #dc2626; font-size: 0.75rem; font-weight: 600; margin-top: 4px; line-height: 1.3;"></div>
             </div>
             <div class="form-group" style="flex: 1.6;">
               <label class="form-label" for="clientMasterInputName" style="font-size: 0.8rem;">取引先 会社名 / 屋号 <span
@@ -6600,7 +6602,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261027_freq_sync"></script>
+  <script src="js/app.bundle.js?v=20261027_client_code_warn"></script>
 </body>
 
 </html>

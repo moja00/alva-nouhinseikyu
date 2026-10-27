@@ -2990,6 +2990,24 @@ export function findClientByName(name) {
     list.find(c => getMasterKey(c.name).includes(key)) || null;
 }
 
+/**
+ * 販売店コード（得意先コード）で取引先マスタを検索（重複チェック用）
+ * @param {string} code 検索対象のコード
+ * @param {string} [excludeId] 編集時に除外する自身の取引先ID
+ * @returns {Object|null} 一致した取引先オブジェクト、なければnull
+ */
+export function findClientByCode(code, excludeId = '') {
+  if (!code) return null;
+  const cleanCode = normalizeMasterName(code).toLowerCase();
+  if (!cleanCode) return null;
+  const list = getClientMasterList(false);
+  return list.find(c => {
+    if (excludeId && c.id === excludeId) return false;
+    const cCode = c.code ? normalizeMasterName(c.code).toLowerCase() : '';
+    return cCode && cCode === cleanCode;
+  }) || null;
+}
+
 
 /**
  * 品名ごとのユーザー価格履歴マップを取得

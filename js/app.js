@@ -41,6 +41,7 @@ import {
   getClientMasterUsageMap,
   recordClientMasterUsage,
   findClientByName,
+  findClientByCode,
   getUserPriceHistoryForItem,
   recordUserPrice,
   getExpenseList,
@@ -335,6 +336,8 @@ const DOM = {
   clientMasterFormTitle: document.getElementById('clientMasterFormTitle'),
   clientMasterEditId: document.getElementById('clientMasterEditId'),
   clientMasterInputCode: document.getElementById('clientMasterInputCode'),
+  clientMasterCodeWarn: document.getElementById('clientMasterCodeWarn'),
+  docClientCodeWarn: document.getElementById('docClientCodeWarn'),
   clientMasterInputName: document.getElementById('clientMasterInputName'),
   clientMasterInputHonorific: document.getElementById('clientMasterInputHonorific'),
   clientMasterSelectCategory: document.getElementById('clientMasterSelectCategory'),
@@ -3394,6 +3397,14 @@ function setupEventListeners() {
       handleSaveClientMaster();
     }
   });
+  if (DOM.clientMasterInputCode) {
+    DOM.clientMasterInputCode.addEventListener('input', checkClientMasterCodeDuplicate);
+    DOM.clientMasterInputCode.addEventListener('blur', checkClientMasterCodeDuplicate);
+  }
+  if (DOM.inputClientCode) {
+    DOM.inputClientCode.addEventListener('input', checkDocClientCodeDuplicate);
+    DOM.inputClientCode.addEventListener('blur', checkDocClientCodeDuplicate);
+  }
   if (DOM.inputClientName) {
     DOM.inputClientName.addEventListener('change', handleClientNameAutocomplete);
   }
@@ -5014,10 +5025,110 @@ function toggleNewClientForm(show = null) {
   }
 }
 
+function checkClientMasterCodeDuplicate() {
+  if (!DOM.clientMasterInputCode) return null;
+  const code = DOM.clientMasterInputCode.value.trim();
+  const editId = DOM.clientMasterEditId ? DOM.clientMasterEditId.value : '';
+  const warnEl = DOM.clientMasterCodeWarn || document.getElementById('clientMasterCodeWarn');
+
+  if (!code) {
+    if (warnEl) {
+      warnEl.style.display = 'none';
+      warnEl.textContent = '';
+    }
+    DOM.clientMasterInputCode.style.borderColor = '';
+    DOM.clientMasterInputCode.style.backgroundColor = '';
+    return null;
+  }
+
+  const existing = (typeof findClientByCode === 'function') 
+    ? findClientByCode(code, editId) 
+    : null;
+
+  if (existing) {
+    if (warnEl) {
+      warnEl.style.display = 'block';
+      warnEl.innerHTML = `⚠️ <strong>登録済みです</strong>（「${escapeHtml(existing.name)}」で使用中）`;
+    }
+    DOM.clientMasterInputCode.style.borderColor = '#ef4444';
+    DOM.clientMasterInputCode.style.backgroundColor = '#fef2f2';
+    return existing;
+  } else {
+    if (warnEl) {
+      warnEl.style.display = 'none';
+      warnEl.textContent = '';
+    }
+    DOM.clientMasterInputCode.style.borderColor = '';
+    DOM.clientMasterInputCode.style.backgroundColor = '';
+    return null;
+  }
+}
+
+function checkDocClientCodeDuplicate() {
+  if (!DOM.inputClientCode) return null;
+  const code = DOM.inputClientCode.value.trim();
+  const warnEl = DOM.docClientCodeWarn || document.getElementById('docClientCodeWarn');
+  const currentName = DOM.inputClientName ? DOM.inputClientName.value.trim() : '';
+
+  if (!code) {
+    if (warnEl) {
+      warnEl.style.display = 'none';
+      warnEl.textContent = '';
+    }
+    DOM.inputClientCode.style.borderColor = '';
+    DOM.inputClientCode.style.backgroundColor = '';
+    return null;
+  }
+
+  const existing = (typeof findClientByCode === 'function') ? findClientByCode(code) : null;
+  if (existing) {
+    const isSameName = currentName && (
+      existing.name.toLowerCase() === currentName.toLowerCase() ||
+      (typeof normalizeMasterName === 'function' && normalizeMasterName(existing.name).toLowerCase() === normalizeMasterName(currentName).toLowerCase())
+    );
+    if (!isSameName && currentName) {
+      if (warnEl) {
+        warnEl.style.display = 'block';
+        warnEl.style.color = '#dc2626';
+        warnEl.innerHTML = `⚠️ <strong>登録済みです</strong>（「${escapeHtml(existing.name)}」の販売店コード）`;
+      }
+      DOM.inputClientCode.style.borderColor = '#ef4444';
+      DOM.inputClientCode.style.backgroundColor = '#fef2f2';
+      return existing;
+    } else if (!currentName) {
+      if (warnEl) {
+        warnEl.style.display = 'block';
+        warnEl.style.color = '#0284c7';
+        warnEl.innerHTML = `ℹ️ 「${escapeHtml(existing.name)}」の販売店コードです`;
+      }
+      DOM.inputClientCode.style.borderColor = '';
+      DOM.inputClientCode.style.backgroundColor = '';
+      return existing;
+    }
+  }
+
+  if (warnEl) {
+    warnEl.style.display = 'none';
+    warnEl.textContent = '';
+  }
+  DOM.inputClientCode.style.borderColor = '';
+  DOM.inputClientCode.style.backgroundColor = '';
+  return null;
+}
+
 function resetClientMasterForm() {
   if (DOM.clientMasterEditId) DOM.clientMasterEditId.value = '';
   if (DOM.clientMasterFormTitle) DOM.clientMasterFormTitle.textContent = '新規取引先の登録';
-  if (DOM.clientMasterInputCode) DOM.clientMasterInputCode.value = '';
+  if (DOM.clientMasterInputCode) {
+    DOM.clientMasterInputCode.value = '';
+    DOM.clientMasterInputCode.style.borderColor = '';
+    DOM.clientMasterInputCode.style.backgroundColor = '';
+  }
+  const warnEl = DOM.clientMasterCodeWarn || document.getElementById('clientMasterCodeWarn');
+  if (warnEl) {
+    warnEl.style.display = 'none';
+    warnEl.textContent = '';
+  }
   if (DOM.clientMasterInputName) DOM.clientMasterInputName.value = '';
   if (DOM.clientMasterInputHonorific) DOM.clientMasterInputHonorific.value = '御中';
   if (DOM.clientMasterSelectCategory) DOM.clientMasterSelectCategory.value = 'customer';
@@ -5043,9 +5154,26 @@ function handleSaveClientMaster() {
     return;
   }
 
+  const code = DOM.clientMasterInputCode ? DOM.clientMasterInputCode.value.trim() : '';
+  const editId = DOM.clientMasterEditId ? DOM.clientMasterEditId.value : '';
+
+  // 販売店コード（得意先コード）の重複チェック
+  if (code) {
+    const duplicate = (typeof findClientByCode === 'function') ? findClientByCode(code, editId) : null;
+    if (duplicate) {
+      alert(`⚠️ 販売店コード「${code}」は既に「${duplicate.name}」として登録済みです！\n重複しているため保存できません。別のコードを入力してください。`);
+      checkClientMasterCodeDuplicate();
+      if (DOM.clientMasterInputCode) {
+        DOM.clientMasterInputCode.focus();
+        DOM.clientMasterInputCode.select();
+      }
+      return;
+    }
+  }
+
   const clientData = {
     id: DOM.clientMasterEditId ? DOM.clientMasterEditId.value || undefined : undefined,
-    code: DOM.clientMasterInputCode ? DOM.clientMasterInputCode.value.trim() : '',
+    code,
     name,
     honorific: DOM.clientMasterInputHonorific ? DOM.clientMasterInputHonorific.value : '御中',
     category: DOM.clientMasterSelectCategory ? DOM.clientMasterSelectCategory.value : 'customer',
@@ -5082,6 +5210,7 @@ function renderClientMasterList(filter = 'all', searchQuery = '') {
   if (q) {
     filtered = filtered.filter(c => 
       (c.name && c.name.toLowerCase().includes(q)) ||
+      (c.code && c.code.toLowerCase().includes(q)) ||
       (c.address && c.address.toLowerCase().includes(q)) ||
       (c.contactPerson && c.contactPerson.toLowerCase().includes(q)) ||
       (c.invoiceNumber && c.invoiceNumber.toLowerCase().includes(q)) ||
@@ -5236,7 +5365,16 @@ function editClientMaster(client) {
 
   if (DOM.clientMasterEditId) DOM.clientMasterEditId.value = client.id;
   if (DOM.clientMasterFormTitle) DOM.clientMasterFormTitle.textContent = `取引先の編集: ${client.name}`;
-  if (DOM.clientMasterInputCode) DOM.clientMasterInputCode.value = client.code || '';
+  if (DOM.clientMasterInputCode) {
+    DOM.clientMasterInputCode.value = client.code || '';
+    DOM.clientMasterInputCode.style.borderColor = '';
+    DOM.clientMasterInputCode.style.backgroundColor = '';
+  }
+  const warnEl = DOM.clientMasterCodeWarn || document.getElementById('clientMasterCodeWarn');
+  if (warnEl) {
+    warnEl.style.display = 'none';
+    warnEl.textContent = '';
+  }
   if (DOM.clientMasterInputName) DOM.clientMasterInputName.value = client.name || '';
   if (DOM.clientMasterInputHonorific) DOM.clientMasterInputHonorific.value = client.honorific !== undefined ? client.honorific : '御中';
   if (DOM.clientMasterSelectCategory) DOM.clientMasterSelectCategory.value = client.category || 'customer';
