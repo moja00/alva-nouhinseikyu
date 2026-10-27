@@ -509,6 +509,30 @@ label.form-label {
   flex-direction: column;
 }
 
+.sheet-enduser-row {
+  display: none; /* JSで値がある場合のみ block に変更 */
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #1e293b;
+  letter-spacing: 0.04em;
+  margin-bottom: 5px;
+  line-height: 1.35;
+  word-break: break-all;
+}
+
+.sheet-enduser-name {
+  color: #0f172a;
+  border-bottom: 1.5px solid #94a3b8;
+  padding-bottom: 1px;
+}
+
+.sheet-enduser-suffix {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #475569;
+  margin-left: 4px;
+}
+
 .sheet-title {
   font-size: 2rem;
   font-weight: 700;

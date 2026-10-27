@@ -11,6 +11,7 @@ export const SAMPLE_DOCUMENTS = {
     issueDate: '2026-09-15',
     dueDate: '2026-10-31',
     title: 'コーポレートサイトリニューアル及び運用保守（8月分）',
+    endUserName: '',
     client: {
       name: 'アークス・テクノロジー株式会社',
       honorific: '御中',

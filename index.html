@@ -309,7 +309,7 @@
         </button>
         <div style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
-          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.23-print-scale-fix</span>
+          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.27-enduser-field</span>
         </div>
       </div>
 
@@ -523,6 +523,20 @@
                 <input type="text" id="inputClientContact" class="form-input" placeholder="例: 開発部 佐藤 様">
               </div>
             </div>
+
+            <!-- 販売店経由時のユーザー（エンドユーザー）記入欄 -->
+            <div class="form-group" style="margin-top: 10px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 10px 12px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <label class="form-label" for="inputEndUserName" style="margin-bottom: 0; color: #166534; font-weight: 700; font-size: 0.8rem;">
+                  👤 ユーザー名記入欄（販売店経由のエンドユーザー様）
+                </label>
+                <span style="font-size: 0.72rem; color: #15803d; font-weight: 600;">※タイトル上に「○○ 様分」と表示</span>
+              </div>
+              <input type="text" id="inputEndUserName" class="form-input" placeholder="例: 山田太郎、○○クリニック（未入力時は非表示）" style="background: #ffffff;">
+              <div style="font-size: 0.7rem; color: #4b5563; margin-top: 4px; line-height: 1.4;">
+                ※未入力の場合は「様分」を含め完全に非表示となり、帳票タイトルが自動的に繰り上がります。
+              </div>
+            </div>
           </div>
 
           <!-- 自社情報サマリーカード（設定は共通モーダルで一括管理） -->
@@ -707,6 +721,9 @@
           <!-- シートヘッダー -->
           <header class="sheet-header">
             <div class="sheet-title-box">
+              <div class="sheet-enduser-row" id="sheetEndUserRow" style="display: none;">
+                <span class="sheet-enduser-name" id="sheetEndUserName"></span><span class="sheet-enduser-suffix"> 様分</span>
+              </div>
               <h2 class="sheet-title" id="sheetDocTitle">御 請 求 書</h2>
               <div style="font-size: 0.95rem; font-weight: 600; color: #475569; margin-top: 6px;" id="sheetDocSubject">
                 Webサイト制作および運用保守業務
@@ -1106,6 +1123,12 @@
             </svg>
             最新同期
           </button>
+          <button type="button" class="btn btn-outline btn-xs" id="btnExportEndUsersCsv"
+            onclick="window.exportEndUsersCSV &amp;&amp; window.exportEndUsersCSV()"
+            style="display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; font-size: 0.75rem; font-weight: 700; color: #047857; border: 1px solid #a7f3d0; background: #ecfdf5; border-radius: 6px; cursor: pointer;"
+            title="販売店経由のエンドユーザー名一覧をCSV出力（抽出）">
+            <span>👤</span> ユーザー名抽出 (CSV)
+          </button>
         </div>
         <button type="button" class="modal-close" id="btnCloseHistoryModal"
           style="font-size: 1.25rem; border: none; background: none; cursor: pointer; color: #64748b;"
@@ -1134,13 +1157,13 @@
             </div>
           </div>
 
-          <!-- ② 取引先検索 -->
+          <!-- ② 取引先・ユーザー名検索 -->
           <div>
             <label style="display: block; font-size: 0.775rem; font-weight: 700; color: #334155; margin-bottom: 4px;">
-              🏢 取引先
+              🏢 取引先・ユーザー名
             </label>
             <input type="text" id="historySearchClient" list="historyClientDatalist" class="form-input"
-              placeholder="取引先名で絞り込み..."
+              placeholder="取引先・エンドユーザー名..."
               style="width: 100%; padding: 7px 10px; font-size: 0.825rem; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; background: #fff;">
             <datalist id="historyClientDatalist"></datalist>
           </div>
@@ -2463,11 +2486,16 @@
             </div>
           </div>
 
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 10px;">
             <div class="form-group" style="margin-bottom: 0;">
               <label class="form-label" style="font-size: 0.75rem;">取引先名</label>
               <input type="text" id="iqeClientName" class="form-input" style="font-size: 0.825rem; padding: 5px 8px;"
                 placeholder="例: 株式会社サンプル">
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label" style="font-size: 0.75rem;">ユーザー名（○○ 様分）</label>
+              <input type="text" id="iqeEndUserName" class="form-input" style="font-size: 0.825rem; padding: 5px 8px;"
+                placeholder="例: 山田太郎（任意）">
             </div>
             <div class="form-group" style="margin-bottom: 0;">
               <label class="form-label" style="font-size: 0.75rem;">件名</label>
@@ -6190,7 +6218,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261023_print_scale_fix"></script>
+  <script src="js/app.bundle.js?v=20261027_enduser_field"></script>
 </body>
 
 </html>

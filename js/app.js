@@ -165,6 +165,7 @@ const DOM = {
   // 取引先入力
   inputClientCode: document.getElementById('inputClientCode'),
   inputClientName: document.getElementById('inputClientName'),
+  inputEndUserName: document.getElementById('inputEndUserName'),
   inputClientHonorific: document.getElementById('inputClientHonorific'),
   inputClientZip: document.getElementById('inputClientZip'),
   inputClientAddress: document.getElementById('inputClientAddress'),
@@ -194,6 +195,8 @@ const DOM = {
   stampPreviewThumb: document.getElementById('stampPreviewThumb'),
 
   // プレビュー側要素
+  sheetEndUserRow: document.getElementById('sheetEndUserRow'),
+  sheetEndUserName: document.getElementById('sheetEndUserName'),
   sheetDocTitle: document.getElementById('sheetDocTitle'),
   sheetDocSubject: document.getElementById('sheetDocSubject'),
   sheetDocNumber: document.getElementById('sheetDocNumber'),
@@ -274,6 +277,7 @@ const DOM = {
   historyMatchCount: document.getElementById('historyMatchCount'),
   historyMatchTotalAmount: document.getElementById('historyMatchTotalAmount'),
   btnResetHistoryFilters: document.getElementById('btnResetHistoryFilters'),
+  btnExportEndUsersCsv: document.getElementById('btnExportEndUsersCsv'),
 
   backupModal: document.getElementById('backupModal'),
   btnCloseBackupModal: document.getElementById('btnCloseBackupModal'),
@@ -510,6 +514,7 @@ const DOM = {
   iqeDueDate: document.getElementById('iqeDueDate'),
   iqePaymentStatus: document.getElementById('iqePaymentStatus'),
   iqeClientName: document.getElementById('iqeClientName'),
+  iqeEndUserName: document.getElementById('iqeEndUserName'),
   iqeTitle: document.getElementById('iqeTitle'),
   iqeItemsTableBody: document.getElementById('iqeItemsTableBody'),
   iqeNotes: document.getElementById('iqeNotes'),
@@ -1174,6 +1179,7 @@ function populateFormFromDoc() {
   // 取引先
   if (DOM.inputClientCode) DOM.inputClientCode.value = currentDoc.client?.code || '';
   DOM.inputClientName.value = currentDoc.client?.name || '';
+  if (DOM.inputEndUserName) DOM.inputEndUserName.value = currentDoc.endUserName || currentDoc.client?.endUserName || '';
   DOM.inputClientHonorific.value = currentDoc.client?.honorific || '御中';
   DOM.inputClientZip.value = currentDoc.client?.zip || '';
   DOM.inputClientAddress.value = currentDoc.client?.address || '';
@@ -1229,6 +1235,26 @@ function renderAll() {
   } else if (spacedTitle.length === 4) {
     spacedTitle = spacedTitle[0] + ' ' + spacedTitle[1] + ' ' + spacedTitle[2] + ' ' + spacedTitle[3];
   }
+
+  // エンドユーザー名（販売店経由での購入者・納品先: タイトルの上の行に表示）
+  const rawEndUser = (currentDoc.endUserName || currentDoc.client?.endUserName || '').trim();
+  // 「様」「様分」の重複入力を自動サニタイズ
+  const cleanEndUser = rawEndUser.replace(/(様分|様|様\s*分)\s*$/, '').trim();
+
+  if (DOM.sheetEndUserRow && DOM.sheetEndUserName) {
+    if (cleanEndUser) {
+      DOM.sheetEndUserName.textContent = cleanEndUser;
+      DOM.sheetEndUserRow.style.display = 'block';
+      DOM.sheetEndUserRow.setAttribute('data-end-user', cleanEndUser);
+      if (DOM.invoiceSheet) DOM.invoiceSheet.setAttribute('data-end-user', cleanEndUser);
+    } else {
+      DOM.sheetEndUserName.textContent = '';
+      DOM.sheetEndUserRow.style.display = 'none';
+      DOM.sheetEndUserRow.removeAttribute('data-end-user');
+      if (DOM.invoiceSheet) DOM.invoiceSheet.removeAttribute('data-end-user');
+    }
+  }
+
   DOM.sheetDocTitle.textContent = spacedTitle;
   DOM.sheetDocSubject.textContent = currentDoc.title || '';
 
@@ -2148,6 +2174,13 @@ function setupEventListeners() {
 
   if (DOM.inputClientCode) bindInput(DOM.inputClientCode, val => currentDoc.client.code = val);
   bindInput(DOM.inputClientName, val => currentDoc.client.name = val);
+  if (DOM.inputEndUserName) {
+    bindInput(DOM.inputEndUserName, val => {
+      currentDoc.endUserName = val;
+      if (!currentDoc.client) currentDoc.client = {};
+      currentDoc.client.endUserName = val;
+    });
+  }
   if (DOM.inputClientHonorific) {
     DOM.inputClientHonorific.addEventListener('change', e => {
       currentDoc.client.honorific = e.target.value;
@@ -4055,10 +4088,11 @@ function filterAndRenderHistoryList() {
       }
     }
 
-    // 3. 取引先
+    // 3. 取引先・エンドユーザー名
     if (clientQuery) {
       const cName = (item.clientName || item.client?.name || '').toLowerCase();
-      if (!cName.includes(clientQuery)) {
+      const eName = (item.endUserName || item.client?.endUserName || item.fullDoc?.endUserName || item.fullDoc?.client?.endUserName || '').toLowerCase();
+      if (!cName.includes(clientQuery) && !eName.includes(clientQuery)) {
         return false;
       }
     }
@@ -4148,6 +4182,11 @@ function filterAndRenderHistoryList() {
       `;
     }
 
+    const endUser = (item.endUserName || item.client?.endUserName || item.fullDoc?.endUserName || item.fullDoc?.client?.endUserName || '').trim();
+    const endUserBadge = endUser
+      ? `<span style="background: #e0f2fe; color: #0369a1; font-weight: 700; font-size: 0.725rem; padding: 2px 7px; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px;" title="販売店経由エンドユーザー"><span style="font-size: 7px; color: #0284c7;">●</span> ユーザー: <strong>${escapeHtml(endUser)}</strong> 様分</span>`
+      : '';
+
     card.innerHTML = `
       <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap;">
         
@@ -4158,6 +4197,7 @@ function filterAndRenderHistoryList() {
               ${typeMeta.label}
             </span>
             ${statusBadge}
+            ${endUserBadge}
             <span style="font-weight: 800; font-size: 0.95rem; color: #0f172a;">${escapeHtml(item.clientName || item.client?.name || '名称未設定')}</span>
             <span style="font-size: 0.8rem; color: #64748b; font-family: monospace; background: #f1f5f9; padding: 1px 6px; border-radius: 4px;">${escapeHtml(item.docNumber || '-')}</span>
           </div>
@@ -7810,6 +7850,7 @@ function openInvoiceQuickEdit(docId) {
   if (DOM.iqeDueDate) DOM.iqeDueDate.value = currentIqeDoc.dueDate || '';
   if (DOM.iqePaymentStatus) DOM.iqePaymentStatus.value = (currentIqeDoc.isPaid || currentIqeDoc.paymentStatus === 'paid') ? 'paid' : 'unpaid';
   if (DOM.iqeClientName) DOM.iqeClientName.value = currentIqeDoc.client?.name || summary?.clientName || '';
+  if (DOM.iqeEndUserName) DOM.iqeEndUserName.value = currentIqeDoc.endUserName || currentIqeDoc.client?.endUserName || summary?.endUserName || '';
   if (DOM.iqeTitle) DOM.iqeTitle.value = currentIqeDoc.title || '';
   if (DOM.iqeNotes) DOM.iqeNotes.value = currentIqeDoc.notes || '';
 
@@ -7939,6 +7980,7 @@ function saveInvoiceQuickEditHandler() {
   const paymentStatus = DOM.iqePaymentStatus ? DOM.iqePaymentStatus.value : 'unpaid';
   const isPaid = (paymentStatus === 'paid');
   const clientName = DOM.iqeClientName ? DOM.iqeClientName.value.trim() : (currentIqeDoc.client?.name || '');
+  const endUserName = DOM.iqeEndUserName ? DOM.iqeEndUserName.value.trim() : (currentIqeDoc.endUserName || currentIqeDoc.client?.endUserName || '');
   const title = DOM.iqeTitle ? DOM.iqeTitle.value.trim() : currentIqeDoc.title;
   const notes = DOM.iqeNotes ? DOM.iqeNotes.value : currentIqeDoc.notes;
 
@@ -7955,6 +7997,8 @@ function saveInvoiceQuickEditHandler() {
   }
   if (!currentIqeDoc.client) currentIqeDoc.client = {};
   currentIqeDoc.client.name = clientName;
+  currentIqeDoc.endUserName = endUserName;
+  currentIqeDoc.client.endUserName = endUserName;
   currentIqeDoc.title = title;
   currentIqeDoc.notes = notes;
   currentIqeDoc.items = currentIqeItems;
@@ -13276,6 +13320,88 @@ window.filterAndRenderHistoryList = typeof filterAndRenderHistoryList !== 'undef
 window.switchAccountingTab = typeof switchAccountingTab !== 'undefined' ? switchAccountingTab : null;
 window.switchEditorTab = typeof switchEditorTab !== 'undefined' ? switchEditorTab : null;
 window.switchAppView = typeof switchAppView !== 'undefined' ? switchAppView : null;
+
+// ==========================================================================
+// エンドユーザー名抽出・エクスポート機能（販売店経由伝票のユーザー名抽出）
+// ==========================================================================
+/**
+ * 現在アクティブな伝票からエンドユーザー名を抽出
+ * @returns {string} エンドユーザー名（未入力時は空文字）
+ */
+function extractEndUser() {
+  const name = (currentDoc?.endUserName || currentDoc?.client?.endUserName || '').trim();
+  return name.replace(/(様分|様|様\s*分)\s*$/, '').trim();
+}
+window.extractEndUser = extractEndUser;
+
+/**
+ * 過去履歴データからエンドユーザー名と伝票一覧を抽出
+ * @returns {Array<object>}
+ */
+function getAllEndUsers() {
+  const history = typeof getHistoryList === 'function' ? getHistoryList() : [];
+  const results = [];
+  history.forEach(item => {
+    const full = item.fullDoc || item;
+    const raw = (item.endUserName || full.endUserName || item.client?.endUserName || full.client?.endUserName || '').trim();
+    const clean = raw.replace(/(様分|様|様\s*分)\s*$/, '').trim();
+    if (clean) {
+      results.push({
+        id: item.id,
+        docNumber: item.docNumber || full.docNumber || '',
+        docType: item.docType || full.docType || '',
+        issueDate: item.issueDate || full.issueDate || '',
+        clientName: item.clientName || item.client?.name || full.client?.name || '',
+        endUserName: clean,
+        title: item.title || full.title || '',
+        grandTotal: item.grandTotal || full.grandTotal || 0,
+        isIssued: !!(item.isIssued || full.isIssued)
+      });
+    }
+  });
+  return results;
+}
+window.getAllEndUsers = getAllEndUsers;
+
+/**
+ * 保存された全履歴からエンドユーザー名一覧をCSV出力（抽出）
+ */
+function exportEndUsersCSV() {
+  const users = getAllEndUsers();
+  if (users.length === 0) {
+    alert('保存された書類履歴の中に、ユーザー名（エンドユーザー様）が記入されたデータはありませんでした。');
+    return;
+  }
+
+  const headers = ['書類番号', '書類種別', '発行日', '販売店・取引先名', 'エンドユーザー名', '件名', '合計金額(税込)', '確定発行状況'];
+  const docTypeLabels = { invoice: '請求書', delivery: '納品書', estimate: '見積書', receipt: '領収書' };
+
+  const rows = users.map(u => [
+    `"${(u.docNumber || '').replace(/"/g, '""')}"`,
+    `"${(docTypeLabels[u.docType] || u.docType || '').replace(/"/g, '""')}"`,
+    `"${(u.issueDate || '').replace(/"/g, '""')}"`,
+    `"${(u.clientName || '').replace(/"/g, '""')}"`,
+    `"${(u.endUserName || '').replace(/"/g, '""')}"`,
+    `"${(u.title || '').replace(/"/g, '""')}"`,
+    `${Number(u.grandTotal) || 0}`,
+    `"${u.isIssued ? '確定発行済' : '下書き'}"`
+  ]);
+
+  const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\r\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `ユーザー名一覧抽出_${new Date().toISOString().split('T')[0]}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  if (typeof showToast === 'function') {
+    showToast(`👤 エンドユーザー名一覧（${users.length}件）をCSV抽出しました`, 'success');
+  }
+}
+window.exportEndUsersCSV = exportEndUsersCSV;
 
 async function triggerServerSyncAll() {
   const choice = confirm(

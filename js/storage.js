@@ -934,6 +934,7 @@ export function saveDocToHistory(doc) {
       docType: doc.docType || 'invoice',
       docNumber: doc.docNumber || '',
       title: doc.title || '',
+      endUserName: doc.endUserName || doc.client?.endUserName || '',
       clientName: doc.client?.name || '名称未設定',
       client: doc.client || { name: '名称未設定' },
       issueDate: doc.issueDate || '',

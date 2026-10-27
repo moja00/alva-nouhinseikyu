@@ -118,13 +118,15 @@ export function createEmptyInvoice(docType = 'invoice') {
     issueDate: dates.issue,
     dueDate: dates.due,
     title: '', // 件名は空白
+    endUserName: '', // エンドユーザー名（販売店経由時）
     client: {
       code: '',
       name: '', // 取引先名は空白
       honorific: '御中',
       zip: '',
       address: '',
-      contactPerson: ''
+      contactPerson: '',
+      endUserName: ''
     },
     issuer: {
       name: '株式会社アルバワークス',

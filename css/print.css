@@ -139,6 +139,14 @@
     margin-bottom: 14px !important;
   }
 
+  .invoice-sheet .sheet-enduser-row {
+    font-size: 11pt !important;
+    color: #0f172a !important;
+    margin-bottom: 4px !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
   .invoice-sheet .sheet-parties {
     margin-bottom: 14px !important;
     gap: 16px !important;
