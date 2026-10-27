@@ -1185,6 +1185,10 @@ setInterval(() => {
 // フォームへのデータ設定
 // ==========================================================================
 function populateFormFromDoc() {
+  if (currentDoc && typeof syncEndUsersToDocItems === 'function') {
+    syncEndUsersToDocItems(currentDoc);
+  }
+
   // 書類種別ボタングループの選択状態
   DOM.docTypeBtns.forEach(btn => {
     btn.classList.toggle('active', btn.dataset.type === currentDoc.docType);
@@ -2473,6 +2477,19 @@ function setupEventListeners() {
       currentDoc.endUserName = val;
       if (!currentDoc.client) currentDoc.client = {};
       currentDoc.client.endUserName = val;
+      // ユーザー名が入力された際、明細のユーザー名欄が空欄であれば自動アシスト
+      if (val && Array.isArray(currentDoc.items)) {
+        let changed = false;
+        currentDoc.items.forEach(it => {
+          if (!it.endUserName || !it.endUserName.trim()) {
+            it.endUserName = val;
+            changed = true;
+          }
+        });
+        if (changed) {
+          renderItemInputCards();
+        }
+      }
     });
   }
   if (DOM.inputClientHonorific) {
@@ -2536,6 +2553,7 @@ function setupEventListeners() {
         unit: '式',
         unitPrice: 0,
         taxRate: 10,
+        endUserName: currentDoc.endUserName || currentDoc.client?.endUserName || '',
         note: ''
       });
       renderItemInputCards();
@@ -4472,7 +4490,9 @@ function filterAndRenderHistoryList() {
         // 検索キーワードにマッチするか判定
         const isMatched = productKeywords.some(kw => itText.includes(kw));
         const qtyStr = it.quantity ? ` ×${it.quantity}` : '';
-        return `<span class="history-item-chip ${isMatched ? 'is-match' : ''}">📦 ${escapeHtml(itName)}${qtyStr}</span>`;
+        const itUser = (it.endUserName || '').trim();
+        const userTag = itUser ? `<span style="color: #0369a1; font-weight: 600; font-size: 0.72rem; margin-left: 4px; background: #e0f2fe; padding: 1px 5px; border-radius: 3px;" title="商品エンドユーザー">👤 ${escapeHtml(itUser)}</span>` : '';
+        return `<span class="history-item-chip ${isMatched ? 'is-match' : ''}">📦 ${escapeHtml(itName)}${qtyStr}${userTag}</span>`;
       });
       itemsChipsHtml = `
         <div style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed #f1f5f9;">
@@ -4481,7 +4501,13 @@ function filterAndRenderHistoryList() {
       `;
     }
 
-    const endUser = (item.endUserName || item.client?.endUserName || item.fullDoc?.endUserName || item.fullDoc?.client?.endUserName || '').trim();
+    let endUser = (item.endUserName || item.client?.endUserName || item.fullDoc?.endUserName || item.fullDoc?.client?.endUserName || '').trim();
+    if (!endUser && docItems.length > 0) {
+      const foundItemUser = docItems.find(it => it.endUserName && it.endUserName.trim());
+      if (foundItemUser) {
+        endUser = foundItemUser.endUserName.trim();
+      }
+    }
     const endUserBadge = endUser
       ? `<span style="background: #e0f2fe; color: #0369a1; font-weight: 700; font-size: 0.725rem; padding: 2px 7px; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px;" title="販売店経由エンドユーザー"><span style="font-size: 7px; color: #0284c7;">●</span> ユーザー: <strong>${escapeHtml(endUser)}</strong> 様分</span>`
       : '';

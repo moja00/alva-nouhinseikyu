@@ -4264,7 +4264,12 @@ function saveActiveDoc(doc) {
 function loadActiveDoc() {
   try {
     const raw = localStorage.getItem(KEYS.ACTIVE_DOC);
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    const doc = JSON.parse(raw);
+    if (doc && typeof syncEndUsersToDocItems === 'function') {
+      syncEndUsersToDocItems(doc);
+    }
+    return doc;
   } catch (e) {
     console.error('Failed to load active doc:', e);
     return null;
@@ -4331,12 +4336,213 @@ function loadIssuerProfile() {
 }
 
 /**
+ * ユーザー名の整形（「ストリームズ様分」や「戸倉様」などを「ストリームズ 様」「戸倉 様」に統一）
+ */
+function formatEndUserName(name) {
+  if (!name) return '';
+  let clean = String(name).trim().replace(/様分\s*$/, '様').trim();
+  if (!clean) return '';
+  if (clean === '消防署') return '消防署';
+  if (!clean.endsWith('様')) {
+    clean += ' 様';
+  } else if (!clean.endsWith(' 様')) {
+    clean = clean.replace(/([^ ])様$/, '$1 様');
+  }
+  return clean;
+}
+
+/**
+ * 伝票内の明細において、ユーザー名が特定可能なのに明細のendUserNameが空欄のものを自動追加記載・補完
+ * @param {Object} doc - 伝票または履歴サマリーオブジェクト
+ * @param {Array} [serialList] - オプションのシリアルリスト
+ * @returns {boolean} - 内容が更新されたかどうか
+ */
+function syncEndUsersToDocItems(doc, serialList) {
+  if (!doc || typeof doc !== 'object') return false;
+
+  const serials = Array.isArray(serialList) && serialList.length > 0
+    ? serialList
+    : (typeof getInventorySerialList === 'function' ? getInventorySerialList() : (typeof DEFAULT_INVENTORY_SERIALS !== 'undefined' ? DEFAULT_INVENTORY_SERIALS : []));
+
+  // シリアル番号 -> エンドユーザー名のマップ構築
+  const snUserMap = {};
+  const docNumSnMap = {};
+  if (Array.isArray(serials)) {
+    serials.forEach(s => {
+      if (s && s.serialNumber) {
+        const cleanSn = String(s.serialNumber).trim().toUpperCase();
+        if (s.endUserName && s.endUserName.trim()) {
+          snUserMap[cleanSn] = s.endUserName.trim();
+        }
+        if (s.docNumber) {
+          const cleanDoc = String(s.docNumber).trim().toUpperCase();
+          if (!docNumSnMap[cleanDoc]) docNumSnMap[cleanDoc] = [];
+          docNumSnMap[cleanDoc].push(s);
+        }
+      }
+    });
+  }
+
+  const docNumber = String(doc.docNumber || doc.fullDoc?.docNumber || '').trim().toUpperCase();
+  const docTitle = String(doc.title || doc.fullDoc?.title || '').trim();
+  const docEndUser = formatEndUserName(doc.endUserName || doc.client?.endUserName || doc.fullDoc?.endUserName || doc.fullDoc?.client?.endUserName || '');
+
+  // タイトルからのユーザー名・シリアル抽出
+  const titleUsers = [];
+  // 1. タイトルに含まれるシリアル番号(N10411等)から台帳のユーザー名を取得
+  const snRegex = /N\s*(\d{4,5})/gi;
+  let snM;
+  while ((snM = snRegex.exec(docTitle)) !== null) {
+    const snKey = ('N' + snM[1]).toUpperCase();
+    if (snUserMap[snKey]) {
+      const u = formatEndUserName(snUserMap[snKey]);
+      if (u && !titleUsers.includes(u)) {
+        titleUsers.push(u);
+      }
+    }
+  }
+
+  // 2. シリアルから取れなかった場合のみ、タイトルの「〇〇様」「〇〇様分」から直接抽出
+  if (titleUsers.length === 0) {
+    const cleanedTitle = docTitle.replace(/^(?:同行特価|特別価格|展示会特価|数量限定特別価格|広告宣伝特別価格|デモ機特価|特価|価格訂正|セット値引き)[\s　・]*/, '');
+    const titleRegex = /([^\s　]+?様)(?:分)?/g;
+    let match;
+    while ((match = titleRegex.exec(cleanedTitle)) !== null) {
+      const formatted = formatEndUserName(match[1]);
+      if (formatted && !titleUsers.includes(formatted)) {
+        titleUsers.push(formatted);
+      }
+    }
+  }
+
+  let updated = false;
+
+  // 明細リストの参照（doc.items および doc.fullDoc.items の両方）
+  const targetItemLists = [];
+  if (Array.isArray(doc.items)) targetItemLists.push(doc.items);
+  if (doc.fullDoc && Array.isArray(doc.fullDoc.items) && doc.fullDoc.items !== doc.items) {
+    targetItemLists.push(doc.fullDoc.items);
+  }
+
+  targetItemLists.forEach(items => {
+    items.forEach(item => {
+      if (!item || typeof item !== 'object') return;
+
+      // 1. シリアル番号の正規化と特定
+      let cleanSn = '';
+      if (item.serialNumber && String(item.serialNumber).trim()) {
+        const m = String(item.serialNumber).trim().match(/N\s*(\d{4,5})/i);
+        if (m) cleanSn = ('N' + m[1]).toUpperCase();
+        else cleanSn = String(item.serialNumber).trim().toUpperCase();
+      }
+      if (!cleanSn && (item.note || item.description)) {
+        const text = `${item.note || ''} ${item.description || ''}`;
+        const m = text.match(/N\s*(\d{4,5})/i);
+        if (m) {
+          cleanSn = ('N' + m[1]).toUpperCase();
+          if (!item.serialNumber) {
+            item.serialNumber = cleanSn;
+            updated = true;
+          }
+        }
+      }
+
+      // 2. ユーザー名候補の特定
+      let candidateUser = '';
+
+      // (A) シリアル番号から引当
+      if (cleanSn && snUserMap[cleanSn]) {
+        candidateUser = formatEndUserName(snUserMap[cleanSn]);
+      }
+
+      // (B) 明細noteから直接抽出
+      if (!candidateUser && item.note) {
+        if (String(item.note).includes('消防署')) {
+          candidateUser = '消防署';
+        } else {
+          const noteMatch = String(item.note).match(/([^\s　]+?様)(?:分)?/);
+          if (noteMatch) {
+            candidateUser = formatEndUserName(noteMatch[1]);
+          }
+        }
+      }
+
+      // (C) 伝票タイトルからの抽出
+      if (!candidateUser && titleUsers.length > 0) {
+        candidateUser = titleUsers.join(' / ');
+      }
+
+      // (D) 伝票ヘッダーのエンドユーザー名
+      if (!candidateUser && docEndUser) {
+        candidateUser = docEndUser;
+      }
+
+      // (E) 伝票番号からシリアル台帳を引当
+      if (!candidateUser && docNumber && docNumSnMap[docNumber]) {
+        const matched = docNumSnMap[docNumber].find(s => s.endUserName && s.endUserName.trim());
+        if (matched) {
+          candidateUser = formatEndUserName(matched.endUserName);
+        }
+      }
+
+      // 3. 明細の endUserName が空欄の場合に追加記載
+      const currentItemUser = String(item.endUserName || '').trim();
+      if (!currentItemUser && candidateUser) {
+        item.endUserName = candidateUser;
+        updated = true;
+      } else if (currentItemUser) {
+        const formatted = formatEndUserName(currentItemUser);
+        if (formatted !== currentItemUser) {
+          item.endUserName = formatted;
+          updated = true;
+        }
+      }
+    });
+  });
+
+  // 伝票レベルのエンドユーザー名も空欄で、明細から定まる場合は補完
+  if (!doc.endUserName && !doc.client?.endUserName) {
+    const firstUser = (doc.items && doc.items[0]?.endUserName) || (doc.fullDoc?.items && doc.fullDoc.items[0]?.endUserName);
+    if (firstUser) {
+      doc.endUserName = firstUser;
+      if (doc.fullDoc) doc.fullDoc.endUserName = firstUser;
+      updated = true;
+    }
+  }
+
+  return updated;
+}
+
+/**
  * 書類履歴一覧を取得
  */
 function getHistoryList() {
   try {
     const raw = localStorage.getItem(KEYS.HISTORY);
-    return raw ? JSON.parse(raw) : [];
+    if (!raw) return [];
+    const list = JSON.parse(raw);
+    if (!Array.isArray(list)) return [];
+
+    // 各伝票の明細ユーザー名を自動同期・補完
+    let anyUpdated = false;
+    list.forEach(docItem => {
+      if (syncEndUsersToDocItems(docItem)) {
+        anyUpdated = true;
+      }
+      if (docItem.fullDoc && syncEndUsersToDocItems(docItem.fullDoc)) {
+        anyUpdated = true;
+      }
+    });
+
+    if (anyUpdated) {
+      try {
+        localStorageSetItemAndSync(KEYS.HISTORY, JSON.stringify(list));
+      } catch (e) {
+        console.warn('Failed to update synced endUsers to localStorage:', e);
+      }
+    }
+
+    return list;
   } catch (e) {
     console.error('Failed to get history list:', e);
     return [];
@@ -4348,6 +4554,9 @@ function getHistoryList() {
  */
 function saveDocToHistory(doc) {
   try {
+    if (typeof syncEndUsersToDocItems === 'function') {
+      syncEndUsersToDocItems(doc);
+    }
     const list = getHistoryList();
     const existingIndex = list.findIndex(item => item.id === doc.id);
 
@@ -4471,7 +4680,11 @@ function deleteDocFromHistory(id) {
 function getDocFromHistory(id) {
   const list = getHistoryList();
   const found = list.find(item => item.id === id);
-  return found ? found.fullDoc : null;
+  if (!found || !found.fullDoc) return null;
+  if (typeof syncEndUsersToDocItems === 'function') {
+    syncEndUsersToDocItems(found.fullDoc);
+  }
+  return found.fullDoc;
 }
 
 /**
@@ -9612,6 +9825,10 @@ setInterval(() => {
 // フォームへのデータ設定
 // ==========================================================================
 function populateFormFromDoc() {
+  if (currentDoc && typeof syncEndUsersToDocItems === 'function') {
+    syncEndUsersToDocItems(currentDoc);
+  }
+
   // 書類種別ボタングループの選択状態
   DOM.docTypeBtns.forEach(btn => {
     btn.classList.toggle('active', btn.dataset.type === currentDoc.docType);
@@ -10900,6 +11117,19 @@ function setupEventListeners() {
       currentDoc.endUserName = val;
       if (!currentDoc.client) currentDoc.client = {};
       currentDoc.client.endUserName = val;
+      // ユーザー名が入力された際、明細のユーザー名欄が空欄であれば自動アシスト
+      if (val && Array.isArray(currentDoc.items)) {
+        let changed = false;
+        currentDoc.items.forEach(it => {
+          if (!it.endUserName || !it.endUserName.trim()) {
+            it.endUserName = val;
+            changed = true;
+          }
+        });
+        if (changed) {
+          renderItemInputCards();
+        }
+      }
     });
   }
   if (DOM.inputClientHonorific) {
@@ -10963,6 +11193,7 @@ function setupEventListeners() {
         unit: '式',
         unitPrice: 0,
         taxRate: 10,
+        endUserName: currentDoc.endUserName || currentDoc.client?.endUserName || '',
         note: ''
       });
       renderItemInputCards();
@@ -12899,7 +13130,9 @@ function filterAndRenderHistoryList() {
         // 検索キーワードにマッチするか判定
         const isMatched = productKeywords.some(kw => itText.includes(kw));
         const qtyStr = it.quantity ? ` ×${it.quantity}` : '';
-        return `<span class="history-item-chip ${isMatched ? 'is-match' : ''}">📦 ${escapeHtml(itName)}${qtyStr}</span>`;
+        const itUser = (it.endUserName || '').trim();
+        const userTag = itUser ? `<span style="color: #0369a1; font-weight: 600; font-size: 0.72rem; margin-left: 4px; background: #e0f2fe; padding: 1px 5px; border-radius: 3px;" title="商品エンドユーザー">👤 ${escapeHtml(itUser)}</span>` : '';
+        return `<span class="history-item-chip ${isMatched ? 'is-match' : ''}">📦 ${escapeHtml(itName)}${qtyStr}${userTag}</span>`;
       });
       itemsChipsHtml = `
         <div style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed #f1f5f9;">
@@ -12908,7 +13141,13 @@ function filterAndRenderHistoryList() {
       `;
     }
 
-    const endUser = (item.endUserName || item.client?.endUserName || item.fullDoc?.endUserName || item.fullDoc?.client?.endUserName || '').trim();
+    let endUser = (item.endUserName || item.client?.endUserName || item.fullDoc?.endUserName || item.fullDoc?.client?.endUserName || '').trim();
+    if (!endUser && docItems.length > 0) {
+      const foundItemUser = docItems.find(it => it.endUserName && it.endUserName.trim());
+      if (foundItemUser) {
+        endUser = foundItemUser.endUserName.trim();
+      }
+    }
     const endUserBadge = endUser
       ? `<span style="background: #e0f2fe; color: #0369a1; font-weight: 700; font-size: 0.725rem; padding: 2px 7px; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px;" title="販売店経由エンドユーザー"><span style="font-size: 7px; color: #0284c7;">●</span> ユーザー: <strong>${escapeHtml(endUser)}</strong> 様分</span>`
       : '';
