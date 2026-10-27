@@ -2073,7 +2073,7 @@ function renderItemInputCards() {
           <span style="position: absolute; left: 8px; top: 50%; transform: translateY(-50%); font-size: 13px; opacity: 0.65; pointer-events: none;">📝</span>
         </div>
         <div style="position: relative;">
-          <input type="text" class="form-input item-input-end-user" placeholder="👤 ユーザー名（例: 戸倉、佐藤 ※商品ごとにユーザーが異なる場合に入力）" value="${escapeHtml(item.endUserName || '')}" style="font-size: 0.825rem; background: #f0fdf4; border-color: #bbf7d0; color: #166534; padding-left: 28px;">
+          <input type="text" class="form-input item-input-end-user" placeholder="👤 ユーザー名（納品先・エンドユーザー名 ※商品ごとに異なる場合に入力）" value="${escapeHtml(item.endUserName || '')}" style="font-size: 0.825rem; background: #f0fdf4; border-color: #bbf7d0; color: #166534; padding-left: 28px;">
           <span style="position: absolute; left: 8px; top: 50%; transform: translateY(-50%); font-size: 13px; pointer-events: none;">👤</span>
         </div>
       </div>
@@ -5947,7 +5947,7 @@ function renderSerialsManagementTable() {
         <td style="padding: 6px 12px;">
           <input type="text" class="form-input form-input-xs serial-inline-input"
             data-sn="${escapeHtml(s.serialNumber)}" data-field="endUserName"
-            value="${escapeHtml(s.endUserName || '')}" placeholder="例: 戸倉 様"
+            value="${escapeHtml(s.endUserName || '')}" placeholder="—"
             style="font-size: 0.8rem; width: 100%; border: 1px solid transparent; background: transparent; padding: 4px 6px; border-radius: 4px;"
             onfocus="this.style.borderColor='#3b82f6'; this.style.background='#ffffff';"
             onblur="this.style.borderColor='transparent'; this.style.background='transparent';">
