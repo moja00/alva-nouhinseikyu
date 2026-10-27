@@ -31,6 +31,7 @@ import {
   saveItemMasterList,
   saveItemToMaster,
   deleteItemFromMaster,
+  findItemMasterByName,
   getItemMasterUsageMap,
   getItemDocUsage,
   recordItemMasterUsage,
@@ -2405,6 +2406,29 @@ function renderItemInputCards() {
         renderItemInputCards();
       }
       handleItemChange();
+    });
+
+    inputName.addEventListener('change', () => {
+      const val = inputName.value.trim();
+      if (!val) return;
+      const matched = (typeof findItemMasterByName === 'function') ? findItemMasterByName(val) : null;
+      if (matched) {
+        // 単価が未入力または0の場合、商品マスタの固定価格をデフォルト値として自動投入
+        if (!Number(inputPrice.value)) {
+          inputPrice.value = matched.unitPrice;
+          item.unitPrice = matched.unitPrice;
+          if (matched.unit && (!inputUnit.value || inputUnit.value === '式')) {
+            inputUnit.value = matched.unit;
+            item.unit = matched.unit;
+          }
+          if (matched.userPrice && inputUserPrice && !Number(inputUserPrice.value)) {
+            inputUserPrice.value = matched.userPrice;
+            item.userPrice = matched.userPrice;
+          }
+          handleItemChange();
+          showToast(`商品マスタから「${matched.name}」の標準単価 (¥${matched.unitPrice.toLocaleString()}) を反映しました`, 'info');
+        }
+      }
     });
 
     if (inputDescription) inputDescription.addEventListener('input', handleItemChange);
@@ -4840,7 +4864,7 @@ function handleSaveItemMaster() {
     itemData.id = editId;
   }
 
-  saveItemToMaster(itemData);
+  saveItemToMaster(itemData, true);
   resetItemMasterForm();
   renderItemMasterList(DOM.inputSearchItemMaster.value);
   showToast(`商品「${name}」をマスタに保存しました！`, 'success');
@@ -4921,18 +4945,21 @@ function renderItemMasterList(searchQuery = '') {
       </div>
     `;
 
-    // 伝票へ追加（過去伝票やマスタから完全に独立したコピーオブジェクトとして追加）
+    // 伝票へ追加（商品マスタの固定価格をデフォルト値として明細へ投入）
     card.querySelector('.btn-add-master-to-doc').addEventListener('click', () => {
       // マスタの使用回数を記録
       recordItemMasterUsage(item.id, item.name);
+
+      const defaultPrice = Number(item.unitPrice) || 0;
+      const defaultUserPrice = Number(item.userPrice) > 0 ? Number(item.userPrice) : estUserPriceInc;
 
       const newItem = {
         id: 'item_' + Date.now() + Math.random().toString(36).substr(2, 4),
         name: item.name,
         quantity: 1,
         unit: item.unit || '式',
-        unitPrice: item.unitPrice,
-        userPrice: estUserPriceInc,
+        unitPrice: defaultPrice,
+        userPrice: defaultUserPrice,
         taxRate: item.taxRate !== undefined ? item.taxRate : 10,
         note: item.note || ''
       };

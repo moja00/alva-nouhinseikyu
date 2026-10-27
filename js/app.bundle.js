@@ -3823,19 +3823,6 @@ const SAMPLE_CLIENT_KEYS = new Set([
 
 const DEFAULT_ITEMS_MASTER = [
   {
-    id: "prod_1790320521317_adue",
-    name: "DP-MS　スプレッダー",
-    unitPrice: 59612,
-    userPrice: 80000,
-    unit: "個",
-    taxRate: 10,
-    note: "",
-    usageCount: 2,
-    createdAt: "2026-09-25T07:15:21.317Z",
-    updatedAt: "2026-09-28T04:09:29.451Z",
-    lastUsedAt: "2026-09-28T04:09:29.445Z"
-  },
-  {
     id: "prod_1790319200414_10bm",
     name: "DP-MS　メカニカルスプレッダー",
     unitPrice: 73025,
@@ -4166,6 +4153,15 @@ function deduplicateItemMasterList(list) {
 
     // 修理・オーバーホール項目は商品マスタから完全排除（非表示）
     if (isRepairItem(item)) continue;
+
+    // スプレッダーとメカニカルスプレッダーをメカニカルスプレッダーに統一（単価73,025円固定）
+    if (key === 'dp-ms スプレッダー' || key === 'スプレッダー' || key === 'dp-ms メカニカルスプレッダー' || key === 'メカニカルスプレッダー') {
+      item.name = 'DP-MS　メカニカルスプレッダー';
+      item.unitPrice = 73025;
+      item.userPrice = 98000;
+      item.unit = '個';
+      key = getMasterKey(item.name);
+    }
 
     if (!map.has(key)) {
       map.set(key, { ...item });
@@ -4515,6 +4511,25 @@ function syncEndUsersToDocItems(doc, serialList) {
 }
 
 /**
+ * 過去伝票の明細で「スプレッダー」となっている品名を「DP-MS　メカニカルスプレッダー」に統一
+ * （※ユーザー指示により単価・金額などの価格情報は一切変更せず維持）
+ */
+function unifyMechanicalSpreaderDocItems(doc) {
+  if (!doc) return false;
+  let updated = false;
+  const items = Array.isArray(doc.items) ? doc.items : [];
+  items.forEach(it => {
+    if (!it || !it.name) return;
+    const key = getMasterKey(it.name);
+    if (key === 'dp-ms スプレッダー' || key === 'スプレッダー') {
+      it.name = 'DP-MS　メカニカルスプレッダー';
+      updated = true;
+    }
+  });
+  return updated;
+}
+
+/**
  * 書類履歴一覧を取得
  */
 function getHistoryList() {
@@ -4524,14 +4539,14 @@ function getHistoryList() {
     const list = JSON.parse(raw);
     if (!Array.isArray(list)) return [];
 
-    // 各伝票の明細ユーザー名を自動同期・補完
+    // 各伝票の明細ユーザー名を自動同期・補完 ＆ スプレッダーの品名統一（価格は完全維持）
     let anyUpdated = false;
     list.forEach(docItem => {
-      if (syncEndUsersToDocItems(docItem)) {
-        anyUpdated = true;
-      }
-      if (docItem.fullDoc && syncEndUsersToDocItems(docItem.fullDoc)) {
-        anyUpdated = true;
+      if (syncEndUsersToDocItems(docItem)) anyUpdated = true;
+      if (unifyMechanicalSpreaderDocItems(docItem)) anyUpdated = true;
+      if (docItem.fullDoc) {
+        if (syncEndUsersToDocItems(docItem.fullDoc)) anyUpdated = true;
+        if (unifyMechanicalSpreaderDocItems(docItem.fullDoc)) anyUpdated = true;
       }
     });
 
@@ -4539,7 +4554,7 @@ function getHistoryList() {
       try {
         localStorageSetItemAndSync(KEYS.HISTORY, JSON.stringify(list));
       } catch (e) {
-        console.warn('Failed to update synced endUsers to localStorage:', e);
+        console.warn('Failed to update synced history to localStorage:', e);
       }
     }
 
@@ -5572,7 +5587,7 @@ function recordItemMasterUsage(itemId, itemName) {
 /**
  * 商品マスタに商品を追加（または上書き）
  */
-function saveItemToMaster(item) {
+function saveItemToMaster(item, isExplicitEdit = true) {
   try {
     const list = getItemMasterList(false);
     const cleanName = (item.name || '').trim();
@@ -5585,13 +5600,22 @@ function saveItemToMaster(item) {
 
     let savedItem = null;
     if (existingIndex >= 0) {
+      // 既存商品の更新時：
+      // isExplicitEditがfalse（伝票保存等の自動処理）の場合は商品マスタの固定価格（unitPrice/userPrice）を絶対に変更しない！
+      const currentUnitPrice = Number(list[existingIndex].unitPrice) || 0;
+      const currentUserPrice = Number(list[existingIndex].userPrice) || 0;
+
       list[existingIndex] = {
         ...list[existingIndex],
         ...item,
         name: cleanName,
         sku: item.sku !== undefined ? item.sku : (list[existingIndex].sku || ''),
-        unitPrice: Number(item.unitPrice !== undefined ? item.unitPrice : list[existingIndex].unitPrice) || 0,
-        userPrice: Number(item.userPrice !== undefined ? item.userPrice : list[existingIndex].userPrice) || 0,
+        unitPrice: isExplicitEdit
+          ? (Number(item.unitPrice !== undefined ? item.unitPrice : currentUnitPrice) || 0)
+          : currentUnitPrice,
+        userPrice: isExplicitEdit
+          ? (Number(item.userPrice !== undefined ? item.userPrice : currentUserPrice) || 0)
+          : currentUserPrice,
         unit: item.unit || list[existingIndex].unit || '式',
         taxRate: item.taxRate !== undefined ? Number(item.taxRate) : (list[existingIndex].taxRate ?? 10),
         note: item.note !== undefined ? item.note : (list[existingIndex].note || ''),
@@ -5621,6 +5645,19 @@ function saveItemToMaster(item) {
     console.error('Failed to save item to master:', e);
     return false;
   }
+}
+
+/**
+ * 品名で商品マスタを検索（完全一致または正規化キー一致）
+ * @param {string} name 
+ * @returns {Object|null}
+ */
+function findItemMasterByName(name) {
+  if (!name) return null;
+  const key = getMasterKey(name);
+  if (!key) return null;
+  const list = getItemMasterList(false);
+  return list.find(i => getMasterKey(i.name) === key) || null;
 }
 
 /**
@@ -6182,11 +6219,19 @@ function autoRegisterMastersFromDoc(doc) {
       });
     }
 
-    // 商品明細の自動マスタ登録（サンプル商品は除外）
+    // 商品明細の自動マスタ登録（サンプル商品・修理項目は除外）
+    // 【最重要ルール】伝票保存時に既存商品マスタの価格を絶対に上書きしない！
+    // 納品請求書で価格を変更して発行しても、商品マスタの価格は固定で維持されます。
     if (Array.isArray(doc.items)) {
+      const currentList = getItemMasterList(false);
       doc.items.forEach(it => {
         const name = (it.name || '').trim();
-        if (name && !SAMPLE_ITEM_KEYS.has(getMasterKey(name))) {
+        if (!name || SAMPLE_ITEM_KEYS.has(getMasterKey(name)) || isRepairItem(it)) return;
+
+        const key = getMasterKey(name);
+        const exists = currentList.some(m => getMasterKey(m.name) === key);
+        if (!exists) {
+          // 未登録の完全新規品目のみマスタに追加（isExplicitEdit: false で価格を保護）
           saveItemToMaster({
             name: name,
             unitPrice: Number(it.unitPrice) || 0,
@@ -6194,7 +6239,8 @@ function autoRegisterMastersFromDoc(doc) {
             unit: it.unit || '式',
             taxRate: it.taxRate !== undefined ? Number(it.taxRate) : 10,
             note: it.note || ''
-          });
+          }, false);
+          currentList.push({ name });
         }
       });
     }
@@ -11356,6 +11402,29 @@ function renderItemInputCards() {
       handleItemChange();
     });
 
+    inputName.addEventListener('change', () => {
+      const val = inputName.value.trim();
+      if (!val) return;
+      const matched = (typeof findItemMasterByName === 'function') ? findItemMasterByName(val) : null;
+      if (matched) {
+        // 単価が未入力または0の場合、商品マスタの固定価格をデフォルト値として自動投入
+        if (!Number(inputPrice.value)) {
+          inputPrice.value = matched.unitPrice;
+          item.unitPrice = matched.unitPrice;
+          if (matched.unit && (!inputUnit.value || inputUnit.value === '式')) {
+            inputUnit.value = matched.unit;
+            item.unit = matched.unit;
+          }
+          if (matched.userPrice && inputUserPrice && !Number(inputUserPrice.value)) {
+            inputUserPrice.value = matched.userPrice;
+            item.userPrice = matched.userPrice;
+          }
+          handleItemChange();
+          showToast(`商品マスタから「${matched.name}」の標準単価 (¥${matched.unitPrice.toLocaleString()}) を反映しました`, 'info');
+        }
+      }
+    });
+
     if (inputDescription) inputDescription.addEventListener('input', handleItemChange);
     inputQty.addEventListener('input', () => {
       item.quantity = Number(inputQty.value) || 0;
@@ -13789,7 +13858,7 @@ function handleSaveItemMaster() {
     itemData.id = editId;
   }
 
-  saveItemToMaster(itemData);
+  saveItemToMaster(itemData, true);
   resetItemMasterForm();
   renderItemMasterList(DOM.inputSearchItemMaster.value);
   showToast(`商品「${name}」をマスタに保存しました！`, 'success');
@@ -13870,18 +13939,21 @@ function renderItemMasterList(searchQuery = '') {
       </div>
     `;
 
-    // 伝票へ追加（過去伝票やマスタから完全に独立したコピーオブジェクトとして追加）
+    // 伝票へ追加（商品マスタの固定価格をデフォルト値として明細へ投入）
     card.querySelector('.btn-add-master-to-doc').addEventListener('click', () => {
       // マスタの使用回数を記録
       recordItemMasterUsage(item.id, item.name);
+
+      const defaultPrice = Number(item.unitPrice) || 0;
+      const defaultUserPrice = Number(item.userPrice) > 0 ? Number(item.userPrice) : estUserPriceInc;
 
       const newItem = {
         id: 'item_' + Date.now() + Math.random().toString(36).substr(2, 4),
         name: item.name,
         quantity: 1,
         unit: item.unit || '式',
-        unitPrice: item.unitPrice,
-        userPrice: estUserPriceInc,
+        unitPrice: defaultPrice,
+        userPrice: defaultUserPrice,
         taxRate: item.taxRate !== undefined ? item.taxRate : 10,
         note: item.note || ''
       };
