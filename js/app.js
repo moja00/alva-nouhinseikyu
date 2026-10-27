@@ -32,6 +32,7 @@ import {
   saveItemToMaster,
   deleteItemFromMaster,
   getItemMasterUsageMap,
+  getItemDocUsage,
   recordItemMasterUsage,
   getClientMasterList,
   saveClientMasterList,
@@ -4870,15 +4871,17 @@ function renderItemMasterList(searchQuery = '') {
     const estUserEx = item.unitPrice + profit;
     const estUserPriceInc = item.userPrice || Math.round(estUserEx * (1 + taxRate / 100));
 
-    // 使用回数の集計（マスタ記録値 ＋ 過去の書類履歴での登場回数）
-    const totalUsage = (Number(item.usageCount) || 0) + (usageMap[(item.name || '').trim()] || 0);
+    // 納品請求書に記載された頻度（伝票履歴の実登場件数）
+    const docUsage = (typeof getItemDocUsage === 'function')
+      ? getItemDocUsage(item, usageMap)
+      : (usageMap[(item.name || '').trim()] || 0);
 
     card.innerHTML = `
       <div class="master-item-info">
         <div class="master-item-header">
           <span class="master-item-name">${escapeHtml(item.name)}</span>
           <div style="display: flex; gap: 4px; align-items: center;">
-            <span class="master-usage-badge" title="使用頻度">★ 頻度: ${totalUsage}回</span>
+            <span class="master-usage-badge" title="納品請求書への記載実績: ${docUsage}回">★ 頻度: ${docUsage}回</span>
             <span class="badge" style="background: #f1f5f9; color: #475569; font-size: 0.7rem; padding: 2px 6px; border-radius: 4px;">
               ${escapeHtml(item.unit || '式')} / 税率${taxRate}%
             </span>

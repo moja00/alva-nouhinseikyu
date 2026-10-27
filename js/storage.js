@@ -835,7 +835,8 @@ export function deduplicateItemMasterList(list) {
       const existing = map.get(key);
       const isExistingRescued = !!(existing.rescued || (existing.note && existing.note.includes('自動復元')));
       const isItemRescued = !!(item.rescued || (item.note && item.note.includes('自動復元')));
-      const totalUsage = (Number(existing.usageCount) || 0) + (Number(item.usageCount) || 0);
+      // 重複統合時に加算すると実行毎に肥大化するため、最大値を維持
+      const mergedUsage = Math.max(Number(existing.usageCount) || 0, Number(item.usageCount) || 0);
 
       let merged;
       if (isExistingRescued && !isItemRescued) {
@@ -849,7 +850,7 @@ export function deduplicateItemMasterList(list) {
         const timeB = new Date(item.updatedAt || item.createdAt || 0).getTime();
         merged = timeB > timeA ? { ...existing, ...item } : { ...item, ...existing };
       }
-      merged.usageCount = totalUsage;
+      merged.usageCount = mergedUsage;
       map.set(key, merged);
     }
   }
@@ -1350,24 +1351,69 @@ export function getDocFromHistory(id) {
 }
 
 /**
- * 書類履歴から商品マスタの使用回数マップを算出
- * @returns {Record<string, number>}
+ * 過去の納品請求書履歴から各商品マスタの記載頻度（登場伝票件数）を集計
+ * 全角・半角スペースや大文字小文字の揺れを正規化し、1伝票1回として集計
+ * @returns {Record<string, number>} 商品名および正規化キーに対する伝票記載件数マップ
  */
 export function getItemMasterUsageMap() {
   const usageMap = {};
-  const docHistory = getHistoryList();
-  docHistory.forEach(docSummary => {
-    const doc = docSummary.fullDoc;
-    if (doc && Array.isArray(doc.items)) {
-      doc.items.forEach(it => {
-        const name = (it.name || '').trim();
-        if (name) {
-          usageMap[name] = (usageMap[name] || 0) + 1;
+  try {
+    const docHistory = getHistoryList();
+    if (Array.isArray(docHistory)) {
+      docHistory.forEach(docSummary => {
+        // サンプル伝票やキャンセル済み伝票は集計から除外
+        if (docSummary && docSummary.id && String(docSummary.id).startsWith('sample_')) return;
+        if (docSummary && docSummary.isCancelled) return;
+
+        const doc = (docSummary && docSummary.fullDoc) || docSummary;
+        if (!doc || doc.isCancelled) return;
+
+        const items = Array.isArray(doc.items) ? doc.items : (Array.isArray(docSummary.items) ? docSummary.items : []);
+        if (Array.isArray(items)) {
+          // 1枚の伝票内での同一商品の重複行を1回としてカウント
+          const seenInDoc = new Set();
+          items.forEach(it => {
+            if (!it) return;
+            const rawName = (it.name || '').trim();
+            if (!rawName) return;
+
+            const key = getMasterKey(rawName);
+            if (!key || seenInDoc.has(key)) return;
+            seenInDoc.add(key);
+
+            // 正規化キー（全角半角スペースや大文字小文字を吸収）でカウント加算
+            usageMap[key] = (usageMap[key] || 0) + 1;
+
+            // 生の商品名（トリム後）でも引けるように保存
+            usageMap[rawName] = (usageMap[rawName] || 0) + 1;
+          });
         }
       });
     }
-  });
+  } catch (e) {
+    console.error('Failed to get item master usage map:', e);
+  }
   return usageMap;
+}
+
+/**
+ * 商品マスタアイテムに対する納品請求書への記載頻度（登場件数）を正確に取得
+ * @param {Object} item 商品マスタアイテム
+ * @param {Record<string, number>} [usageMap] 事前集計マップ（省略時は自動取得）
+ * @returns {number} 納品請求書に記載された回数
+ */
+export function getItemDocUsage(item, usageMap) {
+  if (!item) return 0;
+  const map = usageMap || getItemMasterUsageMap();
+  const name = (item.name || '').trim();
+  const key = getMasterKey(name);
+  if (key && typeof map[key] === 'number') {
+    return map[key];
+  }
+  if (name && typeof map[name] === 'number') {
+    return map[name];
+  }
+  return 0;
 }
 
 // ==========================================================================
@@ -2149,9 +2195,14 @@ export function getItemMasterList(sortByFrequency = true) {
 
     if (sortByFrequency) {
       const historyUsage = getItemMasterUsageMap();
+      // マスタ内アイテムの usageCount も納品請求書の実記載頻度で同期・更新
+      list.forEach(item => {
+        item.docUsageCount = getItemDocUsage(item, historyUsage);
+        item.usageCount = item.docUsageCount; // 肥大化した内部カウンタを伝票記載実数に正規化
+      });
       list.sort((a, b) => {
-        const countA = (Number(a.usageCount) || 0) + (historyUsage[(a.name || '').trim()] || 0);
-        const countB = (Number(b.usageCount) || 0) + (historyUsage[(b.name || '').trim()] || 0);
+        const countA = Number(a.docUsageCount) || 0;
+        const countB = Number(b.docUsageCount) || 0;
         if (countB !== countA) return countB - countA;
         return (b.updatedAt || b.createdAt || '').localeCompare(a.updatedAt || a.createdAt || '');
       });
