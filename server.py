@@ -582,19 +582,6 @@ DEFAULT_ISSUER = {
 
 DEFAULT_ITEMS = [
     {
-        "id": "prod_1790320521317_adue",
-        "name": "DP-MS　スプレッダー",
-        "unitPrice": 59612,
-        "userPrice": 80000,
-        "unit": "個",
-        "taxRate": 10,
-        "note": "",
-        "usageCount": 2,
-        "createdAt": "2026-09-25T07:15:21.317Z",
-        "updatedAt": "2026-09-28T04:09:29.451Z",
-        "lastUsedAt": "2026-09-28T04:09:29.445Z"
-    },
-    {
         "id": "prod_1790319200414_10bm",
         "name": "DP-MS　メカニカルスプレッダー",
         "unitPrice": 73025,
@@ -746,14 +733,14 @@ DEFAULT_INVENTORY = [
     },
     {
         "id": "inv_2",
-        "itemId": "prod_1790320521317_adue",
-        "name": "DP-MS　スプレッダー",
+        "itemId": "prod_1790319200414_10bm",
+        "name": "DP-MS　メカニカルスプレッダー",
         "sku": "DP-MS-01",
         "currentStock": 3,
         "safetyStock": 1,
         "unit": "個",
         "unitCost": 40000,
-        "unitPrice": 59612,
+        "unitPrice": 73025,
         "location": "パーツ保管棚 B-2",
         "lastInDate": "2026-09-25",
         "note": "",
@@ -764,6 +751,7 @@ DEFAULT_INVENTORY = [
 ]
 
 DEFAULT_PURCHASE_MAPPINGS = {
+    "メカニカルスプレッダー": "inv_2",
     "スプレッダー": "inv_2",
     "ベーシックセット": "inv_1"
 }
