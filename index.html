@@ -328,7 +328,7 @@
         </button>
         <div style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
-          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.27-item-enduser-sync</span>
+          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.27-dp5000-set-assembly</span>
         </div>
       </div>
 
@@ -2231,6 +2231,95 @@
         <button type="button" class="btn btn-secondary btn-sm" id="btnCancelSerialAssignModal">キャンセル</button>
         <button type="button" class="btn btn-primary btn-sm" id="btnSaveSerialAssignModal" style="font-weight: 700; padding: 6px 18px;">
           引当を適用する
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 📦 DP-5000 セット品化（キッティング・組立）モーダル -->
+  <div class="modal-overlay" id="modalBundleAssembly" style="z-index: 1060; display: none;">
+    <div class="modal-card" style="max-width: 640px; width: 95vw; max-height: 90vh; display: flex; flex-direction: column;">
+      <div class="modal-header" style="padding: 14px 20px; background: linear-gradient(135deg, #1e1b4b, #312e81); color: #ffffff;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <div style="width: 36px; height: 36px; border-radius: 8px; background: rgba(255,255,255,0.15); display: flex; align-items: center; justify-content: center; font-size: 1.3rem;">
+            📦
+          </div>
+          <div>
+            <h3 class="modal-title" style="margin: 0; font-size: 1.1rem; color: #ffffff;">DP-5000 セット品化（組立・キッティング）</h3>
+            <span style="font-size: 0.75rem; color: #c7d2fe;">本体1台 ＋ リチウムイオンバッテリー2個 ＋ 専用急速充電器1個</span>
+          </div>
+        </div>
+        <button type="button" class="btn-icon-danger" id="btnCloseBundleAssemblyModal" style="color: #ffffff; font-size: 1.2rem;">✕</button>
+      </div>
+
+      <div class="modal-body" style="padding: 18px 20px; overflow-y: auto; flex: 1;">
+        <!-- ステップ1: DP-5000 本体の選択 -->
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; margin-bottom: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <label class="form-label" style="font-size: 0.85rem; font-weight: 700; color: #1e293b; margin: 0;">
+              1️⃣ DP-5000 本体シリアルの選択 <span style="color: var(--danger);">*</span>
+            </label>
+            <span style="font-size: 0.725rem; color: #64748b;" id="bundleBodyStockCountText">在庫中: 0台</span>
+          </div>
+          <select id="bundleSelectBodySerial" class="form-select" style="font-size: 0.95rem; font-weight: 700; font-family: monospace;">
+            <!-- JSで在庫中の本体シリアルを生成 -->
+          </select>
+        </div>
+
+        <!-- ステップ2: リチウムイオンバッテリーの選択 (2個) -->
+        <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 14px; margin-bottom: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <label class="form-label" style="font-size: 0.85rem; font-weight: 700; color: #065f46; margin: 0;">
+              2️⃣ リチウムイオンバッテリーの選択（シリアルから2個選択） <span style="color: var(--danger);">*</span>
+            </label>
+            <span style="font-size: 0.8rem; font-weight: 700; color: #047857;" id="bundleBatCountBadge">
+              選択中: <strong id="bundleSelectedBatCount" style="font-size: 1rem; color: #059669;">0</strong> / 2 個
+            </span>
+          </div>
+          <div style="font-size: 0.75rem; color: #15803d; margin-bottom: 10px;">
+            ※選択された2個のバッテリーはセット品へ組込出庫され、バッテリー現在庫から自動で -2 個落ちます。
+          </div>
+          <div id="bundleBatteryListContainer" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; max-height: 180px; overflow-y: auto; padding: 4px;">
+            <!-- JSでチェックボックス/カード生成 -->
+          </div>
+        </div>
+
+        <!-- ステップ3: 急速充電器（1個自動引当） -->
+        <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 12px 14px; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 1.3rem;">⚡</span>
+            <div>
+              <div style="font-size: 0.85rem; font-weight: 700; color: #1e40af;">PSE認証 専用急速充電器: 1個（自動出庫）</div>
+              <div style="font-size: 0.725rem; color: #3b82f6;">セット品化に伴い充電器の現在庫から自動で -1 個落ちます</div>
+            </div>
+          </div>
+          <div style="text-align: right;">
+            <span style="font-size: 0.75rem; color: #64748b; display: block;">充電器現在庫</span>
+            <span style="font-size: 1.05rem; font-weight: 700; color: #1d4ed8;" id="bundleChargerStockDisp">5 個</span>
+          </div>
+        </div>
+
+        <!-- セット品化サマリー & 原価計算 -->
+        <div style="background: #f8fafc; border: 2px dashed #cbd5e1; border-radius: 8px; padding: 12px 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span style="font-size: 0.825rem; font-weight: 700; color: #334155;">完成品名:</span>
+            <span style="font-size: 0.9rem; font-weight: 800; color: #1e1b4b;">DP-5000 ベーシックセット バッテリー２個</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; color: #64748b; margin-bottom: 4px;">
+            <span>構成内容:</span>
+            <span id="bundleSummaryComponentsText">本体 1台 + バッテリー 2個 + 充電器 1個</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; font-weight: 700; color: #0f172a; padding-top: 6px; border-top: 1px solid #e2e8f0;">
+            <span>合計仕入原価 (BOM標準):</span>
+            <span style="font-size: 1.05rem; color: #059669;" id="bundleTotalCostDisp">¥172,000</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="padding: 14px 20px; display: flex; justify-content: space-between; align-items: center; background: #f8fafc; border-top: 1px solid #e2e8f0;">
+        <button type="button" class="btn btn-secondary btn-sm" id="btnCancelBundleAssembly">キャンセル</button>
+        <button type="button" class="btn btn-primary" id="btnExecuteBundleAssembly" style="background: linear-gradient(135deg, #4f46e5, #4338ca); font-weight: 700; padding: 8px 20px; display: inline-flex; align-items: center; gap: 6px;" disabled>
+          <span>📦 セット品化を実行する（在庫自動出庫）</span>
         </button>
       </div>
     </div>

@@ -8608,8 +8608,25 @@ function updateSerialStatus(serialNumber, newStatus, details = {}) {
       if (details.invoiceNumber !== undefined) target.docNumber = details.invoiceNumber;
       if (details.docId !== undefined) target.docId = details.docId;
       if (details.invoiceId !== undefined) target.docId = details.invoiceId;
-      if (details.bundleItemId !== undefined) target.bundleItemId = details.bundleItemId;
       if (details.note !== undefined) target.note = details.note;
+
+      // セット品化された本体が出荷された場合、組込バッテリーも連動して出荷済みに更新
+      if (newStatus === 'shipped' && target.isBundled && Array.isArray(target.batterySerials)) {
+        target.batterySerials.forEach(batSn => {
+          const bat = list.find(s => s && String(s.serialNumber).trim().toUpperCase() === String(batSn).trim().toUpperCase());
+          if (bat) {
+            bat.status = 'shipped';
+            bat.clientName = target.clientName || '';
+            bat.endUserName = target.endUserName || '';
+            bat.shipDate = target.shipDate || '';
+            bat.docNumber = target.docNumber || '';
+            bat.docId = target.docId || '';
+            const baseNote = (bat.note || '').replace(/\s*\[DP-5000\([^)]+\)と共に出荷\]/g, '').trim();
+            bat.note = (baseNote ? baseNote + ' ' : '') + `[DP-5000(${target.serialNumber})と共に出荷]`;
+            bat.updatedAt = new Date().toISOString();
+          }
+        });
+      }
     }
 
     localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(list));
@@ -8693,6 +8710,231 @@ function getAvailableSerialsByItem(inventoryIdOrName) {
     (s.inventoryId === inventoryIdOrName || s.itemName === inventoryIdOrName) && 
     s.status === 'in_stock'
   );
+}
+
+/**
+ * DP-5000セット品化に必要な各コンポーネント（本体、バッテリー、充電器）の利用可能状況を取得
+ */
+function getAvailableBundleComponents() {
+  const serials = getInventorySerialList();
+  const invList = getInventoryList();
+
+  // 1. 在庫中かつ未セット化のDP-5000本体
+  const availableBodies = serials.filter(s => {
+    if (!s || s.status !== 'in_stock') return false;
+    if (s.isBundled) return false;
+    const itemName = String(s.itemName || '').toUpperCase();
+    return s.inventoryId === 'inv_dp5000_body' || (itemName.includes('DP-5000') && !itemName.includes('MS'));
+  });
+
+  // 2. 在庫中かつ未セット化のリチウムイオンバッテリー
+  const availableBatteries = serials.filter(s => {
+    if (!s || s.status !== 'in_stock') return false;
+    if (s.status === 'bundled' || s.bundledWith) return false;
+    const itemName = String(s.itemName || '').toUpperCase();
+    return s.inventoryId === 'inv_dp5000_bat' || s.itemType === 'battery' || itemName.includes('バッテリー');
+  });
+
+  // 3. 専用急速充電器の在庫数
+  const chgItem = invList.find(it => it.id === 'inv_dp5000_chg' || (it.name && it.name.includes('急速充電器')));
+  const chargerStock = chgItem ? Number(chgItem.currentStock || 0) : 0;
+
+  return {
+    bodies: availableBodies,
+    batteries: availableBatteries,
+    chargerStock,
+    chargerItem: chgItem || null,
+    possibleSetCount: Math.min(availableBodies.length, Math.floor(availableBatteries.length / 2), chargerStock)
+  };
+}
+
+/**
+ * DP-5000本体とバッテリー2個・急速充電器1個をセット品化（キッティング）
+ * @param {string} bodySerialNumber - DP-5000本体のシリアル番号（例: "N8460"）
+ * @param {string[]} batterySerialNumbers - 選択されたリチウムイオンバッテリーのシリアル番号（2個）
+ * @param {Object} [options] - オプション
+ * @returns {{ success: boolean, message?: string }}
+ */
+function assembleDP5000Bundle(bodySerialNumber, batterySerialNumbers, options = {}) {
+  try {
+    if (!bodySerialNumber) {
+      return { success: false, message: 'DP-5000本体のシリアル番号が指定されていません。' };
+    }
+    if (!Array.isArray(batterySerialNumbers) || batterySerialNumbers.length !== 2) {
+      return { success: false, message: 'リチウムイオンバッテリーは正確に2個選択してください。' };
+    }
+    if (String(batterySerialNumbers[0]).trim().toUpperCase() === String(batterySerialNumbers[1]).trim().toUpperCase()) {
+      return { success: false, message: '異なる2個のバッテリーシリアルを選択してください。' };
+    }
+
+    const cleanBodySn = String(bodySerialNumber).trim().toUpperCase();
+    const cleanBatSns = batterySerialNumbers.map(s => String(s).trim().toUpperCase());
+
+    // 1. シリアルリストの取得と検証
+    const serialList = getInventorySerialList();
+    const bodySerial = serialList.find(s => s && String(s.serialNumber).trim().toUpperCase() === cleanBodySn);
+    if (!bodySerial) {
+      return { success: false, message: `指定されたDP-5000本体(S/N: ${cleanBodySn})が見つかりません。` };
+    }
+    if (bodySerial.status !== 'in_stock') {
+      return { success: false, message: `DP-5000本体(S/N: ${cleanBodySn})は在庫中ではありません。(状態: ${bodySerial.status})` };
+    }
+    if (bodySerial.isBundled) {
+      return { success: false, message: `DP-5000本体(S/N: ${cleanBodySn})は既にセット品化されています。` };
+    }
+
+    // バッテリーの検証
+    for (const batSn of cleanBatSns) {
+      const bat = serialList.find(s => s && String(s.serialNumber).trim().toUpperCase() === batSn);
+      if (!bat) {
+        return { success: false, message: `バッテリー(S/N: ${batSn})が見つかりません。` };
+      }
+      if (bat.status !== 'in_stock') {
+        return { success: false, message: `バッテリー(S/N: ${batSn})は在庫中ではありません。(状態: ${bat.status})` };
+      }
+    }
+
+    // 2. 在庫マスタから急速充電器の在庫数を確認・減算
+    const invList = getInventoryList();
+    const chgItem = invList.find(it => it.id === 'inv_dp5000_chg' || (it.name && it.name.includes('急速充電器')));
+    if (!chgItem) {
+      return { success: false, message: '在庫マスタに専用急速充電器が見つかりません。' };
+    }
+    if (Number(chgItem.currentStock || 0) < 1) {
+      return { success: false, message: '専用急速充電器の在庫が不足しています。(現在庫: 0個)' };
+    }
+
+    // 急速充電器を 1 個減算（自動出庫！）
+    chgItem.currentStock = Number(chgItem.currentStock) - 1;
+    if (!Array.isArray(chgItem.history)) chgItem.history = [];
+    chgItem.history.unshift({
+      id: 'log_bundle_' + Date.now(),
+      date: new Date().toISOString().split('T')[0],
+      type: 'out',
+      qty: 1,
+      reason: `DP-5000(S/N: ${cleanBodySn})セット品化に伴う自動出庫`,
+      currentStock: chgItem.currentStock,
+      timestamp: new Date().toISOString()
+    });
+
+    // 3. バッテリー2個のステータスを bundled に更新（在庫から自動で落ちる！）
+    cleanBatSns.forEach(batSn => {
+      const bat = serialList.find(s => s && String(s.serialNumber).trim().toUpperCase() === batSn);
+      if (bat) {
+        bat.status = 'bundled';
+        bat.bundledWith = cleanBodySn;
+        bat.bundledAt = new Date().toISOString();
+        const baseNote = (bat.note || '').replace(/\s*\[DP-5000\([^)]+\)セット組込\]/g, '').trim();
+        bat.note = (baseNote ? baseNote + ' ' : '') + `[DP-5000(${cleanBodySn})セット組込]`;
+        bat.updatedAt = new Date().toISOString();
+      }
+    });
+
+    // 4. DP-5000本体をセット品化済みに更新
+    bodySerial.isBundled = true;
+    bodySerial.bundleName = 'DP-5000 ベーシックセット バッテリー２個';
+    bodySerial.batterySerials = cleanBatSns;
+    bodySerial.chargerDeducted = true;
+    bodySerial.bundledAt = new Date().toISOString();
+    const bodyBaseNote = (bodySerial.note || '').replace(/\s*\[セット品化済:[^\]]+\]/g, '').trim();
+    bodySerial.note = (bodyBaseNote ? bodyBaseNote + ' ' : '') + `[セット品化済: バッテリー ${cleanBatSns.join(', ')} / 急速充電器1個付属]`;
+    bodySerial.updatedAt = new Date().toISOString();
+
+    // 5. 保存と全体同期
+    localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(invList));
+    saveServerInventory(invList).catch(() => {});
+
+    localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(serialList));
+    saveServerInventorySerials(serialList).catch(() => {});
+
+    // 在庫マスタとシリアルの数値を完全同期
+    syncInventoryStockFromSerials();
+
+    console.log(`【セット品化完了】本体: ${cleanBodySn}, バッテリー: ${cleanBatSns.join(', ')}, 充電器 -1`);
+    return {
+      success: true,
+      bodySerialNumber: cleanBodySn,
+      batterySerialNumbers: cleanBatSns,
+      message: `DP-5000本体(S/N: ${cleanBodySn})をセット品化しました！バッテリー(${cleanBatSns.join(', ')}) 2個と急速充電器 1個を自動出庫しました。`
+    };
+  } catch (e) {
+    console.error('Failed to assemble DP-5000 bundle:', e);
+    return { success: false, message: e.message || 'セット品化処理中にエラーが発生しました。' };
+  }
+}
+
+/**
+ * DP-5000本体のセット品化を解除（バラし・在庫戻し）
+ * @param {string} bodySerialNumber - DP-5000本体のシリアル番号
+ * @returns {{ success: boolean, message?: string }}
+ */
+function disassembleDP5000Bundle(bodySerialNumber) {
+  try {
+    if (!bodySerialNumber) return { success: false, message: 'シリアル番号が指定されていません。' };
+    const cleanBodySn = String(bodySerialNumber).trim().toUpperCase();
+    const serialList = getInventorySerialList();
+    const bodySerial = serialList.find(s => s && String(s.serialNumber).trim().toUpperCase() === cleanBodySn);
+    if (!bodySerial || !bodySerial.isBundled) {
+      return { success: false, message: `指定された本体(S/N: ${cleanBodySn})はセット品化されていません。` };
+    }
+
+    const batSns = Array.isArray(bodySerial.batterySerials) ? bodySerial.batterySerials : [];
+
+    // 1. バッテリーを在庫中(in_stock)に戻す
+    batSns.forEach(batSn => {
+      const bat = serialList.find(s => s && String(s.serialNumber).trim().toUpperCase() === String(batSn).trim().toUpperCase());
+      if (bat) {
+        bat.status = 'in_stock';
+        bat.bundledWith = '';
+        bat.bundledAt = null;
+        bat.note = (bat.note || '').replace(/\s*\[DP-5000\([^)]+\)セット組込\]/g, '').trim();
+        bat.updatedAt = new Date().toISOString();
+      }
+    });
+
+    // 2. 急速充電器の在庫を +1 戻す
+    const invList = getInventoryList();
+    const chgItem = invList.find(it => it.id === 'inv_dp5000_chg' || (it.name && it.name.includes('急速充電器')));
+    if (chgItem && bodySerial.chargerDeducted) {
+      chgItem.currentStock = Number(chgItem.currentStock || 0) + 1;
+      if (!Array.isArray(chgItem.history)) chgItem.history = [];
+      chgItem.history.unshift({
+        id: 'log_unbundle_' + Date.now(),
+        date: new Date().toISOString().split('T')[0],
+        type: 'in',
+        qty: 1,
+        reason: `DP-5000(S/N: ${cleanBodySn})セット品化解除に伴う在庫戻し`,
+        currentStock: chgItem.currentStock,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // 3. 本体のセット品化フラグを解除
+    bodySerial.isBundled = false;
+    bodySerial.bundleName = '';
+    bodySerial.batterySerials = [];
+    bodySerial.chargerDeducted = false;
+    bodySerial.bundledAt = null;
+    bodySerial.note = (bodySerial.note || '').replace(/\s*\[セット品化済:[^\]]+\]/g, '').trim();
+    bodySerial.updatedAt = new Date().toISOString();
+
+    // 4. 保存と同期
+    localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(invList));
+    saveServerInventory(invList).catch(() => {});
+
+    localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(serialList));
+    saveServerInventorySerials(serialList).catch(() => {});
+
+    syncInventoryStockFromSerials();
+
+    return {
+      success: true,
+      message: `DP-5000(S/N: ${cleanBodySn})のセット品化を解除しました。バッテリー2個と急速充電器1個を通常在庫に戻しました。`
+    };
+  } catch (e) {
+    console.error('Failed to disassemble DP-5000 bundle:', e);
+    return { success: false, message: e.message || 'セット品化解除中にエラーが発生しました。' };
+  }
 }
 async function saveServerInventorySerials(serials) {
   try {
@@ -9104,6 +9346,19 @@ const DOM = {
   adjustSimulatedStockVal: document.getElementById('adjustSimulatedStockVal'),
   btnCancelAdjust: document.getElementById('btnCancelAdjust'),
   btnConfirmAdjust: document.getElementById('btnConfirmAdjust'),
+
+  // 📦 DP-5000 セット品化（キッティング・組立）モーダル
+  modalBundleAssembly: document.getElementById('modalBundleAssembly'),
+  btnCloseBundleAssemblyModal: document.getElementById('btnCloseBundleAssemblyModal'),
+  btnCancelBundleAssembly: document.getElementById('btnCancelBundleAssembly'),
+  btnExecuteBundleAssembly: document.getElementById('btnExecuteBundleAssembly'),
+  bundleSelectBodySerial: document.getElementById('bundleSelectBodySerial'),
+  bundleBatteryListContainer: document.getElementById('bundleBatteryListContainer'),
+  bundleSelectedBatCount: document.getElementById('bundleSelectedBatCount'),
+  bundleBodyStockCountText: document.getElementById('bundleBodyStockCountText'),
+  bundleChargerStockDisp: document.getElementById('bundleChargerStockDisp'),
+  bundleTotalCostDisp: document.getElementById('bundleTotalCostDisp'),
+  bundleSummaryComponentsText: document.getElementById('bundleSummaryComponentsText'),
 
   // 在庫履歴モーダル
   inventoryHistoryModal: document.getElementById('inventoryHistoryModal'),
@@ -12217,6 +12472,17 @@ function setupEventListeners() {
     DOM.btnCloseInventoryHistoryModal2.addEventListener('click', closeInventoryHistoryModal);
   }
 
+  // 📦 DP-5000 セット品化モーダル制御
+  if (DOM.btnCloseBundleAssemblyModal) {
+    DOM.btnCloseBundleAssemblyModal.addEventListener('click', closeBundleAssemblyModal);
+  }
+  if (DOM.btnCancelBundleAssembly) {
+    DOM.btnCancelBundleAssembly.addEventListener('click', closeBundleAssemblyModal);
+  }
+  if (DOM.btnExecuteBundleAssembly) {
+    DOM.btnExecuteBundleAssembly.addEventListener('click', handleBundleAssemblyExecute);
+  }
+
   // 経費・仕入切り替えトグル＆在庫連動の初期化
   initExpensePurchaseToggle();
 
@@ -14198,6 +14464,11 @@ function renderInventoryTable() {
         <td style="font-size: 0.75rem; color: #64748b;">${escapeHtml(item.lastInDate || '-')}</td>
         <td style="text-align: center;">
           <div class="inv-action-btn-group" style="justify-content: center;">
+            ${(item.id === 'inv_dp5000_body' || item.id === 'inv_1' || (item.name && item.name.includes('ベーシックセット'))) ? `
+              <button type="button" class="btn-inv-action" style="background:#e0e7ff; border-color:#c7d2fe; color:#3730a3; font-weight:700;" onclick="window.openBundleAssemblyModal('${item.id}')" title="DP-5000本体とバッテリー2個・急速充電器1個をセット品化（組立・キッティング）">
+                📦セット品化
+              </button>
+            ` : ''}
             ${hasSerial ? `
               <button type="button" class="btn-inv-action" style="background:#ecfdf5; border-color:#a7f3d0; color:#047857; font-weight:700;" onclick="window.openInventoryLotModal('${item.id}')" title="輸入・国内仕入ロット入庫・シリアル登録">
                 📥ロット入庫
@@ -14551,10 +14822,16 @@ function renderSerialsManagementTable() {
     let itemBadge = '';
     if (isDp5k) {
       itemBadge = `<span class="badge" style="background: #eff6ff; color: #1d4ed8; font-weight: 700; padding: 3px 8px; border-radius: 4px; border: 1px solid #bfdbfe;">DP-5000 <small style="font-weight: normal; color: #3b82f6;">(本体/セット)</small></span>`;
+      if (s.isBundled) {
+        itemBadge += `<div style="margin-top: 4px;"><span class="badge" style="background:#e0e7ff; color:#3730a3; font-size:0.7rem; font-weight:700; padding:2px 6px; border-radius:4px; border: 1px solid #c7d2fe;">📦 セット品化済 (🔋 ${(s.batterySerials || []).join(', ')})</span></div>`;
+      }
     } else if (isMs) {
       itemBadge = `<span class="badge" style="background: #fefce8; color: #a16207; font-weight: 700; padding: 3px 8px; border-radius: 4px; border: 1px solid #fef08a;">DP-MS <small style="font-weight: normal; color: #ca8a04;">(スプレッダー)</small></span>`;
     } else {
       itemBadge = `<span class="badge" style="background: #f1f5f9; color: #475569; font-weight: 700; padding: 3px 8px; border-radius: 4px; border: 1px solid #e2e8f0;">PSE認証バッテリー <small style="color: #64748b; font-weight: normal;">(社内把握用)</small></span>`;
+      if (s.status === 'bundled' || s.bundledWith) {
+        itemBadge += `<div style="margin-top: 4px;"><span class="badge" style="background:#fef3c7; color:#92400e; font-size:0.7rem; font-weight:700; padding:2px 6px; border-radius:4px; border: 1px solid #fde68a;">📦 セット組込中 (${escapeHtml(s.bundledWith || '')})</span></div>`;
+      }
     }
 
     const docNum = s.docNumber || s.invoiceNumber || '';
@@ -14589,11 +14866,13 @@ function renderSerialsManagementTable() {
             style="font-size: 0.775rem; font-weight: 700; padding: 2px 6px; width: 110px; border-radius: 6px; ${
               s.status === 'in_stock' ? 'background: #f0fdf4; color: #166534; border-color: #86efac;' :
               s.status === 'shipped' ? 'background: #eff6ff; color: #1e40af; border-color: #93c5fd;' :
+              s.status === 'bundled' ? 'background: #fefce8; color: #a16207; border-color: #fde047;' :
               s.status === 'maintenance' ? 'background: #fefce8; color: #854d0e; border-color: #fde047;' :
               'background: #fef2f2; color: #991b1b; border-color: #fca5a5;'
             }">
             <option value="in_stock" ${s.status === 'in_stock' ? 'selected' : ''}>🟢 在庫中</option>
             <option value="shipped" ${s.status === 'shipped' ? 'selected' : ''}>🔵 出荷済</option>
+            <option value="bundled" ${s.status === 'bundled' ? 'selected' : ''}>📦 セット組込中</option>
             <option value="maintenance" ${s.status === 'maintenance' ? 'selected' : ''}>🟡 保守/貸出</option>
             <option value="defective" ${s.status === 'defective' ? 'selected' : ''}>🔴 不良/廃棄</option>
           </select>
@@ -14646,7 +14925,16 @@ function renderSerialsManagementTable() {
 
         <!-- 操作 -->
         <td style="padding: 10px 12px; text-align: center;">
-          <div style="display: flex; gap: 4px; justify-content: center;">
+          <div style="display: flex; gap: 4px; justify-content: center; align-items: center; flex-wrap: wrap;">
+            ${(isDp5k && s.isBundled) ? `
+              <button type="button" class="btn btn-xs" onclick="window.disassembleBundleConfirm('${escapeHtml(s.serialNumber)}')" title="セット品化を解除してバッテリー・充電器を在庫に戻す" style="background:#fee2e2; color:#991b1b; border: 1px solid #fca5a5; font-size: 0.7rem; font-weight: 700; padding: 2px 6px;">
+                解除
+              </button>
+            ` : (isDp5k && s.status === 'in_stock' ? `
+              <button type="button" class="btn btn-xs" onclick="window.openBundleAssemblyModal('inv_dp5000_body', '${escapeHtml(s.serialNumber)}')" title="この本体をバッテリー2個・充電器1個とセット品化" style="background:#e0e7ff; color:#3730a3; border: 1px solid #c7d2fe; font-size: 0.7rem; font-weight: 700; padding: 2px 6px;">
+                📦セット化
+              </button>
+            ` : '')}
             <button type="button" class="btn btn-xs btn-outline-secondary" onclick="window.openSerialSingleModal('${escapeHtml(s.serialNumber)}')" title="シリアル詳細編集" style="padding: 2px 6px; font-size: 0.725rem;">
               ✏️
             </button>
@@ -14882,9 +15170,206 @@ function saveSerialSingleModal() {
 }
 window.saveSerialSingleModal = saveSerialSingleModal;
 
-/**
- * 連続一括採番モーダル制御
- */
+// ==========================================================================
+// 📦 DP-5000 セット品化（キッティング・組立）モーダル制御
+// ==========================================================================
+let currentBundleSelectedBatteries = new Set();
+let currentBundleTargetBodySn = '';
+
+function openBundleAssemblyModal(targetInventoryId = 'inv_dp5000_body', preselectedBodySn = '') {
+  const modal = document.getElementById('modalBundleAssembly');
+  if (!modal) return;
+
+  currentBundleSelectedBatteries.clear();
+  currentBundleTargetBodySn = preselectedBodySn || '';
+
+  renderBundleAssemblyModal();
+
+  modal.classList.add('active');
+  modal.style.display = 'flex';
+}
+window.openBundleAssemblyModal = openBundleAssemblyModal;
+
+function closeBundleAssemblyModal() {
+  const modal = document.getElementById('modalBundleAssembly');
+  if (!modal) return;
+  modal.classList.remove('active');
+  modal.style.display = 'none';
+  currentBundleSelectedBatteries.clear();
+  currentBundleTargetBodySn = '';
+}
+window.closeBundleAssemblyModal = closeBundleAssemblyModal;
+
+function renderBundleAssemblyModal() {
+  const comp = typeof getAvailableBundleComponents === 'function' ? getAvailableBundleComponents() : { bodies: [], batteries: [], chargerStock: 0 };
+  
+  const selectBody = document.getElementById('bundleSelectBodySerial');
+  const bodyCountText = document.getElementById('bundleBodyStockCountText');
+  const batContainer = document.getElementById('bundleBatteryListContainer');
+  const chgStockDisp = document.getElementById('bundleChargerStockDisp');
+  const totalCostDisp = document.getElementById('bundleTotalCostDisp');
+
+  // 1. 本体の選択肢生成
+  if (selectBody) {
+    if (bodyCountText) bodyCountText.textContent = `在庫中（未セット化）: ${comp.bodies.length}台`;
+    if (comp.bodies.length === 0) {
+      selectBody.innerHTML = '<option value="">⚠️ 在庫中（未セット化）のDP-5000本体がありません</option>';
+      selectBody.disabled = true;
+    } else {
+      selectBody.disabled = false;
+      let bodyOpts = comp.bodies.map(b => {
+        const isSelected = (currentBundleTargetBodySn && b.serialNumber === currentBundleTargetBodySn) || (!currentBundleTargetBodySn && b.serialNumber === comp.bodies[0].serialNumber);
+        if (isSelected && !currentBundleTargetBodySn) {
+          currentBundleTargetBodySn = b.serialNumber;
+        }
+        return `<option value="${escapeHtml(b.serialNumber)}" ${isSelected ? 'selected' : ''}>S/N: ${escapeHtml(b.serialNumber)} (仕入原価: ¥${Number(b.unitCost || 152000).toLocaleString()})</option>`;
+      });
+      selectBody.innerHTML = bodyOpts.join('');
+
+      selectBody.onchange = () => {
+        currentBundleTargetBodySn = selectBody.value;
+        updateBundleAssemblyState();
+      };
+    }
+  }
+
+  // 2. バッテリーの選択リスト生成（シリアルから2個選択）
+  if (batContainer) {
+    if (comp.batteries.length === 0) {
+      batContainer.innerHTML = '<div style="grid-column: 1/-1; padding: 20px; text-align: center; color: #dc2626; font-size: 0.85rem; font-weight: 600;">⚠️ 在庫中のリチウムイオンバッテリーがありません</div>';
+    } else {
+      let batHtml = comp.batteries.map(bat => {
+        const isChecked = currentBundleSelectedBatteries.has(bat.serialNumber);
+        return `
+          <label style="display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 6px; border: 1px solid ${isChecked ? '#10b981' : '#cbd5e1'}; background: ${isChecked ? '#ecfdf5' : '#ffffff'}; cursor: pointer; transition: all 0.15s ease;" class="bundle-bat-card">
+            <input type="checkbox" class="bundle-bat-checkbox" value="${escapeHtml(bat.serialNumber)}" ${isChecked ? 'checked' : ''} style="accent-color: #059669; width: 16px; height: 16px;">
+            <div style="flex: 1; min-width: 0;">
+              <span style="font-family: monospace; font-weight: 700; font-size: 0.9rem; color: #0f172a; display: block;">${escapeHtml(bat.serialNumber)}</span>
+              <span style="font-size: 0.68rem; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block;">${escapeHtml(bat.note || '社内管理用')}</span>
+            </div>
+          </label>
+        `;
+      }).join('');
+      batContainer.innerHTML = batHtml;
+
+      batContainer.querySelectorAll('.bundle-bat-checkbox').forEach(cb => {
+        cb.addEventListener('change', (e) => {
+          const sn = e.target.value;
+          if (e.target.checked) {
+            if (currentBundleSelectedBatteries.size >= 2) {
+              e.target.checked = false;
+              showToast('バッテリーは2個までしか選択できません。別のバッテリーの選択を解除してください。', 'warning');
+              return;
+            }
+            currentBundleSelectedBatteries.add(sn);
+          } else {
+            currentBundleSelectedBatteries.delete(sn);
+          }
+          updateBundleAssemblyState();
+        });
+      });
+    }
+  }
+
+  // 3. 急速充電器の在庫数表示
+  if (chgStockDisp) {
+    chgStockDisp.innerHTML = `${comp.chargerStock} 個 <span style="font-size:0.75rem; color:#dc2626;">${comp.chargerStock < 1 ? '(⚠️在庫なし)' : ''}</span>`;
+  }
+
+  // 4. 合計原価
+  if (totalCostDisp) {
+    totalCostDisp.textContent = '¥172,000';
+  }
+
+  updateBundleAssemblyState();
+}
+
+function updateBundleAssemblyState() {
+  const batCountBadge = document.getElementById('bundleSelectedBatCount');
+  const btnExec = document.getElementById('btnExecuteBundleAssembly');
+  const selectBody = document.getElementById('bundleSelectBodySerial');
+  const comp = typeof getAvailableBundleComponents === 'function' ? getAvailableBundleComponents() : { bodies: [], batteries: [], chargerStock: 0 };
+
+  const selectedCount = currentBundleSelectedBatteries.size;
+  if (batCountBadge) {
+    batCountBadge.textContent = selectedCount;
+    batCountBadge.style.color = selectedCount === 2 ? '#059669' : (selectedCount > 2 ? '#dc2626' : '#d97706');
+  }
+
+  const container = document.getElementById('bundleBatteryListContainer');
+  if (container) {
+    container.querySelectorAll('.bundle-bat-card').forEach(card => {
+      const cb = card.querySelector('input[type="checkbox"]');
+      if (cb && cb.checked) {
+        card.style.borderColor = '#10b981';
+        card.style.background = '#ecfdf5';
+      } else {
+        card.style.borderColor = '#cbd5e1';
+        card.style.background = '#ffffff';
+      }
+    });
+  }
+
+  const hasBody = selectBody && selectBody.value && !selectBody.disabled;
+  const hasBat2 = selectedCount === 2;
+  const hasChg = comp.chargerStock >= 1;
+
+  if (btnExec) {
+    const canExecute = hasBody && hasBat2 && hasChg;
+    btnExec.disabled = !canExecute;
+    btnExec.style.opacity = canExecute ? '1' : '0.5';
+    btnExec.style.cursor = canExecute ? 'pointer' : 'not-allowed';
+  }
+}
+
+function handleBundleAssemblyExecute() {
+  const selectBody = document.getElementById('bundleSelectBodySerial');
+  const bodySn = selectBody ? selectBody.value : '';
+  const batSns = Array.from(currentBundleSelectedBatteries);
+
+  if (!bodySn) {
+    showToast('DP-5000本体のシリアルを選択してください。', 'warning');
+    return;
+  }
+  if (batSns.length !== 2) {
+    showToast('リチウムイオンバッテリーを2個選択してください。', 'warning');
+    return;
+  }
+
+  const result = typeof assembleDP5000Bundle === 'function' 
+    ? assembleDP5000Bundle(bodySn, batSns) 
+    : { success: false, message: '関数が見つかりません' };
+
+  if (result.success) {
+    closeBundleAssemblyModal();
+    if (typeof renderInventoryTable === 'function') renderInventoryTable();
+    if (typeof renderSerialsManagementTable === 'function') renderSerialsManagementTable();
+    showToast(result.message || 'セット品化が完了しました！', 'success');
+  } else {
+    showToast(result.message || 'セット品化に失敗しました。', 'danger');
+  }
+}
+window.handleBundleAssemblyExecute = handleBundleAssemblyExecute;
+
+function disassembleBundleConfirm(bodySerialNumber) {
+  if (!bodySerialNumber) return;
+  if (!confirm(`DP-5000本体「${bodySerialNumber}」のセット品化を解除しますか？\n\n・組み込まれていたリチウムイオンバッテリー2個が在庫中に戻ります\n・急速充電器の現在庫数が 1 個戻ります`)) {
+    return;
+  }
+
+  const result = typeof disassembleDP5000Bundle === 'function'
+    ? disassembleDP5000Bundle(bodySerialNumber)
+    : { success: false, message: '関数が見つかりません' };
+
+  if (result.success) {
+    if (typeof renderInventoryTable === 'function') renderInventoryTable();
+    if (typeof renderSerialsManagementTable === 'function') renderSerialsManagementTable();
+    showToast(result.message || 'セット品化を解除しました。', 'info');
+  } else {
+    showToast(result.message || '解除に失敗しました。', 'danger');
+  }
+}
+window.disassembleBundleConfirm = disassembleBundleConfirm;
 function openSerialBatchModal() {
   const modal = document.getElementById('serialBatchRegisterModal');
   if (!modal) return;

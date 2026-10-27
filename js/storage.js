@@ -5305,8 +5305,25 @@ export function updateSerialStatus(serialNumber, newStatus, details = {}) {
       if (details.invoiceNumber !== undefined) target.docNumber = details.invoiceNumber;
       if (details.docId !== undefined) target.docId = details.docId;
       if (details.invoiceId !== undefined) target.docId = details.invoiceId;
-      if (details.bundleItemId !== undefined) target.bundleItemId = details.bundleItemId;
       if (details.note !== undefined) target.note = details.note;
+
+      // セット品化された本体が出荷された場合、組込バッテリーも連動して出荷済みに更新
+      if (newStatus === 'shipped' && target.isBundled && Array.isArray(target.batterySerials)) {
+        target.batterySerials.forEach(batSn => {
+          const bat = list.find(s => s && String(s.serialNumber).trim().toUpperCase() === String(batSn).trim().toUpperCase());
+          if (bat) {
+            bat.status = 'shipped';
+            bat.clientName = target.clientName || '';
+            bat.endUserName = target.endUserName || '';
+            bat.shipDate = target.shipDate || '';
+            bat.docNumber = target.docNumber || '';
+            bat.docId = target.docId || '';
+            const baseNote = (bat.note || '').replace(/\s*\[DP-5000\([^)]+\)と共に出荷\]/g, '').trim();
+            bat.note = (baseNote ? baseNote + ' ' : '') + `[DP-5000(${target.serialNumber})と共に出荷]`;
+            bat.updatedAt = new Date().toISOString();
+          }
+        });
+      }
     }
 
     localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(list));
@@ -5394,6 +5411,231 @@ export function getAvailableSerialsByItem(inventoryIdOrName) {
     (s.inventoryId === inventoryIdOrName || s.itemName === inventoryIdOrName) && 
     s.status === 'in_stock'
   );
+}
+
+/**
+ * DP-5000セット品化に必要な各コンポーネント（本体、バッテリー、充電器）の利用可能状況を取得
+ */
+export function getAvailableBundleComponents() {
+  const serials = getInventorySerialList();
+  const invList = getInventoryList();
+
+  // 1. 在庫中かつ未セット化のDP-5000本体
+  const availableBodies = serials.filter(s => {
+    if (!s || s.status !== 'in_stock') return false;
+    if (s.isBundled) return false;
+    const itemName = String(s.itemName || '').toUpperCase();
+    return s.inventoryId === 'inv_dp5000_body' || (itemName.includes('DP-5000') && !itemName.includes('MS'));
+  });
+
+  // 2. 在庫中かつ未セット化のリチウムイオンバッテリー
+  const availableBatteries = serials.filter(s => {
+    if (!s || s.status !== 'in_stock') return false;
+    if (s.status === 'bundled' || s.bundledWith) return false;
+    const itemName = String(s.itemName || '').toUpperCase();
+    return s.inventoryId === 'inv_dp5000_bat' || s.itemType === 'battery' || itemName.includes('バッテリー');
+  });
+
+  // 3. 専用急速充電器の在庫数
+  const chgItem = invList.find(it => it.id === 'inv_dp5000_chg' || (it.name && it.name.includes('急速充電器')));
+  const chargerStock = chgItem ? Number(chgItem.currentStock || 0) : 0;
+
+  return {
+    bodies: availableBodies,
+    batteries: availableBatteries,
+    chargerStock,
+    chargerItem: chgItem || null,
+    possibleSetCount: Math.min(availableBodies.length, Math.floor(availableBatteries.length / 2), chargerStock)
+  };
+}
+
+/**
+ * DP-5000本体とバッテリー2個・急速充電器1個をセット品化（キッティング）
+ * @param {string} bodySerialNumber - DP-5000本体のシリアル番号（例: "N8460"）
+ * @param {string[]} batterySerialNumbers - 選択されたリチウムイオンバッテリーのシリアル番号（2個）
+ * @param {Object} [options] - オプション
+ * @returns {{ success: boolean, message?: string }}
+ */
+export function assembleDP5000Bundle(bodySerialNumber, batterySerialNumbers, options = {}) {
+  try {
+    if (!bodySerialNumber) {
+      return { success: false, message: 'DP-5000本体のシリアル番号が指定されていません。' };
+    }
+    if (!Array.isArray(batterySerialNumbers) || batterySerialNumbers.length !== 2) {
+      return { success: false, message: 'リチウムイオンバッテリーは正確に2個選択してください。' };
+    }
+    if (String(batterySerialNumbers[0]).trim().toUpperCase() === String(batterySerialNumbers[1]).trim().toUpperCase()) {
+      return { success: false, message: '異なる2個のバッテリーシリアルを選択してください。' };
+    }
+
+    const cleanBodySn = String(bodySerialNumber).trim().toUpperCase();
+    const cleanBatSns = batterySerialNumbers.map(s => String(s).trim().toUpperCase());
+
+    // 1. シリアルリストの取得と検証
+    const serialList = getInventorySerialList();
+    const bodySerial = serialList.find(s => s && String(s.serialNumber).trim().toUpperCase() === cleanBodySn);
+    if (!bodySerial) {
+      return { success: false, message: `指定されたDP-5000本体(S/N: ${cleanBodySn})が見つかりません。` };
+    }
+    if (bodySerial.status !== 'in_stock') {
+      return { success: false, message: `DP-5000本体(S/N: ${cleanBodySn})は在庫中ではありません。(状態: ${bodySerial.status})` };
+    }
+    if (bodySerial.isBundled) {
+      return { success: false, message: `DP-5000本体(S/N: ${cleanBodySn})は既にセット品化されています。` };
+    }
+
+    // バッテリーの検証
+    for (const batSn of cleanBatSns) {
+      const bat = serialList.find(s => s && String(s.serialNumber).trim().toUpperCase() === batSn);
+      if (!bat) {
+        return { success: false, message: `バッテリー(S/N: ${batSn})が見つかりません。` };
+      }
+      if (bat.status !== 'in_stock') {
+        return { success: false, message: `バッテリー(S/N: ${batSn})は在庫中ではありません。(状態: ${bat.status})` };
+      }
+    }
+
+    // 2. 在庫マスタから急速充電器の在庫数を確認・減算
+    const invList = getInventoryList();
+    const chgItem = invList.find(it => it.id === 'inv_dp5000_chg' || (it.name && it.name.includes('急速充電器')));
+    if (!chgItem) {
+      return { success: false, message: '在庫マスタに専用急速充電器が見つかりません。' };
+    }
+    if (Number(chgItem.currentStock || 0) < 1) {
+      return { success: false, message: '専用急速充電器の在庫が不足しています。(現在庫: 0個)' };
+    }
+
+    // 急速充電器を 1 個減算（自動出庫！）
+    chgItem.currentStock = Number(chgItem.currentStock) - 1;
+    if (!Array.isArray(chgItem.history)) chgItem.history = [];
+    chgItem.history.unshift({
+      id: 'log_bundle_' + Date.now(),
+      date: new Date().toISOString().split('T')[0],
+      type: 'out',
+      qty: 1,
+      reason: `DP-5000(S/N: ${cleanBodySn})セット品化に伴う自動出庫`,
+      currentStock: chgItem.currentStock,
+      timestamp: new Date().toISOString()
+    });
+
+    // 3. バッテリー2個のステータスを bundled に更新（在庫から自動で落ちる！）
+    cleanBatSns.forEach(batSn => {
+      const bat = serialList.find(s => s && String(s.serialNumber).trim().toUpperCase() === batSn);
+      if (bat) {
+        bat.status = 'bundled';
+        bat.bundledWith = cleanBodySn;
+        bat.bundledAt = new Date().toISOString();
+        const baseNote = (bat.note || '').replace(/\s*\[DP-5000\([^)]+\)セット組込\]/g, '').trim();
+        bat.note = (baseNote ? baseNote + ' ' : '') + `[DP-5000(${cleanBodySn})セット組込]`;
+        bat.updatedAt = new Date().toISOString();
+      }
+    });
+
+    // 4. DP-5000本体をセット品化済みに更新
+    bodySerial.isBundled = true;
+    bodySerial.bundleName = 'DP-5000 ベーシックセット バッテリー２個';
+    bodySerial.batterySerials = cleanBatSns;
+    bodySerial.chargerDeducted = true;
+    bodySerial.bundledAt = new Date().toISOString();
+    const bodyBaseNote = (bodySerial.note || '').replace(/\s*\[セット品化済:[^\]]+\]/g, '').trim();
+    bodySerial.note = (bodyBaseNote ? bodyBaseNote + ' ' : '') + `[セット品化済: バッテリー ${cleanBatSns.join(', ')} / 急速充電器1個付属]`;
+    bodySerial.updatedAt = new Date().toISOString();
+
+    // 5. 保存と全体同期
+    localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(invList));
+    saveServerInventory(invList).catch(() => {});
+
+    localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(serialList));
+    saveServerInventorySerials(serialList).catch(() => {});
+
+    // 在庫マスタとシリアルの数値を完全同期
+    syncInventoryStockFromSerials();
+
+    console.log(`【セット品化完了】本体: ${cleanBodySn}, バッテリー: ${cleanBatSns.join(', ')}, 充電器 -1`);
+    return {
+      success: true,
+      bodySerialNumber: cleanBodySn,
+      batterySerialNumbers: cleanBatSns,
+      message: `DP-5000本体(S/N: ${cleanBodySn})をセット品化しました！バッテリー(${cleanBatSns.join(', ')}) 2個と急速充電器 1個を自動出庫しました。`
+    };
+  } catch (e) {
+    console.error('Failed to assemble DP-5000 bundle:', e);
+    return { success: false, message: e.message || 'セット品化処理中にエラーが発生しました。' };
+  }
+}
+
+/**
+ * DP-5000本体のセット品化を解除（バラし・在庫戻し）
+ * @param {string} bodySerialNumber - DP-5000本体のシリアル番号
+ * @returns {{ success: boolean, message?: string }}
+ */
+export function disassembleDP5000Bundle(bodySerialNumber) {
+  try {
+    if (!bodySerialNumber) return { success: false, message: 'シリアル番号が指定されていません。' };
+    const cleanBodySn = String(bodySerialNumber).trim().toUpperCase();
+    const serialList = getInventorySerialList();
+    const bodySerial = serialList.find(s => s && String(s.serialNumber).trim().toUpperCase() === cleanBodySn);
+    if (!bodySerial || !bodySerial.isBundled) {
+      return { success: false, message: `指定された本体(S/N: ${cleanBodySn})はセット品化されていません。` };
+    }
+
+    const batSns = Array.isArray(bodySerial.batterySerials) ? bodySerial.batterySerials : [];
+
+    // 1. バッテリーを在庫中(in_stock)に戻す
+    batSns.forEach(batSn => {
+      const bat = serialList.find(s => s && String(s.serialNumber).trim().toUpperCase() === String(batSn).trim().toUpperCase());
+      if (bat) {
+        bat.status = 'in_stock';
+        bat.bundledWith = '';
+        bat.bundledAt = null;
+        bat.note = (bat.note || '').replace(/\s*\[DP-5000\([^)]+\)セット組込\]/g, '').trim();
+        bat.updatedAt = new Date().toISOString();
+      }
+    });
+
+    // 2. 急速充電器の在庫を +1 戻す
+    const invList = getInventoryList();
+    const chgItem = invList.find(it => it.id === 'inv_dp5000_chg' || (it.name && it.name.includes('急速充電器')));
+    if (chgItem && bodySerial.chargerDeducted) {
+      chgItem.currentStock = Number(chgItem.currentStock || 0) + 1;
+      if (!Array.isArray(chgItem.history)) chgItem.history = [];
+      chgItem.history.unshift({
+        id: 'log_unbundle_' + Date.now(),
+        date: new Date().toISOString().split('T')[0],
+        type: 'in',
+        qty: 1,
+        reason: `DP-5000(S/N: ${cleanBodySn})セット品化解除に伴う在庫戻し`,
+        currentStock: chgItem.currentStock,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // 3. 本体のセット品化フラグを解除
+    bodySerial.isBundled = false;
+    bodySerial.bundleName = '';
+    bodySerial.batterySerials = [];
+    bodySerial.chargerDeducted = false;
+    bodySerial.bundledAt = null;
+    bodySerial.note = (bodySerial.note || '').replace(/\s*\[セット品化済:[^\]]+\]/g, '').trim();
+    bodySerial.updatedAt = new Date().toISOString();
+
+    // 4. 保存と同期
+    localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(invList));
+    saveServerInventory(invList).catch(() => {});
+
+    localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(serialList));
+    saveServerInventorySerials(serialList).catch(() => {});
+
+    syncInventoryStockFromSerials();
+
+    return {
+      success: true,
+      message: `DP-5000(S/N: ${cleanBodySn})のセット品化を解除しました。バッテリー2個と急速充電器1個を通常在庫に戻しました。`
+    };
+  } catch (e) {
+    console.error('Failed to disassemble DP-5000 bundle:', e);
+    return { success: false, message: e.message || 'セット品化解除中にエラーが発生しました。' };
+  }
 }
 
 export async function saveServerInventorySerials(serials) {
