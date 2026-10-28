@@ -5615,7 +5615,8 @@ export function getInventorySerialList() {
       }
       // ⚠️ 既に台帳に存在するシリアルレコードに対しては、空欄にした値をデフォルトデータで上書きしてはならない！
     }
-    if (updated) {
+    const bundleChanged = syncBundledBatteriesWithParents(parsed);
+    if (updated || bundleChanged) {
       localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(parsed));
     }
     return parsed;
@@ -5766,6 +5767,57 @@ export function updateSerialStatus(serialNumber, newStatus, details = {}) {
   }
 }
 
+/**
+ * セット組込バッテリーに対して、親本体（DP-5000等）の販売店・ユーザー・出荷日・伝票情報を自動同期
+ */
+export function syncBundledBatteriesWithParents(list) {
+  if (!Array.isArray(list) || list.length === 0) return false;
+  const bodyMap = new Map();
+  list.forEach(s => {
+    if (s && s.serialNumber && !s.bundledWith) {
+      bodyMap.set(String(s.serialNumber).trim().toUpperCase(), s);
+    }
+  });
+
+  let changed = false;
+  list.forEach(s => {
+    if (s && s.bundledWith) {
+      const parent = bodyMap.get(String(s.bundledWith).trim().toUpperCase());
+      if (parent) {
+        if (parent.clientName && s.clientName !== parent.clientName) {
+          s.clientName = parent.clientName;
+          changed = true;
+        }
+        if (parent.endUserName && s.endUserName !== parent.endUserName) {
+          s.endUserName = parent.endUserName;
+          changed = true;
+        }
+        const parentShipDate = parent.shipDate || parent.shippedDate || '';
+        if (parentShipDate && (s.shipDate !== parentShipDate || s.shippedDate !== parentShipDate)) {
+          s.shipDate = parentShipDate;
+          s.shippedDate = parentShipDate;
+          changed = true;
+        }
+        const parentDocNum = parent.docNumber || parent.invoiceNumber || '';
+        if (parentDocNum && s.docNumber !== parentDocNum) {
+          s.docNumber = parentDocNum;
+          s.invoiceNumber = parentDocNum;
+          changed = true;
+        }
+        if (parent.docId && s.docId !== parent.docId) {
+          s.docId = parent.docId;
+          changed = true;
+        }
+        if (parent.status === 'shipped' && s.status !== 'shipped') {
+          s.status = 'shipped';
+          changed = true;
+        }
+      }
+    }
+  });
+  return changed;
+}
+
 export function updateSerialDetails(serialNumber, updates = {}) {
   try {
     if (!serialNumber) return false;
@@ -5777,6 +5829,24 @@ export function updateSerialDetails(serialNumber, updates = {}) {
       target.userEditedEndUser = true; // 台帳で明示的に手動編集されたことを記録
     }
     Object.assign(target, updates, { updatedAt: new Date().toISOString() });
+
+    // もし本体（セット品化済・組込バッテリー持ち）を編集した場合、付属バッテリー側にも自動連動
+    if (target.isBundled || (Array.isArray(target.batterySerials) && target.batterySerials.length > 0)) {
+      const batSns = Array.isArray(target.batterySerials) ? target.batterySerials : [];
+      batSns.forEach(bSn => {
+        const batObj = list.find(s => s && String(s.serialNumber).trim().toUpperCase() === String(bSn).trim().toUpperCase());
+        if (batObj) {
+          if (updates.clientName !== undefined) batObj.clientName = updates.clientName;
+          if (updates.endUserName !== undefined) batObj.endUserName = updates.endUserName;
+          if (updates.shipDate !== undefined) batObj.shipDate = updates.shipDate;
+          if (updates.shippedDate !== undefined) batObj.shippedDate = updates.shippedDate;
+          if (updates.docNumber !== undefined) batObj.docNumber = updates.docNumber;
+          if (updates.docId !== undefined) batObj.docId = updates.docId;
+          batObj.updatedAt = new Date().toISOString();
+        }
+      });
+    }
+
     localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(list));
     saveServerInventorySerials(list).catch(() => {});
     

@@ -8918,7 +8918,8 @@ function getInventorySerialList() {
       }
       // ⚠️ 既に台帳に存在するシリアルレコードに対しては、空欄にした値をデフォルトデータで上書きしてはならない！
     }
-    if (updated) {
+    const bundleChanged = syncBundledBatteriesWithParents(parsed);
+    if (updated || bundleChanged) {
       localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(parsed));
     }
     return parsed;
@@ -9065,6 +9066,57 @@ function updateSerialStatus(serialNumber, newStatus, details = {}) {
     return false;
   }
 }
+
+/**
+ * セット組込バッテリーに対して、親本体（DP-5000等）の販売店・ユーザー・出荷日・伝票情報を自動同期
+ */
+function syncBundledBatteriesWithParents(list) {
+  if (!Array.isArray(list) || list.length === 0) return false;
+  const bodyMap = new Map();
+  list.forEach(s => {
+    if (s && s.serialNumber && !s.bundledWith) {
+      bodyMap.set(String(s.serialNumber).trim().toUpperCase(), s);
+    }
+  });
+
+  let changed = false;
+  list.forEach(s => {
+    if (s && s.bundledWith) {
+      const parent = bodyMap.get(String(s.bundledWith).trim().toUpperCase());
+      if (parent) {
+        if (parent.clientName && s.clientName !== parent.clientName) {
+          s.clientName = parent.clientName;
+          changed = true;
+        }
+        if (parent.endUserName && s.endUserName !== parent.endUserName) {
+          s.endUserName = parent.endUserName;
+          changed = true;
+        }
+        const parentShipDate = parent.shipDate || parent.shippedDate || '';
+        if (parentShipDate && (s.shipDate !== parentShipDate || s.shippedDate !== parentShipDate)) {
+          s.shipDate = parentShipDate;
+          s.shippedDate = parentShipDate;
+          changed = true;
+        }
+        const parentDocNum = parent.docNumber || parent.invoiceNumber || '';
+        if (parentDocNum && s.docNumber !== parentDocNum) {
+          s.docNumber = parentDocNum;
+          s.invoiceNumber = parentDocNum;
+          changed = true;
+        }
+        if (parent.docId && s.docId !== parent.docId) {
+          s.docId = parent.docId;
+          changed = true;
+        }
+        if (parent.status === 'shipped' && s.status !== 'shipped') {
+          s.status = 'shipped';
+          changed = true;
+        }
+      }
+    }
+  });
+  return changed;
+}
 function updateSerialDetails(serialNumber, updates = {}) {
   try {
     if (!serialNumber) return false;
@@ -9076,6 +9128,24 @@ function updateSerialDetails(serialNumber, updates = {}) {
       target.userEditedEndUser = true; // 台帳で明示的に手動編集されたことを記録
     }
     Object.assign(target, updates, { updatedAt: new Date().toISOString() });
+
+    // もし本体（セット品化済・組込バッテリー持ち）を編集した場合、付属バッテリー側にも自動連動
+    if (target.isBundled || (Array.isArray(target.batterySerials) && target.batterySerials.length > 0)) {
+      const batSns = Array.isArray(target.batterySerials) ? target.batterySerials : [];
+      batSns.forEach(bSn => {
+        const batObj = list.find(s => s && String(s.serialNumber).trim().toUpperCase() === String(bSn).trim().toUpperCase());
+        if (batObj) {
+          if (updates.clientName !== undefined) batObj.clientName = updates.clientName;
+          if (updates.endUserName !== undefined) batObj.endUserName = updates.endUserName;
+          if (updates.shipDate !== undefined) batObj.shipDate = updates.shipDate;
+          if (updates.shippedDate !== undefined) batObj.shippedDate = updates.shippedDate;
+          if (updates.docNumber !== undefined) batObj.docNumber = updates.docNumber;
+          if (updates.docId !== undefined) batObj.docId = updates.docId;
+          batObj.updatedAt = new Date().toISOString();
+        }
+      });
+    }
+
     localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(list));
     saveServerInventorySerials(list).catch(() => {});
     
@@ -16120,17 +16190,33 @@ function renderSerialsManagementTable() {
       }
     }
 
-    const docNum = s.docNumber || s.invoiceNumber || '';
-    const docLinkHtml = docNum ? `
+    // バッテリーかつ組込先本体（bundledWith）がある場合、親本体の情報を自動連動
+    let parentBody = null;
+    if (isBat && (s.status === 'bundled' || s.bundledWith)) {
+      parentBody = serialList.find(b => b && String(b.serialNumber).trim().toUpperCase() === String(s.bundledWith).trim().toUpperCase());
+    }
+
+    const effectiveClient = s.clientName || (parentBody && parentBody.clientName) || '';
+    const effectiveEndUser = s.endUserName || (parentBody && parentBody.endUserName) || '';
+    const effectiveShipDate = s.shipDate || s.shippedDate || (parentBody && (parentBody.shipDate || parentBody.shippedDate)) || '';
+    const effectiveDocNum = s.docNumber || s.invoiceNumber || (parentBody && (parentBody.docNumber || parentBody.invoiceNumber)) || '';
+    const effectiveDocId = s.docId || s.invoiceId || (parentBody && (parentBody.docId || parentBody.invoiceId)) || '';
+    const isParentLinked = !s.clientName && parentBody && (parentBody.clientName || parentBody.docNumber);
+
+    const docLinkHtml = effectiveDocNum ? `
       <div style="display: flex; align-items: center; gap: 4px;">
-        <button type="button" class="btn btn-xs btn-outline-primary" onclick="window.openInvoiceFromSerial('${escapeHtml(s.docId || '')}', '${escapeHtml(docNum)}')" title="該当の納品請求書を開く" style="font-family: monospace; font-weight: 700; padding: 2px 6px; font-size: 0.75rem;">
-          📄 ${escapeHtml(docNum)}
+        <button type="button" class="btn btn-xs btn-outline-primary" onclick="window.openInvoiceFromSerial('${escapeHtml(effectiveDocId)}', '${escapeHtml(effectiveDocNum)}')" title="該当の納品請求書を開く" style="font-family: monospace; font-weight: 700; padding: 2px 6px; font-size: 0.75rem;">
+          📄 ${escapeHtml(effectiveDocNum)}
         </button>
+        ${isParentLinked ? `<span style="font-size: 0.65rem; color: #2563eb; background: #eff6ff; border: 1px solid #bfdbfe; padding: 1px 4px; border-radius: 3px;" title="本体(${parentBody.serialNumber})と自動連動">連動</span>` : ''}
       </div>
     ` : `<span style="color: #94a3b8; font-size: 0.75rem;">未紐付</span>`;
 
+    // ステータスの表示判定（本体が出荷済みなら組込バッテリーも自動で出荷済み連動表示）
+    const effectiveStatus = (parentBody && parentBody.status === 'shipped' && s.status === 'bundled') ? 'shipped' : s.status;
+
     html += `
-      <tr style="border-bottom: 1px solid #e2e8f0;">
+      <tr style="border-bottom: 1px solid #e2e8f0; ${isParentLinked ? 'background: #fbfdff;' : ''}">
         <!-- シリアル番号 -->
         <td style="padding: 10px 12px;">
           <div style="display: flex; align-items: center; gap: 6px;">
@@ -16150,17 +16236,17 @@ function renderSerialsManagementTable() {
         <td style="padding: 10px 12px; text-align: center;">
           <select class="serial-status-select form-select form-select-xs" data-sn="${escapeHtml(s.serialNumber)}"
             style="font-size: 0.775rem; font-weight: 700; padding: 2px 6px; width: 110px; border-radius: 6px; ${
-              s.status === 'in_stock' ? 'background: #f0fdf4; color: #166534; border-color: #86efac;' :
-              s.status === 'shipped' ? 'background: #eff6ff; color: #1e40af; border-color: #93c5fd;' :
-              s.status === 'bundled' ? 'background: #fefce8; color: #a16207; border-color: #fde047;' :
-              s.status === 'maintenance' ? 'background: #fefce8; color: #854d0e; border-color: #fde047;' :
+              effectiveStatus === 'in_stock' ? 'background: #f0fdf4; color: #166534; border-color: #86efac;' :
+              effectiveStatus === 'shipped' ? 'background: #eff6ff; color: #1e40af; border-color: #93c5fd;' :
+              effectiveStatus === 'bundled' ? 'background: #fefce8; color: #a16207; border-color: #fde047;' :
+              effectiveStatus === 'maintenance' ? 'background: #fefce8; color: #854d0e; border-color: #fde047;' :
               'background: #fef2f2; color: #991b1b; border-color: #fca5a5;'
             }">
-            <option value="in_stock" ${s.status === 'in_stock' ? 'selected' : ''}>🟢 在庫中</option>
-            <option value="shipped" ${s.status === 'shipped' ? 'selected' : ''}>🔵 出荷済</option>
-            <option value="bundled" ${s.status === 'bundled' ? 'selected' : ''}>📦 セット組込中</option>
-            <option value="maintenance" ${s.status === 'maintenance' ? 'selected' : ''}>🟡 保守/貸出</option>
-            <option value="defective" ${s.status === 'defective' ? 'selected' : ''}>🔴 不良/廃棄</option>
+            <option value="in_stock" ${effectiveStatus === 'in_stock' ? 'selected' : ''}>🟢 在庫中</option>
+            <option value="shipped" ${effectiveStatus === 'shipped' ? 'selected' : ''}>🔵 出荷済</option>
+            <option value="bundled" ${effectiveStatus === 'bundled' ? 'selected' : ''}>📦 セット組込中</option>
+            <option value="maintenance" ${effectiveStatus === 'maintenance' ? 'selected' : ''}>🟡 保守/貸出</option>
+            <option value="defective" ${effectiveStatus === 'defective' ? 'selected' : ''}>🔴 不良/廃棄</option>
           </select>
         </td>
 
@@ -16168,30 +16254,33 @@ function renderSerialsManagementTable() {
         <td style="padding: 6px 12px;">
           <input type="text" class="form-input form-input-xs serial-inline-input"
             data-sn="${escapeHtml(s.serialNumber)}" data-field="clientName"
-            value="${escapeHtml(s.clientName || '')}" placeholder="販売店を入力..."
-            style="font-size: 0.8rem; width: 100%; border: 1px solid transparent; background: transparent; padding: 4px 6px; border-radius: 4px;"
+            value="${escapeHtml(effectiveClient)}" placeholder="${parentBody ? `[本体 ${parentBody.serialNumber} 連動]` : '販売店を入力...'}"
+            style="font-size: 0.8rem; width: 100%; border: 1px solid ${isParentLinked ? '#bfdbfe' : 'transparent'}; background: ${isParentLinked ? '#eff6ff' : 'transparent'}; padding: 4px 6px; border-radius: 4px;"
+            title="${isParentLinked ? `本体(${parentBody.serialNumber})の販売店と自動連動しています` : ''}"
             onfocus="this.style.borderColor='#3b82f6'; this.style.background='#ffffff';"
-            onblur="this.style.borderColor='transparent'; this.style.background='transparent';">
+            onblur="this.style.borderColor='${isParentLinked ? '#bfdbfe' : 'transparent'}'; this.style.background='${isParentLinked ? '#eff6ff' : 'transparent'}';">
         </td>
 
         <!-- ユーザー（インライン編集） -->
         <td style="padding: 6px 12px;">
           <input type="text" class="form-input form-input-xs serial-inline-input"
             data-sn="${escapeHtml(s.serialNumber)}" data-field="endUserName"
-            value="${escapeHtml(s.endUserName || '')}" placeholder="—"
-            style="font-size: 0.8rem; width: 100%; border: 1px solid transparent; background: transparent; padding: 4px 6px; border-radius: 4px;"
+            value="${escapeHtml(effectiveEndUser)}" placeholder="—"
+            style="font-size: 0.8rem; width: 100%; border: 1px solid ${isParentLinked ? '#bfdbfe' : 'transparent'}; background: ${isParentLinked ? '#eff6ff' : 'transparent'}; padding: 4px 6px; border-radius: 4px;"
+            title="${isParentLinked ? `本体(${parentBody.serialNumber})のユーザーと自動連動しています` : ''}"
             onfocus="this.style.borderColor='#3b82f6'; this.style.background='#ffffff';"
-            onblur="this.style.borderColor='transparent'; this.style.background='transparent';">
+            onblur="this.style.borderColor='${isParentLinked ? '#bfdbfe' : 'transparent'}'; this.style.background='${isParentLinked ? '#eff6ff' : 'transparent'}';">
         </td>
 
         <!-- 出荷日（インライン日付） -->
         <td style="padding: 6px 12px;">
           <input type="date" class="form-input form-input-xs serial-inline-input"
             data-sn="${escapeHtml(s.serialNumber)}" data-field="shipDate"
-            value="${escapeHtml(s.shipDate || s.shippedDate || '')}"
-            style="font-size: 0.775rem; width: 110px; border: 1px solid transparent; background: transparent; padding: 4px 4px; border-radius: 4px;"
+            value="${escapeHtml(effectiveShipDate)}"
+            style="font-size: 0.775rem; width: 110px; border: 1px solid ${isParentLinked ? '#bfdbfe' : 'transparent'}; background: ${isParentLinked ? '#eff6ff' : 'transparent'}; padding: 4px 4px; border-radius: 4px;"
+            title="${isParentLinked ? `本体(${parentBody.serialNumber})の出荷日と自動連動しています` : ''}"
             onfocus="this.style.borderColor='#3b82f6'; this.style.background='#ffffff';"
-            onblur="this.style.borderColor='transparent'; this.style.background='transparent';">
+            onblur="this.style.borderColor='${isParentLinked ? '#bfdbfe' : 'transparent'}'; this.style.background='${isParentLinked ? '#eff6ff' : 'transparent'}';">
         </td>
 
         <!-- 納品請求書紐付け -->
@@ -16246,6 +16335,7 @@ function renderSerialsManagementTable() {
       const updates = { [field]: val };
       if (field === 'shipDate') updates.shippedDate = val;
       updateSerialDetails(sn, updates);
+      renderSerialsManagementTable();
       showToast(`シリアル「${sn}」の${field === 'clientName' ? '販売店' : field === 'endUserName' ? 'ユーザー' : field === 'shipDate' ? '出荷日' : '備考'}を保存しました`, 'success');
     });
   });
