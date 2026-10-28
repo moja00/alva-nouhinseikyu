@@ -13036,20 +13036,20 @@ function setupEventListeners() {
     DOM.lotSerialGroupsContainer.addEventListener('click', (e) => {
       const btnAuto = e.target.closest('.btn-group-auto-serial');
       if (btnAuto) {
-        const rowId = Number(btnAuto.dataset.rowId);
-        generateSerialNumbersForGroup(rowId);
+        const groupKey = btnAuto.dataset.groupKey || btnAuto.dataset.rowId;
+        generateSerialNumbersForGroup(groupKey);
         return;
       }
       const btnToggle = e.target.closest('.btn-group-toggle-text');
       if (btnToggle) {
-        const rowId = Number(btnToggle.dataset.rowId);
-        toggleGroupSerialTextMode(rowId);
+        const groupKey = btnToggle.dataset.groupKey || btnToggle.dataset.rowId;
+        toggleGroupSerialTextMode(groupKey);
         return;
       }
       const btnClear = e.target.closest('.btn-group-clear-serial');
       if (btnClear) {
-        const rowId = Number(btnClear.dataset.rowId);
-        clearGroupSerialNumbers(rowId);
+        const groupKey = btnClear.dataset.groupKey || btnClear.dataset.rowId;
+        clearGroupSerialNumbers(groupKey);
         return;
       }
     });
@@ -17275,13 +17275,15 @@ function initLotItemRows(defaultItemId = null) {
   const initialQty = 10;
   const initialUnitPrice = firstItem ? (Number(firstItem.unitCost || firstItem.cost) || 0) : 0;
   const initialSubtotal = initialQty * initialUnitPrice;
+  const isFirstBundle = firstItem ? (firstItem.id === 'inv_1' || firstItem.type === 'bundle' || (firstItem.name && firstItem.name.includes('ベーシックセット'))) : false;
 
   lotItemRows = [
     {
       rowId: nextLotRowId++,
       itemId: firstItem ? firstItem.id : '',
       itemName: firstItem ? firstItem.name : '',
-      hasSerial: firstItem ? (firstItem.hasSerial === true) : false,
+      hasSerial: firstItem ? (firstItem.hasSerial === true || isFirstBundle) : false,
+      isBundle: isFirstBundle,
       qty: initialQty,
       unitPrice: initialUnitPrice,
       subtotal: initialSubtotal,
@@ -17304,12 +17306,14 @@ function addLotItemRow() {
 
   const initialQty = 1;
   const initialUnitPrice = candidate ? (Number(candidate.unitCost || candidate.cost) || 0) : 0;
+  const isCandidateBundle = candidate ? (candidate.id === 'inv_1' || candidate.type === 'bundle' || (candidate.name && candidate.name.includes('ベーシックセット'))) : false;
 
   lotItemRows.push({
     rowId: nextLotRowId++,
     itemId: candidate ? candidate.id : '',
     itemName: candidate ? candidate.name : '',
-    hasSerial: candidate ? (candidate.hasSerial === true) : false,
+    hasSerial: candidate ? (candidate.hasSerial === true || isCandidateBundle) : false,
+    isBundle: isCandidateBundle,
     qty: initialQty,
     unitPrice: initialUnitPrice,
     subtotal: initialQty * initialUnitPrice,
@@ -17392,22 +17396,25 @@ function renderLotItemRows() {
   DOM.lotItemsTableBody.innerHTML = html;
 }
 
+function isBundleLotRow(r) {
+  if (!r) return false;
+  return r.itemId === 'inv_1' || 
+         r.isBundle === true || 
+         (r.itemName && r.itemName.includes('ベーシックセット'));
+}
+window.isBundleLotRow = isBundleLotRow;
+
 function onLotItemSelectChange(rowId, selectElem) {
   const row = lotItemRows.find(r => r.rowId === rowId);
   if (!row) return;
 
   const opt = selectElem.options[selectElem.selectedIndex];
   if (opt) {
-    if (opt.dataset.isBundle === '1' || opt.value === 'inv_1' || (opt.dataset.name && opt.dataset.name.includes('ベーシックセット'))) {
-      const qty = row.qty || 1;
-      lotItemRows = lotItemRows.filter(r => r.rowId !== rowId);
-      addLotDp5000BundleSet(qty);
-      return;
-    }
-
     row.itemId = opt.value;
     row.itemName = opt.dataset.name || opt.text.split('[')[0].trim();
-    row.hasSerial = opt.dataset.hasSerial === '1';
+    const isBundle = opt.dataset.isBundle === '1' || opt.value === 'inv_1' || (row.itemName && row.itemName.includes('ベーシックセット'));
+    row.isBundle = isBundle;
+    row.hasSerial = opt.dataset.hasSerial === '1' || isBundle;
     const cost = Number(opt.dataset.unitCost) || 0;
     if (cost > 0) {
       row.unitPrice = cost;
@@ -17663,12 +17670,64 @@ window.updateLandedCostCalculation = updateLandedCostCalculation;
 // シリアル番号入力の品目別グループ管理（要件3）
 // --------------------------------------------------------------------------
 
+function getLotSerialConfigs() {
+  const configs = [];
+  lotItemRows.forEach(r => {
+    if (isBundleLotRow(r)) {
+      // DP-5000 ベーシックセットの場合、本体（r.qty台）とバッテリー（r.qty * 2個）の2グループを生成
+      configs.push({
+        groupKey: `${r.rowId}_body`,
+        rowId: r.rowId,
+        itemId: 'inv_dp5000_body',
+        itemName: 'DP-5000 本体',
+        label: `🔢 【DP-5000 本体】 (${r.qty} 台分)`,
+        qty: r.qty,
+        prefix: 'DP5K',
+        role: 'body',
+        isBundlePart: true,
+        parentRow: r
+      });
+      configs.push({
+        groupKey: `${r.rowId}_bat`,
+        rowId: r.rowId,
+        itemId: 'inv_dp5000_bat',
+        itemName: 'PSE認証 リチウムイオンバッテリー (15000mAh)',
+        label: `🔋 【付属バッテリー】 (${r.qty * 2} 個分 / 1台につき2個)`,
+        qty: r.qty * 2,
+        prefix: 'BAT',
+        role: 'battery',
+        isBundlePart: true,
+        parentRow: r
+      });
+    } else if (r.hasSerial) {
+      let prefix = 'SN';
+      if (r.itemName && (r.itemName.includes('DP-5000') || r.itemName.includes('本体'))) prefix = 'DP5K';
+      else if (r.itemName && (r.itemName.includes('バッテリー') || r.itemName.includes('電池'))) prefix = 'BAT';
+
+      configs.push({
+        groupKey: String(r.rowId),
+        rowId: r.rowId,
+        itemId: r.itemId,
+        itemName: r.itemName,
+        label: `🔢 ${r.itemName} (${r.qty} 台分)`,
+        qty: r.qty,
+        prefix: prefix,
+        role: 'single',
+        isBundlePart: false,
+        parentRow: r
+      });
+    }
+  });
+  return configs;
+}
+window.getLotSerialConfigs = getLotSerialConfigs;
+
 function renderLotSerialGroups(syncSlots = false) {
   if (!DOM.lotSerialGroupsContainer || !DOM.lotSerialSection) return;
 
-  const hasSerialRows = lotItemRows.filter(r => r.hasSerial);
+  const serialConfigs = getLotSerialConfigs();
 
-  if (hasSerialRows.length === 0) {
+  if (serialConfigs.length === 0) {
     DOM.lotSerialSection.style.display = 'block';
     DOM.lotSerialGroupsContainer.innerHTML = `
       <div style="padding: 14px; text-align: center; color: #64748b; font-size: 0.8rem; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 6px;">
@@ -17688,8 +17747,8 @@ function renderLotSerialGroups(syncSlots = false) {
 
   // 既存のDOMカードをチェックし、品目・数量が同じであればスロット再構築を避けてタイピング中のフォーカス喪失を防止
   const existingCards = DOM.lotSerialGroupsContainer.querySelectorAll('.lot-serial-group-card');
-  const existingSignatures = Array.from(existingCards).map(c => `${c.dataset.rowId}_${c.querySelectorAll('.lot-serial-group-input').length}`);
-  const newSignatures = hasSerialRows.map(r => `${r.rowId}_${r.qty}`);
+  const existingSignatures = Array.from(existingCards).map(c => `${c.dataset.groupKey || c.dataset.rowId}_${c.querySelectorAll('.lot-serial-group-input').length}`);
+  const newSignatures = serialConfigs.map(c => `${c.groupKey}_${c.qty}`);
   const isIdentical = (existingSignatures.length === newSignatures.length) && existingSignatures.every((s, i) => s === newSignatures[i]);
 
   if (!syncSlots && isIdentical) {
@@ -17699,58 +17758,83 @@ function renderLotSerialGroups(syncSlots = false) {
 
   // グループカードの構築
   let html = '';
-  hasSerialRows.forEach(r => {
+
+  // セット品行が含まれている場合、上部にわかりやすい案内バナーを表示
+  const hasBundleRow = lotItemRows.some(isBundleLotRow);
+  if (hasBundleRow) {
+    const bundleRows = lotItemRows.filter(isBundleLotRow);
+    const totalBundleQty = bundleRows.reduce((sum, r) => sum + (Number(r.qty) || 0), 0);
+    html += `
+      <div style="background: linear-gradient(135deg, #eff6ff, #f0fdf4); border: 1px solid #bfdbfe; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+        <div>
+          <div style="font-weight: 700; color: #1e3a8a; font-size: 0.85rem; display: flex; align-items: center; gap: 6px;">
+            <span>📦</span> <span>DP-5000 ベーシックセット仕入（${totalBundleQty} セット分）</span>
+          </div>
+          <div style="font-size: 0.75rem; color: #475569; margin-top: 2px;">
+            本体（${totalBundleQty}台）および付属バッテリー（${totalBundleQty * 2}個）のシリアル番号を入力してください。ロット確定時に自動でセット品紐付け（キッティング）されます。
+          </div>
+        </div>
+        <div style="display: flex; gap: 6px; align-items: center;">
+          <span style="background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; font-size: 0.725rem; font-weight: 700; padding: 3px 8px; border-radius: 9999px;">
+            ⚡ 急速充電器: ${totalBundleQty} 個（自動入庫）
+          </span>
+        </div>
+      </div>
+    `;
+  }
+
+  serialConfigs.forEach(cfg => {
     // 既存スロットに入力されていた値を取得
-    const existingInps = DOM.lotSerialGroupsContainer.querySelectorAll(`.lot-serial-group-input[data-row-id="${r.rowId}"]`);
+    const existingInps = DOM.lotSerialGroupsContainer.querySelectorAll(`.lot-serial-group-input[data-group-key="${cfg.groupKey}"], .lot-serial-group-input[data-row-id="${cfg.groupKey}"]`);
     let currentValues = Array.from(existingInps).map(inp => (inp.value || '').trim());
-    if (currentValues.length === 0 && r.serials && r.serials.length > 0) {
-      currentValues = r.serials;
+    if (currentValues.length === 0 && cfg.parentRow && cfg.parentRow.serials && cfg.parentRow.serials.length > 0 && !cfg.isBundlePart) {
+      currentValues = cfg.parentRow.serials;
     }
 
     let slotsHtml = '';
-    for (let i = 0; i < r.qty; i++) {
+    for (let i = 0; i < cfg.qty; i++) {
       const val = currentValues[i] || '';
       slotsHtml += `
-        <div class="group-serial-slot-item" id="slotItem_${r.rowId}_${i}" style="display: flex; align-items: center; gap: 4px; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 4px 6px;">
+        <div class="group-serial-slot-item" id="slotItem_${cfg.groupKey}_${i}" style="display: flex; align-items: center; gap: 4px; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 4px 6px;">
           <span style="font-size: 0.725rem; font-weight: 700; color: #64748b; width: 28px; text-align: right; flex-shrink: 0; font-family: monospace;">#${i + 1}</span>
-          <input type="text" class="form-input lot-serial-group-input" data-row-id="${r.rowId}" data-index="${i}" value="${escapeHtml(val)}" placeholder="S/N #${i + 1}" style="font-family: monospace; font-size: 0.8rem; padding: 3px 6px; flex: 1; height: 28px; border-radius: 4px;">
-          <span class="slot-status-icon" id="slotStatus_${r.rowId}_${i}" style="font-size: 0.8rem; width: 16px; text-align: center; flex-shrink: 0;"></span>
+          <input type="text" class="form-input lot-serial-group-input" data-group-key="${cfg.groupKey}" data-row-id="${cfg.groupKey}" data-index="${i}" value="${escapeHtml(val)}" placeholder="${cfg.prefix} #${i + 1}" style="font-family: monospace; font-size: 0.8rem; padding: 3px 6px; flex: 1; height: 28px; border-radius: 4px;">
+          <span class="slot-status-icon" id="slotStatus_${cfg.groupKey}_${i}" style="font-size: 0.8rem; width: 16px; text-align: center; flex-shrink: 0;"></span>
         </div>
       `;
     }
 
     html += `
-      <div class="lot-serial-group-card" data-row-id="${r.rowId}" style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px;">
+      <div class="lot-serial-group-card" data-group-key="${cfg.groupKey}" data-row-id="${cfg.groupKey}" style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; margin-bottom: 10px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
           <div style="display: flex; align-items: center; gap: 8px;">
-            <strong style="font-size: 0.85rem; color: #0f172a;">🔢 ${escapeHtml(r.itemName)} (${r.qty} 台分)</strong>
-            <span class="group-serial-badge" data-row-id="${r.rowId}" style="font-size: 0.725rem; font-weight: 700; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 2px 8px; border-radius: 9999px;">
-              入力: 0 / 必要: ${r.qty}
+            <strong style="font-size: 0.85rem; color: #0f172a;">${escapeHtml(cfg.label)}</strong>
+            <span class="group-serial-badge" data-group-key="${cfg.groupKey}" data-row-id="${cfg.groupKey}" style="font-size: 0.725rem; font-weight: 700; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 2px 8px; border-radius: 9999px;">
+              入力: 0 / 必要: ${cfg.qty}
             </span>
           </div>
           <div style="display: flex; align-items: center; gap: 6px;">
-            <button type="button" class="btn btn-secondary btn-xs btn-group-toggle-text" data-row-id="${r.rowId}" style="font-size: 0.725rem;">
+            <button type="button" class="btn btn-secondary btn-xs btn-group-toggle-text" data-group-key="${cfg.groupKey}" data-row-id="${cfg.groupKey}" style="font-size: 0.725rem;">
               📋 一括テキスト
             </button>
-            <button type="button" class="btn btn-secondary btn-xs btn-group-auto-serial" data-row-id="${r.rowId}" style="font-size: 0.725rem; background: #f0fdf4; border-color: #86efac; color: #166534;" title="連番で一括入力">
-              ⚡ 連番自動入力
+            <button type="button" class="btn btn-secondary btn-xs btn-group-auto-serial" data-group-key="${cfg.groupKey}" data-row-id="${cfg.groupKey}" style="font-size: 0.725rem; background: #f0fdf4; border-color: #86efac; color: #166534;" title="連番で一括入力">
+              ⚡ 連番自動入力 (${cfg.prefix}...)
             </button>
-            <button type="button" class="btn btn-secondary btn-xs btn-group-clear-serial" data-row-id="${r.rowId}" style="font-size: 0.725rem; background: #fff1f2; border-color: #fecdd3; color: #be123c;" title="クリア">
+            <button type="button" class="btn btn-secondary btn-xs btn-group-clear-serial" data-group-key="${cfg.groupKey}" data-row-id="${cfg.groupKey}" style="font-size: 0.725rem; background: #fff1f2; border-color: #fecdd3; color: #be123c;" title="クリア">
               🗑️ クリア
             </button>
           </div>
         </div>
 
-        <div class="group-slots-container" data-row-id="${r.rowId}" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px; max-height: 200px; overflow-y: auto; padding: 6px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px;">
+        <div class="group-slots-container" data-group-key="${cfg.groupKey}" data-row-id="${cfg.groupKey}" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px; max-height: 200px; overflow-y: auto; padding: 6px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px;">
           ${slotsHtml}
         </div>
 
-        <div class="group-text-area" data-row-id="${r.rowId}" style="display: none; margin-top: 8px;">
+        <div class="group-text-area" data-group-key="${cfg.groupKey}" data-row-id="${cfg.groupKey}" style="display: none; margin-top: 8px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
             <span style="font-size: 0.7rem; color: #475569; font-weight: 600;">複数行貼り付け（改行またはカンマ区切り）:</span>
             <span style="font-size: 0.7rem; color: #64748b;">※テキスト入力内容は自動でスロットへ反映されます</span>
           </div>
-          <textarea class="form-input group-serial-textarea" data-row-id="${r.rowId}" rows="3" style="font-family: monospace; font-size: 0.8rem;" placeholder="シリアル番号を1行1件貼り付け..."></textarea>
+          <textarea class="form-input group-serial-textarea" data-group-key="${cfg.groupKey}" data-row-id="${cfg.groupKey}" rows="3" style="font-family: monospace; font-size: 0.8rem;" placeholder="シリアル番号を1行1件貼り付け..."></textarea>
         </div>
       </div>
     `;
@@ -17760,13 +17844,13 @@ function renderLotSerialGroups(syncSlots = false) {
   updateAllSerialValidationAndBadges();
 }
 
-function getGroupSerialValues(rowId) {
+function getGroupSerialValues(groupKey) {
   if (!DOM.lotSerialGroupsContainer) return [];
-  const inps = DOM.lotSerialGroupsContainer.querySelectorAll(`.lot-serial-group-input[data-row-id="${rowId}"]`);
+  const inps = DOM.lotSerialGroupsContainer.querySelectorAll(`.lot-serial-group-input[data-group-key="${groupKey}"], .lot-serial-group-input[data-row-id="${groupKey}"]`);
   return Array.from(inps).map(inp => (inp.value || '').trim());
 }
 
-function updateLotSerialGroupValidation(rowId) {
+function updateLotSerialGroupValidation(groupKey) {
   updateAllSerialValidationAndBadges();
 }
 
@@ -17777,14 +17861,11 @@ function updateAllSerialValidationAndBadges() {
   const registeredNumbers = new Set(existingSerials.map(s => s.serialNumber));
 
   // 全グループ横断のシリアル出現カウント
-  const allValues = [];
   const countMap = {};
-
   const allInputs = DOM.lotSerialGroupsContainer.querySelectorAll('.lot-serial-group-input');
   allInputs.forEach(inp => {
     const val = (inp.value || '').trim();
     if (val) {
-      allValues.push(val);
       countMap[val] = (countMap[val] || 0) + 1;
     }
   });
@@ -17793,17 +17874,17 @@ function updateAllSerialValidationAndBadges() {
   let totalFilled = 0;
   let hasAnyDuplicate = false;
 
-  const hasSerialRows = lotItemRows.filter(r => r.hasSerial);
+  const serialConfigs = getLotSerialConfigs();
 
-  hasSerialRows.forEach(r => {
-    totalRequired += r.qty;
+  serialConfigs.forEach(cfg => {
+    totalRequired += cfg.qty;
     let groupFilled = 0;
     let groupHasDup = false;
 
-    for (let i = 0; i < r.qty; i++) {
-      const slotItem = document.getElementById(`slotItem_${r.rowId}_${i}`);
-      const statusIcon = document.getElementById(`slotStatus_${r.rowId}_${i}`);
-      const inp = DOM.lotSerialGroupsContainer.querySelector(`.lot-serial-group-input[data-row-id="${r.rowId}"][data-index="${i}"]`);
+    for (let i = 0; i < cfg.qty; i++) {
+      const slotItem = document.getElementById(`slotItem_${cfg.groupKey}_${i}`);
+      const statusIcon = document.getElementById(`slotStatus_${cfg.groupKey}_${i}`);
+      const inp = DOM.lotSerialGroupsContainer.querySelector(`.lot-serial-group-input[data-group-key="${cfg.groupKey}"][data-index="${i}"], .lot-serial-group-input[data-row-id="${cfg.groupKey}"][data-index="${i}"]`);
       const val = inp ? (inp.value || '').trim() : '';
 
       if (!val) {
@@ -17848,21 +17929,21 @@ function updateAllSerialValidationAndBadges() {
     }
 
     // グループバッジの更新
-    const groupBadge = DOM.lotSerialGroupsContainer.querySelector(`.group-serial-badge[data-row-id="${r.rowId}"]`);
+    const groupBadge = DOM.lotSerialGroupsContainer.querySelector(`.group-serial-badge[data-group-key="${cfg.groupKey}"], .group-serial-badge[data-row-id="${cfg.groupKey}"]`);
     if (groupBadge) {
       if (groupHasDup) {
-        groupBadge.textContent = `⚠️ 重複あり: ${groupFilled} / 必要: ${r.qty}`;
+        groupBadge.textContent = `⚠️ 重複あり: ${groupFilled} / 必要: ${cfg.qty}`;
         groupBadge.style.background = '#fffbeb';
         groupBadge.style.color = '#b45309';
         groupBadge.style.borderColor = '#fde68a';
-      } else if (groupFilled === r.qty) {
-        groupBadge.textContent = `✓ 全数入力完了 (${groupFilled}/${r.qty} 台)`;
+      } else if (groupFilled === cfg.qty) {
+        groupBadge.textContent = `✓ 全数入力完了 (${groupFilled}/${cfg.qty} 件)`;
         groupBadge.style.background = '#ecfdf5';
         groupBadge.style.color = '#047857';
         groupBadge.style.borderColor = '#a7f3d0';
       } else {
-        const remaining = r.qty - groupFilled;
-        groupBadge.textContent = `入力済: ${groupFilled} / 必要: ${r.qty} (残り ${remaining} 台)`;
+        const remaining = cfg.qty - groupFilled;
+        groupBadge.textContent = `入力済: ${groupFilled} / 必要: ${cfg.qty} (残り ${remaining} 件)`;
         groupBadge.style.background = '#fef2f2';
         groupBadge.style.color = '#dc2626';
         groupBadge.style.borderColor = '#fecaca';
@@ -17878,17 +17959,17 @@ function updateAllSerialValidationAndBadges() {
       DOM.lotSerialCountBadge.style.color = '#64748b';
       DOM.lotSerialCountBadge.style.borderColor = '#cbd5e1';
     } else if (hasAnyDuplicate) {
-      DOM.lotSerialCountBadge.textContent = `⚠️ 重複あり (${totalFilled}/${totalRequired} 台)`;
+      DOM.lotSerialCountBadge.textContent = `⚠️ 重複あり (${totalFilled}/${totalRequired} 件)`;
       DOM.lotSerialCountBadge.style.background = '#fffbeb';
       DOM.lotSerialCountBadge.style.color = '#b45309';
       DOM.lotSerialCountBadge.style.borderColor = '#fde68a';
     } else if (totalFilled === totalRequired) {
-      DOM.lotSerialCountBadge.textContent = `✓ 全数入力完了 (${totalFilled}/${totalRequired} 台)`;
+      DOM.lotSerialCountBadge.textContent = `✓ 全数入力完了 (${totalFilled}/${totalRequired} 件)`;
       DOM.lotSerialCountBadge.style.background = '#ecfdf5';
       DOM.lotSerialCountBadge.style.color = '#047857';
       DOM.lotSerialCountBadge.style.borderColor = '#a7f3d0';
     } else {
-      DOM.lotSerialCountBadge.textContent = `入力済: ${totalFilled} / 必要: ${totalRequired} 台`;
+      DOM.lotSerialCountBadge.textContent = `入力済: ${totalFilled} / 必要: ${totalRequired} 件`;
       DOM.lotSerialCountBadge.style.background = '#fef2f2';
       DOM.lotSerialCountBadge.style.color = '#dc2626';
       DOM.lotSerialCountBadge.style.borderColor = '#fecaca';
@@ -17898,11 +17979,11 @@ function updateAllSerialValidationAndBadges() {
 
 // Enterキー押下で次スロットへ移動（品目内、および品目間）
 function onLotSerialInputEnterKey(currentInput) {
-  const rowId = Number(currentInput.dataset.rowId);
+  const groupKey = currentInput.dataset.groupKey || currentInput.dataset.rowId;
   const idx = Number(currentInput.dataset.index);
 
   // 同じ品目グループの次スロットを探す
-  const nextInGroup = DOM.lotSerialGroupsContainer.querySelector(`.lot-serial-group-input[data-row-id="${rowId}"][data-index="${idx + 1}"]`);
+  const nextInGroup = DOM.lotSerialGroupsContainer.querySelector(`.lot-serial-group-input[data-group-key="${groupKey}"][data-index="${idx + 1}"], .lot-serial-group-input[data-row-id="${groupKey}"][data-index="${idx + 1}"]`);
   if (nextInGroup) {
     nextInGroup.focus();
     nextInGroup.select();
@@ -17910,11 +17991,11 @@ function onLotSerialInputEnterKey(currentInput) {
   }
 
   // 同じグループの最後なら、次のシリアル対象品目グループの先頭スロットを探す
-  const hasSerialRows = lotItemRows.filter(r => r.hasSerial);
-  const currentGroupIndex = hasSerialRows.findIndex(r => r.rowId === rowId);
-  if (currentGroupIndex >= 0 && currentGroupIndex + 1 < hasSerialRows.length) {
-    const nextRow = hasSerialRows[currentGroupIndex + 1];
-    const nextGroupFirst = DOM.lotSerialGroupsContainer.querySelector(`.lot-serial-group-input[data-row-id="${nextRow.rowId}"][data-index="0"]`);
+  const serialConfigs = getLotSerialConfigs();
+  const currentGroupIndex = serialConfigs.findIndex(c => c.groupKey === String(groupKey));
+  if (currentGroupIndex >= 0 && currentGroupIndex + 1 < serialConfigs.length) {
+    const nextCfg = serialConfigs[currentGroupIndex + 1];
+    const nextGroupFirst = DOM.lotSerialGroupsContainer.querySelector(`.lot-serial-group-input[data-group-key="${nextCfg.groupKey}"][data-index="0"], .lot-serial-group-input[data-row-id="${nextCfg.groupKey}"][data-index="0"]`);
     if (nextGroupFirst) {
       nextGroupFirst.focus();
       nextGroupFirst.select();
@@ -17930,25 +18011,20 @@ function onLotSerialInputEnterKey(currentInput) {
 }
 
 // 連番自動入力（品目グループ別）
-function generateSerialNumbersForGroup(rowId) {
-  const row = lotItemRows.find(r => r.rowId === rowId);
-  if (!row) return;
+function generateSerialNumbersForGroup(groupKey) {
+  const serialConfigs = getLotSerialConfigs();
+  const cfg = serialConfigs.find(c => c.groupKey === String(groupKey));
+  if (!cfg) return;
 
   const d = new Date();
   const yymm = `${String(d.getFullYear()).slice(-2)}${String(d.getMonth() + 1).padStart(2, '0')}`;
-
-  let prefix = `SN-${yymm}-`;
-  if (row.itemName.includes('DP-5000') || row.itemName.includes('本体')) {
-    prefix = `DP5K-${yymm}-`;
-  } else if (row.itemName.includes('バッテリー') || row.itemName.includes('電池')) {
-    prefix = `BAT-${yymm}-`;
-  }
+  const prefix = `${cfg.prefix}-${yymm}-`;
 
   const existingSerials = getInventorySerialList();
   const existingNumbers = new Set(existingSerials.map(s => s.serialNumber));
 
   // 他の品目グループで既に入力中の番号も含めて重複回避
-  const otherInputs = DOM.lotSerialGroupsContainer.querySelectorAll(`.lot-serial-group-input:not([data-row-id="${rowId}"])`);
+  const otherInputs = DOM.lotSerialGroupsContainer.querySelectorAll(`.lot-serial-group-input:not([data-group-key="${cfg.groupKey}"])`);
   otherInputs.forEach(inp => {
     const v = (inp.value || '').trim();
     if (v) existingNumbers.add(v);
@@ -17956,7 +18032,7 @@ function generateSerialNumbersForGroup(rowId) {
 
   const generated = [];
   let num = 1;
-  while (generated.length < row.qty) {
+  while (generated.length < cfg.qty) {
     const sn = `${prefix}${String(num).padStart(3, '0')}`;
     if (!existingNumbers.has(sn)) {
       generated.push(sn);
@@ -17965,22 +18041,22 @@ function generateSerialNumbersForGroup(rowId) {
     num++;
   }
 
-  const inps = DOM.lotSerialGroupsContainer.querySelectorAll(`.lot-serial-group-input[data-row-id="${rowId}"]`);
+  const inps = DOM.lotSerialGroupsContainer.querySelectorAll(`.lot-serial-group-input[data-group-key="${cfg.groupKey}"], .lot-serial-group-input[data-row-id="${cfg.groupKey}"]`);
   inps.forEach((inp, i) => {
     inp.value = generated[i] || '';
   });
 
   // 一括テキストエリアにも同期
-  const textarea = DOM.lotSerialGroupsContainer.querySelector(`.group-serial-textarea[data-row-id="${rowId}"]`);
+  const textarea = DOM.lotSerialGroupsContainer.querySelector(`.group-serial-textarea[data-group-key="${cfg.groupKey}"], .group-serial-textarea[data-row-id="${cfg.groupKey}"]`);
   if (textarea) textarea.value = generated.join('\n');
 
   updateAllSerialValidationAndBadges();
-  showToast(`「${row.itemName}」に連番シリアル ${row.qty} 件を自動入力しました。`, 'info');
+  showToast(`「${cfg.label}」に連番シリアル ${cfg.qty} 件を自動入力しました。`, 'info');
 }
 
 // 一括テキストエリアのトグル表示
-function toggleGroupSerialTextMode(rowId) {
-  const card = DOM.lotSerialGroupsContainer.querySelector(`.lot-serial-group-card[data-row-id="${rowId}"]`);
+function toggleGroupSerialTextMode(groupKey) {
+  const card = DOM.lotSerialGroupsContainer.querySelector(`.lot-serial-group-card[data-group-key="${groupKey}"], .lot-serial-group-card[data-row-id="${groupKey}"]`);
   if (!card) return;
   const textAreaDiv = card.querySelector('.group-text-area');
   const btnToggle = card.querySelector('.btn-group-toggle-text');
@@ -17989,7 +18065,7 @@ function toggleGroupSerialTextMode(rowId) {
   const isHidden = textAreaDiv.style.display === 'none';
   if (isHidden) {
     // 現在のスロット値をテキストエリアに反映して表示
-    const values = getGroupSerialValues(rowId);
+    const values = getGroupSerialValues(groupKey);
     const textarea = textAreaDiv.querySelector('.group-serial-textarea');
     if (textarea) textarea.value = values.filter(Boolean).join('\n');
 
@@ -18000,7 +18076,7 @@ function toggleGroupSerialTextMode(rowId) {
     btnToggle.style.borderColor = '#c7d2fe';
   } else {
     // スロットへ反映して閉じる
-    applyGroupTextToSlots(rowId);
+    applyGroupTextToSlots(groupKey);
     textAreaDiv.style.display = 'none';
     btnToggle.textContent = '📋 一括テキスト';
     btnToggle.style.background = '';
@@ -18010,8 +18086,8 @@ function toggleGroupSerialTextMode(rowId) {
 }
 
 // テキストエリアからスロットへの反映
-function applyGroupTextToSlots(rowId) {
-  const card = DOM.lotSerialGroupsContainer.querySelector(`.lot-serial-group-card[data-row-id="${rowId}"]`);
+function applyGroupTextToSlots(groupKey) {
+  const card = DOM.lotSerialGroupsContainer.querySelector(`.lot-serial-group-card[data-group-key="${groupKey}"], .lot-serial-group-card[data-row-id="${groupKey}"]`);
   if (!card) return;
   const textarea = card.querySelector('.group-serial-textarea');
   if (!textarea) return;
@@ -18028,8 +18104,8 @@ function applyGroupTextToSlots(rowId) {
 }
 
 // グループシリアルのクリア
-function clearGroupSerialNumbers(rowId) {
-  const card = DOM.lotSerialGroupsContainer.querySelector(`.lot-serial-group-card[data-row-id="${rowId}"]`);
+function clearGroupSerialNumbers(groupKey) {
+  const card = DOM.lotSerialGroupsContainer.querySelector(`.lot-serial-group-card[data-group-key="${groupKey}"], .lot-serial-group-card[data-row-id="${groupKey}"]`);
   if (!card) return;
   const inps = card.querySelectorAll('.lot-serial-group-input');
   inps.forEach(inp => inp.value = '');
@@ -18113,20 +18189,20 @@ function submitInventoryLotStockIn() {
   const grandTotal = totalCost + taxTotal;
 
   // シリアル番号の品目別検証
-  const serialsByRow = {};
+  const serialConfigs = getLotSerialConfigs();
+  const serialsByGroupKey = {};
   const allParsedSerials = [];
   const existingSerials = getInventorySerialList();
   const registeredNumbers = new Set(existingSerials.map(s => s.serialNumber));
 
-  const hasSerialRows = lotItemRows.filter(r => r.hasSerial);
-  for (const r of hasSerialRows) {
-    const rawValues = getGroupSerialValues(r.rowId);
+  for (const cfg of serialConfigs) {
+    const rawValues = getGroupSerialValues(cfg.groupKey);
     const parsed = rawValues.filter(Boolean);
-    serialsByRow[r.rowId] = parsed;
+    serialsByGroupKey[cfg.groupKey] = parsed;
     allParsedSerials.push(...parsed);
 
-    if (parsed.length !== r.qty) {
-      if (!confirm(`「${r.itemName}」の入力シリアル番号（${parsed.length}件）が入庫数量（${r.qty}台）と一致していません（未入力の枠があります）。このまま登録しますか？`)) {
+    if (parsed.length !== cfg.qty) {
+      if (!confirm(`「${cfg.label}」の入力シリアル番号（${parsed.length}件）が入庫数量（${cfg.qty}件）と一致していません（未入力の枠があります）。このまま登録しますか？`)) {
         return;
       }
     }
@@ -18165,17 +18241,28 @@ function submitInventoryLotStockIn() {
   const lotData = {
     id: lotId,
     lotNumber,
-    items: lotItemRows.map(r => ({
-      itemId: r.itemId,
-      itemName: r.itemName,
-      hasSerial: r.hasSerial,
-      quantity: r.qty,
-      unitPrice: r.unitPrice,
-      subtotal: r.subtotal,
-      allocatedCost: r.allocatedCost,
-      unitCost: r.landedUnitCost,
-      serials: serialsByRow[r.rowId] || []
-    })),
+    items: lotItemRows.map(r => {
+      let rowSerials = [];
+      if (isBundleLotRow(r)) {
+        rowSerials = [
+          ...(serialsByGroupKey[`${r.rowId}_body`] || []),
+          ...(serialsByGroupKey[`${r.rowId}_bat`] || [])
+        ];
+      } else {
+        rowSerials = serialsByGroupKey[String(r.rowId)] || [];
+      }
+      return {
+        itemId: r.itemId,
+        itemName: r.itemName,
+        hasSerial: r.hasSerial,
+        quantity: r.qty,
+        unitPrice: r.unitPrice,
+        subtotal: r.subtotal,
+        allocatedCost: r.allocatedCost,
+        unitCost: r.landedUnitCost,
+        serials: rowSerials
+      };
+    }),
     // 後方互換用フィールド（先頭品目）
     itemId: lotItemRows[0].itemId,
     itemName: lotItemRows[0].itemName,
@@ -18187,7 +18274,7 @@ function submitInventoryLotStockIn() {
     grandTotal,
     supplier,
     storageLocation,
-    hasSerial: hasSerialRows.length > 0,
+    hasSerial: serialConfigs.length > 0,
     costDetails,
     syncAccounting,
     creditAccount: creditAccountRaw,
@@ -18218,53 +18305,127 @@ function submitInventoryLotStockIn() {
 
   // 2. 各品目の在庫マスタ（現在庫 ＆ 確定仕入原価）を一括更新
   lotItemRows.forEach(r => {
-    adjustStock(r.itemId, r.qty, `混載ロット入庫: ${lotNumber} (確定実仕入原価: ¥${r.landedUnitCost.toLocaleString()}/台)`, { 
-      unitCost: r.landedUnitCost,
-      date: arrivalDate
-    });
-    // 保管場所の指定がある場合は最新の在庫リストから取得して更新
-    if (storageLocation) {
-      const currentInvList = getInventoryList();
-      const target = currentInvList.find(i => i.id === r.itemId);
-      if (target && target.location !== storageLocation) {
-        target.location = storageLocation;
-        saveInventoryItem(target);
+    if (isBundleLotRow(r)) {
+      // セット仕入行の場合：本体・バッテリー×2・急速充電器の各品目在庫を一括加算
+      const invList = getInventoryList();
+      const bodyItem = invList.find(i => i.id === 'inv_dp5000_body' || (i.name && i.name.includes('DP-5000') && i.type !== 'bundle'));
+      const batItem = invList.find(i => i.id === 'inv_dp5000_bat' || (i.name && i.name.includes('バッテリー')));
+      const chgItem = invList.find(i => i.id === 'inv_dp5000_chg' || (i.name && i.name.includes('急速充電器')));
+
+      const bodyUnitCost = Math.round(r.landedUnitCost * 0.84);
+      const batUnitCost = Math.round(r.landedUnitCost * 0.08);
+      const chgUnitCost = Math.round(r.landedUnitCost * 0.08);
+
+      if (bodyItem) adjustStock(bodyItem.id, r.qty, `混載ロット入庫(セット仕入本体): ${lotNumber}`, { unitCost: bodyUnitCost, date: arrivalDate });
+      if (batItem) adjustStock(batItem.id, r.qty * 2, `混載ロット入庫(セット仕入バッテリー): ${lotNumber}`, { unitCost: batUnitCost, date: arrivalDate });
+      if (chgItem) adjustStock(chgItem.id, r.qty, `混載ロット入庫(セット仕入急速充電器): ${lotNumber}`, { unitCost: chgUnitCost, date: arrivalDate });
+
+      if (storageLocation) {
+        const curList = getInventoryList();
+        [bodyItem, batItem, chgItem].forEach(it => {
+          if (!it) return;
+          const target = curList.find(x => x.id === it.id);
+          if (target && target.location !== storageLocation) {
+            target.location = storageLocation;
+            saveInventoryItem(target);
+          }
+        });
+      }
+    } else {
+      adjustStock(r.itemId, r.qty, `混載ロット入庫: ${lotNumber} (確定実仕入原価: ¥${r.landedUnitCost.toLocaleString()}/台)`, { 
+        unitCost: r.landedUnitCost,
+        date: arrivalDate
+      });
+      // 保管場所の指定がある場合は最新の在庫リストから取得して更新
+      if (storageLocation) {
+        const currentInvList = getInventoryList();
+        const target = currentInvList.find(i => i.id === r.itemId);
+        if (target && target.location !== storageLocation) {
+          target.location = storageLocation;
+          saveInventoryItem(target);
+        }
       }
     }
   });
 
-  // 3. シリアル番号の一括保存（シリアル管理品目のみ）
+  // 3. シリアル番号の一括保存（シリアル管理品目およびセット品）
   const allSerialObjects = [];
-  hasSerialRows.forEach(r => {
-    const serialList = serialsByRow[r.rowId] || [];
-    serialList.forEach(sn => {
-      allSerialObjects.push({
-        serialNumber: sn,
-        itemId: r.itemId,
-        itemName: r.itemName,
-        lotId,
-        lotNumber,
-        costPrice: r.landedUnitCost,
-        status: 'in_stock',
-        arrivalDate,
-        customerName: '',
-        invoiceNumber: '',
-        shippedDate: ''
+  lotItemRows.forEach(r => {
+    if (isBundleLotRow(r)) {
+      const bodySns = serialsByGroupKey[`${r.rowId}_body`] || [];
+      const batSns = serialsByGroupKey[`${r.rowId}_bat`] || [];
+
+      // バッテリーシリアルを登録
+      batSns.forEach((bSn, idx) => {
+        const pairedBodySn = bodySns[Math.floor(idx / 2)] || '';
+        allSerialObjects.push({
+          serialNumber: bSn,
+          itemId: 'inv_dp5000_bat',
+          itemName: 'PSE認証 リチウムイオンバッテリー (15000mAh)',
+          lotId,
+          lotNumber,
+          costPrice: Math.round(r.landedUnitCost * 0.08),
+          status: pairedBodySn ? 'bundled' : 'in_stock',
+          bundledWith: pairedBodySn,
+          note: pairedBodySn ? `[セット組込済 (本体: ${pairedBodySn})]` : '',
+          arrivalDate,
+          customerName: '',
+          invoiceNumber: '',
+          shippedDate: ''
+        });
       });
-    });
+
+      // 本体シリアルを登録（バッテリー2個と自動キッティング紐付け）
+      bodySns.forEach((bSn, idx) => {
+        const pairedBats = [batSns[idx * 2], batSns[idx * 2 + 1]].filter(Boolean);
+        allSerialObjects.push({
+          serialNumber: bSn,
+          itemId: 'inv_dp5000_body',
+          itemName: 'DP-5000 本体',
+          lotId,
+          lotNumber,
+          costPrice: r.landedUnitCost,
+          status: 'in_stock',
+          isBundled: pairedBats.length === 2,
+          batterySerials: pairedBats,
+          note: pairedBats.length === 2 ? `[セット仕入品: 🔋 ${pairedBats.join(', ')} / 急速充電器付属]` : '',
+          arrivalDate,
+          customerName: '',
+          invoiceNumber: '',
+          shippedDate: ''
+        });
+      });
+    } else if (r.hasSerial) {
+      const serialList = serialsByGroupKey[String(r.rowId)] || [];
+      serialList.forEach(sn => {
+        allSerialObjects.push({
+          serialNumber: sn,
+          itemId: r.itemId,
+          itemName: r.itemName,
+          lotId,
+          lotNumber,
+          costPrice: r.landedUnitCost,
+          status: 'in_stock',
+          arrivalDate,
+          customerName: '',
+          invoiceNumber: '',
+          shippedDate: ''
+        });
+      });
+    }
   });
 
   if (allSerialObjects.length > 0) {
     saveBatchInventorySerials(allSerialObjects);
   }
 
-  // 3.5. 同一ロットでDP-5000本体とバッテリーが入庫された場合、自動でセット品化紐付け
+  // 3.5. 単品バラ入庫でDP-5000本体とバッテリーが別行で入庫された場合の後方互換セット品化紐付け
   try {
-    const bodyRow = lotItemRows.find(r => r.itemId === 'inv_dp5000_body' || (r.itemName && r.itemName.includes('DP-5000') && !r.itemName.includes('MS')));
-    const batRow = lotItemRows.find(r => r.itemId === 'inv_dp5000_bat' || (r.itemName && r.itemName.includes('バッテリー')));
+    const bodyRow = lotItemRows.find(r => !isBundleLotRow(r) && (r.itemId === 'inv_dp5000_body' || (r.itemName && r.itemName.includes('DP-5000') && !r.itemName.includes('MS'))));
+    const batRow = lotItemRows.find(r => !isBundleLotRow(r) && (r.itemId === 'inv_dp5000_bat' || (r.itemName && r.itemName.includes('バッテリー'))));
     if (bodyRow && batRow) {
-      const bodySns = serialsByRow[bodyRow.rowId] || [];
-      const batSns = serialsByRow[batRow.rowId] || [];
+      const bodySns = serialsByGroupKey[String(bodyRow.rowId)] || [];
+      const batSns = serialsByGroupKey[String(batRow.rowId)] || [];
       const bundleCount = Math.min(bodySns.length, Math.floor(batSns.length / 2));
       if (bundleCount > 0) {
         const serialMasterList = getInventorySerialList();
@@ -18293,7 +18454,6 @@ function submitInventoryLotStockIn() {
         if (bundledCount > 0) {
           localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(serialMasterList));
           saveServerInventorySerials(serialMasterList).catch(() => {});
-          syncInventoryStockFromSerials();
           console.log(`【ロット入庫自動セット品化】${bundledCount}セットのDP-5000本体にバッテリー2個を自動紐付けしました`);
         }
       }
@@ -18301,6 +18461,9 @@ function submitInventoryLotStockIn() {
   } catch (err) {
     console.warn('Auto bundle assembly on lot save error:', err);
   }
+
+  // セット品（inv_1）の出荷可能セット数等を最新のシリアル・在庫から同期
+  syncInventoryStockFromSerials();
 
   // 4. 財務会計への自動複合仕訳登録（科目判断 ＆ 建て替え者反映 ＆ 貸借完全一致）
   if (syncAccounting) {
