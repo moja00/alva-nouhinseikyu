@@ -2687,13 +2687,6 @@ export function setCategoryNonStock(categoryName, isNonStock) {
     saveNonStockCategories(updated);
   }
 }
-  const list = getItemCategoryList();
-  if (!list.includes(cleanName)) {
-    list.push(cleanName);
-    saveItemCategoryList(list);
-  }
-  return true;
-}
 
 /**
  * 商品カテゴリを削除
