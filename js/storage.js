@@ -5794,7 +5794,11 @@ export function saveBatchInventorySerials(serialsArray = []) {
     if (!Array.isArray(serialsArray) || serialsArray.length === 0) return 0;
     const list = getInventorySerialList();
     const snMap = new Map();
-    list.forEach(s => snMap.set(s.serialNumber, s));
+    list.forEach(s => {
+      if (s && s.serialNumber) {
+        snMap.set(String(s.serialNumber).trim().toUpperCase(), s);
+      }
+    });
 
     let addedCount = 0;
     serialsArray.forEach(item => {
@@ -5804,18 +5808,32 @@ export function saveBatchInventorySerials(serialsArray = []) {
       // 再登録時は削除フラグ解除
       removeDeletedSerial(sn);
 
-      const entryId = item.id || `sn_${sn.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+      const existing = snMap.get(sn);
+      const isShipped = existing && (existing.status === 'shipped' || existing.clientName || existing.docNumber);
+      const entryId = (existing && existing.id) || item.id || `sn_${sn.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+
+      // 既存の先行出荷データ（顧客名・出荷日・伝票番号など）を絶対に消去せず、ロット情報を安全に後付けマージ
       const newObj = {
+        ...(existing || {}),
         ...item,
         id: entryId,
         serialNumber: sn,
-        status: item.status || 'in_stock',
-        clientName: item.clientName || '',
-        endUserName: item.endUserName || '',
-        shipDate: item.shipDate || item.shippedDate || '',
-        docNumber: item.docNumber || item.invoiceNumber || '',
-        docId: item.docId || item.invoiceId || '',
-        note: item.note || '',
+        status: isShipped ? 'shipped' : (item.status || (existing && existing.status) || 'in_stock'),
+        clientName: (existing && existing.clientName) || item.clientName || '',
+        endUserName: (existing && existing.endUserName) || item.endUserName || '',
+        shipDate: (existing && (existing.shipDate || existing.shippedDate)) || item.shipDate || item.shippedDate || '',
+        docNumber: (existing && (existing.docNumber || existing.invoiceNumber)) || item.docNumber || item.invoiceNumber || '',
+        docId: (existing && (existing.docId || existing.invoiceId)) || item.docId || item.invoiceId || '',
+        lotId: item.lotId || (existing && existing.lotId) || '',
+        lotNumber: item.lotNumber || (existing && existing.lotNumber) || '',
+        costPrice: (item.costPrice !== undefined) ? item.costPrice : (existing && (existing.costPrice !== undefined ? existing.costPrice : existing.unitCost)) || 0,
+        unitCost: (item.unitCost !== undefined) ? item.unitCost : (item.costPrice !== undefined ? item.costPrice : (existing && (existing.unitCost !== undefined ? existing.unitCost : existing.costPrice)) || 0),
+        arrivalDate: item.arrivalDate || item.inDate || (existing && (existing.arrivalDate || existing.inDate)) || '',
+        inDate: item.inDate || item.arrivalDate || (existing && (existing.inDate || existing.arrivalDate)) || '',
+        isBundled: (item.isBundled !== undefined) ? item.isBundled : (existing && existing.isBundled),
+        batterySerials: item.batterySerials || (existing && existing.batterySerials),
+        bundledWith: item.bundledWith || (existing && existing.bundledWith),
+        note: [existing && existing.note, item.note].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(' ') || '',
         updatedAt: new Date().toISOString()
       };
       snMap.set(sn, newObj);

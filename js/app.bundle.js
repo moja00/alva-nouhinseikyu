@@ -9092,7 +9092,11 @@ function saveBatchInventorySerials(serialsArray = []) {
     if (!Array.isArray(serialsArray) || serialsArray.length === 0) return 0;
     const list = getInventorySerialList();
     const snMap = new Map();
-    list.forEach(s => snMap.set(s.serialNumber, s));
+    list.forEach(s => {
+      if (s && s.serialNumber) {
+        snMap.set(String(s.serialNumber).trim().toUpperCase(), s);
+      }
+    });
 
     let addedCount = 0;
     serialsArray.forEach(item => {
@@ -9102,18 +9106,32 @@ function saveBatchInventorySerials(serialsArray = []) {
       // 再登録時は削除フラグ解除
       removeDeletedSerial(sn);
 
-      const entryId = item.id || `sn_${sn.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+      const existing = snMap.get(sn);
+      const isShipped = existing && (existing.status === 'shipped' || existing.clientName || existing.docNumber);
+      const entryId = (existing && existing.id) || item.id || `sn_${sn.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+
+      // 既存の先行出荷データ（顧客名・出荷日・伝票番号など）を絶対に消去せず、ロット情報を安全に後付けマージ
       const newObj = {
+        ...(existing || {}),
         ...item,
         id: entryId,
         serialNumber: sn,
-        status: item.status || 'in_stock',
-        clientName: item.clientName || '',
-        endUserName: item.endUserName || '',
-        shipDate: item.shipDate || item.shippedDate || '',
-        docNumber: item.docNumber || item.invoiceNumber || '',
-        docId: item.docId || item.invoiceId || '',
-        note: item.note || '',
+        status: isShipped ? 'shipped' : (item.status || (existing && existing.status) || 'in_stock'),
+        clientName: (existing && existing.clientName) || item.clientName || '',
+        endUserName: (existing && existing.endUserName) || item.endUserName || '',
+        shipDate: (existing && (existing.shipDate || existing.shippedDate)) || item.shipDate || item.shippedDate || '',
+        docNumber: (existing && (existing.docNumber || existing.invoiceNumber)) || item.docNumber || item.invoiceNumber || '',
+        docId: (existing && (existing.docId || existing.invoiceId)) || item.docId || item.invoiceId || '',
+        lotId: item.lotId || (existing && existing.lotId) || '',
+        lotNumber: item.lotNumber || (existing && existing.lotNumber) || '',
+        costPrice: (item.costPrice !== undefined) ? item.costPrice : (existing && (existing.costPrice !== undefined ? existing.costPrice : existing.unitCost)) || 0,
+        unitCost: (item.unitCost !== undefined) ? item.unitCost : (item.costPrice !== undefined ? item.costPrice : (existing && (existing.unitCost !== undefined ? existing.unitCost : existing.costPrice)) || 0),
+        arrivalDate: item.arrivalDate || item.inDate || (existing && (existing.arrivalDate || existing.inDate)) || '',
+        inDate: item.inDate || item.arrivalDate || (existing && (existing.inDate || existing.arrivalDate)) || '',
+        isBundled: (item.isBundled !== undefined) ? item.isBundled : (existing && existing.isBundled),
+        batterySerials: item.batterySerials || (existing && existing.batterySerials),
+        bundledWith: item.bundledWith || (existing && existing.bundledWith),
+        note: [existing && existing.note, item.note].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(' ') || '',
         updatedAt: new Date().toISOString()
       };
       snMap.set(sn, newObj);
@@ -17858,13 +17876,18 @@ function updateAllSerialValidationAndBadges() {
   if (!DOM.lotSerialGroupsContainer) return;
 
   const existingSerials = getInventorySerialList();
-  const registeredNumbers = new Set(existingSerials.map(s => s.serialNumber));
+  const existingSerialMap = new Map();
+  existingSerials.forEach(s => {
+    if (s && s.serialNumber) {
+      existingSerialMap.set(String(s.serialNumber).trim().toUpperCase(), s);
+    }
+  });
 
-  // 全グループ横断のシリアル出現カウント
+  // 全グループ横断のシリアル出現カウント（大文字トリム）
   const countMap = {};
   const allInputs = DOM.lotSerialGroupsContainer.querySelectorAll('.lot-serial-group-input');
   allInputs.forEach(inp => {
-    const val = (inp.value || '').trim();
+    const val = (inp.value || '').trim().toUpperCase();
     if (val) {
       countMap[val] = (countMap[val] || 0) + 1;
     }
@@ -17872,20 +17895,23 @@ function updateAllSerialValidationAndBadges() {
 
   let totalRequired = 0;
   let totalFilled = 0;
-  let hasAnyDuplicate = false;
+  let hasAnyInternalDup = false;
+  let totalLinked = 0;
 
   const serialConfigs = getLotSerialConfigs();
 
   serialConfigs.forEach(cfg => {
     totalRequired += cfg.qty;
     let groupFilled = 0;
-    let groupHasDup = false;
+    let groupHasInternalDup = false;
+    let groupLinkedCount = 0;
 
     for (let i = 0; i < cfg.qty; i++) {
       const slotItem = document.getElementById(`slotItem_${cfg.groupKey}_${i}`);
       const statusIcon = document.getElementById(`slotStatus_${cfg.groupKey}_${i}`);
       const inp = DOM.lotSerialGroupsContainer.querySelector(`.lot-serial-group-input[data-group-key="${cfg.groupKey}"][data-index="${i}"], .lot-serial-group-input[data-row-id="${cfg.groupKey}"][data-index="${i}"]`);
       const val = inp ? (inp.value || '').trim() : '';
+      const valUpper = val.toUpperCase();
 
       if (!val) {
         if (slotItem) {
@@ -17899,21 +17925,38 @@ function updateAllSerialValidationAndBadges() {
       } else {
         groupFilled++;
         totalFilled++;
-        const isInternalDup = countMap[val] > 1;
-        const isRegisteredDup = registeredNumbers.has(val);
+        const isInternalDup = countMap[valUpper] > 1;
+        const existingRec = existingSerialMap.get(valUpper);
 
-        if (isInternalDup || isRegisteredDup) {
-          groupHasDup = true;
-          hasAnyDuplicate = true;
+        if (isInternalDup) {
+          // ① 同一ロット内での重複入力（エラー）
+          groupHasInternalDup = true;
+          hasAnyInternalDup = true;
           if (slotItem) {
             slotItem.style.borderColor = '#ef4444';
             slotItem.style.backgroundColor = '#fef2f2';
           }
           if (statusIcon) {
             statusIcon.innerHTML = '⚠️';
-            statusIcon.title = isInternalDup ? '重複しています' : '既にシリアル台帳に登録済みです';
+            statusIcon.style.color = '#dc2626';
+            statusIcon.title = '同一ロット内で重複入力されています';
+          }
+        } else if (existingRec) {
+          // ② 既にシリアル台帳に存在（先行納品書発行済み または 登録済みデータへのロット情報後付け紐付け）
+          groupLinkedCount++;
+          totalLinked++;
+          if (slotItem) {
+            slotItem.style.borderColor = '#3b82f6';
+            slotItem.style.backgroundColor = '#eff6ff';
+          }
+          if (statusIcon) {
+            statusIcon.innerHTML = '🔗';
+            statusIcon.style.color = '#2563eb';
+            const clientInfo = existingRec.clientName ? ` (納品先: ${existingRec.clientName})` : '';
+            statusIcon.title = `シリアル台帳に登録済み${clientInfo}。既存の顧客・伝票情報を保持したまま、今回のロット仕入原価・ロット情報を紐付け更新します`;
           }
         } else {
+          // ③ 新規シリアル番号
           if (slotItem) {
             slotItem.style.borderColor = '#10b981';
             slotItem.style.backgroundColor = '#f0fdf4';
@@ -17922,7 +17965,7 @@ function updateAllSerialValidationAndBadges() {
             statusIcon.innerHTML = '✓';
             statusIcon.style.color = '#059669';
             statusIcon.style.fontWeight = 'bold';
-            statusIcon.title = '入力完了';
+            statusIcon.title = '新規登録可能';
           }
         }
       }
@@ -17931,22 +17974,30 @@ function updateAllSerialValidationAndBadges() {
     // グループバッジの更新
     const groupBadge = DOM.lotSerialGroupsContainer.querySelector(`.group-serial-badge[data-group-key="${cfg.groupKey}"], .group-serial-badge[data-row-id="${cfg.groupKey}"]`);
     if (groupBadge) {
-      if (groupHasDup) {
-        groupBadge.textContent = `⚠️ 重複あり: ${groupFilled} / 必要: ${cfg.qty}`;
-        groupBadge.style.background = '#fffbeb';
-        groupBadge.style.color = '#b45309';
-        groupBadge.style.borderColor = '#fde68a';
-      } else if (groupFilled === cfg.qty) {
-        groupBadge.textContent = `✓ 全数入力完了 (${groupFilled}/${cfg.qty} 件)`;
-        groupBadge.style.background = '#ecfdf5';
-        groupBadge.style.color = '#047857';
-        groupBadge.style.borderColor = '#a7f3d0';
-      } else {
-        const remaining = cfg.qty - groupFilled;
-        groupBadge.textContent = `入力済: ${groupFilled} / 必要: ${cfg.qty} (残り ${remaining} 件)`;
+      if (groupHasInternalDup) {
+        groupBadge.textContent = `⚠️ ロット内重複あり: ${groupFilled} / 必要: ${cfg.qty}`;
         groupBadge.style.background = '#fef2f2';
         groupBadge.style.color = '#dc2626';
         groupBadge.style.borderColor = '#fecaca';
+      } else if (groupFilled === cfg.qty) {
+        if (groupLinkedCount > 0) {
+          groupBadge.textContent = `✓ 全数入力完了 (台帳連携 ${groupLinkedCount}件含む / ${groupFilled}件)`;
+          groupBadge.style.background = '#eff6ff';
+          groupBadge.style.color = '#1d4ed8';
+          groupBadge.style.borderColor = '#bfdbfe';
+        } else {
+          groupBadge.textContent = `✓ 全数入力完了 (${groupFilled}/${cfg.qty} 件)`;
+          groupBadge.style.background = '#ecfdf5';
+          groupBadge.style.color = '#047857';
+          groupBadge.style.borderColor = '#a7f3d0';
+        }
+      } else {
+        const remaining = cfg.qty - groupFilled;
+        const linkedNote = groupLinkedCount > 0 ? ` (台帳連携 ${groupLinkedCount}件)` : '';
+        groupBadge.textContent = `入力済: ${groupFilled} / 必要: ${cfg.qty}${linkedNote} (残り ${remaining} 件)`;
+        groupBadge.style.background = '#f8fafc';
+        groupBadge.style.color = '#334155';
+        groupBadge.style.borderColor = '#cbd5e1';
       }
     }
   });
@@ -17958,21 +18009,29 @@ function updateAllSerialValidationAndBadges() {
       DOM.lotSerialCountBadge.style.background = '#f1f5f9';
       DOM.lotSerialCountBadge.style.color = '#64748b';
       DOM.lotSerialCountBadge.style.borderColor = '#cbd5e1';
-    } else if (hasAnyDuplicate) {
-      DOM.lotSerialCountBadge.textContent = `⚠️ 重複あり (${totalFilled}/${totalRequired} 件)`;
-      DOM.lotSerialCountBadge.style.background = '#fffbeb';
-      DOM.lotSerialCountBadge.style.color = '#b45309';
-      DOM.lotSerialCountBadge.style.borderColor = '#fde68a';
-    } else if (totalFilled === totalRequired) {
-      DOM.lotSerialCountBadge.textContent = `✓ 全数入力完了 (${totalFilled}/${totalRequired} 件)`;
-      DOM.lotSerialCountBadge.style.background = '#ecfdf5';
-      DOM.lotSerialCountBadge.style.color = '#047857';
-      DOM.lotSerialCountBadge.style.borderColor = '#a7f3d0';
-    } else {
-      DOM.lotSerialCountBadge.textContent = `入力済: ${totalFilled} / 必要: ${totalRequired} 件`;
+    } else if (hasAnyInternalDup) {
+      DOM.lotSerialCountBadge.textContent = `⚠️ ロット内重複あり (${totalFilled}/${totalRequired} 件)`;
       DOM.lotSerialCountBadge.style.background = '#fef2f2';
       DOM.lotSerialCountBadge.style.color = '#dc2626';
       DOM.lotSerialCountBadge.style.borderColor = '#fecaca';
+    } else if (totalFilled === totalRequired) {
+      if (totalLinked > 0) {
+        DOM.lotSerialCountBadge.textContent = `✓ 全数入力完了 (台帳連携 ${totalLinked}件含む / ${totalFilled}件)`;
+        DOM.lotSerialCountBadge.style.background = '#eff6ff';
+        DOM.lotSerialCountBadge.style.color = '#1d4ed8';
+        DOM.lotSerialCountBadge.style.borderColor = '#bfdbfe';
+      } else {
+        DOM.lotSerialCountBadge.textContent = `✓ 全数入力完了 (${totalFilled}/${totalRequired} 件)`;
+        DOM.lotSerialCountBadge.style.background = '#ecfdf5';
+        DOM.lotSerialCountBadge.style.color = '#047857';
+        DOM.lotSerialCountBadge.style.borderColor = '#a7f3d0';
+      }
+    } else {
+      const linkedNote = totalLinked > 0 ? ` (台帳連携 ${totalLinked}件)` : '';
+      DOM.lotSerialCountBadge.textContent = `入力済: ${totalFilled} / 必要: ${totalRequired} 件${linkedNote}`;
+      DOM.lotSerialCountBadge.style.background = '#f8fafc';
+      DOM.lotSerialCountBadge.style.color = '#334155';
+      DOM.lotSerialCountBadge.style.borderColor = '#cbd5e1';
     }
   }
 }
@@ -18208,24 +18267,24 @@ function submitInventoryLotStockIn() {
     }
   }
 
-  // ロット内全体での重複チェック
+  // ロット内全体での重複チェック（同一ロット内での重複入力のみエラー）
   const countMap = {};
   const internalDups = [];
   allParsedSerials.forEach(s => {
-    countMap[s] = (countMap[s] || 0) + 1;
-    if (countMap[s] === 2) internalDups.push(s);
+    const sUpper = String(s).trim().toUpperCase();
+    countMap[sUpper] = (countMap[sUpper] || 0) + 1;
+    if (countMap[sUpper] === 2) internalDups.push(s);
   });
   if (internalDups.length > 0) {
-    alert(`シリアル番号に重複があります（${internalDups.join(', ')}）。重複を解消してください。`);
+    alert(`同一ロット入庫内で同じシリアル番号が重複入力されています（${internalDups.join(', ')}）。重複を解消してください。`);
     return;
   }
 
-  // 既存シリアル台帳との重複チェック
-  const conflicts = allParsedSerials.filter(s => registeredNumbers.has(s));
+  // 既存シリアル台帳との照合（先行出荷データ等が存在する場合は顧客・伝票情報を維持して安全にマージ更新）
+  const registeredNumbers = new Set(existingSerials.map(s => String(s.serialNumber || '').trim().toUpperCase()));
+  const conflicts = allParsedSerials.filter(s => registeredNumbers.has(String(s).trim().toUpperCase()));
   if (conflicts.length > 0) {
-    if (!confirm(`以下のシリアル番号は既にシリアル台帳に登録されています：\n${conflicts.join(', ')}\nこのまま重複登録しますか？`)) {
-      return;
-    }
+    console.log(`【先行出荷シリアル紐付け】既存台帳レコード ${conflicts.length} 件にロット仕入情報をマージ更新します:`, conflicts);
   }
 
   // 1. ロットデータの構築 & 保存
