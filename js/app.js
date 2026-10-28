@@ -441,6 +441,7 @@ const DOM = {
   lotDispUnitCost: document.getElementById('lotDispUnitCost'),
   lotDispTax: document.getElementById('lotDispTax'),
   lotDispGrandTotal: document.getElementById('lotDispGrandTotal'),
+  btnAddLotDp5000Bundle: document.getElementById('btnAddLotDp5000Bundle'),
   btnAddLotItemRow: document.getElementById('btnAddLotItemRow'),
   lotItemsTableBody: document.getElementById('lotItemsTableBody'),
   lotItemsSummaryCount: document.getElementById('lotItemsSummaryCount'),
@@ -3654,6 +3655,11 @@ function setupEventListeners() {
   }
   if (DOM.btnAutoLotNumber) {
     DOM.btnAutoLotNumber.addEventListener('click', autoGenerateLotNumber);
+  }
+  if (DOM.btnAddLotDp5000Bundle) {
+    DOM.btnAddLotDp5000Bundle.addEventListener('click', () => {
+      addLotDp5000BundleSet();
+    });
   }
   if (DOM.btnAddLotItemRow) {
     DOM.btnAddLotItemRow.addEventListener('click', () => {
@@ -7754,8 +7760,91 @@ let nextLotRowId = 1;
 
 function getSingleItemList() {
   const list = getInventoryList();
-  return list.filter(i => i.type !== 'bundle');
+  // 単品品目に加え、仕入可能なセット品（DP-5000 ベーシックセット等）も選択可能にする
+  return list;
 }
+
+/**
+ * 📦 DP-5000 セット仕入を一括展開追加（本体1台 ＋ バッテリー2個 ＋ 急速充電器1個）
+ */
+function addLotDp5000BundleSet(setCount = 1) {
+  const invList = getInventoryList();
+  const bodyItem = invList.find(i => i.id === 'inv_dp5000_body' || (i.name && i.name.includes('DP-5000') && i.type !== 'bundle'));
+  const batItem = invList.find(i => i.id === 'inv_dp5000_bat' || (i.name && i.name.includes('バッテリー')));
+  const chgItem = invList.find(i => i.id === 'inv_dp5000_chg' || (i.name && i.name.includes('急速充電器')));
+
+  if (!bodyItem || !batItem || !chgItem) {
+    showToast('在庫マスタに本体、バッテリー、充電器の登録が見つかりません', 'danger');
+    return;
+  }
+
+  // もし現在のリストが初期状態の1行かつ未入力（小計0）ならクリアして置換
+  const isInitialOnly = lotItemRows.length === 1 && (!lotItemRows[0].unitPrice || lotItemRows[0].unitPrice === 0);
+  if (isInitialOnly) {
+    lotItemRows = [];
+  }
+
+  const validSetCount = Math.max(1, Number(setCount) || 1);
+  const bodyCost = Number(bodyItem.unitCost) || 152000;
+  const batCost = Number(batItem.unitCost) || 7700;
+  const chgCost = Number(chgItem.unitCost) || 7700;
+
+  // 1. DP-5000 本体 (1台 × セット数)
+  lotItemRows.push({
+    rowId: nextLotRowId++,
+    itemId: bodyItem.id,
+    itemName: bodyItem.name,
+    hasSerial: true,
+    qty: validSetCount,
+    unitPrice: bodyCost,
+    subtotal: validSetCount * bodyCost,
+    allocatedCost: 0,
+    landedUnitCost: bodyCost,
+    serials: [],
+    textMode: false,
+    isBundlePart: true,
+    bundleRole: 'main'
+  });
+
+  // 2. PSE認証 リチウムイオンバッテリー (2個 × セット数)
+  lotItemRows.push({
+    rowId: nextLotRowId++,
+    itemId: batItem.id,
+    itemName: batItem.name,
+    hasSerial: true,
+    qty: validSetCount * 2,
+    unitPrice: batCost,
+    subtotal: (validSetCount * 2) * batCost,
+    allocatedCost: 0,
+    landedUnitCost: batCost,
+    serials: [],
+    textMode: false,
+    isBundlePart: true,
+    bundleRole: 'battery'
+  });
+
+  // 3. PSE認証 専用急速充電器 (1個 × セット数)
+  lotItemRows.push({
+    rowId: nextLotRowId++,
+    itemId: chgItem.id,
+    itemName: chgItem.name,
+    hasSerial: false,
+    qty: validSetCount,
+    unitPrice: chgCost,
+    subtotal: validSetCount * chgCost,
+    allocatedCost: 0,
+    landedUnitCost: chgCost,
+    serials: [],
+    textMode: false,
+    isBundlePart: true,
+    bundleRole: 'charger'
+  });
+
+  renderLotItemRows();
+  updateLandedCostCalculation(true);
+  showToast(`DP-5000 セット仕入構成（本体${validSetCount}台・バッテリー${validSetCount * 2}個・急速充電器${validSetCount}個）を一括展開しました！実際の仕入単価に合わせて調整してください。`, 'success');
+}
+window.addLotDp5000BundleSet = addLotDp5000BundleSet;
 
 function openInventoryLotModal(defaultItemId = null) {
   if (!DOM.inventoryLotModal) return;
@@ -7935,15 +8024,22 @@ function renderLotItemRows() {
   let html = '';
   lotItemRows.forEach((r, idx) => {
     const isSingle = lotItemRows.length === 1;
-    const optionsHtml = singleItems.map(item => `
-      <option value="${item.id}"
-        data-name="${escapeHtml(item.name)}"
-        data-has-serial="${item.hasSerial ? '1' : '0'}"
-        data-unit-cost="${Number(item.unitCost || item.cost) || 0}"
-        ${item.id === r.itemId ? 'selected' : ''}>
-        ${escapeHtml(item.name)} ${item.hasSerial ? '🔢(S/N追跡)' : ''} [現在庫: ${item.currentStock}${item.unit || '個'}]
-      </option>
-    `).join('');
+    const optionsHtml = singleItems.map(item => {
+      const isBundle = item.type === 'bundle';
+      const bundlePrefix = isBundle ? '📦【セット仕入】' : '';
+      const serialSuffix = (item.hasSerial || isBundle) ? '🔢(S/N追跡)' : '';
+      return `
+        <option value="${item.id}"
+          data-name="${escapeHtml(item.name)}"
+          data-type="${item.type || 'single'}"
+          data-is-bundle="${isBundle ? '1' : '0'}"
+          data-has-serial="${(item.hasSerial || isBundle) ? '1' : '0'}"
+          data-unit-cost="${Number(item.unitCost || item.cost) || 0}"
+          ${item.id === r.itemId ? 'selected' : ''}>
+          ${bundlePrefix}${escapeHtml(item.name)} ${serialSuffix} [現在庫: ${item.currentStock}${item.unit || '個'}]
+        </option>
+      `;
+    }).join('');
 
     html += `
       <tr data-row-id="${r.rowId}" style="border-bottom: 1px solid #e2e8f0;">
@@ -7986,6 +8082,13 @@ function onLotItemSelectChange(rowId, selectElem) {
 
   const opt = selectElem.options[selectElem.selectedIndex];
   if (opt) {
+    if (opt.dataset.isBundle === '1' || opt.value === 'inv_1' || (opt.dataset.name && opt.dataset.name.includes('ベーシックセット'))) {
+      const qty = row.qty || 1;
+      lotItemRows = lotItemRows.filter(r => r.rowId !== rowId);
+      addLotDp5000BundleSet(qty);
+      return;
+    }
+
     row.itemId = opt.value;
     row.itemName = opt.dataset.name || opt.text.split('[')[0].trim();
     row.hasSerial = opt.dataset.hasSerial === '1';
@@ -8837,6 +8940,50 @@ function submitInventoryLotStockIn() {
 
   if (allSerialObjects.length > 0) {
     saveBatchInventorySerials(allSerialObjects);
+  }
+
+  // 3.5. 同一ロットでDP-5000本体とバッテリーが入庫された場合、自動でセット品化紐付け
+  try {
+    const bodyRow = lotItemRows.find(r => r.itemId === 'inv_dp5000_body' || (r.itemName && r.itemName.includes('DP-5000') && !r.itemName.includes('MS')));
+    const batRow = lotItemRows.find(r => r.itemId === 'inv_dp5000_bat' || (r.itemName && r.itemName.includes('バッテリー')));
+    if (bodyRow && batRow) {
+      const bodySns = serialsByRow[bodyRow.rowId] || [];
+      const batSns = serialsByRow[batRow.rowId] || [];
+      const bundleCount = Math.min(bodySns.length, Math.floor(batSns.length / 2));
+      if (bundleCount > 0) {
+        const serialMasterList = getInventorySerialList();
+        let bundledCount = 0;
+        for (let i = 0; i < bundleCount; i++) {
+          const bodySn = bodySns[i];
+          const pairedBatSns = [batSns[i * 2], batSns[i * 2 + 1]].filter(Boolean);
+          if (pairedBatSns.length === 2) {
+            const bodyObj = serialMasterList.find(s => s && s.serialNumber === bodySn);
+            if (bodyObj) {
+              bodyObj.isBundled = true;
+              bodyObj.batterySerials = pairedBatSns;
+              bodyObj.note = (bodyObj.note ? bodyObj.note + ' ' : '') + `[セット仕入品: 🔋 ${pairedBatSns.join(', ')} / 急速充電器付属]`;
+            }
+            pairedBatSns.forEach(bSn => {
+              const batObj = serialMasterList.find(s => s && s.serialNumber === bSn);
+              if (batObj) {
+                batObj.status = 'bundled';
+                batObj.bundledWith = bodySn;
+                batObj.note = (batObj.note ? batObj.note + ' ' : '') + `[セット組込済 (本体: ${bodySn})]`;
+              }
+            });
+            bundledCount++;
+          }
+        }
+        if (bundledCount > 0) {
+          localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(serialMasterList));
+          saveServerInventorySerials(serialMasterList).catch(() => {});
+          syncInventoryStockFromSerials();
+          console.log(`【ロット入庫自動セット品化】${bundledCount}セットのDP-5000本体にバッテリー2個を自動紐付けしました`);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Auto bundle assembly on lot save error:', err);
   }
 
   // 4. 財務会計への自動複合仕訳登録（科目判断 ＆ 建て替え者反映 ＆ 貸借完全一致）

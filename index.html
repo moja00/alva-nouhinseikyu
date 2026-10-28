@@ -328,7 +328,7 @@
         </button>
         <div style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
-          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.28-fix-charger-stock</span>
+          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.28-lot-bundle-support</span>
         </div>
       </div>
 
@@ -2130,12 +2130,17 @@
                 <span style="font-size: 0.7rem; font-weight: 600; color: #047857; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 6px; border-radius: 4px;">混載・原価自動按分</span>
               </h4>
               <span style="font-size: 0.725rem; color: #64748b;">
-                1回の輸入で届いた品目を自由に追加できます。共通諸費用は本体金額比率で自動按分され、端数差額も完全調整されます。
+                1回の輸入・国内仕入で届いた品目を自由に追加できます。DP-5000をバッテリー2個・急速充電器付属で仕入れる場合は「📦 DP-5000 セット仕入を一括展開」を押すとワンクリックで自動セット展開されます。
               </span>
             </div>
-            <button type="button" id="btnAddLotItemRow" class="btn btn-secondary btn-xs" style="background: #ecfdf5; border-color: #a7f3d0; color: #047857; font-weight: 700; padding: 4px 12px; font-size: 0.75rem;">
-              ＋ 品目を追加
-            </button>
+            <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+              <button type="button" id="btnAddLotDp5000Bundle" class="btn btn-xs" style="background: linear-gradient(135deg, #059669, #047857); color: #ffffff; border: none; font-weight: 700; padding: 4px 12px; font-size: 0.75rem; border-radius: 6px; box-shadow: 0 1px 3px rgba(5,150,105,0.3);" title="本体1台・バッテリー2個・急速充電器1個をセット構成で一括展開追加">
+                📦 DP-5000 セット仕入を一括展開（本体1+バッテリ2+充電器1）
+              </button>
+              <button type="button" id="btnAddLotItemRow" class="btn btn-secondary btn-xs" style="background: #ecfdf5; border-color: #a7f3d0; color: #047857; font-weight: 700; padding: 4px 12px; font-size: 0.75rem;">
+                ＋ 単品目を追加
+              </button>
+            </div>
           </div>
 
           <div style="overflow-x: auto;">
@@ -6772,7 +6777,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261028_fix_charger_stock"></script>
+  <script src="js/app.bundle.js?v=20261028_lot_bundle_support"></script>
 </body>
 
 </html>
