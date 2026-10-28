@@ -13033,20 +13033,29 @@ function setupEventListeners() {
 
   // 品目別シリアルグループコンテナのイベント委譲
   if (DOM.lotSerialGroupsContainer) {
-    // シリアル入力時のバリデーション＆バッジ更新
+    // シリアル入力中のリアルタイムバリデーション＆バッジ更新
     DOM.lotSerialGroupsContainer.addEventListener('input', (e) => {
       if (e.target && e.target.classList.contains('lot-serial-group-input')) {
-        const rowId = Number(e.target.dataset.rowId);
-        updateLotSerialGroupValidation(rowId);
+        const groupKey = e.target.dataset.groupKey || e.target.dataset.rowId;
+        updateLotSerialGroupValidation(groupKey);
       } else if (e.target && e.target.classList.contains('group-serial-textarea')) {
-        const rowId = Number(e.target.dataset.rowId);
-        applyGroupTextToSlots(rowId);
+        const groupKey = e.target.dataset.groupKey || e.target.dataset.rowId;
+        applyGroupTextToSlots(groupKey);
       }
     });
-    // Enterキー押下で次スロットへフォーカス移動
+
+    // 入力確定時（フォーカスアウト・change）に後続スロットへ連番スマート自動補完
+    DOM.lotSerialGroupsContainer.addEventListener('change', (e) => {
+      if (e.target && e.target.classList.contains('lot-serial-group-input')) {
+        handleLotSerialAutoFill(e.target);
+      }
+    });
+
+    // Enterキー押下時：連番補完 ＆ 次スロットへフォーカス移動
     DOM.lotSerialGroupsContainer.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && e.target && e.target.classList.contains('lot-serial-group-input')) {
         e.preventDefault();
+        handleLotSerialAutoFill(e.target);
         onLotSerialInputEnterKey(e.target);
       }
     });
@@ -17843,6 +17852,10 @@ function renderLotSerialGroups(syncSlots = false) {
           </div>
         </div>
 
+        <div style="font-size: 0.725rem; color: #475569; background: #f1f5f9; border-radius: 4px; padding: 3px 8px; margin-bottom: 6px; display: flex; align-items: center; gap: 4px;">
+          <span>💡</span> <span>任意の枠にシリアルを入力すると後続の枠が自動で連番補完されます（途中の欠番は直接上書きで再連番化）</span>
+        </div>
+
         <div class="group-slots-container" data-group-key="${cfg.groupKey}" data-row-id="${cfg.groupKey}" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px; max-height: 200px; overflow-y: auto; padding: 6px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px;">
           ${slotsHtml}
         </div>
@@ -18035,6 +18048,67 @@ function updateAllSerialValidationAndBadges() {
     }
   }
 }
+
+/**
+ * シリアル番号スマート連番自動補完（オートフィル）
+ * 例:
+ *  - #1 に「N8460」と入力 -> 後続（#2〜#10）に N8461, N8462... を自動入力
+ *  - #6 に「N8466」と入力 -> 後続（#7〜#10）に N8467, N8468... を自動で再連番補完
+ *  - 全角（Ｎ８４６０等）も自動で半角大文字化
+ */
+function handleLotSerialAutoFill(currentInput) {
+  if (!currentInput || !currentInput.value) return;
+
+  // 全角英数字を半角大文字へ自動正規化
+  let rawVal = currentInput.value.trim();
+  rawVal = rawVal.replace(/[Ａ-Ｚａ-ｚ０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0));
+  rawVal = rawVal.replace(/[ー−―]/g, '-').toUpperCase();
+  currentInput.value = rawVal;
+
+  const groupKey = currentInput.dataset.groupKey || currentInput.dataset.rowId;
+  const currentIndex = Number(currentInput.dataset.index);
+  if (isNaN(currentIndex)) return;
+
+  // 末尾の数字部分を検出（例: "N8460" -> prefix: "N", numStr: "8460", baseNum: 8460）
+  const match = rawVal.match(/^(.*?)(\d+)$/);
+  if (!match) {
+    updateAllSerialValidationAndBadges();
+    return;
+  }
+
+  const prefix = match[1];
+  const numStr = match[2];
+  const numLen = numStr.length;
+  let baseNum = parseInt(numStr, 10);
+
+  // 同じグループカード内の全入力スロットを取得
+  const card = DOM.lotSerialGroupsContainer.querySelector(`.lot-serial-group-card[data-group-key="${groupKey}"], .lot-serial-group-card[data-row-id="${groupKey}"]`);
+  if (!card) return;
+
+  const allInputs = card.querySelectorAll('.lot-serial-group-input');
+  let filledCount = 0;
+
+  for (let i = currentIndex + 1; i < allInputs.length; i++) {
+    const nextInput = allInputs[i];
+    baseNum++;
+    const nextSerial = `${prefix}${String(baseNum).padStart(numLen, '0')}`;
+    nextInput.value = nextSerial;
+    filledCount++;
+  }
+
+  // 一括テキストエリアにも同期
+  const textarea = card.querySelector('.group-serial-textarea');
+  if (textarea) {
+    const vals = Array.from(allInputs).map(inp => (inp.value || '').trim());
+    textarea.value = vals.join('\n');
+  }
+
+  updateAllSerialValidationAndBadges();
+  if (filledCount > 0) {
+    showToast(`後続の ${filledCount} 枠に連番シリアルを自動入力しました（途中で飛んでいる番号は直接上書きできます）`, 'info');
+  }
+}
+window.handleLotSerialAutoFill = handleLotSerialAutoFill;
 
 // Enterキー押下で次スロットへ移動（品目内、および品目間）
 function onLotSerialInputEnterKey(currentInput) {
