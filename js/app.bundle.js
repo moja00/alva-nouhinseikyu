@@ -10746,20 +10746,12 @@ function switchAppView(viewName) {
         break;
 
       case 'serials':
-        // シリアル番号管理台帳専用フル画面
-        const serialsScreen = document.getElementById('serialsViewScreen');
-        if (serialsScreen) {
-          serialsScreen.classList.add('active');
+        // シリアル番号管理台帳（在庫マスタ内のタブへ完全統合）
+        switchAppView('inventory');
+        if (typeof switchInventoryTab === 'function') {
+          switchInventoryTab('serials');
         }
-        try {
-          if (typeof renderSerialsManagementTable === 'function') {
-            renderSerialsManagementTable();
-          }
-        } catch (err) {
-          console.error('Error initializing serials view:', err);
-        }
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-        break;
+        return;
     }
   } catch (globalErr) {
     console.error('Fatal error in switchAppView:', globalErr);
@@ -16002,10 +15994,6 @@ function renderInventoryTable() {
 let currentInventoryTab = 'items';
 
 function switchInventoryTab(tabName) {
-  if (tabName === 'serials') {
-    switchAppView('serials');
-    return;
-  }
   currentInventoryTab = tabName;
   const tabs = [
     { key: 'items', btn: DOM.tabBtnInventoryItems, content: DOM.inventoryItemsTabContent },
@@ -16039,7 +16027,11 @@ function switchInventoryTab(tabName) {
   });
 
   if (tabName === 'items') renderInventoryTable();
-  if (tabName === 'serials') renderInventorySerialTable();
+  if (tabName === 'serials') {
+    if (typeof renderSerialsManagementTable === 'function') {
+      renderSerialsManagementTable();
+    }
+  }
   if (tabName === 'lots') renderInventoryLotTable();
 }
 
