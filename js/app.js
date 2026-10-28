@@ -432,6 +432,7 @@ const DOM = {
   lotCostShipping: document.getElementById('lotCostShipping'),
   lotCostTariff: document.getElementById('lotCostTariff'),
   lotCostDomesticDelivery: document.getElementById('lotCostDomesticDelivery'),
+  lotCostRemittance: document.getElementById('lotCostRemittance'),
   lotCostImportTax: document.getElementById('lotCostImportTax'),
   lotDomUnitPrice: document.getElementById('lotDomUnitPrice'),
   lotDomShipping: document.getElementById('lotDomShipping'),
@@ -3691,7 +3692,7 @@ function setupEventListeners() {
   // 費用計算入力イベント
   const lotCostInputs = [
     DOM.lotCostGoods, DOM.lotCostConsulting, DOM.lotCostShipping,
-    DOM.lotCostTariff, DOM.lotCostDomesticDelivery, DOM.lotCostImportTax,
+    DOM.lotCostTariff, DOM.lotCostDomesticDelivery, DOM.lotCostRemittance, DOM.lotCostImportTax,
     DOM.lotDomUnitPrice, DOM.lotDomShipping, DOM.lotDomTaxRate
   ];
   lotCostInputs.forEach(input => {
@@ -7760,9 +7761,10 @@ function updateLandedCostCalculation(syncSerials = false) {
     const costShipping = Number(DOM.lotCostShipping ? DOM.lotCostShipping.value : 0) || 0;
     const costTariff = Number(DOM.lotCostTariff ? DOM.lotCostTariff.value : 0) || 0;
     const costDomesticDelivery = Number(DOM.lotCostDomesticDelivery ? DOM.lotCostDomesticDelivery.value : 0) || 0;
+    const costRemittance = Number(DOM.lotCostRemittance ? DOM.lotCostRemittance.value : 0) || 0;
     const costImportTax = Number(DOM.lotCostImportTax ? DOM.lotCostImportTax.value : 0) || 0;
 
-    commonExpenses = costConsulting + costShipping + costTariff + costDomesticDelivery;
+    commonExpenses = costConsulting + costShipping + costTariff + costDomesticDelivery + costRemittance;
     taxTotal = costImportTax;
   } else {
     const domShipping = Number(DOM.lotDomShipping ? DOM.lotDomShipping.value : 0) || 0;
@@ -8289,11 +8291,12 @@ function submitInventoryLotStockIn() {
     const costShipping = Number(DOM.lotCostShipping ? DOM.lotCostShipping.value : 0) || 0;
     const costTariff = Number(DOM.lotCostTariff ? DOM.lotCostTariff.value : 0) || 0;
     const costDomesticDelivery = Number(DOM.lotCostDomesticDelivery ? DOM.lotCostDomesticDelivery.value : 0) || 0;
+    const costRemittance = Number(DOM.lotCostRemittance ? DOM.lotCostRemittance.value : 0) || 0;
     const costImportTax = Number(DOM.lotCostImportTax ? DOM.lotCostImportTax.value : 0) || 0;
 
-    commonExpenses = costConsulting + costShipping + costTariff + costDomesticDelivery;
+    commonExpenses = costConsulting + costShipping + costTariff + costDomesticDelivery + costRemittance;
     taxTotal = costImportTax;
-    costDetails = { costGoods: goodsTotal, costConsulting, costShipping, costTariff, costDomesticDelivery, costImportTax };
+    costDetails = { costGoods: goodsTotal, costConsulting, costShipping, costTariff, costDomesticDelivery, costRemittance, costImportTax };
   } else {
     const domShipping = Number(DOM.lotDomShipping ? DOM.lotDomShipping.value : 0) || 0;
     const domTaxRate = Number(DOM.lotDomTaxRate ? DOM.lotDomTaxRate.value : 10) || 0;

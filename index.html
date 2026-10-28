@@ -328,7 +328,7 @@
         </button>
         <div style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
-          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.28-multi-lot-landed-cost</span>
+          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.28-import-remittance-fee</span>
         </div>
       </div>
 
@@ -2196,8 +2196,12 @@
               <label class="form-label" for="lotCostDomesticDelivery" style="font-size: 0.725rem; font-weight: 600;">⑤ 国内配送送料 (原価算入)</label>
               <input type="number" id="lotCostDomesticDelivery" class="form-input lot-cost-calc-input" min="0" value="5000" style="font-size: 0.9rem; font-weight: 600; text-align: right;">
             </div>
+            <div class="form-group">
+              <label class="form-label" for="lotCostRemittance" style="font-size: 0.725rem; font-weight: 600;">⑥ 海外送金手数料 (原価算入)</label>
+              <input type="number" id="lotCostRemittance" class="form-input lot-cost-calc-input" min="0" value="4000" style="font-size: 0.9rem; font-weight: 600; text-align: right;">
+            </div>
             <div class="form-group" style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 6px 8px;">
-              <label class="form-label" for="lotCostImportTax" style="font-size: 0.725rem; font-weight: 700; color: #b91c1c;">⑥ 【別枠】輸入消費税 (仮払消費税連動)</label>
+              <label class="form-label" for="lotCostImportTax" style="font-size: 0.725rem; font-weight: 700; color: #b91c1c;">⑦ 【別枠】輸入消費税 (仮払消費税連動)</label>
               <input type="number" id="lotCostImportTax" class="form-input lot-cost-calc-input" min="0" value="12000" style="font-size: 0.9rem; font-weight: 700; text-align: right; color: #b91c1c;">
               <span style="font-size: 0.65rem; color: #7f1d1d; display: block; margin-top: 2px;">※原価には含めず、財務会計の「仮払消費税」として計上</span>
             </div>
@@ -6731,7 +6735,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261028_multi_lot_landed_cost"></script>
+  <script src="js/app.bundle.js?v=20261028_remittance_fee"></script>
 </body>
 
 </html>
