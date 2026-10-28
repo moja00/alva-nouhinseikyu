@@ -16933,7 +16933,8 @@ function switchLotProcurementType(type) {
   updateLandedCostCalculation();
 }
 
-function updateLandedCostCalculation() {
+function updateLandedCostCalculation(syncSlots = false) {
+  const shouldSyncSlots = (syncSlots === true);
   const typeRadio = document.querySelector('input[name="lotProcurementType"]:checked');
   const type = typeRadio ? typeRadio.value : 'import';
   const qty = Math.max(1, Number(DOM.lotInputQty ? DOM.lotInputQty.value : 10) || 1);
@@ -16980,7 +16981,7 @@ function updateLandedCostCalculation() {
 
   // シリアル管理品の場合、個別スロットの数量同期・更新
   if (hasSerial) {
-    renderLotSerialSlots(qty, syncSlots);
+    renderLotSerialSlots(qty, shouldSyncSlots);
   } else if (DOM.lotSerialCountBadge) {
     DOM.lotSerialCountBadge.textContent = 'シリアル追跡対象外';
     DOM.lotSerialCountBadge.style.background = '#f1f5f9';
