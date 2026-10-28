@@ -9640,37 +9640,26 @@ function initExpensePurchaseToggle() {
 }
 
 function switchExpenseEntryType(type) {
-  const isPurchase = (type === 'purchase');
-
-  if (DOM.radioExpenseTypeExpense) DOM.radioExpenseTypeExpense.checked = !isPurchase;
-  if (DOM.radioExpenseTypePurchase) DOM.radioExpenseTypePurchase.checked = isPurchase;
+  // 在庫反映機能は「在庫マスタ」のロット入庫に一本化されたため、経費画面では常に通常経費として動作
+  if (DOM.radioExpenseTypeExpense) DOM.radioExpenseTypeExpense.checked = true;
+  if (DOM.radioExpenseTypePurchase) DOM.radioExpenseTypePurchase.checked = false;
 
   if (DOM.labelExpenseTypeExpense) {
-    if (!isPurchase) DOM.labelExpenseTypeExpense.classList.add('active');
-    else DOM.labelExpenseTypeExpense.classList.remove('active');
+    DOM.labelExpenseTypeExpense.classList.add('active');
   }
   if (DOM.labelExpenseTypePurchase) {
-    if (isPurchase) DOM.labelExpenseTypePurchase.classList.add('active');
-    else DOM.labelExpenseTypePurchase.classList.remove('active');
+    DOM.labelExpenseTypePurchase.classList.remove('active');
   }
 
   if (DOM.expenseInventoryPanel) {
-    DOM.expenseInventoryPanel.style.display = isPurchase ? 'block' : 'none';
+    DOM.expenseInventoryPanel.style.display = 'none';
   }
 
   if (DOM.btnSaveExpense) {
-    DOM.btnSaveExpense.textContent = isPurchase ? '📦 仕入れ＆在庫入庫を確定' : '💼 経費として登録';
-  }
-
-  if (isPurchase) {
-    if (DOM.expenseSelectCategory) {
-      DOM.expenseSelectCategory.value = '仕入高';
-    }
-    // 商品マスタを参照してドロップダウンを生成
-    populateExpenseInventoryDropdown();
-    checkAndSuggestInventoryMatch();
+    DOM.btnSaveExpense.textContent = '💼 経費として登録';
   }
 }
+
 
 /**
  * 経費仕入れ画面の入庫対象在庫ドロップダウン
@@ -11631,7 +11620,7 @@ function syncCurrentMultiReceiptFormData() {
   const item = multiReceiptSession.items[multiReceiptSession.currentIndex];
   if (!item) return;
 
-  const entryType = (DOM.radioMultiReceiptTypePurchase && DOM.radioMultiReceiptTypePurchase.checked) ? 'purchase' : 'expense';
+  const entryType = 'expense';
   item.formData = {
     claimant: DOM.multiReceiptInputClaimant ? DOM.multiReceiptInputClaimant.value : (multiReceiptSession.globalClaimant || '小林俊介'),
     date: DOM.multiReceiptInputDate ? DOM.multiReceiptInputDate.value : getTodayDateString(),
@@ -11717,24 +11706,21 @@ function loadMultiReceiptItem(index) {
 }
 
 function setMultiReceiptEntryType(type) {
-  const isPurchase = type === 'purchase';
-  if (DOM.radioMultiReceiptTypeExpense) DOM.radioMultiReceiptTypeExpense.checked = !isPurchase;
-  if (DOM.radioMultiReceiptTypePurchase) DOM.radioMultiReceiptTypePurchase.checked = isPurchase;
+  // 在庫反映機能は「在庫マスタ」のロット入庫に一本化されたため、経費画面では常に通常経費として動作
+  if (DOM.radioMultiReceiptTypeExpense) DOM.radioMultiReceiptTypeExpense.checked = true;
+  if (DOM.radioMultiReceiptTypePurchase) DOM.radioMultiReceiptTypePurchase.checked = false;
 
   if (DOM.labelMultiReceiptTypeExpense) {
-    DOM.labelMultiReceiptTypeExpense.classList.toggle('active', !isPurchase);
-    DOM.labelMultiReceiptTypeExpense.style.color = !isPurchase ? '#4338ca' : '#64748b';
+    DOM.labelMultiReceiptTypeExpense.classList.toggle('active', true);
+    DOM.labelMultiReceiptTypeExpense.style.color = '#4338ca';
   }
   if (DOM.labelMultiReceiptTypePurchase) {
-    DOM.labelMultiReceiptTypePurchase.classList.toggle('active', isPurchase);
-    DOM.labelMultiReceiptTypePurchase.style.color = isPurchase ? '#065f46' : '#64748b';
+    DOM.labelMultiReceiptTypePurchase.classList.toggle('active', false);
+    DOM.labelMultiReceiptTypePurchase.style.color = '#64748b';
   }
 
   if (DOM.multiReceiptInventoryPanel) {
-    DOM.multiReceiptInventoryPanel.style.display = isPurchase ? 'block' : 'none';
-  }
-  if (isPurchase && DOM.multiReceiptSelectCategory) {
-    DOM.multiReceiptSelectCategory.value = '仕入高';
+    DOM.multiReceiptInventoryPanel.style.display = 'none';
   }
 }
 
@@ -11862,27 +11848,13 @@ async function saveCurrentMultiReceiptItem(advanceNext = true) {
     return;
   }
 
-  const isPurchase = data.entryType === 'purchase';
-  let linkedInventoryId = '';
-  let linkedInventoryQty = 1;
-
-  if (isPurchase) {
-    linkedInventoryId = data.inventoryItemId;
-    linkedInventoryQty = Math.max(1, parseInt(data.inventoryQty, 10) || 1);
-    if (!linkedInventoryId) {
-      alert('仕入れ入庫を行う対象の在庫品目を選択してください。');
-      if (DOM.multiReceiptSelectInventoryItem) DOM.multiReceiptSelectInventoryItem.focus();
-      return;
-    }
-  }
-
   const expenseId = item.savedExpId || ('exp_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6));
   const receiptImg = item.rawImage || '';
 
   const expenseItem = {
     id: expenseId,
     date: data.date,
-    category: isPurchase ? '仕入高' : data.category,
+    category: data.category || '消耗品費',
     amount: amount,
     taxRate: Number(data.taxRate) || 10,
     payee: data.payee,
@@ -11890,10 +11862,10 @@ async function saveCurrentMultiReceiptItem(advanceNext = true) {
     note: data.note,
     claimant: data.claimant || '小林俊介',
     isSettled: false,
-    isCost: isPurchase,
-    isPurchase: isPurchase,
-    linkedInventoryId: isPurchase ? (linkedInventoryId || '') : '',
-    linkedInventoryQty: isPurchase ? (Number(linkedInventoryQty) || 0) : 0,
+    isCost: false,
+    isPurchase: false,
+    linkedInventoryId: '',
+    linkedInventoryQty: 0,
     receiptImage: (receiptImg && receiptImg.startsWith('data:image/')) ? '' : receiptImg
   };
 
@@ -11901,19 +11873,6 @@ async function saveCurrentMultiReceiptItem(advanceNext = true) {
   if (!savedExp) {
     alert('経費の保存に失敗しました。');
     return;
-  }
-
-  if (isPurchase && linkedInventoryId && linkedInventoryQty > 0) {
-    const unitCost = Math.round(amount / linkedInventoryQty);
-    if (typeof adjustStock === 'function') {
-      adjustStock(linkedInventoryId, linkedInventoryQty, `仕入入庫: ${data.payee || '仕入先未指定'}`, {
-        sourceRef: savedExp.id,
-        payee: data.payee,
-        unitCost: unitCost,
-        date: data.date
-      });
-    }
-    if (typeof renderInventoryTable === 'function') renderInventoryTable();
   }
 
   if (typeof fetch !== 'undefined' && receiptImg && receiptImg.startsWith('data:image/')) {
@@ -12490,27 +12449,13 @@ function handleSaveExpense() {
 
     const paymentMethod = DOM.expensePaymentMethod ? DOM.expensePaymentMethod.value : '101 現金';
 
-    const isPurchase = DOM.radioExpenseTypePurchase && DOM.radioExpenseTypePurchase.checked;
-    let linkedInventoryId = '';
-    let linkedInventoryQty = 1;
-
-    if (isPurchase) {
-      linkedInventoryId = DOM.expenseSelectInventoryItem ? DOM.expenseSelectInventoryItem.value : '';
-      linkedInventoryQty = DOM.expenseInputInQty ? Math.max(1, parseInt(DOM.expenseInputInQty.value, 10) || 1) : 1;
-
-      if (!linkedInventoryId) {
-        alert('仕入れ入庫を行う対象の在庫品目を選択してください。\n（該当する品目がない場合は「＋新規品目」から在庫マスタに登録できます）');
-        if (DOM.expenseSelectInventoryItem) DOM.expenseSelectInventoryItem.focus();
-        return;
-      }
-    }
-
+    const isPurchase = false;
     const tempReceiptDataUrl = (typeof currentReceiptDataUrl !== 'undefined' && currentReceiptDataUrl) ? currentReceiptDataUrl : undefined;
 
     const expenseItem = {
       id,
       date,
-      category: isPurchase ? '仕入高' : category,
+      category,
       amount,
       taxRate,
       payee,
@@ -12519,34 +12464,15 @@ function handleSaveExpense() {
       claimant,
       paymentMethod,
       isSettled: false,
-      isCost: isPurchase,
-      isPurchase: isPurchase,
-      linkedInventoryId: isPurchase ? (linkedInventoryId || '') : '',
-      linkedInventoryQty: isPurchase ? (Number(linkedInventoryQty) || 0) : 0,
+      isCost: false,
+      isPurchase: false,
+      linkedInventoryId: '',
+      linkedInventoryQty: 0,
       // ⚠️ localStorageの容量オーバー(QuotaExceededError)を防ぐため、Base64の巨大文字列は初回保存時には空にする
       receiptImage: (tempReceiptDataUrl && tempReceiptDataUrl.startsWith('data:image/')) ? '' : tempReceiptDataUrl
     };
 
     const savedExp = saveExpense(expenseItem);
-
-    if (isPurchase && linkedInventoryId && linkedInventoryQty > 0) {
-      const rawMatchTarget = payee || note || '仕入伝票';
-      const unitCost = Math.round(amount / linkedInventoryQty);
-
-      if (typeof adjustStock === 'function') {
-        adjustStock(linkedInventoryId, linkedInventoryQty, `仕入入庫: ${payee || '仕入先未指定'}`, {
-          sourceRef: savedExp ? savedExp.id : '',
-          payee: payee,
-          unitCost: unitCost,
-          date: date
-        });
-      }
-
-      if (DOM.expenseCheckSaveMapping && DOM.expenseCheckSaveMapping.checked && rawMatchTarget) {
-        if (typeof savePurchaseMapping === 'function') savePurchaseMapping(rawMatchTarget, linkedInventoryId);
-      }
-      if (typeof renderInventoryTable === 'function') renderInventoryTable();
-    }
 
     // 画像アップロードと後追いのURL更新
     if (savedExp && typeof fetch !== 'undefined') {
@@ -12601,10 +12527,8 @@ function handleSaveExpense() {
       switchExpenseMobileTab('list');
     }
     
-    if (isPurchase) {
-      if (typeof showToast === 'function') showToast(`仕入データを登録し、在庫を +${linkedInventoryQty} 反映しました！`, 'success');
-    } else {
-      if (typeof showToast === 'function') showToast(id ? '経費データを更新しました！' : '経費と領収書写真を保存しました（電帳法対応）！', 'success');
+    if (typeof showToast === 'function') {
+      showToast(id ? '経費データを更新しました！' : '経費と領収書写真を保存しました（電帳法対応）！', 'success');
     }
 
     if (typeof isDateInPeriod === 'function' && typeof currentAccGlobalPeriod !== 'undefined') {
