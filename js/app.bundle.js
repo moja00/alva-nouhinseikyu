@@ -9857,6 +9857,34 @@ const DOM = {
   lotCheckSyncAccounting: document.getElementById('lotCheckSyncAccounting'),
   lotSelectCreditAccount: document.getElementById('lotSelectCreditAccount'),
   lotJournalPreviewBox: document.getElementById('lotJournalPreviewBox'),
+  lotAccountGoods: document.getElementById('lotAccountGoods'),
+  lotAccountConsulting: document.getElementById('lotAccountConsulting'),
+  lotAccountShipping: document.getElementById('lotAccountShipping'),
+  lotAccountTariff: document.getElementById('lotAccountTariff'),
+  lotAccountDomesticDelivery: document.getElementById('lotAccountDomesticDelivery'),
+  lotAccountRemittance: document.getElementById('lotAccountRemittance'),
+  lotPayerCompanyRow: document.getElementById('lotPayerCompanyRow'),
+  lotPayerOtherRow: document.getElementById('lotPayerOtherRow'),
+  lotInputPayerName: document.getElementById('lotInputPayerName'),
+  lotInputReceiptFile: document.getElementById('lotInputReceiptFile'),
+  btnSelectLotReceiptFile: document.getElementById('btnSelectLotReceiptFile'),
+  btnClearLotReceiptFile: document.getElementById('btnClearLotReceiptFile'),
+  lotReceiptPreviewContainer: document.getElementById('lotReceiptPreviewContainer'),
+  lotReceiptImagePreview: document.getElementById('lotReceiptImagePreview'),
+  lotReceiptFileName: document.getElementById('lotReceiptFileName'),
+  lotReceiptDropNotice: document.getElementById('lotReceiptDropNotice'),
+  lotReceiptManageModal: document.getElementById('lotReceiptManageModal'),
+  lotReceiptModalTitle: document.getElementById('lotReceiptModalTitle'),
+  lotReceiptModalSub: document.getElementById('lotReceiptModalSub'),
+  lotReceiptModalImage: document.getElementById('lotReceiptModalImage'),
+  lotReceiptModalEmpty: document.getElementById('lotReceiptModalEmpty'),
+  lotReceiptModalFileInput: document.getElementById('lotReceiptModalFileInput'),
+  btnLotReceiptModalSelectFile: document.getElementById('btnLotReceiptModalSelectFile'),
+  btnLotReceiptModalRotate: document.getElementById('btnLotReceiptModalRotate'),
+  btnLotReceiptModalDelete: document.getElementById('btnLotReceiptModalDelete'),
+  btnCloseLotReceiptModal: document.getElementById('btnCloseLotReceiptModal'),
+  btnCancelLotReceiptModal: document.getElementById('btnCancelLotReceiptModal'),
+  btnSaveLotReceiptModal: document.getElementById('btnSaveLotReceiptModal'),
 
   // シリアル番号管理台帳 ＆ ロット履歴
   inputSearchSerial: document.getElementById('inputSearchSerial'),
@@ -13087,10 +13115,46 @@ function setupEventListeners() {
   }
 
   if (DOM.lotSelectCreditAccount) {
-    DOM.lotSelectCreditAccount.addEventListener('change', updateLandedCostCalculation);
+    DOM.lotSelectCreditAccount.addEventListener('change', () => updateLandedCostCalculation(false));
   }
   if (DOM.lotCheckSyncAccounting) {
-    DOM.lotCheckSyncAccounting.addEventListener('change', updateLandedCostCalculation);
+    DOM.lotCheckSyncAccounting.addEventListener('change', () => updateLandedCostCalculation(false));
+  }
+
+  // 経費建て替え者（会社直接 / その他立替）切り替えイベント
+  const lotPayerTypeRadios = document.getElementsByName('lotPayerType');
+  lotPayerTypeRadios.forEach(r => {
+    r.addEventListener('change', () => {
+      const isOther = (r.value === 'other');
+      if (DOM.lotPayerCompanyRow) DOM.lotPayerCompanyRow.style.display = isOther ? 'none' : 'flex';
+      if (DOM.lotPayerOtherRow) DOM.lotPayerOtherRow.style.display = isOther ? 'flex' : 'none';
+      updateLandedCostCalculation(false);
+    });
+  });
+
+  if (DOM.lotInputPayerName) {
+    DOM.lotInputPayerName.addEventListener('input', () => updateLandedCostCalculation(false));
+  }
+
+  // 各輸入費用の勘定科目選択変更イベント（借方科目変更で仕訳プレビュー即時更新）
+  const lotAccountSelects = [
+    DOM.lotAccountGoods, DOM.lotAccountConsulting, DOM.lotAccountShipping,
+    DOM.lotAccountTariff, DOM.lotAccountDomesticDelivery, DOM.lotAccountRemittance
+  ];
+  lotAccountSelects.forEach(sel => {
+    if (sel) sel.addEventListener('change', () => updateLandedCostCalculation(false));
+  });
+
+  // ロット入庫モーダル内: 領収書・証憑画像の添付イベント
+  if (DOM.btnSelectLotReceiptFile && DOM.lotInputReceiptFile) {
+    DOM.btnSelectLotReceiptFile.addEventListener('click', () => DOM.lotInputReceiptFile.click());
+    DOM.lotInputReceiptFile.addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (file) handleLotReceiptFileSelect(file);
+    });
+  }
+  if (DOM.btnClearLotReceiptFile) {
+    DOM.btnClearLotReceiptFile.addEventListener('click', clearLotReceiptImage);
   }
 
   // 費用計算入力イベント
@@ -13111,6 +13175,36 @@ function setupEventListeners() {
   if (DOM.inventoryLotModal) {
     DOM.inventoryLotModal.addEventListener('click', (e) => {
       if (e.target === DOM.inventoryLotModal) closeInventoryLotModal();
+    });
+  }
+
+  // ロット台帳一覧での画像管理ボタンクリック（イベント委譲）
+  if (DOM.inventoryLotTableContainer) {
+    DOM.inventoryLotTableContainer.addEventListener('click', (e) => {
+      const btn = e.target.closest('.btn-open-lot-receipt');
+      if (btn) {
+        const lotId = btn.dataset.lotId;
+        if (lotId) openLotReceiptManageModal(lotId);
+      }
+    });
+  }
+
+  // ロット証憑画像管理モーダル（後から追加・差替・削除）イベント
+  if (DOM.btnCloseLotReceiptModal) DOM.btnCloseLotReceiptModal.addEventListener('click', closeLotReceiptManageModal);
+  if (DOM.btnCancelLotReceiptModal) DOM.btnCancelLotReceiptModal.addEventListener('click', closeLotReceiptManageModal);
+  if (DOM.btnLotReceiptModalSelectFile && DOM.lotReceiptModalFileInput) {
+    DOM.btnLotReceiptModalSelectFile.addEventListener('click', () => DOM.lotReceiptModalFileInput.click());
+    DOM.lotReceiptModalFileInput.addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (file) handleLotReceiptModalFileSelect(file);
+    });
+  }
+  if (DOM.btnLotReceiptModalRotate) DOM.btnLotReceiptModalRotate.addEventListener('click', rotateLotReceiptModalImage);
+  if (DOM.btnLotReceiptModalDelete) DOM.btnLotReceiptModalDelete.addEventListener('click', deleteLotReceiptModalImage);
+  if (DOM.btnSaveLotReceiptModal) DOM.btnSaveLotReceiptModal.addEventListener('click', saveLotReceiptModalImage);
+  if (DOM.lotReceiptManageModal) {
+    DOM.lotReceiptManageModal.addEventListener('click', (e) => {
+      if (e.target === DOM.lotReceiptManageModal) closeLotReceiptManageModal();
     });
   }
 
@@ -16785,6 +16879,175 @@ function initSerialsManagementEvents() {
 window.initSerialsManagementEvents = initSerialsManagementEvents;
 
 // ==========================================================================
+// ロット証憑・領収書画像の管理ステート＆関数
+// ==========================================================================
+let currentLotReceiptDataUrl = '';
+let currentLotReceiptFileName = '';
+
+let activeLotForReceipt = null;
+let activeLotReceiptTempUrl = '';
+let activeLotReceiptRotation = 0;
+
+async function handleLotReceiptFileSelect(file) {
+  if (!file) return;
+  try {
+    currentLotReceiptFileName = file.name;
+    let dataUrl = '';
+    if (typeof compressReceiptImage === 'function' && file.type.startsWith('image/')) {
+      dataUrl = await compressReceiptImage(file);
+    } else {
+      dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+    currentLotReceiptDataUrl = dataUrl;
+    if (DOM.lotReceiptImagePreview) DOM.lotReceiptImagePreview.src = dataUrl;
+    if (DOM.lotReceiptFileName) DOM.lotReceiptFileName.textContent = `${file.name} (${Math.round(file.size / 1024)} KB)`;
+    if (DOM.lotReceiptPreviewContainer) DOM.lotReceiptPreviewContainer.style.display = 'flex';
+    if (DOM.btnClearLotReceiptFile) DOM.btnClearLotReceiptFile.style.display = 'inline-block';
+    if (DOM.lotReceiptDropNotice) DOM.lotReceiptDropNotice.style.display = 'none';
+  } catch (err) {
+    console.error('handleLotReceiptFileSelect error:', err);
+    showToast('画像ファイルの読み込みに失敗しました', 'danger');
+  }
+}
+
+function clearLotReceiptImage() {
+  currentLotReceiptDataUrl = '';
+  currentLotReceiptFileName = '';
+  if (DOM.lotInputReceiptFile) DOM.lotInputReceiptFile.value = '';
+  if (DOM.lotReceiptImagePreview) DOM.lotReceiptImagePreview.src = '';
+  if (DOM.lotReceiptPreviewContainer) DOM.lotReceiptPreviewContainer.style.display = 'none';
+  if (DOM.btnClearLotReceiptFile) DOM.btnClearLotReceiptFile.style.display = 'none';
+  if (DOM.lotReceiptDropNotice) DOM.lotReceiptDropNotice.style.display = 'block';
+}
+
+function openLotReceiptManageModal(lotId) {
+  const lotList = getInventoryLotList();
+  const lot = lotList.find(l => l.id === lotId);
+  if (!lot) {
+    showToast('対象のロットが見つかりません', 'danger');
+    return;
+  }
+  activeLotForReceipt = lot;
+  activeLotReceiptTempUrl = lot.receiptImage || lot.receiptDataUrl || '';
+  activeLotReceiptRotation = 0;
+
+  if (DOM.lotReceiptModalTitle) DOM.lotReceiptModalTitle.textContent = `ロット証憑・領収書画像の管理: ${lot.lotNumber || ''}`;
+  if (DOM.lotReceiptModalSub) DOM.lotReceiptModalSub.textContent = `品目: ${lot.itemName || ''} (数量: ${lot.quantity || 0} 台 / 入荷日: ${lot.arrivalDate || '-'})`;
+
+  updateLotReceiptModalView();
+
+  if (DOM.lotReceiptManageModal) {
+    DOM.lotReceiptManageModal.classList.add('active');
+    DOM.lotReceiptManageModal.style.display = 'flex';
+  }
+}
+
+function closeLotReceiptManageModal() {
+  activeLotForReceipt = null;
+  activeLotReceiptTempUrl = '';
+  activeLotReceiptRotation = 0;
+  if (DOM.lotReceiptModalFileInput) DOM.lotReceiptModalFileInput.value = '';
+  if (DOM.lotReceiptManageModal) {
+    DOM.lotReceiptManageModal.classList.remove('active');
+    DOM.lotReceiptManageModal.style.display = 'none';
+  }
+}
+
+function updateLotReceiptModalView() {
+  if (!DOM.lotReceiptModalImage || !DOM.lotReceiptModalEmpty) return;
+  if (activeLotReceiptTempUrl) {
+    DOM.lotReceiptModalImage.src = activeLotReceiptTempUrl;
+    DOM.lotReceiptModalImage.style.transform = `rotate(${activeLotReceiptRotation}deg)`;
+    DOM.lotReceiptModalImage.style.display = 'block';
+    DOM.lotReceiptModalEmpty.style.display = 'none';
+    if (DOM.btnLotReceiptModalRotate) DOM.btnLotReceiptModalRotate.style.display = 'inline-block';
+    if (DOM.btnLotReceiptModalDelete) DOM.btnLotReceiptModalDelete.style.display = 'inline-block';
+  } else {
+    DOM.lotReceiptModalImage.src = '';
+    DOM.lotReceiptModalImage.style.display = 'none';
+    DOM.lotReceiptModalEmpty.style.display = 'block';
+    if (DOM.btnLotReceiptModalRotate) DOM.btnLotReceiptModalRotate.style.display = 'none';
+    if (DOM.btnLotReceiptModalDelete) DOM.btnLotReceiptModalDelete.style.display = 'none';
+  }
+}
+
+async function handleLotReceiptModalFileSelect(file) {
+  if (!file) return;
+  try {
+    let dataUrl = '';
+    if (typeof compressReceiptImage === 'function' && file.type.startsWith('image/')) {
+      dataUrl = await compressReceiptImage(file);
+    } else {
+      dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+    activeLotReceiptTempUrl = dataUrl;
+    activeLotReceiptRotation = 0;
+    updateLotReceiptModalView();
+    showToast('新しい画像を読み込みました。「画像を保存・更新」をクリックして確定してください。', 'info');
+  } catch (err) {
+    console.error('handleLotReceiptModalFileSelect error:', err);
+    showToast('画像読み込みに失敗しました', 'danger');
+  }
+}
+
+function rotateLotReceiptModalImage() {
+  activeLotReceiptRotation = (activeLotReceiptRotation + 90) % 360;
+  if (DOM.lotReceiptModalImage) {
+    DOM.lotReceiptModalImage.style.transform = `rotate(${activeLotReceiptRotation}deg)`;
+  }
+}
+
+function deleteLotReceiptModalImage() {
+  if (!confirm('このロットの証憑画像を削除しますか？')) return;
+  activeLotReceiptTempUrl = '';
+  activeLotReceiptRotation = 0;
+  updateLotReceiptModalView();
+}
+
+async function saveLotReceiptModalImage() {
+  if (!activeLotForReceipt) return;
+  const targetLot = activeLotForReceipt;
+  targetLot.receiptImage = activeLotReceiptTempUrl;
+  targetLot.receiptDataUrl = activeLotReceiptTempUrl;
+
+  // サーバー保存エンドポイントがあれば非同期で永続化
+  if (typeof fetch !== 'undefined' && activeLotReceiptTempUrl && activeLotReceiptTempUrl.startsWith('data:image/')) {
+    (window.apiFetch || fetch)('save-receipt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: targetLot.id, image: activeLotReceiptTempUrl })
+    }).then(res => res.json()).then(resData => {
+      if (resData && resData.url) {
+        targetLot.receiptImage = resData.url;
+        targetLot.receiptDataUrl = resData.url;
+        saveInventoryLot(targetLot);
+        renderInventoryLotTable();
+      }
+    }).catch(e => console.warn('save-receipt upload error:', e));
+  }
+
+  saveInventoryLot(targetLot);
+  renderInventoryLotTable();
+  closeLotReceiptManageModal();
+  showToast(`ロット「${targetLot.lotNumber}」の証憑画像を更新・保存しました！`, 'success');
+}
+
+window.openLotReceiptManageModal = openLotReceiptManageModal;
+window.closeLotReceiptManageModal = closeLotReceiptManageModal;
+window.handleLotReceiptFileSelect = handleLotReceiptFileSelect;
+window.clearLotReceiptImage = clearLotReceiptImage;
+
+// ==========================================================================
 // 入荷ロット履歴のレンダリング
 // ==========================================================================
 function renderInventoryLotTable() {
@@ -16812,6 +17075,7 @@ function renderInventoryLotTable() {
           <th style="text-align: right; min-width: 100px;">1台確定原価</th>
           <th style="text-align: right; min-width: 100px;">原価総額</th>
           <th style="text-align: right; min-width: 90px;">輸入消費税</th>
+          <th style="text-align: center; min-width: 85px;">証憑画像</th>
           <th style="text-align: center; min-width: 80px;">会計連動</th>
         </tr>
       </thead>
@@ -16825,19 +17089,25 @@ function renderInventoryLotTable() {
     const totalCost = Number(lot.totalCost) || (unitCost * (Number(lot.quantity) || 1));
     const importTax = Number(lot.importTax || lot.taxTotal) || 0;
 
+    const hasReceipt = Boolean(lot.receiptImage || lot.receiptDataUrl);
+    const receiptBtn = hasReceipt
+      ? `<button type="button" class="btn btn-xs btn-open-lot-receipt" data-lot-id="${escapeHtml(lot.id)}" style="background:#ecfdf5; border-color:#a7f3d0; color:#047857; font-weight:700; padding:2px 8px; border-radius:4px; font-size:0.75rem;" title="領収書・インボイス画像を確認/差替">🖼️ あり</button>`
+      : `<button type="button" class="btn btn-xs btn-open-lot-receipt" data-lot-id="${escapeHtml(lot.id)}" style="background:#f1f5f9; border-color:#cbd5e1; color:#475569; padding:2px 8px; border-radius:4px; font-size:0.75rem;" title="領収書・インボイス画像を追加">➕ 追加</button>`;
+
     html += `
       <tr>
         <td style="font-family: monospace; font-weight: 700; color: #0f172a;">${escapeHtml(lot.lotNumber)}</td>
         <td style="font-size: 0.8rem; color: #475569;">${escapeHtml(lot.arrivalDate || '-')}</td>
         <td>
           <div style="font-weight: 600; font-size: 0.85rem; color: #0f172a;">${escapeHtml(lot.itemName || '-')}</div>
-          <span style="font-size: 0.725rem; color: #64748b;">${escapeHtml(lot.supplier || '-')}</span>
+          <span style="font-size: 0.725rem; color: #64748b;">${escapeHtml(lot.supplier || (lot.payerName ? `立替: ${lot.payerName}` : '-'))}</span>
         </td>
         <td style="text-align: right; font-weight: 700; font-size: 0.95rem;">${Number(lot.quantity || 0).toLocaleString()}</td>
         <td style="text-align: center;">${typeLabel}</td>
         <td style="text-align: right; font-family: monospace; font-weight: 700; color: #047857;">¥${unitCost.toLocaleString()}</td>
         <td style="text-align: right; font-family: monospace;">¥${totalCost.toLocaleString()}</td>
         <td style="text-align: right; font-family: monospace; color: #b91c1c;">${importTax > 0 ? `¥${importTax.toLocaleString()}` : '-'}</td>
+        <td style="text-align: center;">${receiptBtn}</td>
         <td style="text-align: center;">
           ${lot.syncAccounting ? '<span style="color:#059669; font-weight:700; font-size:0.8rem;" title="財務会計へ仕訳登録済">✅ 連携済</span>' : '<span style="color:#94a3b8; font-size:0.75rem;">-</span>'}
         </td>
@@ -16884,6 +17154,17 @@ function openInventoryLotModal(defaultItemId = null) {
     if (importRadio) importRadio.checked = true;
     switchLotProcurementType('import');
   }
+
+  // 証憑画像のリセット
+  clearLotReceiptImage();
+
+  // 建て替え者初期値: 会社直接
+  const companyRadio = document.querySelector('input[name="lotPayerType"][value="company"]');
+  if (companyRadio) companyRadio.checked = true;
+  if (DOM.lotPayerCompanyRow) DOM.lotPayerCompanyRow.style.display = 'flex';
+  if (DOM.lotPayerOtherRow) DOM.lotPayerOtherRow.style.display = 'none';
+  if (DOM.lotInputPayerName) DOM.lotInputPayerName.value = '代表取締役';
+  if (DOM.lotSelectCreditAccount) DOM.lotSelectCreditAccount.value = '102';
 
   // 混載品目リストの初期化
   initLotItemRows(defaultItemId);
@@ -17244,13 +17525,88 @@ function updateLandedCostCalculation(syncSerials = false) {
   if (DOM.lotDispTax) DOM.lotDispTax.textContent = `¥${taxTotal.toLocaleString()}`;
   if (DOM.lotDispGrandTotal) DOM.lotDispGrandTotal.textContent = `¥${grandTotal.toLocaleString()}`;
 
-  // 会計仕訳プレビューの更新（借方・貸方完全一致）
+  // 会計仕訳プレビューの更新（各費用科目を判断して表示 ＆ 建て替え者反映 ＆ 貸借完全一致）
   if (DOM.lotJournalPreviewBox) {
-    const creditCode = DOM.lotSelectCreditAccount ? DOM.lotSelectCreditAccount.value : '102';
-    const creditName = creditCode === '102' ? '普通預金' : (creditCode === '201' ? '買掛金' : '現金');
+    const payerTypeRadio = document.querySelector('input[name="lotPayerType"]:checked');
+    const payerType = payerTypeRadio ? payerTypeRadio.value : 'company';
+
+    // 借方明細行プレビュー
+    const debitLinesPreview = [];
+    if (goodsTotal > 0) {
+      const code = DOM.lotAccountGoods ? DOM.lotAccountGoods.value : '131';
+      const name = code === '131' ? '商品・棚卸資産' : '仕入高';
+      debitLinesPreview.push(`【借方】${code} ${name} ¥${goodsTotal.toLocaleString()}`);
+    }
+    if (type === 'import') {
+      const cConsulting = Number(DOM.lotCostConsulting ? DOM.lotCostConsulting.value : 0) || 0;
+      if (cConsulting > 0) {
+        const cCode = DOM.lotAccountConsulting ? DOM.lotAccountConsulting.value : '611';
+        const cName = cCode === '611' ? '支払手数料(コンサル料)' : (cCode === '619' ? '外注費(コンサル料)' : '商品(コンサル按分)');
+        debitLinesPreview.push(`【借方】${cCode} ${cName} ¥${cConsulting.toLocaleString()}`);
+      }
+      const cShipping = Number(DOM.lotCostShipping ? DOM.lotCostShipping.value : 0) || 0;
+      if (cShipping > 0) {
+        const sCode = DOM.lotAccountShipping ? DOM.lotAccountShipping.value : '503';
+        const sName = sCode === '503' ? '荷造運賃(国際送料)' : (sCode === '501' ? '仕入高(国際運賃)' : '商品(国際送料按分)');
+        debitLinesPreview.push(`【借方】${sCode} ${sName} ¥${cShipping.toLocaleString()}`);
+      }
+      const cTariff = Number(DOM.lotCostTariff ? DOM.lotCostTariff.value : 0) || 0;
+      if (cTariff > 0) {
+        const tCode = DOM.lotAccountTariff ? DOM.lotAccountTariff.value : '615';
+        const tName = tCode === '615' ? '租税公課(通関関税)' : (tCode === '131' ? '商品(関税按分)' : '仕入高(関税)');
+        debitLinesPreview.push(`【借方】${tCode} ${tName} ¥${cTariff.toLocaleString()}`);
+      }
+      const cDomestic = Number(DOM.lotCostDomesticDelivery ? DOM.lotCostDomesticDelivery.value : 0) || 0;
+      if (cDomestic > 0) {
+        const dCode = DOM.lotAccountDomesticDelivery ? DOM.lotAccountDomesticDelivery.value : '503';
+        const dName = dCode === '503' ? '荷造運賃(国内配送)' : (dCode === '131' ? '商品(国内送料按分)' : '仕入高');
+        debitLinesPreview.push(`【借方】${dCode} ${dName} ¥${cDomestic.toLocaleString()}`);
+      }
+      const cRemittance = Number(DOM.lotCostRemittance ? DOM.lotCostRemittance.value : 0) || 0;
+      if (cRemittance > 0) {
+        const rCode = DOM.lotAccountRemittance ? DOM.lotAccountRemittance.value : '611';
+        const rName = rCode === '611' ? '支払手数料(海外送金手数料)' : '商品(送金手数料按分)';
+        debitLinesPreview.push(`【借方】${rCode} ${rName} ¥${cRemittance.toLocaleString()}`);
+      }
+      if (taxTotal > 0) {
+        debitLinesPreview.push(`【借方】116 仮払消費税(輸入消費税) ¥${taxTotal.toLocaleString()}`);
+      }
+    } else {
+      const domShip = Number(DOM.lotDomShipping ? DOM.lotDomShipping.value : 0) || 0;
+      if (domShip > 0) {
+        debitLinesPreview.push(`【借方】503 荷造運賃(国内送料) ¥${domShip.toLocaleString()}`);
+      }
+      if (taxTotal > 0) {
+        debitLinesPreview.push(`【借方】116 仮払消費税 ¥${taxTotal.toLocaleString()}`);
+      }
+    }
+
+    // 貸方プレビュー
+    let creditPreview = '';
+    if (payerType === 'company') {
+      const creditCodeRaw = DOM.lotSelectCreditAccount ? DOM.lotSelectCreditAccount.value : '102';
+      let creditCode = '102';
+      let creditName = '普通預金（会社直接）';
+      if (creditCodeRaw === '201') {
+        creditCode = '201';
+        creditName = '買掛金（後日支払）';
+      } else if (creditCodeRaw === '212_card') {
+        creditCode = '212';
+        creditName = '未払金（法人カード）';
+      } else if (creditCodeRaw === '101') {
+        creditCode = '101';
+        creditName = '現金（会社小口）';
+      }
+      creditPreview = `【貸方】${creditCode} ${creditName} ¥${grandTotal.toLocaleString()}`;
+    } else {
+      const payerName = DOM.lotInputPayerName ? (DOM.lotInputPayerName.value.trim() || '代表取締役') : '代表取締役';
+      creditPreview = `【貸方】212 未払金（立替精算: ${payerName}） ¥${grandTotal.toLocaleString()}`;
+    }
+
     DOM.lotJournalPreviewBox.innerHTML = `
-      【借方】131 商品・棚卸資産 ¥${totalCost.toLocaleString()} ＋ 116 仮払消費税 ¥${taxTotal.toLocaleString()}<br>
-      【貸方】${creditCode} ${creditName} ¥${grandTotal.toLocaleString()}
+      <div style="font-weight: 700; color: #047857; margin-bottom: 4px;">📊 自動仕訳プレビュー（貸借完全一致: 借方計 ¥${grandTotal.toLocaleString()} ＝ 貸方計 ¥${grandTotal.toLocaleString()}）:</div>
+      ${debitLinesPreview.join('<br>')}<br>
+      <div style="margin-top: 4px; padding-top: 4px; border-top: 1px dashed #cbd5e1; font-weight: 700; color: #1e40af;">${creditPreview}</div>
     `;
   }
 
@@ -17756,7 +18112,10 @@ function submitInventoryLotStockIn() {
   // 1. ロットデータの構築 & 保存
   const lotId = `lot_${Date.now()}`;
   const syncAccounting = DOM.lotCheckSyncAccounting ? DOM.lotCheckSyncAccounting.checked : true;
-  const creditAccount = DOM.lotSelectCreditAccount ? DOM.lotSelectCreditAccount.value : '102';
+  const payerTypeRadio = document.querySelector('input[name="lotPayerType"]:checked');
+  const payerType = payerTypeRadio ? payerTypeRadio.value : 'company';
+  const payerName = DOM.lotInputPayerName ? DOM.lotInputPayerName.value.trim() : '代表取締役';
+  const creditAccountRaw = DOM.lotSelectCreditAccount ? DOM.lotSelectCreditAccount.value : '102';
 
   const itemNamesSummary = lotItemRows.map(r => `${r.itemName}×${r.qty}`).join(', ');
 
@@ -17788,10 +18147,31 @@ function submitInventoryLotStockIn() {
     hasSerial: hasSerialRows.length > 0,
     costDetails,
     syncAccounting,
-    creditAccount
+    creditAccount: creditAccountRaw,
+    payerType,
+    payerName: payerType === 'other' ? payerName : '会社直接',
+    receiptImage: currentLotReceiptDataUrl || '',
+    receiptFileName: currentLotReceiptFileName || '',
+    arrivalDate
   };
 
   saveInventoryLot(lotData);
+
+  // 領収書画像があればサーバーsave-receiptにも非同期アップロード
+  if (typeof fetch !== 'undefined' && currentLotReceiptDataUrl && currentLotReceiptDataUrl.startsWith('data:image/')) {
+    (window.apiFetch || fetch)('save-receipt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: lotId, image: currentLotReceiptDataUrl })
+    }).then(res => res.json()).then(resData => {
+      if (resData && resData.url) {
+        lotData.receiptImage = resData.url;
+        lotData.receiptDataUrl = resData.url;
+        saveInventoryLot(lotData);
+        renderInventoryLotTable();
+      }
+    }).catch(e => console.warn('save-receipt upload error:', e));
+  }
 
   // 2. 各品目の在庫マスタ（現在庫 ＆ 確定仕入原価）を一括更新
   const invList = getInventoryList();
@@ -17830,10 +18210,166 @@ function submitInventoryLotStockIn() {
     saveBatchInventorySerials(allSerialObjects);
   }
 
-  // 4. 財務会計への自動複合仕訳登録（端数完全調整・貸借完全一致）
+  // 4. 財務会計への自動複合仕訳登録（科目判断 ＆ 建て替え者反映 ＆ 貸借完全一致）
   if (syncAccounting) {
-    const creditAccDef = findAccountDef(creditAccount);
-    const creditName = creditAccDef ? creditAccDef.name : (creditAccount === '102' ? '普通預金' : '買掛金');
+    const debitLines = [];
+
+    // ① 本体代金
+    if (goodsTotal > 0) {
+      const gCode = DOM.lotAccountGoods ? DOM.lotAccountGoods.value : '131';
+      const gDef = findAccountDef(gCode);
+      debitLines.push({
+        accountCode: gCode,
+        accountName: gDef ? gDef.name : '商品・棚卸資産',
+        subAccount: '本体代金',
+        amount: goodsTotal,
+        taxType: procurementType === 'import' ? 'out_of_scope' : 'taxable_10',
+        invoiceType: 'qualified'
+      });
+    }
+
+    if (procurementType === 'import') {
+      const cConsulting = Number(DOM.lotCostConsulting ? DOM.lotCostConsulting.value : 0) || 0;
+      if (cConsulting > 0) {
+        const cCode = DOM.lotAccountConsulting ? DOM.lotAccountConsulting.value : '611';
+        const cDef = findAccountDef(cCode);
+        debitLines.push({
+          accountCode: cCode,
+          accountName: cDef ? cDef.name : '支払手数料',
+          subAccount: '海外営業コンサル・代行手数料',
+          amount: cConsulting,
+          taxType: 'taxable_10',
+          invoiceType: 'qualified'
+        });
+      }
+
+      const cShipping = Number(DOM.lotCostShipping ? DOM.lotCostShipping.value : 0) || 0;
+      if (cShipping > 0) {
+        const sCode = DOM.lotAccountShipping ? DOM.lotAccountShipping.value : '503';
+        const sDef = findAccountDef(sCode);
+        debitLines.push({
+          accountCode: sCode,
+          accountName: sDef ? sDef.name : '荷造運賃',
+          subAccount: '国際運賃・保険料',
+          amount: cShipping,
+          taxType: 'out_of_scope',
+          invoiceType: 'qualified'
+        });
+      }
+
+      const cTariff = Number(DOM.lotCostTariff ? DOM.lotCostTariff.value : 0) || 0;
+      if (cTariff > 0) {
+        const tCode = DOM.lotAccountTariff ? DOM.lotAccountTariff.value : '615';
+        const tDef = findAccountDef(tCode);
+        debitLines.push({
+          accountCode: tCode,
+          accountName: tDef ? tDef.name : '租税公課',
+          subAccount: '通関関税',
+          amount: cTariff,
+          taxType: 'out_of_scope',
+          invoiceType: 'none'
+        });
+      }
+
+      const cDomestic = Number(DOM.lotCostDomesticDelivery ? DOM.lotCostDomesticDelivery.value : 0) || 0;
+      if (cDomestic > 0) {
+        const dCode = DOM.lotAccountDomesticDelivery ? DOM.lotAccountDomesticDelivery.value : '503';
+        const dDef = findAccountDef(dCode);
+        debitLines.push({
+          accountCode: dCode,
+          accountName: dDef ? dDef.name : '荷造運賃',
+          subAccount: '国内配送運賃',
+          amount: cDomestic,
+          taxType: 'taxable_10',
+          invoiceType: 'qualified'
+        });
+      }
+
+      const cRemittance = Number(DOM.lotCostRemittance ? DOM.lotCostRemittance.value : 0) || 0;
+      if (cRemittance > 0) {
+        const rCode = DOM.lotAccountRemittance ? DOM.lotAccountRemittance.value : '611';
+        const rDef = findAccountDef(rCode);
+        debitLines.push({
+          accountCode: rCode,
+          accountName: rDef ? rDef.name : '支払手数料',
+          subAccount: '海外送金手数料',
+          amount: cRemittance,
+          taxType: 'non_taxable',
+          invoiceType: 'none'
+        });
+      }
+
+      if (taxTotal > 0) {
+        debitLines.push({
+          accountCode: '116',
+          accountName: '仮払消費税',
+          subAccount: '輸入消費税',
+          amount: taxTotal,
+          taxType: 'out_of_scope',
+          invoiceType: 'qualified'
+        });
+      }
+    } else {
+      const domShip = Number(DOM.lotDomShipping ? DOM.lotDomShipping.value : 0) || 0;
+      if (domShip > 0) {
+        debitLines.push({
+          accountCode: '503',
+          accountName: '荷造運賃',
+          subAccount: '国内送料',
+          amount: domShip,
+          taxType: 'taxable_10',
+          invoiceType: 'qualified'
+        });
+      }
+      if (taxTotal > 0) {
+        debitLines.push({
+          accountCode: '116',
+          accountName: '仮払消費税',
+          subAccount: '国内仕入',
+          amount: taxTotal,
+          taxType: 'out_of_scope',
+          invoiceType: 'qualified'
+        });
+      }
+    }
+
+    // 貸方行の生成（会社直接 vs その他立替）
+    const creditLines = [];
+    if (payerType === 'company') {
+      let creditCode = '102';
+      let subAccount = '会社口座直接';
+      if (creditAccountRaw === '201') {
+        creditCode = '201';
+        subAccount = supplier || '仕入先買掛';
+      } else if (creditAccountRaw === '212_card') {
+        creditCode = '212';
+        subAccount = '法人クレジットカード';
+      } else if (creditAccountRaw === '101') {
+        creditCode = '101';
+        subAccount = '小口現金';
+      }
+      const creditAccDef = findAccountDef(creditCode);
+      creditLines.push({
+        accountCode: creditCode,
+        accountName: creditAccDef ? creditAccDef.name : '普通預金',
+        subAccount: subAccount,
+        amount: grandTotal,
+        taxType: 'out_of_scope',
+        invoiceType: 'none'
+      });
+    } else {
+      // その他（役員・社員立替）
+      const creditAccDef = findAccountDef('212');
+      creditLines.push({
+        accountCode: '212',
+        accountName: creditAccDef ? creditAccDef.name : '未払金',
+        subAccount: `立替精算: ${payerName || '役員・社員'}`,
+        amount: grandTotal,
+        taxType: 'out_of_scope',
+        invoiceType: 'none'
+      });
+    }
+
     const journalEntry = {
       id: `jnl_lot_${lotId}`,
       date: arrivalDate,
@@ -17841,13 +18377,9 @@ function submitInventoryLotStockIn() {
       description: `混載ロット入庫・仕入計上: ${lotNumber} (${itemNamesSummary})`,
       sourceType: 'inventory_lot',
       sourceId: lotId,
-      debitLines: [
-        { accountCode: '131', accountName: '商品・棚卸資産', subAccount: '', amount: totalCost, taxType: 'taxable_10', invoiceType: 'qualified' },
-        ...(taxTotal > 0 ? [{ accountCode: '116', accountName: '仮払消費税', subAccount: procurementType === 'import' ? '輸入消費税' : '国内仕入', amount: taxTotal, taxType: 'out_of_scope', invoiceType: 'qualified' }] : [])
-      ],
-      creditLines: [
-        { accountCode: creditAccount, accountName: creditName, subAccount: supplier || '', amount: grandTotal, taxType: 'out_of_scope', invoiceType: 'none' }
-      ],
+      receiptImage: currentLotReceiptDataUrl || '',
+      debitLines,
+      creditLines,
       totalDebit: grandTotal,
       totalCredit: grandTotal
     };

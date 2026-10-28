@@ -328,7 +328,7 @@
         </button>
         <div style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
-          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.28-import-remittance-fee</span>
+          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.28-lot-accounting-receipt</span>
         </div>
       </div>
 
@@ -2175,33 +2175,76 @@
             <span style="font-size: 0.725rem; color: #64748b; font-weight: normal;">※台数按分で1台あたり確定原価を算出</span>
           </h4>
 
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 10px;">
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; margin-bottom: 10px;">
             <div class="form-group">
-              <label class="form-label" for="lotCostGoods" style="font-size: 0.725rem; font-weight: 600;">① 本体代金合計 (邦貨/円) <span style="color: var(--danger);">*</span></label>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                <label class="form-label" for="lotCostGoods" style="font-size: 0.725rem; font-weight: 600; margin: 0;">① 本体代金合計 (円) <span style="color: var(--danger);">*</span></label>
+                <select id="lotAccountGoods" class="form-select lot-cost-account-select" style="font-size: 0.675rem; padding: 1px 4px; height: 20px; width: auto; color: #047857; font-weight: 600; background: #ecfdf5; border-color: #a7f3d0;" title="財務会計の借方勘定科目">
+                  <option value="131" selected>131 商品・棚卸資産</option>
+                  <option value="501">501 仕入高</option>
+                </select>
+              </div>
               <input type="number" id="lotCostGoods" class="form-input lot-cost-calc-input" min="0" value="120000" style="font-size: 0.9rem; font-weight: 600; text-align: right;">
             </div>
             <div class="form-group">
-              <label class="form-label" for="lotCostConsulting" style="font-size: 0.725rem; font-weight: 600;">② 海外営業コンサル料・手数料 (原価算入)</label>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                <label class="form-label" for="lotCostConsulting" style="font-size: 0.725rem; font-weight: 600; margin: 0;">② 海外営業コンサル・代行料</label>
+                <select id="lotAccountConsulting" class="form-select lot-cost-account-select" style="font-size: 0.675rem; padding: 1px 4px; height: 20px; width: auto; color: #1e40af; font-weight: 600; background: #eff6ff; border-color: #bfdbfe;" title="財務会計の借方勘定科目">
+                  <option value="611" selected>611 支払手数料</option>
+                  <option value="619">619 外注費</option>
+                  <option value="131">131 商品 (原価算入)</option>
+                </select>
+              </div>
               <input type="number" id="lotCostConsulting" class="form-input lot-cost-calc-input" min="0" value="15000" style="font-size: 0.9rem; font-weight: 600; text-align: right;">
             </div>
             <div class="form-group">
-              <label class="form-label" for="lotCostShipping" style="font-size: 0.725rem; font-weight: 600;">③ 国際送料・保険料 (原価算入)</label>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                <label class="form-label" for="lotCostShipping" style="font-size: 0.725rem; font-weight: 600; margin: 0;">③ 国際送料・保険料</label>
+                <select id="lotAccountShipping" class="form-select lot-cost-account-select" style="font-size: 0.675rem; padding: 1px 4px; height: 20px; width: auto; color: #1e40af; font-weight: 600; background: #eff6ff; border-color: #bfdbfe;" title="財務会計の借方勘定科目">
+                  <option value="503" selected>503 荷造運賃</option>
+                  <option value="131">131 商品 (原価算入)</option>
+                  <option value="501">501 仕入高</option>
+                </select>
+              </div>
               <input type="number" id="lotCostShipping" class="form-input lot-cost-calc-input" min="0" value="12000" style="font-size: 0.9rem; font-weight: 600; text-align: right;">
             </div>
             <div class="form-group">
-              <label class="form-label" for="lotCostTariff" style="font-size: 0.725rem; font-weight: 600;">④ 通関関税 (原価算入)</label>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                <label class="form-label" for="lotCostTariff" style="font-size: 0.725rem; font-weight: 600; margin: 0;">④ 通関関税</label>
+                <select id="lotAccountTariff" class="form-select lot-cost-account-select" style="font-size: 0.675rem; padding: 1px 4px; height: 20px; width: auto; color: #1e40af; font-weight: 600; background: #eff6ff; border-color: #bfdbfe;" title="財務会計の借方勘定科目">
+                  <option value="615" selected>615 租税公課</option>
+                  <option value="131">131 商品 (原価算入)</option>
+                  <option value="501">501 仕入高</option>
+                </select>
+              </div>
               <input type="number" id="lotCostTariff" class="form-input lot-cost-calc-input" min="0" value="6000" style="font-size: 0.9rem; font-weight: 600; text-align: right;">
             </div>
             <div class="form-group">
-              <label class="form-label" for="lotCostDomesticDelivery" style="font-size: 0.725rem; font-weight: 600;">⑤ 国内配送送料 (原価算入)</label>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                <label class="form-label" for="lotCostDomesticDelivery" style="font-size: 0.725rem; font-weight: 600; margin: 0;">⑤ 国内配送送料</label>
+                <select id="lotAccountDomesticDelivery" class="form-select lot-cost-account-select" style="font-size: 0.675rem; padding: 1px 4px; height: 20px; width: auto; color: #1e40af; font-weight: 600; background: #eff6ff; border-color: #bfdbfe;" title="財務会計の借方勘定科目">
+                  <option value="503" selected>503 荷造運賃</option>
+                  <option value="131">131 商品 (原価算入)</option>
+                  <option value="501">501 仕入高</option>
+                </select>
+              </div>
               <input type="number" id="lotCostDomesticDelivery" class="form-input lot-cost-calc-input" min="0" value="5000" style="font-size: 0.9rem; font-weight: 600; text-align: right;">
             </div>
             <div class="form-group">
-              <label class="form-label" for="lotCostRemittance" style="font-size: 0.725rem; font-weight: 600;">⑥ 海外送金手数料 (原価算入)</label>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                <label class="form-label" for="lotCostRemittance" style="font-size: 0.725rem; font-weight: 600; margin: 0;">⑥ 海外送金手数料</label>
+                <select id="lotAccountRemittance" class="form-select lot-cost-account-select" style="font-size: 0.675rem; padding: 1px 4px; height: 20px; width: auto; color: #1e40af; font-weight: 600; background: #eff6ff; border-color: #bfdbfe;" title="財務会計の借方勘定科目">
+                  <option value="611" selected>611 支払手数料</option>
+                  <option value="131">131 商品 (原価算入)</option>
+                </select>
+              </div>
               <input type="number" id="lotCostRemittance" class="form-input lot-cost-calc-input" min="0" value="4000" style="font-size: 0.9rem; font-weight: 600; text-align: right;">
             </div>
             <div class="form-group" style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 6px 8px;">
-              <label class="form-label" for="lotCostImportTax" style="font-size: 0.725rem; font-weight: 700; color: #b91c1c;">⑦ 【別枠】輸入消費税 (仮払消費税連動)</label>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                <label class="form-label" for="lotCostImportTax" style="font-size: 0.725rem; font-weight: 700; color: #b91c1c; margin: 0;">⑦ 【別枠】輸入消費税</label>
+                <span style="font-size: 0.675rem; font-weight: 700; color: #b91c1c; background: #fee2e2; border: 1px solid #fca5a5; padding: 1px 6px; border-radius: 4px;">116 仮払消費税</span>
+              </div>
               <input type="number" id="lotCostImportTax" class="form-input lot-cost-calc-input" min="0" value="12000" style="font-size: 0.9rem; font-weight: 700; text-align: right; color: #b91c1c;">
               <span style="font-size: 0.65rem; color: #7f1d1d; display: block; margin-top: 2px;">※原価には含めず、財務会計の「仮払消費税」として計上</span>
             </div>
@@ -2272,24 +2315,79 @@
           </div>
         </div>
 
-        <!-- 財務会計自動仕訳連動設定 -->
-        <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px 14px;">
-          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 700; color: #0f172a;">
-              <input type="checkbox" id="lotCheckSyncAccounting" checked style="width: 16px; height: 16px; accent-color: #059669;">
-              📊 財務会計（仕訳帳・B/S資産・仮払消費税）に自動仕訳を登録する
+        <!-- 経費証憑・領収書画像添付エリア（入庫時・任意 / 後から追加も可能） -->
+        <div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px 14px; margin-bottom: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; flex-wrap: wrap; gap: 6px;">
+            <label style="font-size: 0.85rem; font-weight: 700; color: #0f172a; margin: 0; display: flex; align-items: center; gap: 6px;">
+              📄 領収書・インボイス・送金明細の画像添付 <span style="font-size: 0.725rem; font-weight: normal; color: #64748b;">（任意 / 後からロット一覧でも追加可能）</span>
             </label>
-            <div style="display: flex; align-items: center; gap: 6px;">
-              <label for="lotSelectCreditAccount" style="font-size: 0.75rem; color: #475569;">支払科目（貸方）:</label>
-              <select id="lotSelectCreditAccount" class="form-select" style="font-size: 0.8rem; width: auto; padding: 2px 8px;">
-                <option value="102">102 普通預金（即時決済）</option>
-                <option value="201">201 買掛金（掛仕入・未払）</option>
-                <option value="101">101 現金</option>
-              </select>
+            <div style="display: flex; gap: 6px; align-items: center;">
+              <input type="file" id="lotInputReceiptFile" accept="image/*,application/pdf" style="display: none;">
+              <button type="button" class="btn btn-secondary btn-xs" id="btnSelectLotReceiptFile" style="font-size: 0.75rem;">
+                📁 画像ファイルを選択
+              </button>
+              <button type="button" class="btn btn-secondary btn-xs" id="btnClearLotReceiptFile" style="font-size: 0.75rem; color: #dc2626; display: none;">
+                🗑️ 削除
+              </button>
             </div>
           </div>
-          <div id="lotJournalPreviewBox" style="background: #ffffff; border: 1px dashed #94a3b8; border-radius: 6px; padding: 8px 12px; font-size: 0.75rem; font-family: monospace; color: #334155;">
-            【借方】131 商品・棚卸資産 ¥158,000 ＋ 116 仮払消費税 ¥12,000 ／ 【貸方】102 普通預金 ¥170,000
+          <div id="lotReceiptPreviewContainer" style="display: none; align-items: center; gap: 12px; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 6px; padding: 8px 12px;">
+            <img id="lotReceiptImagePreview" src="" alt="添付画像プレビュー" style="max-height: 80px; max-width: 140px; border-radius: 4px; object-fit: contain; background: #ffffff; border: 1px solid #e2e8f0;">
+            <div style="font-size: 0.75rem; color: #475569;">
+              <div id="lotReceiptFileName" style="font-weight: 700; color: #0f172a;">receipt.jpg</div>
+              <div style="font-size: 0.7rem; color: #64748b;">※ロット履歴および電帳法証憑として自動保存・紐付けされます</div>
+            </div>
+          </div>
+          <div id="lotReceiptDropNotice" style="font-size: 0.7rem; color: #94a3b8; text-align: center; padding: 6px; border: 1px dashed #e2e8f0; border-radius: 6px; background: #f8fafc;">
+            ※画像ファイルの選択、またはドラッグ＆ドロップ対応。入庫完了後でも入荷ロット台帳からいつでも追加できます。
+          </div>
+        </div>
+
+        <!-- 財務会計自動仕訳連動設定（科目別個別仕訳 ＆ 建て替え者選択） -->
+        <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px 14px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; flex-wrap: wrap; gap: 8px;">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 700; color: #0f172a;">
+              <input type="checkbox" id="lotCheckSyncAccounting" checked style="width: 16px; height: 16px; accent-color: #059669;">
+              📊 財務会計（仕訳帳・P/L費用・B/S資産・仮払消費税）に科目別自動仕訳を登録する
+            </label>
+
+            <!-- 経費建て替え者（会社直接／その他） -->
+            <div style="display: flex; align-items: center; gap: 10px; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 4px 10px;">
+              <span style="font-size: 0.75rem; font-weight: 700; color: #334155;">経費建て替え者:</span>
+              <label style="display: flex; align-items: center; gap: 4px; font-size: 0.75rem; font-weight: 600; color: #047857; cursor: pointer; margin: 0;">
+                <input type="radio" name="lotPayerType" value="company" checked style="accent-color: #059669;">
+                🏢 会社直接
+              </label>
+              <label style="display: flex; align-items: center; gap: 4px; font-size: 0.75rem; font-weight: 600; color: #2563eb; cursor: pointer; margin: 0;">
+                <input type="radio" name="lotPayerType" value="other" style="accent-color: #2563eb;">
+                👤 その他（立替）
+              </label>
+            </div>
+          </div>
+
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+            <!-- 会社直接時の貸方科目選択 -->
+            <div id="lotPayerCompanyRow" style="display: flex; align-items: center; gap: 6px;">
+              <label for="lotSelectCreditAccount" style="font-size: 0.75rem; color: #475569;">決済口座（貸方）:</label>
+              <select id="lotSelectCreditAccount" class="form-select" style="font-size: 0.8rem; width: auto; padding: 2px 8px;">
+                <option value="102" selected>102 普通預金（会社口座直接）</option>
+                <option value="201">201 買掛金（掛仕入・未払）</option>
+                <option value="212_card">212 未払金（法人クレジットカード）</option>
+                <option value="101">101 現金（会社小口現金）</option>
+              </select>
+            </div>
+
+            <!-- その他（立替）時の立替者名入力 -->
+            <div id="lotPayerOtherRow" style="display: none; align-items: center; gap: 6px;">
+              <label for="lotInputPayerName" style="font-size: 0.75rem; color: #1e40af; font-weight: 600;">立替者氏名/役職:</label>
+              <input type="text" id="lotInputPayerName" class="form-input" value="代表取締役" placeholder="例: 代表取締役、社員名 など" style="font-size: 0.8rem; width: 140px; padding: 2px 8px;">
+              <span style="font-size: 0.7rem; color: #64748b;">(貸方: 212 未払金・立替精算)</span>
+            </div>
+          </div>
+
+          <!-- 複合仕訳プレビュー表示ボックス -->
+          <div id="lotJournalPreviewBox" style="background: #ffffff; border: 1px dashed #94a3b8; border-radius: 6px; padding: 8px 12px; font-size: 0.725rem; font-family: monospace; color: #334155; line-height: 1.5; max-height: 120px; overflow-y: auto;">
+            <!-- JSで借方（各費用科目）・貸方（会社直接/立替者）の内訳を自動プレビュー -->
           </div>
         </div>
 
@@ -2299,6 +2397,56 @@
         <button type="button" class="btn btn-secondary btn-sm" id="btnCancelInventoryLotModal">キャンセル</button>
         <button type="button" class="btn btn-success btn-sm" id="btnSubmitInventoryLotModal" style="background: #059669; border-color: #059669; color: #ffffff; font-weight: 700; padding: 6px 18px;">
           📥 ロット入庫を確定して保存
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 📄 ロット証憑・領収書画像管理モーダル（後から追加・プレビュー・差替） -->
+  <div class="modal-overlay" id="lotReceiptManageModal" style="z-index: 1060; display: none;">
+    <div class="modal-card" style="max-width: 650px; width: 92vw; max-height: 90vh; display: flex; flex-direction: column;">
+      <div class="modal-header" style="padding: 14px 20px; background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 1.2rem;">📄</span>
+          <div>
+            <h3 class="modal-title" style="margin: 0; font-size: 1.05rem; color: #0f172a;" id="lotReceiptModalTitle">ロット証憑・領収書画像の管理</h3>
+            <span style="font-size: 0.725rem; color: #64748b;" id="lotReceiptModalSub">ロット番号: LOT-XXXXX</span>
+          </div>
+        </div>
+        <button type="button" class="btn-icon-danger" id="btnCloseLotReceiptModal" style="font-size: 1.2rem;">✕</button>
+      </div>
+      <div class="modal-body" style="padding: 16px 20px; overflow-y: auto; flex: 1;">
+        <!-- 現在の画像プレビュー領域 -->
+        <div id="lotReceiptModalPreviewArea" style="text-align: center; min-height: 220px; display: flex; align-items: center; justify-content: center; background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; margin-bottom: 12px; position: relative;">
+          <img id="lotReceiptModalImage" src="" alt="証憑画像" style="max-height: 380px; max-width: 100%; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); display: none;">
+          <div id="lotReceiptModalEmpty" style="color: #64748b; font-size: 0.85rem; line-height: 1.6;">
+            証憑画像は未登録です。<br>下のボタンからインボイス・領収書・送金明細の写真を追加できます。
+          </div>
+        </div>
+        
+        <!-- アップロード・操作エリア -->
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
+          <div style="display: flex; gap: 6px;">
+            <input type="file" id="lotReceiptModalFileInput" accept="image/*,application/pdf" style="display: none;">
+            <button type="button" class="btn btn-primary btn-sm" id="btnLotReceiptModalSelectFile" style="font-size: 0.8rem;">
+              📷 画像を選択 / 差替
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btnLotReceiptModalRotate" style="font-size: 0.8rem; display: none;">
+              🔄 回転
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btnLotReceiptModalDelete" style="font-size: 0.8rem; color: #dc2626; display: none;">
+              🗑️ 画像を削除
+            </button>
+          </div>
+          <div style="font-size: 0.725rem; color: #64748b;">
+            電帳法・財務会計の証憑書類として保存されます
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px; padding: 12px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0;">
+        <button type="button" class="btn btn-secondary btn-sm" id="btnCancelLotReceiptModal">閉じる</button>
+        <button type="button" class="btn btn-success btn-sm" id="btnSaveLotReceiptModal" style="background: #059669; border-color: #059669; color: #ffffff; font-weight: 700;">
+          💾 画像を保存・更新
         </button>
       </div>
     </div>
@@ -6735,7 +6883,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261028_remittance_fee"></script>
+  <script src="js/app.bundle.js?v=20261028_lot_accounting_receipt"></script>
 </body>
 
 </html>
