@@ -328,7 +328,7 @@
         </button>
         <div style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
-          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.28-item-category-and-freq-sort</span>
+          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.28-save-button-fix</span>
         </div>
       </div>
 
@@ -1554,7 +1554,7 @@
 
           <div style="display: flex; justify-content: flex-end; gap: 8px;">
             <button type="button" id="btnCancelItemMasterForm" class="btn btn-secondary btn-sm">キャンセル</button>
-            <button type="button" id="btnSaveItemMasterForm" class="btn btn-primary btn-sm">マスタに保存</button>
+            <button type="button" id="btnSaveItemMasterForm" class="btn btn-primary btn-sm" onclick="window.handleSaveItemMaster && window.handleSaveItemMaster()">マスタに保存</button>
           </div>
         </div>
 

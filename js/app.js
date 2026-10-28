@@ -319,6 +319,7 @@ const DOM = {
   itemMasterSelectTax: document.getElementById('itemMasterSelectTax'),
   itemMasterInputNote: document.getElementById('itemMasterInputNote'),
   btnCancelItemMasterForm: document.getElementById('btnCancelItemMasterForm'),
+  btnSaveItemMasterForm: document.getElementById('btnSaveItemMasterForm'),
   itemMasterListContainer: document.getElementById('itemMasterListContainer'),
 
   // 商品カテゴリ管理関連
@@ -3384,10 +3385,17 @@ function setupEventListeners() {
     DOM.btnApplyCalcPrice.addEventListener('click', applyMasterCalculatedPrice);
   }
 
-  // 商品マスタ保存
-  if (DOM.btnSaveItemMasterForm) {
-    DOM.btnSaveItemMasterForm.addEventListener('click', handleSaveItemMaster);
+  // 商品マスタ保存（直接リスナー ＋ イベント委譲）
+  const saveItemBtn = DOM.btnSaveItemMasterForm || document.getElementById('btnSaveItemMasterForm');
+  if (saveItemBtn) {
+    saveItemBtn.addEventListener('click', handleSaveItemMaster);
   }
+  document.addEventListener('click', (e) => {
+    if (e.target && (e.target.id === 'btnSaveItemMasterForm' || (e.target.closest && e.target.closest('#btnSaveItemMasterForm')))) {
+      console.log('【商品マスタ保存】イベント委譲によるクリック検知');
+      handleSaveItemMaster();
+    }
+  });
 
   // 商品カテゴリ管理・追加
   if (DOM.btnOpenAddCategoryModal) {
@@ -5058,41 +5066,55 @@ function applyMasterCalculatedPrice() {
 }
 
 function handleSaveItemMaster() {
-  const name = DOM.itemMasterInputName.value.trim();
+  console.log('【商品マスタ保存】実行開始');
+
+  const nameInput = (DOM && DOM.itemMasterInputName) || document.getElementById('itemMasterInputName');
+  const name = nameInput ? nameInput.value.trim() : '';
   if (!name) {
     alert('品名・項目名を入力してください。');
-    DOM.itemMasterInputName.focus();
+    if (nameInput) nameInput.focus();
     return;
   }
 
-  const priceVal = DOM.itemMasterInputPrice.value;
+  const priceInput = (DOM && DOM.itemMasterInputPrice) || document.getElementById('itemMasterInputPrice');
+  const priceVal = priceInput ? priceInput.value : '';
   if (priceVal === '' || isNaN(Number(priceVal))) {
     alert('帳票の単価（税抜）を入力してください。');
-    DOM.itemMasterInputPrice.focus();
+    if (priceInput) priceInput.focus();
     return;
   }
+
+  const selectCat = (DOM && DOM.itemMasterSelectCategory) || document.getElementById('itemMasterSelectCategory');
+  const userPriceInput = (DOM && DOM.calcInputUserPriceInc) || document.getElementById('calcInputUserPriceInc');
+  const unitInput = (DOM && DOM.itemMasterInputUnit) || document.getElementById('itemMasterInputUnit');
+  const taxInput = (DOM && DOM.itemMasterSelectTax) || document.getElementById('itemMasterSelectTax');
+  const noteInput = (DOM && DOM.itemMasterInputNote) || document.getElementById('itemMasterInputNote');
+  const editIdInput = (DOM && DOM.itemMasterEditId) || document.getElementById('itemMasterEditId');
 
   const itemData = {
     name: name,
-    category: DOM.itemMasterSelectCategory ? DOM.itemMasterSelectCategory.value.trim() : '',
+    category: selectCat ? selectCat.value.trim() : '',
     unitPrice: Math.abs(Number(priceVal)),
-    userPrice: Number(DOM.calcInputUserPriceInc.value) || 0,
-    unit: DOM.itemMasterInputUnit.value.trim() || '式',
-    taxRate: Number(DOM.itemMasterSelectTax.value) || 10,
-    note: DOM.itemMasterInputNote.value.trim()
+    userPrice: Number(userPriceInput ? userPriceInput.value : 0) || 0,
+    unit: (unitInput && unitInput.value.trim()) || '式',
+    taxRate: Number(taxInput ? taxInput.value : 10) || 10,
+    note: (noteInput && noteInput.value.trim()) || ''
   };
 
-  const editId = DOM.itemMasterEditId.value;
+  const editId = editIdInput ? editIdInput.value : '';
   if (editId) {
     itemData.id = editId;
   }
 
+  console.log('【商品マスタ保存】保存ペイロード:', itemData);
   saveItemToMaster(itemData, true);
   resetItemMasterForm();
   renderItemCategoryTabs();
   populateItemCategoryDropdown();
-  renderItemMasterList(DOM.inputSearchItemMaster ? DOM.inputSearchItemMaster.value : '');
+  const searchInput = (DOM && DOM.inputSearchItemMaster) || document.getElementById('inputSearchItemMaster');
+  renderItemMasterList(searchInput ? searchInput.value : '');
   showToast(`商品「${name}」をマスタに保存しました！`, 'success');
+  console.log('【商品マスタ保存】完了');
 }
 
 function renderItemMasterList(searchQuery = '') {
@@ -14990,6 +15012,7 @@ window.closeCompanyProfileModal = typeof closeCompanyProfileModal !== 'undefined
 };
 window.openItemMasterModal = typeof openItemMasterModal !== 'undefined' ? openItemMasterModal : null;
 window.closeItemMasterModal = typeof closeItemMasterModal !== 'undefined' ? closeItemMasterModal : null;
+window.handleSaveItemMaster = typeof handleSaveItemMaster !== 'undefined' ? handleSaveItemMaster : null;
 window.openCategoryModal = typeof openCategoryModal !== 'undefined' ? openCategoryModal : null;
 window.closeCategoryModal = typeof closeCategoryModal !== 'undefined' ? closeCategoryModal : null;
 window.renderItemCategoryTabs = typeof renderItemCategoryTabs !== 'undefined' ? renderItemCategoryTabs : null;
