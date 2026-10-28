@@ -4222,7 +4222,7 @@ function deduplicateItemMasterList(list) {
     if (!item || !item.name) continue;
     const cleanName = (item.name || '').trim();
     if (!cleanName) continue;
-    const key = getMasterKey(cleanName);
+    let key = getMasterKey(cleanName);
     if (!key) continue;
 
     // サンプル商品は自動パージ（完全排除）
