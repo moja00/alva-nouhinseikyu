@@ -1231,58 +1231,10 @@ export function getHistoryList() {
     const list = JSON.parse(raw);
     if (!Array.isArray(list)) return [];
 
-    // 各伝票の明細ユーザー名を自動同期・補完 ＆ スプレッダーの品名統一（価格は完全維持）
+    // スプレッダーの品名統一（価格は完全維持）
     let anyUpdated = false;
     list.forEach(docItem => {
-      if (docItem.endUserName && docItem.endUserName.includes('NK自動車')) {
-        docItem.endUserName = '';
-        anyUpdated = true;
-      }
-      if (docItem.title && docItem.title.includes('NK自動車')) {
-        docItem.title = docItem.title.replace(/特別価格\s*NK自動車様分/g, '特別価格').trim();
-        anyUpdated = true;
-      }
-      if (docItem.notes && docItem.notes.includes('NK自動車')) {
-        docItem.notes = docItem.notes.replace(/特別価格\s*NK自動車様分/g, '特別価格').trim();
-        anyUpdated = true;
-      }
-      if (Array.isArray(docItem.items)) {
-        docItem.items.forEach(it => {
-          if (it.endUserName && it.endUserName.includes('NK自動車')) {
-            it.endUserName = '';
-            anyUpdated = true;
-          }
-          if (it.note && it.note.includes('NK自動車')) {
-            it.note = it.note.replace(/NK自動車様分?\s*/g, '').trim();
-            anyUpdated = true;
-          }
-        });
-      }
       if (docItem.fullDoc) {
-        if (docItem.fullDoc.endUserName && docItem.fullDoc.endUserName.includes('NK自動車')) {
-          docItem.fullDoc.endUserName = '';
-          anyUpdated = true;
-        }
-        if (docItem.fullDoc.title && docItem.fullDoc.title.includes('NK自動車')) {
-          docItem.fullDoc.title = docItem.fullDoc.title.replace(/特別価格\s*NK自動車様分/g, '特別価格').trim();
-          anyUpdated = true;
-        }
-        if (docItem.fullDoc.notes && docItem.fullDoc.notes.includes('NK自動車')) {
-          docItem.fullDoc.notes = docItem.fullDoc.notes.replace(/特別価格\s*NK自動車様分/g, '特別価格').trim();
-          anyUpdated = true;
-        }
-        if (Array.isArray(docItem.fullDoc.items)) {
-          docItem.fullDoc.items.forEach(it => {
-            if (it.endUserName && it.endUserName.includes('NK自動車')) {
-              it.endUserName = '';
-              anyUpdated = true;
-            }
-            if (it.note && it.note.includes('NK自動車')) {
-              it.note = it.note.replace(/NK自動車様分?\s*/g, '').trim();
-              anyUpdated = true;
-            }
-          });
-        }
         if (unifyMechanicalSpreaderDocItems(docItem.fullDoc)) anyUpdated = true;
       }
       if (unifyMechanicalSpreaderDocItems(docItem)) anyUpdated = true;
@@ -5586,18 +5538,38 @@ export function getInventorySerialList() {
       return [...filteredDefaults];
     }
 
-    // 既存シリアル内の NK自動車 を自動クリーンアップ
-    parsed.forEach(s => {
-      if (!s) return;
-      if (s.endUserName && s.endUserName.includes('NK自動車')) {
-        s.endUserName = '';
-        updated = true;
+    // 伝票履歴（書類履歴）に紐付いている伝票から、未設定のユーザー名を安全に自動同期
+    try {
+      const rawHistory = localStorage.getItem(KEYS.HISTORY);
+      if (rawHistory) {
+        const historyList = JSON.parse(rawHistory);
+        if (Array.isArray(historyList)) {
+          parsed.forEach(s => {
+            if (!s || s.endUserName || s.userEditedEndUser || !s.docNumber) return;
+            const matchedDoc = historyList.find(d => (d.docNumber === s.docNumber || d.id === s.docId));
+            if (!matchedDoc) return;
+            let docUser = '';
+            if (Array.isArray(matchedDoc.items)) {
+              const item = matchedDoc.items.find(it => it && it.serialNumber && String(it.serialNumber).includes(s.serialNumber));
+              if (item && item.endUserName) docUser = item.endUserName;
+            }
+            if (!docUser && matchedDoc.fullDoc && Array.isArray(matchedDoc.fullDoc.items)) {
+              const item = matchedDoc.fullDoc.items.find(it => it && it.serialNumber && String(it.serialNumber).includes(s.serialNumber));
+              if (item && item.endUserName) docUser = item.endUserName;
+            }
+            if (!docUser) {
+              docUser = matchedDoc.endUserName || (matchedDoc.fullDoc ? matchedDoc.fullDoc.endUserName : '');
+            }
+            if (docUser) {
+              s.endUserName = docUser;
+              updated = true;
+            }
+          });
+        }
       }
-      if (s.note && s.note.includes('NK自動車')) {
-        s.note = s.note.replace(/NK自動車様分?\s*/g, '').trim();
-        updated = true;
-      }
-    });
+    } catch (e) {
+      console.warn('Auto sync endUserName from history failed:', e);
+    }
 
     // 伝票から判明した実シリアル（N8460系、N10411系等）および最新マスタを自動マージ・補完
     // ※ただしユーザーがゴミ箱で削除したシリアル（deletedSerials）は絶対に復活させない
@@ -5712,7 +5684,10 @@ export function updateSerialStatus(serialNumber, newStatus, details = {}) {
     } else {
       if (details.clientName !== undefined) target.clientName = details.clientName;
       if (details.customerName !== undefined) target.clientName = details.customerName;
-      if (details.endUserName !== undefined) target.endUserName = details.endUserName;
+      if (details.endUserName !== undefined) {
+        target.endUserName = details.endUserName;
+        target.userEditedEndUser = false; // 伝票からの確定反映時はフラグをリセット
+      }
       if (details.shipDate !== undefined) target.shipDate = details.shipDate;
       if (details.shippedDate !== undefined) { target.shipDate = details.shippedDate; target.shippedDate = details.shippedDate; }
       if (details.docNumber !== undefined) target.docNumber = details.docNumber;
@@ -5769,6 +5744,9 @@ export function updateSerialDetails(serialNumber, updates = {}) {
     const target = list.find(s => s.serialNumber === serialNumber || s.id === serialNumber);
     if (!target) return false;
 
+    if (updates.endUserName !== undefined) {
+      target.userEditedEndUser = true; // 台帳で明示的に手動編集されたことを記録
+    }
     Object.assign(target, updates, { updatedAt: new Date().toISOString() });
     localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(list));
     saveServerInventorySerials(list).catch(() => {});
