@@ -16026,6 +16026,9 @@ function switchInventoryTab(tabName) {
     }
   });
 
+  const contentEl = document.getElementById('inventoryViewScreenContent') || DOM.inventoryViewScreen;
+  if (contentEl) contentEl.scrollTop = 0;
+
   if (tabName === 'items') renderInventoryTable();
   if (tabName === 'serials') {
     if (typeof renderSerialsManagementTable === 'function') {
@@ -16287,18 +16290,18 @@ function renderSerialsManagementTable() {
   }
 
   let html = `
-    <table class="inv-table" style="width: 100%; border-collapse: collapse; font-size: 0.825rem;">
-      <thead>
+    <table class="inv-table" style="width: 100%; border-collapse: collapse; font-size: 0.775rem;">
+      <thead style="position: sticky; top: 0; z-index: 10; background: #f8fafc; box-shadow: 0 1px 2px rgba(0,0,0,0.06);">
         <tr style="background: #f8fafc; border-bottom: 2px solid #cbd5e1; text-align: left; color: #475569;">
-          <th style="min-width: 130px; padding: 10px 12px;">シリアル (S/N)</th>
-          <th style="min-width: 150px; padding: 10px 12px;">対象商品</th>
-          <th style="min-width: 130px; padding: 10px 12px; text-align: center;">ステータス</th>
-          <th style="min-width: 160px; padding: 10px 12px;">販売した販売店</th>
-          <th style="min-width: 130px; padding: 10px 12px;">ユーザー</th>
-          <th style="min-width: 120px; padding: 10px 12px;">出荷日</th>
-          <th style="min-width: 140px; padding: 10px 12px;">納品請求書紐付け</th>
-          <th style="min-width: 180px; padding: 10px 12px;">備考欄</th>
-          <th style="min-width: 90px; padding: 10px 12px; text-align: center;">操作</th>
+          <th style="width: 100px; padding: 8px 6px;">シリアル (S/N)</th>
+          <th style="width: 115px; padding: 8px 6px;">対象商品</th>
+          <th style="width: 100px; padding: 8px 4px; text-align: center;">ステータス</th>
+          <th style="min-width: 120px; padding: 8px 6px;">販売した販売店</th>
+          <th style="width: 85px; padding: 8px 6px;">ユーザー</th>
+          <th style="width: 105px; padding: 8px 4px;">出荷日</th>
+          <th style="width: 110px; padding: 8px 4px;">納品書紐付け</th>
+          <th style="min-width: 100px; padding: 8px 6px;">備考欄</th>
+          <th style="width: 60px; padding: 8px 4px; text-align: center;">操作</th>
         </tr>
       </thead>
       <tbody>
@@ -16311,16 +16314,16 @@ function renderSerialsManagementTable() {
 
     let itemBadge = '';
     if (isDp5k) {
-      itemBadge = `<span class="badge" style="background: #eff6ff; color: #1d4ed8; font-weight: 700; padding: 3px 8px; border-radius: 4px; border: 1px solid #bfdbfe;">DP-5000 <small style="font-weight: normal; color: #3b82f6;">(本体/セット)</small></span>`;
+      itemBadge = `<span class="badge" style="background: #eff6ff; color: #1d4ed8; font-weight: 700; padding: 2px 6px; border-radius: 4px; border: 1px solid #bfdbfe; font-size: 0.72rem;">DP-5000 <small style="font-weight: normal; color: #3b82f6;">(本体/セット)</small></span>`;
       if (s.isBundled) {
-        itemBadge += `<div style="margin-top: 4px;"><span class="badge" style="background:#e0e7ff; color:#3730a3; font-size:0.7rem; font-weight:700; padding:2px 6px; border-radius:4px; border: 1px solid #c7d2fe;">📦 セット品化済 (🔋 ${(s.batterySerials || []).join(', ')})</span></div>`;
+        itemBadge += `<div style="margin-top: 2px;"><span class="badge" style="background:#e0e7ff; color:#3730a3; font-size:0.65rem; font-weight:700; padding:1px 4px; border-radius:3px; border: 1px solid #c7d2fe;">📦 セット化済</span></div>`;
       }
     } else if (isMs) {
-      itemBadge = `<span class="badge" style="background: #fefce8; color: #a16207; font-weight: 700; padding: 3px 8px; border-radius: 4px; border: 1px solid #fef08a;">DP-MS <small style="font-weight: normal; color: #ca8a04;">(スプレッダー)</small></span>`;
+      itemBadge = `<span class="badge" style="background: #fefce8; color: #a16207; font-weight: 700; padding: 2px 6px; border-radius: 4px; border: 1px solid #fef08a; font-size: 0.72rem;">DP-MS <small style="font-weight: normal; color: #ca8a04;">(スプレッダー)</small></span>`;
     } else {
-      itemBadge = `<span class="badge" style="background: #f1f5f9; color: #475569; font-weight: 700; padding: 3px 8px; border-radius: 4px; border: 1px solid #e2e8f0;">PSE認証バッテリー <small style="color: #64748b; font-weight: normal;">(社内把握用)</small></span>`;
+      itemBadge = `<span class="badge" style="background: #f1f5f9; color: #475569; font-weight: 700; padding: 2px 6px; border-radius: 4px; border: 1px solid #e2e8f0; font-size: 0.72rem;">PSEバッテリー</span>`;
       if (s.status === 'bundled' || s.bundledWith) {
-        itemBadge += `<div style="margin-top: 4px;"><span class="badge" style="background:#fef3c7; color:#92400e; font-size:0.7rem; font-weight:700; padding:2px 6px; border-radius:4px; border: 1px solid #fde68a;">📦 セット組込中 (${escapeHtml(s.bundledWith || '')})</span></div>`;
+        itemBadge += `<div style="margin-top: 2px;"><span class="badge" style="background:#fef3c7; color:#92400e; font-size:0.65rem; font-weight:700; padding:1px 4px; border-radius:3px; border: 1px solid #fde68a;">📦 組込 (${escapeHtml(s.bundledWith || '')})</span></div>`;
       }
     }
 
@@ -16338,13 +16341,13 @@ function renderSerialsManagementTable() {
     const isParentLinked = !s.clientName && parentBody && (parentBody.clientName || parentBody.docNumber);
 
     const docLinkHtml = effectiveDocNum ? `
-      <div style="display: flex; align-items: center; gap: 4px;">
-        <button type="button" class="btn btn-xs btn-outline-primary" onclick="window.openInvoiceFromSerial('${escapeHtml(effectiveDocId)}', '${escapeHtml(effectiveDocNum)}')" title="該当の納品請求書を開く" style="font-family: monospace; font-weight: 700; padding: 2px 6px; font-size: 0.75rem;">
+      <div style="display: flex; align-items: center; gap: 3px;">
+        <button type="button" class="btn btn-xs btn-outline-primary" onclick="window.openInvoiceFromSerial('${escapeHtml(effectiveDocId)}', '${escapeHtml(effectiveDocNum)}')" title="該当の納品請求書を開く" style="font-family: monospace; font-weight: 700; padding: 1px 4px; font-size: 0.72rem;">
           📄 ${escapeHtml(effectiveDocNum)}
         </button>
-        ${isParentLinked ? `<span style="font-size: 0.65rem; color: #2563eb; background: #eff6ff; border: 1px solid #bfdbfe; padding: 1px 4px; border-radius: 3px;" title="本体(${parentBody.serialNumber})と自動連動">連動</span>` : ''}
+        ${isParentLinked ? `<span style="font-size: 0.6rem; color: #2563eb; background: #eff6ff; border: 1px solid #bfdbfe; padding: 0 3px; border-radius: 2px;" title="本体(${parentBody.serialNumber})と自動連動">連動</span>` : ''}
       </div>
-    ` : `<span style="color: #94a3b8; font-size: 0.75rem;">未紐付</span>`;
+    ` : `<span style="color: #94a3b8; font-size: 0.72rem;">未紐付</span>`;
 
     // ステータスの表示判定（本体が出荷済みなら組込バッテリーも自動で出荷済み連動表示）
     const effectiveStatus = (parentBody && parentBody.status === 'shipped' && s.status === 'bundled') ? 'shipped' : s.status;
@@ -16352,24 +16355,24 @@ function renderSerialsManagementTable() {
     html += `
       <tr style="border-bottom: 1px solid #e2e8f0; ${isParentLinked ? 'background: #fbfdff;' : ''}">
         <!-- シリアル番号 -->
-        <td style="padding: 10px 12px;">
-          <div style="display: flex; align-items: center; gap: 6px;">
-            <strong style="font-family: monospace; font-size: 0.95rem; color: #0f172a; letter-spacing: 0.5px;">${escapeHtml(s.serialNumber)}</strong>
-            <button type="button" class="btn btn-xs btn-link" onclick="navigator.clipboard && navigator.clipboard.writeText('${escapeHtml(s.serialNumber)}').then(() => showToast('コピーしました: ${escapeHtml(s.serialNumber)}', 'info'))" title="シリアル番号をコピー" style="padding: 0 4px; text-decoration: none; font-size: 0.8rem; color: #64748b;">
+        <td style="padding: 6px 6px;">
+          <div style="display: flex; align-items: center; gap: 3px;">
+            <strong style="font-family: monospace; font-size: 0.85rem; color: #0f172a; letter-spacing: 0.3px;">${escapeHtml(s.serialNumber)}</strong>
+            <button type="button" class="btn btn-xs btn-link" onclick="navigator.clipboard && navigator.clipboard.writeText('${escapeHtml(s.serialNumber)}').then(() => showToast('コピーしました: ${escapeHtml(s.serialNumber)}', 'info'))" title="シリアル番号をコピー" style="padding: 0 2px; text-decoration: none; font-size: 0.75rem; color: #64748b;">
               📋
             </button>
           </div>
         </td>
 
         <!-- 対象商品 -->
-        <td style="padding: 10px 12px;">
+        <td style="padding: 6px 6px;">
           ${itemBadge}
         </td>
 
         <!-- ステータス（変更可能セレクター） -->
-        <td style="padding: 10px 12px; text-align: center;">
+        <td style="padding: 6px 4px; text-align: center;">
           <select class="serial-status-select form-select form-select-xs" data-sn="${escapeHtml(s.serialNumber)}"
-            style="font-size: 0.775rem; font-weight: 700; padding: 2px 6px; width: 110px; border-radius: 6px; ${
+            style="font-size: 0.725rem; font-weight: 700; padding: 2px 4px; width: 95px; border-radius: 4px; ${
               effectiveStatus === 'in_stock' ? 'background: #f0fdf4; color: #166534; border-color: #86efac;' :
               effectiveStatus === 'shipped' ? 'background: #eff6ff; color: #1e40af; border-color: #93c5fd;' :
               effectiveStatus === 'bundled' ? 'background: #fefce8; color: #a16207; border-color: #fde047;' :
@@ -16378,76 +16381,76 @@ function renderSerialsManagementTable() {
             }">
             <option value="in_stock" ${effectiveStatus === 'in_stock' ? 'selected' : ''}>🟢 在庫中</option>
             <option value="shipped" ${effectiveStatus === 'shipped' ? 'selected' : ''}>🔵 出荷済</option>
-            <option value="bundled" ${effectiveStatus === 'bundled' ? 'selected' : ''}>📦 セット組込中</option>
+            <option value="bundled" ${effectiveStatus === 'bundled' ? 'selected' : ''}>📦 セット組込</option>
             <option value="maintenance" ${effectiveStatus === 'maintenance' ? 'selected' : ''}>🟡 保守/貸出</option>
             <option value="defective" ${effectiveStatus === 'defective' ? 'selected' : ''}>🔴 不良/廃棄</option>
           </select>
         </td>
 
         <!-- 販売した販売店（インライン編集） -->
-        <td style="padding: 6px 12px;">
+        <td style="padding: 4px 6px;">
           <input type="text" class="form-input form-input-xs serial-inline-input"
             data-sn="${escapeHtml(s.serialNumber)}" data-field="clientName"
             value="${escapeHtml(effectiveClient)}" placeholder="${parentBody ? `[本体 ${parentBody.serialNumber} 連動]` : '販売店を入力...'}"
-            style="font-size: 0.8rem; width: 100%; border: 1px solid ${isParentLinked ? '#bfdbfe' : 'transparent'}; background: ${isParentLinked ? '#eff6ff' : 'transparent'}; padding: 4px 6px; border-radius: 4px;"
+            style="font-size: 0.775rem; width: 100%; border: 1px solid ${isParentLinked ? '#bfdbfe' : 'transparent'}; background: ${isParentLinked ? '#eff6ff' : 'transparent'}; padding: 2px 4px; border-radius: 4px;"
             title="${isParentLinked ? `本体(${parentBody.serialNumber})の販売店と自動連動しています` : ''}"
             onfocus="this.style.borderColor='#3b82f6'; this.style.background='#ffffff';"
             onblur="this.style.borderColor='${isParentLinked ? '#bfdbfe' : 'transparent'}'; this.style.background='${isParentLinked ? '#eff6ff' : 'transparent'}';">
         </td>
 
         <!-- ユーザー（インライン編集） -->
-        <td style="padding: 6px 12px;">
+        <td style="padding: 4px 6px;">
           <input type="text" class="form-input form-input-xs serial-inline-input"
             data-sn="${escapeHtml(s.serialNumber)}" data-field="endUserName"
             value="${escapeHtml(effectiveEndUser)}" placeholder="—"
-            style="font-size: 0.8rem; width: 100%; border: 1px solid ${isParentLinked ? '#bfdbfe' : 'transparent'}; background: ${isParentLinked ? '#eff6ff' : 'transparent'}; padding: 4px 6px; border-radius: 4px;"
+            style="font-size: 0.775rem; width: 100%; border: 1px solid ${isParentLinked ? '#bfdbfe' : 'transparent'}; background: ${isParentLinked ? '#eff6ff' : 'transparent'}; padding: 2px 4px; border-radius: 4px;"
             title="${isParentLinked ? `本体(${parentBody.serialNumber})のユーザーと自動連動しています` : ''}"
             onfocus="this.style.borderColor='#3b82f6'; this.style.background='#ffffff';"
             onblur="this.style.borderColor='${isParentLinked ? '#bfdbfe' : 'transparent'}'; this.style.background='${isParentLinked ? '#eff6ff' : 'transparent'}';">
         </td>
 
         <!-- 出荷日（インライン日付） -->
-        <td style="padding: 6px 12px;">
+        <td style="padding: 4px 4px;">
           <input type="date" class="form-input form-input-xs serial-inline-input"
             data-sn="${escapeHtml(s.serialNumber)}" data-field="shipDate"
             value="${escapeHtml(effectiveShipDate)}"
-            style="font-size: 0.775rem; width: 110px; border: 1px solid ${isParentLinked ? '#bfdbfe' : 'transparent'}; background: ${isParentLinked ? '#eff6ff' : 'transparent'}; padding: 4px 4px; border-radius: 4px;"
+            style="font-size: 0.75rem; width: 100px; border: 1px solid ${isParentLinked ? '#bfdbfe' : 'transparent'}; background: ${isParentLinked ? '#eff6ff' : 'transparent'}; padding: 2px 2px; border-radius: 4px;"
             title="${isParentLinked ? `本体(${parentBody.serialNumber})の出荷日と自動連動しています` : ''}"
             onfocus="this.style.borderColor='#3b82f6'; this.style.background='#ffffff';"
             onblur="this.style.borderColor='${isParentLinked ? '#bfdbfe' : 'transparent'}'; this.style.background='${isParentLinked ? '#eff6ff' : 'transparent'}';">
         </td>
 
         <!-- 納品請求書紐付け -->
-        <td style="padding: 10px 12px;">
+        <td style="padding: 6px 4px;">
           ${docLinkHtml}
         </td>
 
         <!-- 備考欄（インライン編集） -->
-        <td style="padding: 6px 12px;">
+        <td style="padding: 4px 6px;">
           <input type="text" class="form-input form-input-xs serial-inline-input"
             data-sn="${escapeHtml(s.serialNumber)}" data-field="note"
             value="${escapeHtml(s.note || '')}" placeholder="備考を入力..."
-            style="font-size: 0.8rem; width: 100%; border: 1px solid transparent; background: transparent; padding: 4px 6px; border-radius: 4px;"
+            style="font-size: 0.775rem; width: 100%; border: 1px solid transparent; background: transparent; padding: 2px 4px; border-radius: 4px;"
             onfocus="this.style.borderColor='#3b82f6'; this.style.background='#ffffff';"
             onblur="this.style.borderColor='transparent'; this.style.background='transparent';">
         </td>
 
         <!-- 操作 -->
-        <td style="padding: 10px 12px; text-align: center;">
-          <div style="display: flex; gap: 4px; justify-content: center; align-items: center; flex-wrap: wrap;">
+        <td style="padding: 6px 4px; text-align: center;">
+          <div style="display: flex; gap: 2px; justify-content: center; align-items: center;">
             ${(isDp5k && s.isBundled) ? `
-              <button type="button" class="btn btn-xs" onclick="window.disassembleBundleConfirm('${escapeHtml(s.serialNumber)}')" title="セット品化を解除してバッテリー・充電器を在庫に戻す" style="background:#fee2e2; color:#991b1b; border: 1px solid #fca5a5; font-size: 0.7rem; font-weight: 700; padding: 2px 6px;">
+              <button type="button" class="btn btn-xs" onclick="window.disassembleBundleConfirm('${escapeHtml(s.serialNumber)}')" title="セット品化を解除" style="background:#fee2e2; color:#991b1b; border: 1px solid #fca5a5; font-size: 0.65rem; font-weight: 700; padding: 1px 3px;">
                 解除
               </button>
             ` : (isDp5k && s.status === 'in_stock' ? `
-              <button type="button" class="btn btn-xs" onclick="window.openBundleAssemblyModal('inv_dp5000_body', '${escapeHtml(s.serialNumber)}')" title="この本体をバッテリー2個・充電器1個とセット品化" style="background:#e0e7ff; color:#3730a3; border: 1px solid #c7d2fe; font-size: 0.7rem; font-weight: 700; padding: 2px 6px;">
-                📦セット化
+              <button type="button" class="btn btn-xs" onclick="window.openBundleAssemblyModal('inv_dp5000_body', '${escapeHtml(s.serialNumber)}')" title="セット品化" style="background:#e0e7ff; color:#3730a3; border: 1px solid #c7d2fe; font-size: 0.65rem; font-weight: 700; padding: 1px 3px;">
+                📦セット
               </button>
             ` : '')}
-            <button type="button" class="btn btn-xs btn-outline-secondary" onclick="window.openSerialSingleModal('${escapeHtml(s.serialNumber)}')" title="シリアル詳細編集" style="padding: 2px 6px; font-size: 0.725rem;">
+            <button type="button" class="btn btn-xs btn-outline-secondary" onclick="window.openSerialSingleModal('${escapeHtml(s.serialNumber)}')" title="シリアル詳細編集" style="padding: 1px 4px; font-size: 0.7rem;">
               ✏️
             </button>
-            <button type="button" class="btn btn-xs btn-outline-danger" onclick="window.deleteSerialEntry('${escapeHtml(s.serialNumber)}')" title="台帳から削除" style="padding: 2px 6px; font-size: 0.725rem;">
+            <button type="button" class="btn btn-xs btn-outline-danger" onclick="window.deleteSerialEntry('${escapeHtml(s.serialNumber)}')" title="台帳から削除" style="padding: 1px 4px; font-size: 0.7rem;">
               🗑️
             </button>
           </div>

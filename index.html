@@ -309,7 +309,7 @@
         </button>
         <div style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
-          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.28-inventory-tabs-unified</span>
+          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.28-responsive-compact-layout</span>
         </div>
       </div>
 
@@ -1660,8 +1660,8 @@
     </div>
 
     <!-- メインコンテンツエリア -->
-    <div class="view-screen-content" style="padding: 24px 32px; overflow-y: auto;">
-      <div style="max-width: 1200px; margin: 0 auto;">
+    <div class="view-screen-content" id="inventoryViewScreenContent" style="padding: 14px 18px; overflow-y: auto;">
+      <div style="max-width: 100%; margin: 0 auto;">
         <!-- 1. 在庫品目・BOM構成マスタ タブ -->
         <div id="inventoryItemsTabContent">
           <!-- 上部アクションバー（検索・アラートフィルタ・商品マスタ取込・ロット入庫・新規追加） -->
@@ -1893,117 +1893,6 @@
           <div id="inventoryLotTableContainer" style="overflow-x: auto;">
             <!-- JSでレンダリング -->
           </div>
-        </div>
-
-      </div>
-    </div>
-  </section>
-
-  <!-- ==========================================================================
-       シリアル管理台帳 専用フル画面（DP-5000 / DP-MS / PSEバッテリー台帳追跡）
-       ========================================================================== -->
-  <section class="app-view-screen" id="serialsViewScreen">
-
-    <!-- 専用画面トップバー -->
-    <div class="view-screen-header">
-      <div class="view-screen-header-left">
-        <div class="view-screen-icon-badge" style="background: #ccfbf1; color: #0f766e;">🔢</div>
-        <div>
-          <h2 class="view-screen-title">シリアル管理台帳（個別追跡・出荷先・ユーザー紐付け）</h2>
-          <span class="view-screen-subtitle">DP-5000（本体・セット共通）・DP-MS・PSEバッテリー（社内把握用）の個別S/N追跡</span>
-        </div>
-      </div>
-      <div class="view-screen-header-actions">
-        <button type="button" id="btnExportSerialsCsv" class="btn btn-secondary btn-sm"
-          style="display: inline-flex; align-items: center; gap: 6px;" title="シリアル台帳全体をCSVダウンロード">
-          📥 CSV出力
-        </button>
-        <button type="button" id="btnOpenSerialBatchModal" class="btn btn-secondary btn-sm"
-          style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600;" title="Nから始まる連番シリアルを一括採番登録">
-          🔢 連続一括採番
-        </button>
-        <button type="button" id="btnOpenSerialSingleModal" class="btn btn-primary btn-sm"
-          style="display: inline-flex; align-items: center; gap: 6px; font-weight: 700; background: #0f766e; border-color: #0f766e;">
-          ➕ シリアル新規登録
-        </button>
-        <button type="button" class="btn-back-to-portal" id="btnCloseSerialsScreen"
-          onclick="window.switchAppView && window.switchAppView('portal')" title="メインポータルMENUへ戻る">
-          <span>🏠</span> 業務MENUへ戻る
-        </button>
-      </div>
-    </div>
-
-    <!-- メインコンテンツエリア -->
-    <div class="view-screen-content" style="padding: 24px 32px; overflow-y: auto;">
-      <div style="max-width: 1300px; margin: 0 auto;">
-
-        <!-- 1. 統計サマリーカード -->
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 20px;">
-          <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-            <div style="font-size: 0.75rem; color: #64748b; font-weight: 600;">📊 総管理シリアル数</div>
-            <div style="font-size: 1.5rem; font-weight: 800; color: #0f172a; margin-top: 4px;" id="statSerialTotal">0 <span style="font-size: 0.85rem; font-weight: 500;">台</span></div>
-          </div>
-          <div style="background: #ffffff; border: 1px solid #bbf7d0; border-radius: 8px; padding: 14px 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-            <div style="font-size: 0.75rem; color: #166534; font-weight: 600;">🟢 在庫中 (即時引当可能)</div>
-            <div style="font-size: 1.5rem; font-weight: 800; color: #15803d; margin-top: 4px;" id="statSerialInStock">0 <span style="font-size: 0.85rem; font-weight: 500;">台</span></div>
-          </div>
-          <div style="background: #ffffff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 14px 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-            <div style="font-size: 0.75rem; color: #1e40af; font-weight: 600;">🔵 出荷済 (納品完了)</div>
-            <div style="font-size: 1.5rem; font-weight: 800; color: #2563eb; margin-top: 4px;" id="statSerialShipped">0 <span style="font-size: 0.85rem; font-weight: 500;">台</span></div>
-          </div>
-          <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-            <div style="font-size: 0.75rem; color: #64748b; font-weight: 600;">📦 商品別在庫内訳</div>
-            <div style="font-size: 0.8rem; font-weight: 700; color: #334155; margin-top: 6px; line-height: 1.4;" id="statSerialBreakdown">
-              DP-5000: -- / DP-MS: -- / バッテリー: --
-            </div>
-          </div>
-        </div>
-
-        <!-- 2. 上部フィルター＆検索ツールバー -->
-        <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 18px; margin-bottom: 16px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between;">
-          <div style="flex: 1; min-width: 260px; position: relative;">
-            <input type="text" id="inputSearchSerialMgmt" class="form-input"
-              placeholder="🔍 シリアル番号(S/N)・販売店・ユーザー名・伝票番号・備考で絞り込み..." style="font-size: 0.85rem; width: 100%;">
-          </div>
-          <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
-            <div style="display: flex; align-items: center; gap: 4px;">
-              <span style="font-size: 0.75rem; color: #64748b; font-weight: 600;">商品:</span>
-              <select id="selectSerialMgmtItem" class="form-select" style="font-size: 0.85rem; width: auto; font-weight: 600;">
-                <option value="all">すべての商品 (3品目)</option>
-                <option value="DP-5000">DP-5000 (本体/セット共通)</option>
-                <option value="DP-MS">DP-MS (スプレッダー)</option>
-                <option value="PSE認証リチウムイオンバッテリー">PSE認証リチウムイオンバッテリー (社内把握用)</option>
-              </select>
-            </div>
-            <div style="display: flex; align-items: center; gap: 4px;">
-              <span style="font-size: 0.75rem; color: #64748b; font-weight: 600;">状態:</span>
-              <select id="selectSerialMgmtStatus" class="form-select" style="font-size: 0.85rem; width: auto; font-weight: 600;">
-                <option value="all">すべての状態</option>
-                <option value="in_stock">🟢 在庫中 (引当可能)</option>
-                <option value="shipped">🔵 出荷済 (納品完了)</option>
-                <option value="maintenance">🟡 保守・貸出</option>
-                <option value="defective">🔴 初期不良・廃棄</option>
-              </select>
-            </div>
-            <button type="button" id="btnRefreshSerialMgmt" class="btn btn-secondary btn-sm" style="display: flex; align-items: center; gap: 4px;" title="台帳を再読込">
-              🔄 再読込
-            </button>
-          </div>
-        </div>
-
-        <!-- 3. シリアル台帳一覧テーブルコンテナ -->
-        <div id="serialsManagementTableContainer" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; overflow-x: auto; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
-          <!-- JSでレンダリング -->
-        </div>
-
-        <!-- 注記フッター -->
-        <div style="margin-top: 14px; padding: 10px 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 0.75rem; color: #64748b; line-height: 1.6;">
-          💡 <strong>シリアル管理の仕様と注意事項:</strong><br>
-          ・シリアル番号形式: <strong>Nから始まる4桁〜5桁の数字</strong>（例: N10933, N2001）です。<br>
-          ・「DP-5000」はセット品も本体単品も同一シリアル体系で連動・引当されます。<br>
-          ・「PSE認証リチウムイオンバッテリー」は<strong>会社側が把握するためだけ</strong>の社内管理品であり、外部帳票への自動印字は行われません。<br>
-          ・納品請求書確定発行時に、指定されたシリアルは自動的に「出荷済」となり、販売店・ユーザー・出荷日・伝票番号が同期されます。<br>
-          ・備考欄は表上で直接入力してEnterキーまたはフォーカスを外すと即座に保存されます。
         </div>
 
       </div>
@@ -6824,7 +6713,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261028_inventory_tabs_unified"></script>
+  <script src="js/app.bundle.js?v=20261028_responsive_compact_layout"></script>
 </body>
 
 </html>
