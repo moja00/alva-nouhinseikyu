@@ -3354,6 +3354,7 @@ const KEYS = {
   CLIENT_HISTORY: 'quickdoc_client_history',
   CLIENT_MASTER: 'quickdoc_client_master',
   ITEM_MASTER: 'quickdoc_item_master',
+  ITEM_CATEGORIES: 'alva_item_categories',
   DISCOUNT_REASONS: 'quickdoc_discount_reasons',
   USER_PRICE_HISTORY: 'quickdoc_user_price_history',
   EXPENSES: 'quickdoc_expenses',
@@ -3820,11 +3821,18 @@ const SAMPLE_CLIENT_KEYS = new Set([
   getMasterKey('グローバル・イノベーション株式会社'),
   getMasterKey('スタジオ・ネクサス合同会社')
 ]);
+const DEFAULT_ITEM_CATEGORIES = [
+  '本体・セット',
+  'アタッチメント',
+  'アクセサリー',
+  '消耗品・クランプ'
+];
 
 const DEFAULT_ITEMS_MASTER = [
   {
     id: "prod_1790319200414_10bm",
     name: "DP-MS　メカニカルスプレッダー",
+    category: "アタッチメント",
     unitPrice: 73025,
     userPrice: 98000,
     unit: "個",
@@ -3838,6 +3846,7 @@ const DEFAULT_ITEMS_MASTER = [
   {
     id: "prod_1790319164152_angp",
     name: "DP-EG　3点引きアタッチメント",
+    category: "アタッチメント",
     unitPrice: 163934,
     userPrice: 220000,
     unit: "セット",
@@ -3851,6 +3860,7 @@ const DEFAULT_ITEMS_MASTER = [
   {
     id: "prod_1790319113830_war6",
     name: "DP-AC　アクセサリーキット",
+    category: "アクセサリー",
     unitPrice: 176602,
     userPrice: 237000,
     unit: "セット",
@@ -3864,6 +3874,7 @@ const DEFAULT_ITEMS_MASTER = [
   {
     id: "prod_1790317962497_3xgg",
     name: "DP-5000　ベーシックセット　バッテリー２個",
+    category: "本体・セット",
     unitPrice: 268257,
     userPrice: 360000,
     unit: "式",
@@ -3877,6 +3888,7 @@ const DEFAULT_ITEMS_MASTER = [
   {
     id: "prod_auto_6",
     name: "KET.IC.2B エレクトロパワーバッテリ2個付",
+    category: "本体・セット",
     unitPrice: 300000,
     userPrice: 385000,
     unit: "セット",
@@ -3890,6 +3902,7 @@ const DEFAULT_ITEMS_MASTER = [
   {
     id: "prod_auto_7",
     name: "HIC-025　ホールドイットクランプ",
+    category: "消耗品・クランプ",
     unitPrice: 10400,
     userPrice: 11440,
     unit: "セット",
@@ -4224,7 +4237,16 @@ function deduplicateItemMasterList(list) {
       item.unitPrice = 73025;
       item.userPrice = 98000;
       item.unit = '個';
+      item.category = 'アタッチメント';
       key = getMasterKey(item.name);
+    }
+
+    // デフォルトマスタに定義されたカテゴリがあれば未設定時に補完
+    if (!item.category) {
+      const def = DEFAULT_ITEMS_MASTER.find(d => getMasterKey(d.name) === key);
+      if (def && def.category) {
+        item.category = def.category;
+      }
     }
 
     if (!map.has(key)) {
@@ -5684,6 +5706,7 @@ function saveItemToMaster(item, isExplicitEdit = true) {
         ...list[existingIndex],
         ...item,
         name: cleanName,
+        category: item.category !== undefined ? item.category : (list[existingIndex].category || ''),
         sku: item.sku !== undefined ? item.sku : (list[existingIndex].sku || ''),
         unitPrice: isExplicitEdit
           ? (Number(item.unitPrice !== undefined ? item.unitPrice : currentUnitPrice) || 0)
@@ -5701,6 +5724,7 @@ function saveItemToMaster(item, isExplicitEdit = true) {
       const newItem = {
         id: item.id || ('prod_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6)),
         name: cleanName,
+        category: item.category || '',
         sku: item.sku || '',
         unitPrice: Number(item.unitPrice) || 0,
         userPrice: Number(item.userPrice !== undefined ? item.userPrice : item.unitPrice) || 0,
@@ -5720,6 +5744,72 @@ function saveItemToMaster(item, isExplicitEdit = true) {
     console.error('Failed to save item to master:', e);
     return false;
   }
+}
+
+/**
+ * 商品カテゴリ一覧を取得
+ * @returns {string[]} カテゴリ名配列
+ */
+function getItemCategoryList() {
+  try {
+    const raw = localStorage.getItem(KEYS.ITEM_CATEGORIES);
+    if (!raw) {
+      saveItemCategoryList(DEFAULT_ITEM_CATEGORIES);
+      return [...DEFAULT_ITEM_CATEGORIES];
+    }
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      saveItemCategoryList(DEFAULT_ITEM_CATEGORIES);
+      return [...DEFAULT_ITEM_CATEGORIES];
+    }
+    return parsed;
+  } catch (e) {
+    console.error('Failed to get item category list:', e);
+    return [...DEFAULT_ITEM_CATEGORIES];
+  }
+}
+
+/**
+ * 商品カテゴリ一覧を保存
+ * @param {string[]} list 
+ */
+function saveItemCategoryList(list) {
+  try {
+    if (!Array.isArray(list)) return false;
+    const cleanList = Array.from(new Set(list.map(c => String(c || '').trim()).filter(Boolean)));
+    localStorageSetItemAndSync(KEYS.ITEM_CATEGORIES, JSON.stringify(cleanList));
+    return true;
+  } catch (e) {
+    console.error('Failed to save item category list:', e);
+    return false;
+  }
+}
+
+/**
+ * 商品カテゴリを新規追加
+ * @param {string} name カテゴリ名
+ */
+function addItemCategory(name) {
+  const cleanName = String(name || '').trim();
+  if (!cleanName) return false;
+  const list = getItemCategoryList();
+  if (!list.includes(cleanName)) {
+    list.push(cleanName);
+    saveItemCategoryList(list);
+  }
+  return true;
+}
+
+/**
+ * 商品カテゴリを削除
+ * @param {string} name カテゴリ名
+ */
+function deleteItemCategory(name) {
+  const cleanName = String(name || '').trim();
+  if (!cleanName) return false;
+  const list = getItemCategoryList().filter(c => c !== cleanName);
+  saveItemCategoryList(list);
+  return true;
 }
 
 /**
@@ -9175,6 +9265,10 @@ if (typeof window !== 'undefined') {
   window.getExpenseList = getExpenseList;
   window.loadActiveDoc = loadActiveDoc;
   window.saveActiveDoc = saveActiveDoc;
+  window.getItemCategoryList = getItemCategoryList;
+  window.saveItemCategoryList = saveItemCategoryList;
+  window.addItemCategory = addItemCategory;
+  window.deleteItemCategory = deleteItemCategory;
   window.restoreAttendanceFromBackup = function() {
     const backup = localStorage.getItem(KEYS.ATTENDANCE + '_backup');
     if (backup && backup !== '[]') {
@@ -9388,8 +9482,20 @@ const DOM = {
   itemMasterSelectTax: document.getElementById('itemMasterSelectTax'),
   itemMasterInputNote: document.getElementById('itemMasterInputNote'),
   btnCancelItemMasterForm: document.getElementById('btnCancelItemMasterForm'),
-  btnSaveItemMasterForm: document.getElementById('btnSaveItemMasterForm'),
   itemMasterListContainer: document.getElementById('itemMasterListContainer'),
+
+  // 商品カテゴリ管理関連
+  btnOpenAddCategoryModal: document.getElementById('btnOpenAddCategoryModal'),
+  btnManageCategories: document.getElementById('btnManageCategories'),
+  btnInlineAddCategory: document.getElementById('btnInlineAddCategory'),
+  itemCategoryTabs: document.getElementById('itemCategoryTabs'),
+  itemMasterSelectCategory: document.getElementById('itemMasterSelectCategory'),
+  modalAddCategory: document.getElementById('modalAddCategory'),
+  btnCloseAddCategoryModal: document.getElementById('btnCloseAddCategoryModal'),
+  btnDoneCategoryModal: document.getElementById('btnDoneCategoryModal'),
+  inputNewCategoryName: document.getElementById('inputNewCategoryName'),
+  btnSubmitAddCategory: document.getElementById('btnSubmitAddCategory'),
+  categoryManageList: document.getElementById('categoryManageList'),
 
   // 取引先マスタ関連
   btnOpenClientMaster: document.getElementById('btnOpenClientMaster'),
@@ -10167,6 +10273,8 @@ function switchAppView(viewName) {
         try {
           if (DOM.inputSearchItemMaster) DOM.inputSearchItemMaster.value = '';
           if (typeof resetItemMasterForm === 'function') resetItemMasterForm();
+          if (typeof renderItemCategoryTabs === 'function') renderItemCategoryTabs();
+          if (typeof populateItemCategoryDropdown === 'function') populateItemCategoryDropdown();
           if (typeof renderItemMasterList === 'function') renderItemMasterList();
         } catch (err) {
           console.error('Error initializing items view:', err);
@@ -12444,6 +12552,39 @@ function setupEventListeners() {
     DOM.btnSaveItemMasterForm.addEventListener('click', handleSaveItemMaster);
   }
 
+  // 商品カテゴリ管理・追加
+  if (DOM.btnOpenAddCategoryModal) {
+    DOM.btnOpenAddCategoryModal.addEventListener('click', openCategoryModal);
+  }
+  if (DOM.btnManageCategories) {
+    DOM.btnManageCategories.addEventListener('click', openCategoryModal);
+  }
+  if (DOM.btnInlineAddCategory) {
+    DOM.btnInlineAddCategory.addEventListener('click', openCategoryModal);
+  }
+  if (DOM.btnCloseAddCategoryModal) {
+    DOM.btnCloseAddCategoryModal.addEventListener('click', closeCategoryModal);
+  }
+  if (DOM.btnDoneCategoryModal) {
+    DOM.btnDoneCategoryModal.addEventListener('click', closeCategoryModal);
+  }
+  if (DOM.modalAddCategory) {
+    DOM.modalAddCategory.addEventListener('click', (e) => {
+      if (e.target === DOM.modalAddCategory) closeCategoryModal();
+    });
+  }
+  if (DOM.btnSubmitAddCategory) {
+    DOM.btnSubmitAddCategory.addEventListener('click', handleAddNewCategory);
+  }
+  if (DOM.inputNewCategoryName) {
+    DOM.inputNewCategoryName.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleAddNewCategory();
+      }
+    });
+  }
+
   // 取引先マスタ制御
   if (DOM.btnOpenClientMaster) {
     DOM.btnOpenClientMaster.addEventListener('click', () => openClientMasterModal('customer'));
@@ -13810,6 +13951,8 @@ function closeBackupModal() {
 // ==========================================================================
 // 商品マスタ管理 ＆ 販売店仕切り価格自動計算
 // ==========================================================================
+let currentItemCategory = 'all';
+
 function openItemMasterModal() {
   if (typeof switchAppView === 'function') {
     switchAppView('items');
@@ -13817,6 +13960,8 @@ function openItemMasterModal() {
     DOM.itemMasterModal.classList.add('active');
     if (DOM.inputSearchItemMaster) DOM.inputSearchItemMaster.value = '';
     resetItemMasterForm();
+    renderItemCategoryTabs();
+    populateItemCategoryDropdown();
     renderItemMasterList();
   }
 }
@@ -13844,6 +13989,9 @@ function resetItemMasterForm() {
   DOM.itemMasterEditId.value = '';
   DOM.itemMasterFormTitle.textContent = '新規商品の登録';
   DOM.itemMasterInputName.value = '';
+  if (DOM.itemMasterSelectCategory) {
+    DOM.itemMasterSelectCategory.value = (currentItemCategory !== 'all' && currentItemCategory !== '__uncategorized__') ? currentItemCategory : '';
+  }
   DOM.calcInputUserPriceInc.value = '';
   DOM.itemMasterInputPrice.value = '';
   DOM.itemMasterInputUnit.value = '式';
@@ -13851,6 +13999,174 @@ function resetItemMasterForm() {
   DOM.itemMasterInputNote.value = '';
   updateMasterCalculator(false);
   toggleItemMasterForm(false);
+}
+
+/**
+ * カテゴリ選択肢ドロップダウンを生成
+ * @param {string} [selectedCategory] 選択状態にするカテゴリ名
+ */
+function populateItemCategoryDropdown(selectedCategory = '') {
+  if (!DOM.itemMasterSelectCategory) return;
+  const categories = (typeof getItemCategoryList === 'function') ? getItemCategoryList() : [];
+  let html = '<option value="">（未分類）</option>';
+  categories.forEach(cat => {
+    const isSel = (cat === selectedCategory) ? 'selected' : '';
+    html += `<option value="${escapeHtml(cat)}" ${isSel}>${escapeHtml(cat)}</option>`;
+  });
+  if (selectedCategory && !categories.includes(selectedCategory)) {
+    html += `<option value="${escapeHtml(selectedCategory)}" selected>${escapeHtml(selectedCategory)}</option>`;
+  }
+  DOM.itemMasterSelectCategory.innerHTML = html;
+}
+
+/**
+ * カテゴリ切り替えタブバーを動的描画
+ */
+function renderItemCategoryTabs() {
+  if (!DOM.itemCategoryTabs) return;
+  const categories = (typeof getItemCategoryList === 'function') ? getItemCategoryList() : [];
+  const allItems = (typeof getItemMasterList === 'function') ? getItemMasterList(false).filter(i => !isRepairItem(i)) : [];
+
+  // 各カテゴリの登録件数を集計
+  const countMap = { all: allItems.length };
+  categories.forEach(cat => { countMap[cat] = 0; });
+  let uncategorizedCount = 0;
+
+  allItems.forEach(item => {
+    const cat = (item.category || '').trim();
+    if (cat && countMap.hasOwnProperty(cat)) {
+      countMap[cat]++;
+    } else {
+      uncategorizedCount++;
+    }
+  });
+
+  let html = `
+    <button type="button" class="item-category-tab ${currentItemCategory === 'all' ? 'active' : ''}" data-category="all">
+      すべて <span class="tab-count">${countMap.all || 0}</span>
+    </button>
+  `;
+
+  categories.forEach(cat => {
+    const cnt = countMap[cat] || 0;
+    html += `
+      <button type="button" class="item-category-tab ${currentItemCategory === cat ? 'active' : ''}" data-category="${escapeHtml(cat)}">
+        ${escapeHtml(cat)} <span class="tab-count">${cnt}</span>
+      </button>
+    `;
+  });
+
+  if (uncategorizedCount > 0) {
+    html += `
+      <button type="button" class="item-category-tab ${currentItemCategory === '__uncategorized__' ? 'active' : ''}" data-category="__uncategorized__">
+        未分類 <span class="tab-count">${uncategorizedCount}</span>
+      </button>
+    `;
+  }
+
+  DOM.itemCategoryTabs.innerHTML = html;
+
+  // タブ切り替えクリックイベント
+  DOM.itemCategoryTabs.querySelectorAll('.item-category-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      currentItemCategory = tab.dataset.category;
+      renderItemCategoryTabs();
+      renderItemMasterList(DOM.inputSearchItemMaster ? DOM.inputSearchItemMaster.value : '');
+    });
+  });
+}
+
+/**
+ * カテゴリ管理モーダルを開く
+ */
+function openCategoryModal() {
+  if (!DOM.modalAddCategory) return;
+  DOM.modalAddCategory.classList.add('active');
+  if (DOM.inputNewCategoryName) {
+    DOM.inputNewCategoryName.value = '';
+    DOM.inputNewCategoryName.focus();
+  }
+  renderCategoryManageList();
+}
+
+/**
+ * カテゴリ管理モーダルを閉じる
+ */
+function closeCategoryModal() {
+  if (!DOM.modalAddCategory) return;
+  DOM.modalAddCategory.classList.remove('active');
+  renderItemCategoryTabs();
+  populateItemCategoryDropdown(DOM.itemMasterSelectCategory ? DOM.itemMasterSelectCategory.value : '');
+  renderItemMasterList(DOM.inputSearchItemMaster ? DOM.inputSearchItemMaster.value : '');
+}
+
+/**
+ * カテゴリ管理モーダル内の既存カテゴリ一覧を描画
+ */
+function renderCategoryManageList() {
+  if (!DOM.categoryManageList) return;
+  const categories = (typeof getItemCategoryList === 'function') ? getItemCategoryList() : [];
+  if (categories.length === 0) {
+    DOM.categoryManageList.innerHTML = '<div style="font-size: 0.8rem; color: #94a3b8; text-align: center; padding: 12px;">カテゴリが登録されていません</div>';
+    return;
+  }
+
+  const allItems = (typeof getItemMasterList === 'function') ? getItemMasterList(false) : [];
+  const countMap = {};
+  allItems.forEach(i => {
+    const c = (i.category || '').trim();
+    if (c) countMap[c] = (countMap[c] || 0) + 1;
+  });
+
+  DOM.categoryManageList.innerHTML = categories.map(cat => {
+    const cnt = countMap[cat] || 0;
+    return `
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;">
+        <span style="font-size: 0.85rem; font-weight: 600; color: #1e293b; display: inline-flex; align-items: center; gap: 6px;">
+          <span>🏷️</span> ${escapeHtml(cat)}
+          <span style="font-size: 0.72rem; color: #64748b; font-weight: normal;">(${cnt}件)</span>
+        </span>
+        <button type="button" class="btn-icon-danger btn-delete-category" data-category="${escapeHtml(cat)}" style="font-size: 0.775rem; padding: 3px 8px; cursor: pointer; border-radius: 4px;" title="このカテゴリを削除">
+          ✕ 削除
+        </button>
+      </div>
+    `;
+  }).join('');
+
+  DOM.categoryManageList.querySelectorAll('.btn-delete-category').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const cat = btn.dataset.category;
+      if (confirm(`カテゴリ「${cat}」を削除しますか？\n（※既存商品に設定されたカテゴリ名は変更されません）`)) {
+        if (typeof deleteItemCategory === 'function') {
+          deleteItemCategory(cat);
+          renderCategoryManageList();
+          renderItemCategoryTabs();
+          populateItemCategoryDropdown();
+        }
+      }
+    });
+  });
+}
+
+/**
+ * 新規カテゴリを追加
+ */
+function handleAddNewCategory() {
+  if (!DOM.inputNewCategoryName) return;
+  const name = DOM.inputNewCategoryName.value.trim();
+  if (!name) {
+    alert('カテゴリ名を入力してください');
+    DOM.inputNewCategoryName.focus();
+    return;
+  }
+  if (typeof addItemCategory === 'function') {
+    addItemCategory(name);
+    DOM.inputNewCategoryName.value = '';
+    renderCategoryManageList();
+    renderItemCategoryTabs();
+    populateItemCategoryDropdown(name);
+    showToast(`カテゴリ「${name}」を追加しました`, 'success');
+  }
 }
 
 function updateMasterCalculator(autoApply = true) {
@@ -13921,6 +14237,7 @@ function handleSaveItemMaster() {
 
   const itemData = {
     name: name,
+    category: DOM.itemMasterSelectCategory ? DOM.itemMasterSelectCategory.value.trim() : '',
     unitPrice: Math.abs(Number(priceVal)),
     userPrice: Number(DOM.calcInputUserPriceInc.value) || 0,
     unit: DOM.itemMasterInputUnit.value.trim() || '式',
@@ -13935,34 +14252,65 @@ function handleSaveItemMaster() {
 
   saveItemToMaster(itemData, true);
   resetItemMasterForm();
-  renderItemMasterList(DOM.inputSearchItemMaster.value);
+  renderItemCategoryTabs();
+  populateItemCategoryDropdown();
+  renderItemMasterList(DOM.inputSearchItemMaster ? DOM.inputSearchItemMaster.value : '');
   showToast(`商品「${name}」をマスタに保存しました！`, 'success');
 }
 
 function renderItemMasterList(searchQuery = '') {
-  // 頻度の多い順にソートされた商品マスタを取得
-  const allItems = getItemMasterList(true).filter(item => !isRepairItem(item));
+  // 全商品マスタを取得（非修理品）
+  const allItems = (typeof getItemMasterList === 'function')
+    ? getItemMasterList(false).filter(item => !isRepairItem(item))
+    : [];
   const q = (searchQuery || '').trim().toLowerCase();
+  const usageMap = (typeof getItemMasterUsageMap === 'function') ? getItemMasterUsageMap() : {};
 
-  const filtered = q
-    ? allItems.filter(item => 
-        (item.name && item.name.toLowerCase().includes(q)) ||
-        (item.note && item.note.toLowerCase().includes(q))
-      )
-    : allItems;
+  // 納品請求書への実記載頻度（登場件数）を各アイテムに設定
+  allItems.forEach(item => {
+    item.docUsageCount = (typeof getItemDocUsage === 'function')
+      ? getItemDocUsage(item, usageMap)
+      : (usageMap[getMasterKey(item.name || '')] || usageMap[(item.name || '').trim()] || 0);
+  });
+
+  // ★★★ 使用頻度多い順に上から並べる（降順ソート） ★★★
+  allItems.sort((a, b) => {
+    const countA = Number(a.docUsageCount) || 0;
+    const countB = Number(b.docUsageCount) || 0;
+    if (countB !== countA) return countB - countA;
+    // 頻度が同一の場合は直近更新・作成順
+    return (b.updatedAt || b.createdAt || '').localeCompare(a.updatedAt || a.createdAt || '');
+  });
+
+  // カテゴリ絞り込み
+  let filtered = allItems;
+  if (currentItemCategory && currentItemCategory !== 'all') {
+    if (currentItemCategory === '__uncategorized__') {
+      filtered = filtered.filter(item => !item.category || !item.category.trim());
+    } else {
+      filtered = filtered.filter(item => (item.category || '').trim() === currentItemCategory);
+    }
+  }
+
+  // 検索クエリによる絞り込み
+  if (q) {
+    filtered = filtered.filter(item => 
+      (item.name && item.name.toLowerCase().includes(q)) ||
+      (item.note && item.note.toLowerCase().includes(q)) ||
+      (item.category && item.category.toLowerCase().includes(q))
+    );
+  }
 
   DOM.itemMasterListContainer.innerHTML = '';
 
   if (filtered.length === 0) {
     DOM.itemMasterListContainer.innerHTML = `
       <div style="text-align: center; padding: 30px; color: var(--text-muted); font-size: 0.85rem;">
-        ${q ? '検索条件に一致する商品は見つかりませんでした。' : '登録された商品がありません。「新規商品を登録」ボタンから登録してください。'}
+        ${q ? '検索条件に一致する商品は見つかりませんでした。' : (currentItemCategory !== 'all' ? `カテゴリ「${escapeHtml(currentItemCategory === '__uncategorized__' ? '未分類' : currentItemCategory)}」に商品は登録されていません。` : '登録された商品がありません。「新規商品を登録」ボタンから登録してください。')}
       </div>
     `;
     return;
   }
-
-  const usageMap = getItemMasterUsageMap();
 
   filtered.forEach(item => {
     const card = document.createElement('div');
@@ -13976,15 +14324,14 @@ function renderItemMasterList(searchQuery = '') {
     const estUserPriceInc = item.userPrice || Math.round(estUserEx * (1 + taxRate / 100));
 
     // 納品請求書に記載された頻度（伝票履歴の実登場件数）
-    const docUsage = (typeof getItemDocUsage === 'function')
-      ? getItemDocUsage(item, usageMap)
-      : (usageMap[(item.name || '').trim()] || 0);
+    const docUsage = Number(item.docUsageCount) || 0;
 
     card.innerHTML = `
       <div class="master-item-info">
         <div class="master-item-header">
           <span class="master-item-name">${escapeHtml(item.name)}</span>
-          <div style="display: flex; gap: 4px; align-items: center;">
+          <div style="display: flex; gap: 4px; align-items: center; flex-wrap: wrap;">
+            ${item.category ? `<span class="item-category-badge" title="カテゴリ: ${escapeHtml(item.category)}">🏷️ ${escapeHtml(item.category)}</span>` : ''}
             <span class="master-usage-badge" title="納品請求書への記載実績: ${docUsage}回">★ 頻度: ${docUsage}回</span>
             <span class="badge" style="background: #f1f5f9; color: #475569; font-size: 0.7rem; padding: 2px 6px; border-radius: 4px;">
               ${escapeHtml(item.unit || '式')} / 税率${taxRate}%
@@ -14051,6 +14398,9 @@ function renderItemMasterList(searchQuery = '') {
       DOM.itemMasterFormTitle.textContent = `商品の編集: ${item.name}`;
       DOM.itemMasterEditId.value = item.id;
       DOM.itemMasterInputName.value = item.name;
+      if (DOM.itemMasterSelectCategory) {
+        populateItemCategoryDropdown(item.category || '');
+      }
       DOM.itemMasterInputPrice.value = item.unitPrice;
       DOM.itemMasterInputUnit.value = item.unit || '式';
       DOM.itemMasterSelectTax.value = String(item.taxRate !== undefined ? item.taxRate : 10);
@@ -14064,7 +14414,9 @@ function renderItemMasterList(searchQuery = '') {
     card.querySelector('.btn-delete-master-item').addEventListener('click', () => {
       if (confirm(`商品マスタから「${item.name}」を削除しますか？\n※既存の作成済み伝票の明細には影響しません。`)) {
         deleteItemFromMaster(item.id);
-        renderItemMasterList(DOM.inputSearchItemMaster.value);
+        renderItemCategoryTabs();
+        populateItemCategoryDropdown();
+        renderItemMasterList(DOM.inputSearchItemMaster ? DOM.inputSearchItemMaster.value : '');
         showToast('商品マスタから削除しました');
       }
     });
@@ -23801,6 +24153,10 @@ window.closeCompanyProfileModal = typeof closeCompanyProfileModal !== 'undefined
 };
 window.openItemMasterModal = typeof openItemMasterModal !== 'undefined' ? openItemMasterModal : null;
 window.closeItemMasterModal = typeof closeItemMasterModal !== 'undefined' ? closeItemMasterModal : null;
+window.openCategoryModal = typeof openCategoryModal !== 'undefined' ? openCategoryModal : null;
+window.closeCategoryModal = typeof closeCategoryModal !== 'undefined' ? closeCategoryModal : null;
+window.renderItemCategoryTabs = typeof renderItemCategoryTabs !== 'undefined' ? renderItemCategoryTabs : null;
+window.populateItemCategoryDropdown = typeof populateItemCategoryDropdown !== 'undefined' ? populateItemCategoryDropdown : null;
 window.openClientMasterModal = typeof openClientMasterModal !== 'undefined' ? openClientMasterModal : null;
 window.closeClientMasterModal = typeof closeClientMasterModal !== 'undefined' ? closeClientMasterModal : null;
 window.openInventoryMasterModal = typeof openInventoryMasterModal !== 'undefined' ? openInventoryMasterModal : null;

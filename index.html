@@ -328,7 +328,7 @@
         </button>
         <div style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
-          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.28-holdit-clamp-restore</span>
+          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.28-item-category-and-freq-sort</span>
         </div>
       </div>
 
@@ -1389,6 +1389,11 @@
         </div>
       </div>
       <div class="view-screen-header-actions">
+        <button type="button" id="btnOpenAddCategoryModal" class="btn btn-sm"
+          style="display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; font-weight: 700; background: #eff6ff; border: 1.5px solid #93c5fd; color: #1d4ed8; border-radius: 8px; cursor: pointer; transition: all 0.2s ease;">
+          <span style="font-size: 14px;">📁</span>
+          カテゴリを追加
+        </button>
         <button type="button" id="btnToggleNewItemForm" class="btn btn-primary btn-sm"
           style="display: inline-flex; align-items: center; gap: 6px; padding: 7px 16px; font-weight: 700;">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -1410,7 +1415,7 @@
 
         <!-- 上部アクションバー（検索バー） -->
         <div
-          style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 10px; padding: 14px 18px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;">
+          style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 10px; padding: 14px 18px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;">
           <div style="flex: 1; min-width: 260px; position: relative;">
             <input type="text" id="inputSearchItemMaster" class="form-input" placeholder="🔍 品名や備考で絞り込み検索..."
               style="padding-left: 14px; font-size: 0.9rem;">
@@ -1420,6 +1425,22 @@
           </div>
         </div>
 
+        <!-- カテゴリ切り替えタブバー -->
+        <div class="item-category-tabs-container" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; background: #ffffff; padding: 10px 16px; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 1px 2px rgba(0,0,0,0.03);">
+          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <span style="font-size: 0.775rem; font-weight: 700; color: #64748b; margin-right: 4px; display: inline-flex; align-items: center; gap: 4px;">
+              <span>🏷️</span> カテゴリ:
+            </span>
+            <div id="itemCategoryTabs" style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+              <!-- JSで動的レンダリング -->
+            </div>
+          </div>
+          <button type="button" id="btnManageCategories" class="btn btn-sm"
+            style="font-size: 0.75rem; padding: 4px 10px; color: #475569; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+            ⚙️ カテゴリ管理
+          </button>
+        </div>
+
         <!-- 新規登録・編集フォーム（初期は折りたたみ、トグル可能） -->
         <div id="itemMasterFormContainer"
           style="display: none; background: #ffffff; border: 1.5px solid #93c5fd; border-radius: 12px; padding: 20px; margin-bottom: 24px; box-shadow: 0 4px 12px rgba(37,99,235,0.08);">
@@ -1427,10 +1448,24 @@
             新規商品の登録</h4>
           <input type="hidden" id="itemMasterEditId" value="">
 
-          <div class="form-group" style="margin-bottom: 12px;">
-            <label class="form-label" for="itemMasterInputName" style="font-size: 0.825rem; font-weight: 700;">品名・項目名 <span
-                style="color: var(--danger);">*</span></label>
-            <input type="text" id="itemMasterInputName" class="form-input" placeholder="例: 製品基本セット、導入作業費 など">
+          <div class="form-row" style="margin-bottom: 14px; display: flex; gap: 12px; flex-wrap: wrap;">
+            <div class="form-group" style="flex: 2; min-width: 240px;">
+              <label class="form-label" for="itemMasterInputName" style="font-size: 0.825rem; font-weight: 700;">品名・項目名 <span
+                  style="color: var(--danger);">*</span></label>
+              <input type="text" id="itemMasterInputName" class="form-input" placeholder="例: 製品基本セット、導入作業費 など">
+            </div>
+            <div class="form-group" style="flex: 1.2; min-width: 180px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <label class="form-label" for="itemMasterSelectCategory" style="font-size: 0.825rem; font-weight: 700; margin-bottom: 0;">カテゴリ</label>
+                <a href="javascript:void(0)" id="btnInlineAddCategory" style="font-size: 0.725rem; color: #2563eb; text-decoration: none; font-weight: 600; display: inline-flex; align-items: center; gap: 2px;">
+                  <span>＋作成</span>
+                </a>
+              </div>
+              <select id="itemMasterSelectCategory" class="form-select" style="font-size: 0.85rem; padding: 7px 10px;">
+                <option value="">（未分類）</option>
+                <!-- JSで動的生成 -->
+              </select>
+            </div>
           </div>
 
           <!-- ユーザー税込価格からの単価自動計算アシスト -->
@@ -1535,6 +1570,51 @@
       </div>
     </div>
   </section>
+
+  <!-- 商品カテゴリ管理・追加モーダル -->
+  <div class="modal-overlay" id="modalAddCategory" style="z-index: 1065;">
+    <div class="modal-card" style="max-width: 480px; width: 92vw; border-radius: 12px; overflow: hidden; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.2);">
+      <div class="modal-header" style="padding: 14px 18px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 1.2rem;">📁</span>
+          <div>
+            <h3 class="modal-title" style="margin: 0; font-size: 1.05rem; font-weight: 700; color: #1e293b;">商品カテゴリ管理</h3>
+            <span style="font-size: 0.725rem; color: #64748b;">商品の分類カテゴリを追加・編集します</span>
+          </div>
+        </div>
+        <button type="button" class="btn-icon-danger" id="btnCloseAddCategoryModal" style="font-size: 1.2rem; border: none; background: none; cursor: pointer; color: #64748b;">✕</button>
+      </div>
+
+      <div class="modal-body" style="padding: 18px 20px;">
+        <!-- 新規カテゴリ追加エリア -->
+        <div style="margin-bottom: 18px;">
+          <label class="form-label" for="inputNewCategoryName" style="font-size: 0.775rem; font-weight: 700; color: #334155; margin-bottom: 6px;">
+            新規カテゴリ名
+          </label>
+          <div style="display: flex; gap: 8px;">
+            <input type="text" id="inputNewCategoryName" class="form-input" placeholder="例: 消耗品・パーツ、オプション機器 など" style="flex: 1; font-size: 0.875rem;">
+            <button type="button" id="btnSubmitAddCategory" class="btn btn-primary" style="padding: 8px 16px; font-weight: 700; font-size: 0.85rem; white-space: nowrap;">
+              ＋ 追加
+            </button>
+          </div>
+        </div>
+
+        <!-- 既存カテゴリ一覧エリア -->
+        <div>
+          <label style="display: block; font-size: 0.775rem; font-weight: 700; color: #334155; margin-bottom: 8px;">
+            登録中カテゴリ一覧
+          </label>
+          <div id="categoryManageList" style="display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; padding-right: 4px;">
+            <!-- JSで各カテゴリタグ・削除ボタンを動的描画 -->
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="padding: 12px 18px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; justify-content: flex-end;">
+        <button type="button" class="btn btn-secondary" id="btnDoneCategoryModal" style="padding: 6px 16px; font-size: 0.85rem;">完了</button>
+      </div>
+    </div>
+  </div>
 
   <!-- ==========================================================================
        在庫マスタ台帳専用画面（フルスクリーン・ワークスペース）

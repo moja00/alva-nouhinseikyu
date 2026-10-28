@@ -582,47 +582,9 @@ DEFAULT_ISSUER = {
 
 DEFAULT_ITEMS = [
     {
-        "id": "prod_1790319200414_10bm",
-        "name": "DP-MS　メカニカルスプレッダー",
-        "unitPrice": 73025,
-        "userPrice": 98000,
-        "unit": "個",
-        "taxRate": 10,
-        "note": "",
-        "usageCount": 1,
-        "createdAt": "2026-09-25T06:53:20.414Z",
-        "updatedAt": "2026-09-25T06:53:20.414Z",
-        "lastUsedAt": "2026-09-25T06:55:37.851Z"
-    },
-    {
-        "id": "prod_1790319164152_angp",
-        "name": "DP-EG　3点引きアタッチメント",
-        "unitPrice": 163934,
-        "userPrice": 220000,
-        "unit": "セット",
-        "taxRate": 10,
-        "note": "",
-        "usageCount": 1,
-        "createdAt": "2026-09-25T06:52:44.152Z",
-        "updatedAt": "2026-09-25T06:52:44.152Z",
-        "lastUsedAt": "2026-09-25T06:55:25.362Z"
-    },
-    {
-        "id": "prod_1790319113830_war6",
-        "name": "DP-AC　アクセサリーキット",
-        "unitPrice": 176602,
-        "userPrice": 237000,
-        "unit": "セット",
-        "taxRate": 10,
-        "note": "",
-        "usageCount": 2,
-        "createdAt": "2026-09-25T06:51:53.830Z",
-        "updatedAt": "2026-09-25T06:51:53.830Z",
-        "lastUsedAt": "2026-09-28T02:39:29.185Z"
-    },
-    {
         "id": "prod_1790317962497_3xgg",
         "name": "DP-5000　ベーシックセット　バッテリー２個",
+        "category": "本体・セット",
         "unitPrice": 268257,
         "userPrice": 360000,
         "unit": "式",
@@ -634,8 +596,51 @@ DEFAULT_ITEMS = [
         "updatedAt": "2026-09-29T05:06:55.007Z"
     },
     {
+        "id": "prod_1790319113830_war6",
+        "name": "DP-AC　アクセサリーキット",
+        "category": "アクセサリー",
+        "unitPrice": 176602,
+        "userPrice": 237000,
+        "unit": "セット",
+        "taxRate": 10,
+        "note": "",
+        "usageCount": 2,
+        "createdAt": "2026-09-25T06:51:53.830Z",
+        "updatedAt": "2026-09-25T06:51:53.830Z",
+        "lastUsedAt": "2026-09-28T02:39:29.185Z"
+    },
+    {
+        "id": "prod_1790319164152_angp",
+        "name": "DP-EG　3点引きアタッチメント",
+        "category": "アタッチメント",
+        "unitPrice": 163934,
+        "userPrice": 220000,
+        "unit": "セット",
+        "taxRate": 10,
+        "note": "",
+        "usageCount": 1,
+        "createdAt": "2026-09-25T06:52:44.152Z",
+        "updatedAt": "2026-09-25T06:52:44.152Z",
+        "lastUsedAt": "2026-09-25T06:55:25.362Z"
+    },
+    {
+        "id": "prod_1790319200414_10bm",
+        "name": "DP-MS　メカニカルスプレッダー",
+        "category": "アタッチメント",
+        "unitPrice": 73025,
+        "userPrice": 98000,
+        "unit": "個",
+        "taxRate": 10,
+        "note": "",
+        "usageCount": 1,
+        "createdAt": "2026-09-25T06:53:20.414Z",
+        "updatedAt": "2026-09-25T06:53:20.414Z",
+        "lastUsedAt": "2026-09-25T06:55:37.851Z"
+    },
+    {
         "id": "prod_auto_6",
         "name": "KET.IC.2B エレクトロパワーバッテリ2個付",
+        "category": "本体・セット",
         "unitPrice": 300000,
         "userPrice": 385000,
         "unit": "セット",
@@ -649,6 +654,7 @@ DEFAULT_ITEMS = [
     {
         "id": "prod_auto_7",
         "name": "HIC-025　ホールドイットクランプ",
+        "category": "消耗品・クランプ",
         "unitPrice": 10400,
         "userPrice": 11440,
         "unit": "セット",

@@ -10,6 +10,7 @@ const KEYS = {
   CLIENT_HISTORY: 'quickdoc_client_history',
   CLIENT_MASTER: 'quickdoc_client_master',
   ITEM_MASTER: 'quickdoc_item_master',
+  ITEM_CATEGORIES: 'alva_item_categories',
   DISCOUNT_REASONS: 'quickdoc_discount_reasons',
   USER_PRICE_HISTORY: 'quickdoc_user_price_history',
   EXPENSES: 'quickdoc_expenses',
@@ -479,10 +480,18 @@ const SAMPLE_CLIENT_KEYS = new Set([
   getMasterKey('スタジオ・ネクサス合同会社')
 ]);
 
+export const DEFAULT_ITEM_CATEGORIES = [
+  '本体・セット',
+  'アタッチメント',
+  'アクセサリー',
+  '消耗品・クランプ'
+];
+
 const DEFAULT_ITEMS_MASTER = [
   {
     id: "prod_1790319200414_10bm",
     name: "DP-MS　メカニカルスプレッダー",
+    category: "アタッチメント",
     unitPrice: 73025,
     userPrice: 98000,
     unit: "個",
@@ -496,6 +505,7 @@ const DEFAULT_ITEMS_MASTER = [
   {
     id: "prod_1790319164152_angp",
     name: "DP-EG　3点引きアタッチメント",
+    category: "アタッチメント",
     unitPrice: 163934,
     userPrice: 220000,
     unit: "セット",
@@ -509,6 +519,7 @@ const DEFAULT_ITEMS_MASTER = [
   {
     id: "prod_1790319113830_war6",
     name: "DP-AC　アクセサリーキット",
+    category: "アクセサリー",
     unitPrice: 176602,
     userPrice: 237000,
     unit: "セット",
@@ -522,6 +533,7 @@ const DEFAULT_ITEMS_MASTER = [
   {
     id: "prod_1790317962497_3xgg",
     name: "DP-5000　ベーシックセット　バッテリー２個",
+    category: "本体・セット",
     unitPrice: 268257,
     userPrice: 360000,
     unit: "式",
@@ -535,6 +547,7 @@ const DEFAULT_ITEMS_MASTER = [
   {
     id: "prod_auto_6",
     name: "KET.IC.2B エレクトロパワーバッテリ2個付",
+    category: "本体・セット",
     unitPrice: 300000,
     userPrice: 385000,
     unit: "セット",
@@ -548,6 +561,7 @@ const DEFAULT_ITEMS_MASTER = [
   {
     id: "prod_auto_7",
     name: "HIC-025　ホールドイットクランプ",
+    category: "消耗品・クランプ",
     unitPrice: 10400,
     userPrice: 11440,
     unit: "セット",
@@ -886,7 +900,16 @@ export function deduplicateItemMasterList(list) {
       item.unitPrice = 73025;
       item.userPrice = 98000;
       item.unit = '個';
+      item.category = 'アタッチメント';
       key = getMasterKey(item.name);
+    }
+
+    // デフォルトマスタに定義されたカテゴリがあれば未設定時に補完
+    if (!item.category) {
+      const def = DEFAULT_ITEMS_MASTER.find(d => getMasterKey(d.name) === key);
+      if (def && def.category) {
+        item.category = def.category;
+      }
     }
 
     if (!map.has(key)) {
@@ -2365,6 +2388,7 @@ export function saveItemToMaster(item, isExplicitEdit = true) {
         ...list[existingIndex],
         ...item,
         name: cleanName,
+        category: item.category !== undefined ? item.category : (list[existingIndex].category || ''),
         sku: item.sku !== undefined ? item.sku : (list[existingIndex].sku || ''),
         unitPrice: isExplicitEdit
           ? (Number(item.unitPrice !== undefined ? item.unitPrice : currentUnitPrice) || 0)
@@ -2382,6 +2406,7 @@ export function saveItemToMaster(item, isExplicitEdit = true) {
       const newItem = {
         id: item.id || ('prod_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6)),
         name: cleanName,
+        category: item.category || '',
         sku: item.sku || '',
         unitPrice: Number(item.unitPrice) || 0,
         userPrice: Number(item.userPrice !== undefined ? item.userPrice : item.unitPrice) || 0,
@@ -2401,6 +2426,72 @@ export function saveItemToMaster(item, isExplicitEdit = true) {
     console.error('Failed to save item to master:', e);
     return false;
   }
+}
+
+/**
+ * 商品カテゴリ一覧を取得
+ * @returns {string[]} カテゴリ名配列
+ */
+export function getItemCategoryList() {
+  try {
+    const raw = localStorage.getItem(KEYS.ITEM_CATEGORIES);
+    if (!raw) {
+      saveItemCategoryList(DEFAULT_ITEM_CATEGORIES);
+      return [...DEFAULT_ITEM_CATEGORIES];
+    }
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      saveItemCategoryList(DEFAULT_ITEM_CATEGORIES);
+      return [...DEFAULT_ITEM_CATEGORIES];
+    }
+    return parsed;
+  } catch (e) {
+    console.error('Failed to get item category list:', e);
+    return [...DEFAULT_ITEM_CATEGORIES];
+  }
+}
+
+/**
+ * 商品カテゴリ一覧を保存
+ * @param {string[]} list 
+ */
+export function saveItemCategoryList(list) {
+  try {
+    if (!Array.isArray(list)) return false;
+    const cleanList = Array.from(new Set(list.map(c => String(c || '').trim()).filter(Boolean)));
+    localStorageSetItemAndSync(KEYS.ITEM_CATEGORIES, JSON.stringify(cleanList));
+    return true;
+  } catch (e) {
+    console.error('Failed to save item category list:', e);
+    return false;
+  }
+}
+
+/**
+ * 商品カテゴリを新規追加
+ * @param {string} name カテゴリ名
+ */
+export function addItemCategory(name) {
+  const cleanName = String(name || '').trim();
+  if (!cleanName) return false;
+  const list = getItemCategoryList();
+  if (!list.includes(cleanName)) {
+    list.push(cleanName);
+    saveItemCategoryList(list);
+  }
+  return true;
+}
+
+/**
+ * 商品カテゴリを削除
+ * @param {string} name カテゴリ名
+ */
+export function deleteItemCategory(name) {
+  const cleanName = String(name || '').trim();
+  if (!cleanName) return false;
+  const list = getItemCategoryList().filter(c => c !== cleanName);
+  saveItemCategoryList(list);
+  return true;
 }
 
 /**
@@ -5877,6 +5968,10 @@ if (typeof window !== 'undefined') {
   window.getExpenseList = getExpenseList;
   window.loadActiveDoc = loadActiveDoc;
   window.saveActiveDoc = saveActiveDoc;
+  window.getItemCategoryList = getItemCategoryList;
+  window.saveItemCategoryList = saveItemCategoryList;
+  window.addItemCategory = addItemCategory;
+  window.deleteItemCategory = deleteItemCategory;
   window.restoreAttendanceFromBackup = function() {
     const backup = localStorage.getItem(KEYS.ATTENDANCE + '_backup');
     if (backup && backup !== '[]') {
