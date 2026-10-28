@@ -328,7 +328,7 @@
         </button>
         <div style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
-          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.28-fix-inventory-sync</span>
+          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.28-lot-serial-grid</span>
         </div>
       </div>
 
@@ -2210,23 +2210,49 @@
           </div>
         </div>
 
-        <!-- シリアル番号一括/個別登録エリア（シリアル管理対象品目のみ表示） -->
-        <div id="lotSerialSection" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; margin-bottom: 14px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-            <label class="form-label" style="font-size: 0.8rem; font-weight: 700; color: #1e293b; margin: 0;">
-              🔢 シリアル番号の登録（入庫数量分） <span style="color: var(--danger);">*</span>
-            </label>
+        <!-- シリアル番号 個別スロット・一括登録エリア（シリアル管理対象品目のみ表示） -->
+        <div id="lotSerialSection" style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 14px; margin-bottom: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
             <div style="display: flex; align-items: center; gap: 8px;">
-              <span style="font-size: 0.75rem; font-weight: 600;" id="lotSerialCountBadge">入力: 0 / 必要: 10</span>
-              <button type="button" id="btnGenerateSerialNumbers" class="btn btn-secondary btn-xs" style="font-size: 0.75rem;">
-                ⚡ 連番自動生成
+              <label class="form-label" style="font-size: 0.85rem; font-weight: 700; color: #0f172a; margin: 0;">
+                🔢 シリアル番号の入力（入庫数量分） <span style="color: var(--danger);">*</span>
+              </label>
+              <span id="lotSerialCountBadge" style="font-size: 0.75rem; font-weight: 700; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 2px 8px; border-radius: 9999px;">
+                入力: 0 / 必要: 10
+              </span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <button type="button" id="btnToggleSerialInputMode" class="btn btn-secondary btn-xs" style="font-size: 0.75rem; background: #f1f5f9; border-color: #cbd5e1; color: #334155;">
+                📋 一括テキスト入力切替
+              </button>
+              <button type="button" id="btnGenerateSerialNumbers" class="btn btn-secondary btn-xs" style="font-size: 0.75rem; background: #f0fdf4; border-color: #86efac; color: #166534;" title="連番で一括自動入力">
+                ⚡ 連番自動入力
+              </button>
+              <button type="button" id="btnClearSerialNumbers" class="btn btn-secondary btn-xs" style="font-size: 0.75rem; background: #fff1f2; border-color: #fecdd3; color: #be123c;" title="シリアル入力をクリア">
+                🗑️ クリア
               </button>
             </div>
           </div>
-          <span style="font-size: 0.725rem; color: #64748b; display: block; margin-bottom: 6px;">
-            バーコードリーダーによる読取または1行1件（またはカンマ区切り）でシリアル番号を入力してください。各シリアルに今回の確定原価が自動付与されます。
-          </span>
-          <textarea id="lotInputSerials" class="form-input" rows="4" style="font-family: monospace; font-size: 0.85rem; line-height: 1.4;" placeholder="DP5K-2610-001&#10;DP5K-2610-002&#10;DP5K-2610-003&#10;..."></textarea>
+
+          <div style="font-size: 0.725rem; color: #64748b; margin-bottom: 8px; line-height: 1.4;">
+            入庫数量分の枠に1台ずつシリアル番号を入力（またはバーコードスキャン）してください。<kbd style="background: #e2e8f0; padding: 1px 5px; border-radius: 3px; font-size: 0.7rem; font-family: monospace;">Enter</kbd> キーで次の枠へ自動移動します。
+          </div>
+
+          <!-- (A) 個別スロット入力エリア（数量に応じたスロット群） -->
+          <div id="lotSerialSlotsArea">
+            <div id="lotSerialSlotsContainer" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; max-height: 250px; overflow-y: auto; padding: 6px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;">
+              <!-- JSで入庫数量分の入力スロットを動的生成 -->
+            </div>
+          </div>
+
+          <!-- (B) 一括テキスト入力エリア（トグルで表示・非表示） -->
+          <div id="lotSerialTextArea" style="display: none; margin-top: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              <span style="font-size: 0.725rem; color: #475569; font-weight: 600;">複数行貼り付け（改行またはカンマ区切り）:</span>
+              <button type="button" id="btnApplyTextSerialsToSlots" class="btn btn-primary btn-xs" style="font-size: 0.7rem; padding: 2px 8px;">スロットへ反映</button>
+            </div>
+            <textarea id="lotInputSerials" class="form-input" rows="4" style="font-family: monospace; font-size: 0.85rem; line-height: 1.4;" placeholder="DP5K-2610-001&#10;DP5K-2610-002&#10;DP5K-2610-003&#10;..."></textarea>
+          </div>
         </div>
 
         <!-- 財務会計自動仕訳連動設定 -->
@@ -6692,7 +6718,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261028_fix_inventory_sync"></script>
+  <script src="js/app.bundle.js?v=20261028_lot_serial_grid"></script>
 </body>
 
 </html>

@@ -9848,6 +9848,12 @@ const DOM = {
   lotInputSerials: document.getElementById('lotInputSerials'),
   lotSerialCountBadge: document.getElementById('lotSerialCountBadge'),
   btnGenerateSerialNumbers: document.getElementById('btnGenerateSerialNumbers'),
+  lotSerialSlotsContainer: document.getElementById('lotSerialSlotsContainer'),
+  lotSerialSlotsArea: document.getElementById('lotSerialSlotsArea'),
+  lotSerialTextArea: document.getElementById('lotSerialTextArea'),
+  btnToggleSerialInputMode: document.getElementById('btnToggleSerialInputMode'),
+  btnClearSerialNumbers: document.getElementById('btnClearSerialNumbers'),
+  btnApplyTextSerialsToSlots: document.getElementById('btnApplyTextSerialsToSlots'),
   lotCheckSyncAccounting: document.getElementById('lotCheckSyncAccounting'),
   lotSelectCreditAccount: document.getElementById('lotSelectCreditAccount'),
   lotJournalPreviewBox: document.getElementById('lotJournalPreviewBox'),
@@ -13005,14 +13011,53 @@ function setupEventListeners() {
   if (DOM.btnGenerateSerialNumbers) {
     DOM.btnGenerateSerialNumbers.addEventListener('click', generateSerialNumbersForLot);
   }
+  if (DOM.btnToggleSerialInputMode) {
+    DOM.btnToggleSerialInputMode.addEventListener('click', toggleSerialInputMode);
+  }
+  if (DOM.btnClearSerialNumbers) {
+    DOM.btnClearSerialNumbers.addEventListener('click', clearLotSerialNumbers);
+  }
+  if (DOM.btnApplyTextSerialsToSlots) {
+    DOM.btnApplyTextSerialsToSlots.addEventListener('click', applyTextSerialsToSlots);
+  }
+  if (DOM.lotSerialSlotsContainer) {
+    DOM.lotSerialSlotsContainer.addEventListener('input', (e) => {
+      if (e.target && e.target.classList.contains('lot-serial-slot-input')) {
+        updateLotSerialValidationAndBadge();
+        syncLotSerialsToTextArea();
+      }
+    });
+    DOM.lotSerialSlotsContainer.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && e.target && e.target.classList.contains('lot-serial-slot-input')) {
+        e.preventDefault();
+        const idx = parseInt(e.target.dataset.index, 10);
+        const nextInput = DOM.lotSerialSlotsContainer.querySelector(`.lot-serial-slot-input[data-index="${idx + 1}"]`);
+        if (nextInput) {
+          nextInput.focus();
+          nextInput.select();
+        } else {
+          updateLotSerialValidationAndBadge();
+          if (DOM.btnSubmitInventoryLotModal) {
+            DOM.btnSubmitInventoryLotModal.focus();
+          }
+        }
+      }
+    });
+  }
   if (DOM.lotInputItemId) {
-    DOM.lotInputItemId.addEventListener('change', updateLandedCostCalculation);
+    DOM.lotInputItemId.addEventListener('change', () => {
+      updateLandedCostCalculation(true);
+    });
   }
   if (DOM.lotInputQty) {
-    DOM.lotInputQty.addEventListener('input', updateLandedCostCalculation);
+    DOM.lotInputQty.addEventListener('input', () => {
+      updateLandedCostCalculation(true);
+    });
   }
   if (DOM.lotInputSerials) {
-    DOM.lotInputSerials.addEventListener('input', updateLandedCostCalculation);
+    DOM.lotInputSerials.addEventListener('input', () => {
+      updateLandedCostCalculation(false);
+    });
   }
   if (DOM.lotSelectCreditAccount) {
     DOM.lotSelectCreditAccount.addEventListener('change', updateLandedCostCalculation);
@@ -16814,7 +16859,21 @@ function openInventoryLotModal(defaultItemId = null) {
     switchLotProcurementType('import');
   }
 
-  updateLandedCostCalculation();
+  // 一括テキストエリアを初期状態（非表示）にリセット
+  if (DOM.lotSerialTextArea) {
+    DOM.lotSerialTextArea.style.display = 'none';
+  }
+  if (DOM.btnToggleSerialInputMode) {
+    DOM.btnToggleSerialInputMode.textContent = '📋 一括テキスト入力切替';
+    DOM.btnToggleSerialInputMode.style.background = '#f1f5f9';
+    DOM.btnToggleSerialInputMode.style.color = '#334155';
+    DOM.btnToggleSerialInputMode.style.borderColor = '#cbd5e1';
+  }
+  if (DOM.lotInputSerials) {
+    DOM.lotInputSerials.value = '';
+  }
+
+  updateLandedCostCalculation(true);
   DOM.inventoryLotModal.classList.add('active');
   DOM.inventoryLotModal.style.display = 'flex';
 }
@@ -16919,11 +16978,14 @@ function updateLandedCostCalculation() {
     DOM.lotSerialSection.style.display = hasSerial ? 'block' : 'none';
   }
 
-  // シリアル番号入力カウントの更新
-  if (DOM.lotInputSerials && DOM.lotSerialCountBadge) {
-    const lines = DOM.lotInputSerials.value.split(/[\r\n,]+/).map(s => s.trim()).filter(Boolean);
-    DOM.lotSerialCountBadge.textContent = `入力: ${lines.length} / 必要: ${qty}`;
-    DOM.lotSerialCountBadge.style.color = (lines.length === qty) ? '#059669' : (lines.length > qty ? '#d97706' : '#dc2626');
+  // シリアル管理品の場合、個別スロットの数量同期・更新
+  if (hasSerial) {
+    renderLotSerialSlots(qty, syncSlots);
+  } else if (DOM.lotSerialCountBadge) {
+    DOM.lotSerialCountBadge.textContent = 'シリアル追跡対象外';
+    DOM.lotSerialCountBadge.style.background = '#f1f5f9';
+    DOM.lotSerialCountBadge.style.color = '#64748b';
+    DOM.lotSerialCountBadge.style.borderColor = '#cbd5e1';
   }
 
   // 会計仕訳プレビューの更新
@@ -16939,8 +17001,253 @@ function updateLandedCostCalculation() {
 
 window.updateLandedCostCalculation = updateLandedCostCalculation;
 
+// ==========================================================================
+// ロット入庫シリアル番号 個別スロット＆一括管理ヘルパー
+// ==========================================================================
+
+/**
+ * 現在のスロットまたはテキストエリアから入力されたシリアル番号一覧を取得
+ * @returns {string[]}
+ */
+function getLotSerialValues() {
+  if (DOM.lotSerialSlotsContainer) {
+    const inputs = DOM.lotSerialSlotsContainer.querySelectorAll('.lot-serial-slot-input');
+    if (inputs.length > 0) {
+      return Array.from(inputs).map(inp => (inp.value || '').trim());
+    }
+  }
+  if (DOM.lotInputSerials) {
+    return (DOM.lotInputSerials.value || '').split(/[\r\n,]+/).map(s => s.trim());
+  }
+  return [];
+}
+
+window.getLotSerialValues = getLotSerialValues;
+
+/**
+ * 入庫数量 qty に合わせた個別シリアル入力スロットを生成・維持
+ * @param {number} qty
+ * @param {boolean} force
+ */
+function renderLotSerialSlots(qty, force = false) {
+  if (!DOM.lotSerialSlotsContainer) return;
+
+  const currentValues = getLotSerialValues();
+  const existingInputs = DOM.lotSerialSlotsContainer.querySelectorAll('.lot-serial-slot-input');
+
+  // スロット数が数量と一致しており、強制更新でなければ値とバッジの更新のみ（フォーカス喪失を防止）
+  if (!force && existingInputs.length === qty) {
+    updateLotSerialValidationAndBadge();
+    return;
+  }
+
+  console.log('【ロット入庫】シリアルスロット生成:', { qty, force, currentCount: currentValues.length });
+
+  let html = '';
+  for (let i = 0; i < qty; i++) {
+    const val = currentValues[i] || '';
+    html += `
+      <div class="lot-serial-slot-item" id="lotSerialSlotItem_${i}" style="display: flex; align-items: center; gap: 6px; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 4px 8px; transition: all 0.15s ease;">
+        <span style="font-size: 0.75rem; font-weight: 700; color: #64748b; width: 34px; text-align: right; flex-shrink: 0; font-family: monospace;">#${i + 1}</span>
+        <input type="text" class="form-input lot-serial-slot-input" data-index="${i}" value="${escapeHtml(val)}" placeholder="シリアル #${i + 1} を入力/読取" style="font-family: monospace; font-size: 0.85rem; padding: 4px 8px; flex: 1; height: 30px; border-radius: 4px;">
+        <span class="slot-status-icon" id="slotStatusIcon_${i}" style="font-size: 0.85rem; width: 20px; text-align: center; flex-shrink: 0;"></span>
+      </div>
+    `;
+  }
+
+  DOM.lotSerialSlotsContainer.innerHTML = html;
+  updateLotSerialValidationAndBadge();
+  syncLotSerialsToTextArea();
+}
+
+window.renderLotSerialSlots = renderLotSerialSlots;
+
+/**
+ * シリアルのバリデーション（重複チェック・既存シリアルチェック）とバッジ更新
+ */
+function updateLotSerialValidationAndBadge() {
+  const qty = Math.max(1, Number(DOM.lotInputQty ? DOM.lotInputQty.value : 10) || 1);
+  const inputs = DOM.lotSerialSlotsContainer ? DOM.lotSerialSlotsContainer.querySelectorAll('.lot-serial-slot-input') : [];
+  
+  const existingSerials = getInventorySerialList();
+  const registeredNumbers = new Set(existingSerials.map(s => s.serialNumber));
+
+  const values = [];
+  const countMap = {};
+
+  inputs.forEach((inp) => {
+    const val = (inp.value || '').trim();
+    values.push(val);
+    if (val) {
+      countMap[val] = (countMap[val] || 0) + 1;
+    }
+  });
+
+  let filledCount = 0;
+  let hasDuplicate = false;
+  let hasRegisteredConflict = false;
+
+  inputs.forEach((inp, i) => {
+    const val = values[i];
+    const itemContainer = document.getElementById(`lotSerialSlotItem_${i}`);
+    const statusIcon = document.getElementById(`slotStatusIcon_${i}`);
+
+    if (!val) {
+      if (itemContainer) {
+        itemContainer.style.borderColor = '#cbd5e1';
+        itemContainer.style.backgroundColor = '#ffffff';
+      }
+      if (statusIcon) {
+        statusIcon.innerHTML = '';
+        statusIcon.title = '未入力';
+      }
+    } else {
+      filledCount++;
+      const isInternalDup = countMap[val] > 1;
+      const isRegisteredDup = registeredNumbers.has(val);
+
+      if (isInternalDup || isRegisteredDup) {
+        if (isInternalDup) hasDuplicate = true;
+        if (isRegisteredDup) hasRegisteredConflict = true;
+
+        if (itemContainer) {
+          itemContainer.style.borderColor = '#ef4444';
+          itemContainer.style.backgroundColor = '#fef2f2';
+        }
+        if (statusIcon) {
+          statusIcon.innerHTML = '⚠️';
+          statusIcon.title = isInternalDup ? 'このロット内で重複しています' : '既にシリアル台帳に登録済みのシリアルです';
+        }
+      } else {
+        if (itemContainer) {
+          itemContainer.style.borderColor = '#10b981';
+          itemContainer.style.backgroundColor = '#f0fdf4';
+        }
+        if (statusIcon) {
+          statusIcon.innerHTML = '✓';
+          statusIcon.style.color = '#059669';
+          statusIcon.style.fontWeight = 'bold';
+          statusIcon.title = '入力完了';
+        }
+      }
+    }
+  });
+
+  // バッジ更新
+  if (DOM.lotSerialCountBadge) {
+    if (hasDuplicate) {
+      DOM.lotSerialCountBadge.textContent = `⚠️ 重複あり: ${filledCount} / 必要: ${qty}`;
+      DOM.lotSerialCountBadge.style.background = '#fffbeb';
+      DOM.lotSerialCountBadge.style.color = '#b45309';
+      DOM.lotSerialCountBadge.style.borderColor = '#fde68a';
+    } else if (filledCount === qty) {
+      DOM.lotSerialCountBadge.textContent = `✓ 全数入力完了 (${filledCount}/${qty} 台)`;
+      DOM.lotSerialCountBadge.style.background = '#ecfdf5';
+      DOM.lotSerialCountBadge.style.color = '#047857';
+      DOM.lotSerialCountBadge.style.borderColor = '#a7f3d0';
+    } else if (filledCount > qty) {
+      DOM.lotSerialCountBadge.textContent = `⚠️ 数量超過: ${filledCount} / 必要: ${qty}`;
+      DOM.lotSerialCountBadge.style.background = '#fff7ed';
+      DOM.lotSerialCountBadge.style.color = '#c2410c';
+      DOM.lotSerialCountBadge.style.borderColor = '#ffedd5';
+    } else {
+      const remaining = qty - filledCount;
+      DOM.lotSerialCountBadge.textContent = `入力済: ${filledCount} / 必要: ${qty} (残り ${remaining} 台)`;
+      DOM.lotSerialCountBadge.style.background = '#fef2f2';
+      DOM.lotSerialCountBadge.style.color = '#dc2626';
+      DOM.lotSerialCountBadge.style.borderColor = '#fecaca';
+    }
+  }
+}
+
+window.updateLotSerialValidationAndBadge = updateLotSerialValidationAndBadge;
+
+/**
+ * スロットの値をテキストエリアへ同期
+ */
+function syncLotSerialsToTextArea() {
+  if (!DOM.lotInputSerials) return;
+  const values = getLotSerialValues();
+  DOM.lotInputSerials.value = values.filter(Boolean).join('\n');
+}
+
+/**
+ * テキストエリアの入力値をスロットに反映
+ */
+function applyTextSerialsToSlots() {
+  if (!DOM.lotInputSerials) return;
+  const raw = DOM.lotInputSerials.value || '';
+  const lines = raw.split(/[\r\n,]+/).map(s => s.trim()).filter(Boolean);
+  const qty = Math.max(1, Number(DOM.lotInputQty ? DOM.lotInputQty.value : 10) || 1);
+
+  if (lines.length > qty) {
+    if (confirm(`貼り付けられたシリアル番号（${lines.length}件）が入庫数量（${qty}台）より多いです。入庫数量を ${lines.length} 台に変更しますか？`)) {
+      if (DOM.lotInputQty) {
+        DOM.lotInputQty.value = lines.length;
+      }
+      updateLandedCostCalculation(true);
+    }
+  }
+
+  const effectiveQty = Math.max(1, Number(DOM.lotInputQty ? DOM.lotInputQty.value : 10) || 1);
+  renderLotSerialSlots(effectiveQty, true);
+
+  const inputs = DOM.lotSerialSlotsContainer ? DOM.lotSerialSlotsContainer.querySelectorAll('.lot-serial-slot-input') : [];
+  inputs.forEach((inp, idx) => {
+    inp.value = lines[idx] || '';
+  });
+
+  updateLotSerialValidationAndBadge();
+  showToast(`シリアル番号 ${lines.length} 件をスロットに反映しました。`, 'info');
+}
+
+window.applyTextSerialsToSlots = applyTextSerialsToSlots;
+
+/**
+ * 一括テキスト入力エリアの表示/非表示切り替え
+ */
+function toggleSerialInputMode() {
+  if (!DOM.lotSerialTextArea || !DOM.btnToggleSerialInputMode) return;
+  const isHidden = DOM.lotSerialTextArea.style.display === 'none';
+  if (isHidden) {
+    syncLotSerialsToTextArea();
+    DOM.lotSerialTextArea.style.display = 'block';
+    DOM.btnToggleSerialInputMode.textContent = '🔢 個別スロット表示に戻る';
+    DOM.btnToggleSerialInputMode.style.background = '#e0e7ff';
+    DOM.btnToggleSerialInputMode.style.color = '#3730a3';
+    DOM.btnToggleSerialInputMode.style.borderColor = '#c7d2fe';
+  } else {
+    applyTextSerialsToSlots();
+    DOM.lotSerialTextArea.style.display = 'none';
+    DOM.btnToggleSerialInputMode.textContent = '📋 一括テキスト入力切替';
+    DOM.btnToggleSerialInputMode.style.background = '#f1f5f9';
+    DOM.btnToggleSerialInputMode.style.color = '#334155';
+    DOM.btnToggleSerialInputMode.style.borderColor = '#cbd5e1';
+  }
+}
+
+window.toggleSerialInputMode = toggleSerialInputMode;
+
+/**
+ * シリアル番号入力のクリア
+ */
+function clearLotSerialNumbers() {
+  if (!confirm('入力中のシリアル番号をすべてクリアしますか？')) return;
+  if (DOM.lotSerialSlotsContainer) {
+    const inputs = DOM.lotSerialSlotsContainer.querySelectorAll('.lot-serial-slot-input');
+    inputs.forEach(inp => inp.value = '');
+  }
+  if (DOM.lotInputSerials) {
+    DOM.lotInputSerials.value = '';
+  }
+  updateLotSerialValidationAndBadge();
+  showToast('シリアル番号入力をクリアしました', 'info');
+}
+
+window.clearLotSerialNumbers = clearLotSerialNumbers;
+
 function generateSerialNumbersForLot() {
-  if (!DOM.lotInputItemId || !DOM.lotInputSerials) return;
+  if (!DOM.lotInputItemId) return;
   const selectedOpt = DOM.lotInputItemId.options[DOM.lotInputItemId.selectedIndex];
   const itemName = selectedOpt ? selectedOpt.text : '';
   const qty = Math.max(1, Number(DOM.lotInputQty ? DOM.lotInputQty.value : 10) || 1);
@@ -16968,14 +17275,25 @@ function generateSerialNumbersForLot() {
     num++;
   }
 
-  DOM.lotInputSerials.value = generated.join('\n');
-  updateLandedCostCalculation();
-  showToast(`シリアル番号 ${qty} 件を自動生成しました。`, 'info');
+  // スロットを数量分強制生成した上で流し込む
+  renderLotSerialSlots(qty, true);
+  const inputs = DOM.lotSerialSlotsContainer ? DOM.lotSerialSlotsContainer.querySelectorAll('.lot-serial-slot-input') : [];
+  inputs.forEach((inp, idx) => {
+    if (generated[idx]) inp.value = generated[idx];
+  });
+
+  if (DOM.lotInputSerials) {
+    DOM.lotInputSerials.value = generated.join('\n');
+  }
+
+  updateLotSerialValidationAndBadge();
+  showToast(`シリアル番号 ${qty} 件を連番自動生成しました。`, 'info');
 }
 
 window.generateSerialNumbersForLot = generateSerialNumbersForLot;
 
 function submitInventoryLotStockIn() {
+  console.log('【ロット入庫】確定保存処理 開始');
   const selectedOpt = DOM.lotInputItemId ? DOM.lotInputItemId.options[DOM.lotInputItemId.selectedIndex] : null;
   if (!selectedOpt) {
     showToast('入庫対象品目を選択してください', 'danger');
@@ -17031,11 +17349,34 @@ function submitInventoryLotStockIn() {
   // シリアル番号の検証
   let parsedSerials = [];
   if (hasSerial) {
-    const rawSerialText = DOM.lotInputSerials ? DOM.lotInputSerials.value : '';
-    parsedSerials = rawSerialText.split(/[\r\n,]+/).map(s => s.trim()).filter(Boolean);
+    const rawSerials = getLotSerialValues();
+    parsedSerials = rawSerials.filter(Boolean);
+
+    // 重複チェック
+    const countMap = {};
+    const dups = [];
+    parsedSerials.forEach(s => {
+      countMap[s] = (countMap[s] || 0) + 1;
+      if (countMap[s] === 2) dups.push(s);
+    });
+
+    if (dups.length > 0) {
+      alert(`シリアル番号に重複があります（${dups.join(', ')}）。重複を解消してください。`);
+      return;
+    }
+
+    // 既存台帳との重複チェック
+    const existingSerials = getInventorySerialList();
+    const registeredNumbers = new Set(existingSerials.map(s => s.serialNumber));
+    const conflicts = parsedSerials.filter(s => registeredNumbers.has(s));
+    if (conflicts.length > 0) {
+      if (!confirm(`以下のシリアル番号は既にシリアル台帳に登録されています：\n${conflicts.join(', ')}\nこのまま重複登録しますか？`)) {
+        return;
+      }
+    }
 
     if (parsedSerials.length !== qty) {
-      if (!confirm(`入力されたシリアル番号（${parsedSerials.length}件）が入庫数量（${qty}台）と一致していません。このまま登録しますか？`)) {
+      if (!confirm(`入力されたシリアル番号（${parsedSerials.length}件）が入庫数量（${qty}台）と一致していません（未入力の枠があります）。このまま登録しますか？`)) {
         return;
       }
     }
@@ -17128,6 +17469,7 @@ function submitInventoryLotStockIn() {
   renderInventoryTable();
   renderInventorySerialTable();
   renderInventoryLotTable();
+  console.log('【ロット入庫】確定保存処理 完了', lotData);
   showToast(`ロット「${lotNumber}」（${itemName} × ${qty}）の入庫および確定原価按分計算（¥${unitCost.toLocaleString()}/台）を完了しました！`, 'success');
 }
 
