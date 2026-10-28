@@ -4626,10 +4626,7 @@ function syncEndUsersToDocItems(doc, serialList) {
       // 2. ユーザー名候補の特定
       let candidateUser = '';
 
-      // (A) シリアル番号から引当
-      if (cleanSn && snUserMap[cleanSn]) {
-        candidateUser = formatEndUserName(snUserMap[cleanSn]);
-      }
+      // (A) シリアル番号からの強制注入は、ユーザーが意図して空欄にした場合に消せなくなるため行わない
 
       // (B) 明細noteから直接抽出
       if (!candidateUser && item.note) {
@@ -4749,9 +4746,7 @@ function getHistoryList() {
  */
 function saveDocToHistory(doc) {
   try {
-    if (typeof syncEndUsersToDocItems === 'function') {
-      syncEndUsersToDocItems(doc);
-    }
+    // ⚠️ ユーザーが編集した内容（空欄にしたユーザー名等）を勝手に上書き補完しないよう、syncEndUsersToDocItems は呼ばない
     const list = getHistoryList();
     const existingIndex = list.findIndex(item => item.id === doc.id);
 
@@ -10672,9 +10667,7 @@ setInterval(() => {
 // フォームへのデータ設定
 // ==========================================================================
 function populateFormFromDoc() {
-  if (currentDoc && typeof syncEndUsersToDocItems === 'function') {
-    syncEndUsersToDocItems(currentDoc);
-  }
+  // ⚠️ ユーザーが編集・削除した内容を勝手に上書き復元させないため、syncEndUsersToDocItems は呼ばない
 
   // 書類種別ボタングループの選択状態
   DOM.docTypeBtns.forEach(btn => {
@@ -11125,7 +11118,7 @@ function issueAndSyncAccountingDocument(options = {}) {
             const comp = invList.find(c => c.id === b.componentId || (b.name && c.name === b.name));
             if (comp && !comp.hasSerial) {
               const usedQty = (Number(b.quantity) || 1) * (Number(it.quantity) || 1);
-              updateInventoryStock(comp.id, -usedQty, 'out', `確定出荷引当: ${docNo} (${bundleItem.name})`);
+              adjustStock(comp.id, -usedQty, `確定出荷引当: ${docNo} (${bundleItem.name})`);
               itemAssignedCogs += (Number(comp.unitCost) || 0) * usedQty;
             }
           });
@@ -11220,7 +11213,7 @@ async function cancelCurrentDocIssue() {
             const comp = invList.find(x => x.id === b.componentId || (b.name && x.name === b.name));
             if (comp && !comp.hasSerial) {
               const usedQty = (Number(b.quantity) || 1) * (Number(it.quantity) || 1);
-              updateInventoryStock(comp.id, usedQty, 'in', `確定発行取消による在庫復元: ${docNo} (${bundleItem.name})`);
+              adjustStock(comp.id, usedQty, `確定発行取消による在庫復元: ${docNo} (${bundleItem.name})`);
             }
           });
         }
@@ -11924,7 +11917,22 @@ function renderItemInputCards() {
     const inputEndUser = card.querySelector('.item-input-end-user');
     if (inputEndUser) {
       inputEndUser.addEventListener('input', () => {
-        item.endUserName = inputEndUser.value;
+        const val = inputEndUser.value.trim();
+        item.endUserName = val;
+        // 明細が1件の場合、または他の明細にユーザー名がない場合、基本タブ側も連動同期
+        if (currentDoc.items && currentDoc.items.length === 1) {
+          currentDoc.endUserName = val;
+          if (!currentDoc.client) currentDoc.client = {};
+          currentDoc.client.endUserName = val;
+          if (DOM.inputEndUserName) DOM.inputEndUserName.value = val;
+        } else if (!val) {
+          const anyOther = currentDoc.items.some(x => x !== item && x.endUserName && x.endUserName.trim());
+          if (!anyOther) {
+            currentDoc.endUserName = '';
+            if (currentDoc.client) currentDoc.client.endUserName = '';
+            if (DOM.inputEndUserName) DOM.inputEndUserName.value = '';
+          }
+        }
         renderAll();
       });
     }
@@ -11986,21 +11994,29 @@ function setupEventListeners() {
   bindInput(DOM.inputClientName, val => currentDoc.client.name = val);
   if (DOM.inputEndUserName) {
     bindInput(DOM.inputEndUserName, val => {
-      currentDoc.endUserName = val;
+      const cleanVal = (val || '').trim();
+      currentDoc.endUserName = cleanVal;
       if (!currentDoc.client) currentDoc.client = {};
-      currentDoc.client.endUserName = val;
-      // ユーザー名が入力された際、明細のユーザー名欄が空欄であれば自動アシスト
-      if (val && Array.isArray(currentDoc.items)) {
+      currentDoc.client.endUserName = cleanVal;
+      // 基本タブのユーザー名が変更された際、明細のユーザー名も連動同期（空欄にされた場合は全クリア）
+      if (!cleanVal && Array.isArray(currentDoc.items)) {
         let changed = false;
         currentDoc.items.forEach(it => {
-          if (!it.endUserName || !it.endUserName.trim()) {
-            it.endUserName = val;
+          if (it.endUserName) {
+            it.endUserName = '';
             changed = true;
           }
         });
-        if (changed) {
-          renderItemInputCards();
-        }
+        if (changed) renderItemInputCards();
+      } else if (cleanVal && Array.isArray(currentDoc.items)) {
+        let changed = false;
+        currentDoc.items.forEach(it => {
+          if (!it.endUserName || !it.endUserName.trim()) {
+            it.endUserName = cleanVal;
+            changed = true;
+          }
+        });
+        if (changed) renderItemInputCards();
       }
     });
   }
@@ -18193,7 +18209,7 @@ function submitInventoryLotStockIn() {
   // 2. 各品目の在庫マスタ（現在庫 ＆ 確定仕入原価）を一括更新
   const invList = getInventoryList();
   lotItemRows.forEach(r => {
-    updateInventoryStock(r.itemId, r.qty, 'in', `混載ロット入庫: ${lotNumber} (確定実仕入原価: ¥${r.landedUnitCost.toLocaleString()}/台)`);
+    adjustStock(r.itemId, r.qty, `混載ロット入庫: ${lotNumber} (確定実仕入原価: ¥${r.landedUnitCost.toLocaleString()}/台)`, { unitCost: r.landedUnitCost });
     const targetItem = invList.find(i => i.id === r.itemId);
     if (targetItem) {
       targetItem.unitCost = r.landedUnitCost;

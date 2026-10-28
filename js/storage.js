@@ -1290,10 +1290,7 @@ export function syncEndUsersToDocItems(doc, serialList) {
       // 2. ユーザー名候補の特定
       let candidateUser = '';
 
-      // (A) シリアル番号から引当
-      if (cleanSn && snUserMap[cleanSn]) {
-        candidateUser = formatEndUserName(snUserMap[cleanSn]);
-      }
+      // (A) シリアル番号からの強制注入は、ユーザーが意図して空欄にした場合に消せなくなるため行わない
 
       // (B) 明細noteから直接抽出
       if (!candidateUser && item.note) {
@@ -1413,9 +1410,7 @@ export function getHistoryList() {
  */
 export function saveDocToHistory(doc) {
   try {
-    if (typeof syncEndUsersToDocItems === 'function') {
-      syncEndUsersToDocItems(doc);
-    }
+    // ⚠️ ユーザーが編集した内容（空欄にしたユーザー名等）を勝手に上書き補完しないよう、syncEndUsersToDocItems は呼ばない
     const list = getHistoryList();
     const existingIndex = list.findIndex(item => item.id === doc.id);
 
