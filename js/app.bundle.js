@@ -14228,31 +14228,89 @@ function applyMasterCalculatedPrice() {
   showToast(`帳票の税抜単価に ${formatCurrency(res.calculatedUnitPrice)} を反映しました！`, 'success');
 }
 
-function handleSaveItemMaster() {
+let _isSavingItemMaster = false;
+
+function handleSaveItemMaster(e) {
+  if (e && e.preventDefault) e.preventDefault();
+  if (e && e.stopPropagation) e.stopPropagation();
+
+  if (_isSavingItemMaster) {
+    console.log('【商品マスタ保存】重複実行を抑止しました');
+    return;
+  }
+  _isSavingItemMaster = true;
+  setTimeout(() => { _isSavingItemMaster = false; }, 800);
+
   console.log('【商品マスタ保存】実行開始');
 
-  const nameInput = (DOM && DOM.itemMasterInputName) || document.getElementById('itemMasterInputName');
-  const name = nameInput ? nameInput.value.trim() : '';
+  const formContainer = document.getElementById('itemMasterFormContainer');
+
+  // 1. 品名入力欄の特定と値の抽出
+  const nameInput = document.getElementById('itemMasterInputName') ||
+                    (formContainer ? formContainer.querySelector('#itemMasterInputName, input[type="text"]') : null) ||
+                    (DOM && DOM.itemMasterInputName);
+
+  let name = nameInput ? String(nameInput.value || '').trim() : '';
+
+  // フォールバック1: フォームタイトル「商品の編集: ○○」から品名を自動抽出
+  if (!name && formContainer) {
+    const titleEl = document.getElementById('itemMasterFormTitle') || (DOM && DOM.itemMasterFormTitle);
+    const titleText = titleEl ? titleEl.textContent.trim() : '';
+    if (titleText.startsWith('商品の編集:')) {
+      name = titleText.replace(/^商品の編集:\s*/, '').trim();
+      if (nameInput) nameInput.value = name;
+      console.log('【商品マスタ保存】タイトルから品名を補完:', name);
+    }
+  }
+
+  // フォールバック2: 編集元アイテムIDから品名を補完
+  const editIdInput = document.getElementById('itemMasterEditId') || (DOM && DOM.itemMasterEditId);
+  const editId = editIdInput ? String(editIdInput.value || '').trim() : '';
+  if (!name && editId) {
+    const existingList = typeof getItemMasterList === 'function' ? getItemMasterList(false) : [];
+    const targetItem = existingList.find(i => String(i.id) === String(editId));
+    if (targetItem && targetItem.name) {
+      name = targetItem.name.trim();
+      if (nameInput) nameInput.value = name;
+      console.log('【商品マスタ保存】マスタ既存データから品名を補完:', name);
+    }
+  }
+
   if (!name) {
     alert('品名・項目名を入力してください。');
     if (nameInput) nameInput.focus();
     return;
   }
 
-  const priceInput = (DOM && DOM.itemMasterInputPrice) || document.getElementById('itemMasterInputPrice');
-  const priceVal = priceInput ? priceInput.value : '';
+  // 2. 単価の特定と値の抽出
+  const priceInput = document.getElementById('itemMasterInputPrice') ||
+                     (formContainer ? formContainer.querySelector('#itemMasterInputPrice, input[type="number"]') : null) ||
+                     (DOM && DOM.itemMasterInputPrice);
+  let priceVal = priceInput ? priceInput.value : '';
+
+  // フォールバック: 単価未入力時にユーザー価格からの自動算出単価で補完
+  if (priceVal === '' || isNaN(Number(priceVal))) {
+    const userPriceInput = document.getElementById('calcInputUserPriceInc') || (DOM && DOM.calcInputUserPriceInc);
+    const userPrice = Number(userPriceInput ? userPriceInput.value : 0) || 0;
+    if (userPrice > 0 && typeof calculateWholesalePrice === 'function') {
+      const taxRate = Number(document.getElementById('itemMasterSelectTax')?.value || 10);
+      priceVal = calculateWholesalePrice(userPrice, taxRate).wholesaleUnitPrice;
+      if (priceInput) priceInput.value = priceVal;
+      console.log('【商品マスタ保存】ユーザー価格から単価を自動補完:', priceVal);
+    }
+  }
+
   if (priceVal === '' || isNaN(Number(priceVal))) {
     alert('帳票の単価（税抜）を入力してください。');
     if (priceInput) priceInput.focus();
     return;
   }
 
-  const selectCat = (DOM && DOM.itemMasterSelectCategory) || document.getElementById('itemMasterSelectCategory');
-  const userPriceInput = (DOM && DOM.calcInputUserPriceInc) || document.getElementById('calcInputUserPriceInc');
-  const unitInput = (DOM && DOM.itemMasterInputUnit) || document.getElementById('itemMasterInputUnit');
-  const taxInput = (DOM && DOM.itemMasterSelectTax) || document.getElementById('itemMasterSelectTax');
-  const noteInput = (DOM && DOM.itemMasterInputNote) || document.getElementById('itemMasterInputNote');
-  const editIdInput = (DOM && DOM.itemMasterEditId) || document.getElementById('itemMasterEditId');
+  const selectCat = document.getElementById('itemMasterSelectCategory') || (DOM && DOM.itemMasterSelectCategory);
+  const userPriceInput = document.getElementById('calcInputUserPriceInc') || (DOM && DOM.calcInputUserPriceInc);
+  const unitInput = document.getElementById('itemMasterInputUnit') || (DOM && DOM.itemMasterInputUnit);
+  const taxInput = document.getElementById('itemMasterSelectTax') || (DOM && DOM.itemMasterSelectTax);
+  const noteInput = document.getElementById('itemMasterInputNote') || (DOM && DOM.itemMasterInputNote);
 
   const itemData = {
     name: name,
@@ -14264,7 +14322,6 @@ function handleSaveItemMaster() {
     note: (noteInput && noteInput.value.trim()) || ''
   };
 
-  const editId = editIdInput ? editIdInput.value : '';
   if (editId) {
     itemData.id = editId;
   }
