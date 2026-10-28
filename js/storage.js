@@ -2432,6 +2432,12 @@ export function saveItemMasterList(list) {
     saveServerMasterItems(cleanList).catch(err => {
       console.warn('Server item master save failed:', err);
     });
+    // 在庫マスタとも即時連動（カテゴリ変更による在庫除外・追加を反映）
+    try {
+      getInventoryList();
+    } catch (invErr) {
+      console.warn('Inventory sync failed during saveItemMasterList:', invErr);
+    }
     return true;
   } catch (e) {
     console.error('Failed to save item master list:', e);
@@ -2657,16 +2663,25 @@ export function isNonStockCategory(categoryName) {
   return /修理|工賃|役務|点検|保守|送料|配送料/i.test(name);
 }
 
-/**
- * 商品が在庫管理対象外（在庫マスタ非連携）かどうかを判定
- * @param {object|string} item
- * @returns {boolean}
- */
 export function isNonStockItem(item) {
   if (!item) return false;
-  if (typeof item === 'string') return isRepairItem(item);
-  if (item.category && isNonStockCategory(item.category)) return true;
-  return isRepairItem(item);
+  if (typeof item === 'string') {
+    const product = findItemMasterByName(item);
+    if (product && product.category && String(product.category).trim()) {
+      return isNonStockCategory(product.category);
+    }
+    return isRepairItem(item);
+  }
+  if (item.category && String(item.category).trim()) {
+    return isNonStockCategory(item.category);
+  }
+  const product = item.itemId
+    ? (getItemMasterList(false) || []).find(p => p.id === item.itemId)
+    : findItemMasterByName(item.name);
+  if (product && product.category && String(product.category).trim()) {
+    return isNonStockCategory(product.category);
+  }
+  return isRepairItem(item.name || item);
 }
 
 /**
@@ -4287,17 +4302,26 @@ export function deduplicateInventoryList(rawList) {
     // 1. サンプル品目の完全排除
     if (isSampleItem(inv)) continue;
 
-    // 2. 修理・オーバーホール項目および非在庫カテゴリの完全排除（在庫マスタ非表示）
-    if (isRepairItem(inv) || isNonStockItem(inv)) continue;
+    // 2. 修理・工賃等の非在庫カテゴリ品目の完全排除（在庫マスタ非表示）
+    if (isNonStockItem(inv)) continue;
 
-    const key = getMasterKey(inv.name);
+    let normName = normalizeMasterName(inv.name);
+    let key = getMasterKey(normName);
     if (!key) continue;
+
+    // スプレッダーとメカニカルスプレッダーの統合（重複解消）
+    if (key === 'dp-ms スプレッダー' || key === 'スプレッダー' || key === 'dp-ms メカニカルスプレッダー' || key === 'メカニカルスプレッダー') {
+      normName = 'DP-MS　メカニカルスプレッダー';
+      inv.name = 'DP-MS　メカニカルスプレッダー';
+      if (!inv.sku) inv.sku = 'DP-MS-01';
+      key = getMasterKey(normName);
+    }
 
     if (!map.has(key)) {
       map.set(key, {
         id: inv.id || (`inv_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`),
         itemId: inv.itemId || '',
-        name: normalizeMasterName(inv.name),
+        name: normName,
         sku: (inv.sku || '').trim(),
         currentStock: Number(inv.currentStock) || 0,
         safetyStock: Number(inv.safetyStock) >= 0 ? Number(inv.safetyStock) : 5,
@@ -4368,8 +4392,13 @@ export function getInventoryList() {
     const cleanItems = getItemMasterList(false);
     let modified = (list.length !== beforeLen);
 
+    // 非在庫カテゴリになった既存在庫アイテムを除去（商品マスタで「修理・工賃」に変更された場合など）
+    const beforeCleanLen = list.length;
+    list = list.filter(inv => !isNonStockItem(inv));
+    if (list.length !== beforeCleanLen) modified = true;
+
     cleanItems.forEach(prod => {
-      if (isRepairItem(prod) || isNonStockItem(prod)) return; // 修理項目・非在庫カテゴリは在庫マスタに追加しない
+      if (isNonStockItem(prod)) return; // 修理項目・非在庫カテゴリは在庫マスタに追加しない
       const prodKey = getMasterKey(prod.name);
       const existing = list.find(inv => (inv.itemId && inv.itemId === prod.id) || (getMasterKey(inv.name) === prodKey));
       if (existing) {
@@ -4657,16 +4686,14 @@ export function adjustStock(id, deltaQty, reason = '', metadata = {}, isDirectSe
  */
 export function syncInventoryWithItemsMaster() {
   const invList = getInventoryList();
-  const rawItemMaster = localStorage.getItem(KEYS.ITEM_MASTER);
-  let itemMaster = [];
-  try {
-    itemMaster = rawItemMaster ? JSON.parse(rawItemMaster) : [];
-  } catch (e) { }
+  const cleanItems = getItemMasterList(false);
 
   let addedCount = 0;
-  itemMaster.forEach(item => {
+  cleanItems.forEach(item => {
+    if (isNonStockItem(item)) return; // 修理・工賃等の非在庫品目は除外
+    const itemKey = getMasterKey(item.name);
     // 既存の在庫品目に同名または同itemIdがあるかチェック
-    const exists = invList.some(inv => inv.itemId === item.id || inv.name === item.name);
+    const exists = invList.some(inv => (inv.itemId && inv.itemId === item.id) || (getMasterKey(inv.name) === itemKey));
     if (!exists) {
       invList.push({
         id: `inv_sync_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
@@ -4678,9 +4705,12 @@ export function syncInventoryWithItemsMaster() {
         unit: item.unit || '個',
         unitCost: item.unitPrice ? Math.round(item.unitPrice * 0.6) : 0,
         unitPrice: item.unitPrice || 0,
-        location: '倉庫未割当',
+        location: '本社倉庫',
         lastInDate: '',
         note: `商品マスタ連携品目: ${item.note || ''}`,
+        type: 'single',
+        hasSerial: false,
+        bundleItems: [],
         history: [{
           id: `log_init_${Date.now()}`,
           date: new Date().toISOString().split('T')[0],

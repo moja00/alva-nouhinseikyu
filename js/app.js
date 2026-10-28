@@ -98,7 +98,8 @@ import {
   getAvailableSerialsByItem,
   calculateBundleStockAndCost,
   syncInventoryStockFromSerials,
-  isRepairItem
+  isRepairItem,
+  isNonStockItem
 } from './storage.js';
 
 import {
@@ -5281,6 +5282,9 @@ function handleSaveItemMaster(e) {
 
   console.log('【商品マスタ保存】保存ペイロード:', itemData);
   saveItemToMaster(itemData, true);
+  // 在庫マスタも即時連動・再描画
+  if (typeof getInventoryList === 'function') getInventoryList();
+  if (typeof renderInventoryTable === 'function') renderInventoryTable();
   resetItemMasterForm();
   renderItemCategoryTabs();
   populateItemCategoryDropdown();
@@ -6093,7 +6097,7 @@ function renderInventoryTable() {
   const q = DOM.inputSearchInventory ? DOM.inputSearchInventory.value.trim().toLowerCase() : '';
   const filter = DOM.selectInventoryFilter ? DOM.selectInventoryFilter.value : currentInventoryFilter;
 
-  let filtered = list.filter(item => !isRepairItem(item));
+  let filtered = list.filter(item => !isNonStockItem(item));
   if (q) {
     filtered = filtered.filter(item => 
       (item.name && item.name.toLowerCase().includes(q)) ||
