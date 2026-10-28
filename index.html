@@ -328,7 +328,7 @@
         </button>
         <div style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
-          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.28-lot-serial-grid-fix</span>
+          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.28-multi-lot-landed-cost</span>
         </div>
       </div>
 
@@ -2096,19 +2096,13 @@
           </label>
         </div>
 
-        <!-- 基本情報（品目・ロット番号・入荷日・数量） -->
+        <!-- ロット共通基本情報（ロット番号・入荷日・仕入先・保管場所） -->
         <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; margin-bottom: 14px;">
-          <div class="form-row" style="margin-bottom: 10px;">
-            <div class="form-group" style="flex: 2;">
-              <label class="form-label" for="lotInputItemId" style="font-size: 0.75rem; font-weight: 700;">入庫対象品目 <span style="color: var(--danger);">*</span></label>
-              <select id="lotInputItemId" class="form-select" style="font-size: 0.9rem; font-weight: 600;">
-                <!-- JSでオプション生成（単品構成品が対象） -->
-              </select>
-            </div>
+          <div class="form-row">
             <div class="form-group" style="flex: 1.2;">
               <label class="form-label" for="lotInputNumber" style="font-size: 0.75rem; font-weight: 700;">ロット番号 <span style="color: var(--danger);">*</span></label>
               <div style="display: flex; gap: 4px;">
-                <input type="text" id="lotInputNumber" class="form-input" style="font-size: 0.85rem; font-family: monospace; font-weight: 600;" placeholder="LOT-20261021-01" required>
+                <input type="text" id="lotInputNumber" class="form-input" style="font-size: 0.85rem; font-family: monospace; font-weight: 600;" placeholder="LOT-20261028-01" required>
                 <button type="button" id="btnAutoLotNumber" class="btn btn-secondary btn-xs" title="現在日時からロット番号を自動生成">⚡</button>
               </div>
             </div>
@@ -2116,20 +2110,61 @@
               <label class="form-label" for="lotInputDate" style="font-size: 0.75rem; font-weight: 700;">入荷日 <span style="color: var(--danger);">*</span></label>
               <input type="date" id="lotInputDate" class="form-input" style="font-size: 0.85rem;" required>
             </div>
-            <div class="form-group" style="flex: 1;">
-              <label class="form-label" for="lotInputQty" style="font-size: 0.75rem; font-weight: 700;">入庫数量 <span style="color: var(--danger);">*</span></label>
-              <input type="number" id="lotInputQty" class="form-input" min="1" value="10" required style="font-size: 0.95rem; font-weight: 700; text-align: right;">
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group" style="flex: 2;">
-              <label class="form-label" for="lotInputSupplier" style="font-size: 0.75rem;">仕入先・発送元（任意）</label>
-              <input type="text" id="lotInputSupplier" class="form-input" placeholder="例: 海外製造元工場 / 国内バッテリー販売代理店" style="font-size: 0.85rem;">
-            </div>
             <div class="form-group" style="flex: 1.5;">
+              <label class="form-label" for="lotInputSupplier" style="font-size: 0.75rem;">仕入先・発送元（任意）</label>
+              <input type="text" id="lotInputSupplier" class="form-input" placeholder="例: 海外製造元工場 / 国内販売代理店" style="font-size: 0.85rem;">
+            </div>
+            <div class="form-group" style="flex: 1.2;">
               <label class="form-label" for="lotInputStorageLocation" style="font-size: 0.75rem;">格納保管場所（任意）</label>
               <input type="text" id="lotInputStorageLocation" class="form-input" placeholder="例: 本社倉庫 A-1" style="font-size: 0.85rem;">
             </div>
+          </div>
+        </div>
+
+        <!-- 📦 入庫品目明細（複数品目の混載・自動按分に対応） -->
+        <div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px 14px; margin-bottom: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
+            <div>
+              <h4 style="font-size: 0.85rem; font-weight: 700; color: #0f172a; margin: 0; display: flex; align-items: center; gap: 6px;">
+                <span>📦 入庫品目明細（複数品目の混載仕入に対応）</span>
+                <span style="font-size: 0.7rem; font-weight: 600; color: #047857; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 6px; border-radius: 4px;">混載・原価自動按分</span>
+              </h4>
+              <span style="font-size: 0.725rem; color: #64748b;">
+                1回の輸入で届いた品目を自由に追加できます。共通諸費用は本体金額比率で自動按分され、端数差額も完全調整されます。
+              </span>
+            </div>
+            <button type="button" id="btnAddLotItemRow" class="btn btn-secondary btn-xs" style="background: #ecfdf5; border-color: #a7f3d0; color: #047857; font-weight: 700; padding: 4px 12px; font-size: 0.75rem;">
+              ＋ 品目を追加
+            </button>
+          </div>
+
+          <div style="overflow-x: auto;">
+            <table class="data-table" style="width: 100%; font-size: 0.8rem; margin-bottom: 6px;" id="lotItemsTable">
+              <thead>
+                <tr style="background: #f8fafc; border-bottom: 2px solid #e2e8f0; text-align: left;">
+                  <th style="width: 28px; padding: 6px 4px; text-align: center;">#</th>
+                  <th style="min-width: 220px; padding: 6px 8px;">入庫品目 <span style="color: var(--danger);">*</span></th>
+                  <th style="width: 75px; padding: 6px 6px; text-align: right;">数量 <span style="color: var(--danger);">*</span></th>
+                  <th style="width: 110px; padding: 6px 6px; text-align: right;">単価 (税抜/円)</th>
+                  <th style="width: 125px; padding: 6px 6px; text-align: right;">本体小計 (円) <span style="color: var(--danger);">*</span></th>
+                  <th style="width: 140px; padding: 6px 6px; text-align: right;">確定原価 (按分込/台)</th>
+                  <th style="width: 36px; padding: 6px 4px; text-align: center;"></th>
+                </tr>
+              </thead>
+              <tbody id="lotItemsTableBody">
+                <!-- JSで動的に行生成 -->
+              </tbody>
+              <tfoot>
+                <tr style="background: #f8fafc; font-weight: 700; border-top: 2px solid #cbd5e1;">
+                  <td colspan="2" style="padding: 6px 8px;" id="lotItemsSummaryCount">合計: 1 品目</td>
+                  <td style="padding: 6px 6px; text-align: right;" id="lotItemsSummaryTotalQty">0</td>
+                  <td style="padding: 6px 6px; text-align: right; color: #64748b;">ー</td>
+                  <td style="padding: 6px 6px; text-align: right; color: #0f172a;" id="lotItemsSummaryTotalGoods">¥0</td>
+                  <td style="padding: 6px 6px; text-align: right; color: #047857;" id="lotItemsSummaryAllocNote">共通費用按分後</td>
+                  <td style="padding: 6px 4px;"></td>
+                </tr>
+              </tfoot>
+            </table>
           </div>
         </div>
 
@@ -2210,48 +2245,26 @@
           </div>
         </div>
 
-        <!-- シリアル番号 個別スロット・一括登録エリア（シリアル管理対象品目のみ表示） -->
+        <!-- シリアル番号 個別スロット・品目別グループ登録エリア -->
         <div id="lotSerialSection" style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 14px; margin-bottom: 14px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; flex-wrap: wrap; gap: 8px;">
             <div style="display: flex; align-items: center; gap: 8px;">
               <label class="form-label" style="font-size: 0.85rem; font-weight: 700; color: #0f172a; margin: 0;">
-                🔢 シリアル番号の入力（入庫数量分） <span style="color: var(--danger);">*</span>
+                🔢 シリアル番号の入力（品目別・入庫数量分） <span style="color: var(--danger);">*</span>
               </label>
-              <span id="lotSerialCountBadge" style="font-size: 0.75rem; font-weight: 700; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 2px 8px; border-radius: 9999px;">
-                入力: 0 / 必要: 10
+              <span id="lotSerialCountBadge" style="font-size: 0.75rem; font-weight: 700; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; padding: 2px 8px; border-radius: 9999px;">
+                シリアル管理品目
               </span>
-            </div>
-            <div style="display: flex; align-items: center; gap: 6px;">
-              <button type="button" id="btnToggleSerialInputMode" class="btn btn-secondary btn-xs" style="font-size: 0.75rem; background: #f1f5f9; border-color: #cbd5e1; color: #334155;">
-                📋 一括テキスト入力切替
-              </button>
-              <button type="button" id="btnGenerateSerialNumbers" class="btn btn-secondary btn-xs" style="font-size: 0.75rem; background: #f0fdf4; border-color: #86efac; color: #166534;" title="連番で一括自動入力">
-                ⚡ 連番自動入力
-              </button>
-              <button type="button" id="btnClearSerialNumbers" class="btn btn-secondary btn-xs" style="font-size: 0.75rem; background: #fff1f2; border-color: #fecdd3; color: #be123c;" title="シリアル入力をクリア">
-                🗑️ クリア
-              </button>
             </div>
           </div>
 
           <div style="font-size: 0.725rem; color: #64748b; margin-bottom: 8px; line-height: 1.4;">
-            入庫数量分の枠に1台ずつシリアル番号を入力（またはバーコードスキャン）してください。<kbd style="background: #e2e8f0; padding: 1px 5px; border-radius: 3px; font-size: 0.7rem; font-family: monospace;">Enter</kbd> キーで次の枠へ自動移動します。
+            シリアル管理対象の品目について、数量分の枠に1台ずつシリアル番号を入力（またはバーコードスキャン）してください。<kbd style="background: #e2e8f0; padding: 1px 5px; border-radius: 3px; font-size: 0.7rem; font-family: monospace;">Enter</kbd> キーで次の枠へ自動移動します。シリアル対象外の品目はシリアル入力不要です。
           </div>
 
-          <!-- (A) 個別スロット入力エリア（数量に応じたスロット群） -->
-          <div id="lotSerialSlotsArea">
-            <div id="lotSerialSlotsContainer" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; max-height: 250px; overflow-y: auto; padding: 6px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;">
-              <!-- JSで入庫数量分の入力スロットを動的生成 -->
-            </div>
-          </div>
-
-          <!-- (B) 一括テキスト入力エリア（トグルで表示・非表示） -->
-          <div id="lotSerialTextArea" style="display: none; margin-top: 8px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-              <span style="font-size: 0.725rem; color: #475569; font-weight: 600;">複数行貼り付け（改行またはカンマ区切り）:</span>
-              <button type="button" id="btnApplyTextSerialsToSlots" class="btn btn-primary btn-xs" style="font-size: 0.7rem; padding: 2px 8px;">スロットへ反映</button>
-            </div>
-            <textarea id="lotInputSerials" class="form-input" rows="4" style="font-family: monospace; font-size: 0.85rem; line-height: 1.4;" placeholder="DP5K-2610-001&#10;DP5K-2610-002&#10;DP5K-2610-003&#10;..."></textarea>
+          <!-- 品目別シリアルグループを収容するコンテナ -->
+          <div id="lotSerialGroupsContainer" style="display: flex; flex-direction: column; gap: 12px;">
+            <!-- JSでシリアル管理品目ごとにグループUIを動的生成 -->
           </div>
         </div>
 
@@ -6718,7 +6731,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261028_lot_serial_grid_fix"></script>
+  <script src="js/app.bundle.js?v=20261028_multi_lot_landed_cost"></script>
 </body>
 
 </html>
