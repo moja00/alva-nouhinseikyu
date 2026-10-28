@@ -6547,15 +6547,20 @@ function renderInventorySerialTable() {
           ${s.invoiceNumber ? `<span style="display:block; font-family:monospace; color:#2563eb; font-weight:600;">${escapeHtml(s.invoiceNumber)}</span>` : '-'}
         </td>
         <td style="text-align: center;">
-          ${s.status === 'in_stock' ? `
-            <button type="button" class="btn btn-xs btn-outline-danger" onclick="window.changeSerialStatus('${escapeHtml(s.serialNumber)}', 'defective')" style="font-size:0.7rem; padding:1px 6px;">
-              初期不良化
+          <div style="display: flex; gap: 4px; justify-content: center; align-items: center;">
+            ${s.status === 'in_stock' ? `
+              <button type="button" class="btn btn-xs btn-outline-danger" onclick="window.changeSerialStatus('${escapeHtml(s.serialNumber)}', 'defective')" style="font-size:0.7rem; padding:1px 6px;" title="初期不良として保留">
+                初期不良化
+              </button>
+            ` : (s.status === 'defective' ? `
+              <button type="button" class="btn btn-xs btn-outline-success" onclick="window.changeSerialStatus('${escapeHtml(s.serialNumber)}', 'in_stock')" style="font-size:0.7rem; padding:1px 6px;" title="正常在庫へ復帰">
+                在庫に戻す
+              </button>
+            ` : '<span style="font-size:0.7rem; color:#94a3b8;">出荷完了</span>')}
+            <button type="button" class="btn btn-xs btn-outline-danger" onclick="window.deleteSerialEntry('${escapeHtml(s.serialNumber)}')" title="このシリアルを台帳から完全に削除" style="font-size:0.75rem; padding:1px 5px; color:#dc2626; border-color:#fca5a5;">
+              🗑️
             </button>
-          ` : (s.status === 'defective' ? `
-            <button type="button" class="btn btn-xs btn-outline-success" onclick="window.changeSerialStatus('${escapeHtml(s.serialNumber)}', 'in_stock')" style="font-size:0.7rem; padding:1px 6px;">
-              在庫に戻す
-            </button>
-          ` : '<span style="font-size:0.7rem; color:#94a3b8;">出荷完了</span>')}
+          </div>
         </td>
       </tr>
     `;
