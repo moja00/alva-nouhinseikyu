@@ -8992,7 +8992,6 @@ function submitInventoryLotStockIn() {
   const serialsByGroupKey = {};
   const allParsedSerials = [];
   const existingSerials = getInventorySerialList();
-  const registeredNumbers = new Set(existingSerials.map(s => s.serialNumber));
 
   for (const cfg of serialConfigs) {
     const rawValues = getGroupSerialValues(cfg.groupKey);
