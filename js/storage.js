@@ -907,7 +907,7 @@ export const DEFAULT_INVENTORY_SERIALS = [
   { id: "sn_N10416", serialNumber: "N10416", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "shipped", clientName: "ボディショップ トラスト", endUserName: "", shipDate: "2025-12-23", docNumber: "INV-20251223-01", docId: "doc_20251223_01", note: "特別価格", inDate: "2026-02-01", unitCost: 152000, updatedAt: new Date().toISOString() },
   { id: "sn_N10417", serialNumber: "N10417", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "shipped", clientName: "奥村塗料株式会社", endUserName: "", shipDate: "2026-03-07", docNumber: "INV-20260307-01", docId: "doc_20260307_01", note: "DP5000同行時特別価格+セット値引き（スプレッダーN36115同時出荷）", inDate: "2026-02-01", unitCost: 152000, updatedAt: new Date().toISOString() },
   { id: "sn_N10418", serialNumber: "N10418", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "shipped", clientName: "奥村塗料株式会社", endUserName: "", shipDate: "2026-09-15", docNumber: "INV-20260915-01", docId: "doc_20260915_01", note: "展示会特価", inDate: "2026-02-01", unitCost: 152000, updatedAt: new Date().toISOString() },
-  { id: "sn_N10419", serialNumber: "N10419", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "shipped", clientName: "R・Cペイント販売株式会社", endUserName: "NK自動車 様", shipDate: "2026-07-06", docNumber: "INV-20260706-01", docId: "doc_20260706_01", note: "NK自動車様分 DP-MS値引き", inDate: "2026-02-01", unitCost: 152000, updatedAt: new Date().toISOString() },
+  { id: "sn_N10419", serialNumber: "N10419", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "shipped", clientName: "R・Cペイント販売株式会社", endUserName: "", shipDate: "2026-07-06", docNumber: "INV-20260706-01", docId: "doc_20260706_01", note: "DP-MS値引き", inDate: "2026-02-01", unitCost: 152000, updatedAt: new Date().toISOString() },
   { id: "sn_N10420", serialNumber: "N10420", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "in_stock", clientName: "", endUserName: "", shipDate: "", docNumber: "", docId: "", note: "在庫管理用", inDate: "2026-02-01", unitCost: 152000, updatedAt: new Date().toISOString() },
   { id: "sn_N10933", serialNumber: "N10933", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "shipped", clientName: "株式会社宮田自動車商会 西営業所", endUserName: "ストリームズ 様", shipDate: "2026-10-01", docNumber: "INV-20261001-01", docId: "doc_20261001_01", note: "ストリームズ様分 (169-376200)", inDate: "2026-09-01", unitCost: 152000, updatedAt: new Date().toISOString() },
   { id: "sn_N10936", serialNumber: "N10936", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "shipped", clientName: "日産部品北海道販売株式会社 岩見沢店", endUserName: "ボディリバイブK 様", shipDate: "2026-08-03", docNumber: "INV-20260813-01", docId: "doc_20260813_01", note: "展示会特価 ボディリバイブK様分", inDate: "2026-09-01", unitCost: 152000, updatedAt: new Date().toISOString() },
@@ -920,7 +920,7 @@ export const DEFAULT_INVENTORY_SERIALS = [
   { id: "sn_N35601", serialNumber: "N35601", inventoryId: "inv_2", itemName: "DP-MS", itemType: "spreader", status: "shipped", clientName: "有限会社いわさきオートラック", endUserName: "", shipDate: "2025-11-26", docNumber: "INV-20251126-01", docId: "doc_20251126_01", note: "DP-5000(N8475)同時出荷", inDate: "2025-07-01", unitCost: 40000, updatedAt: new Date().toISOString() },
   { id: "sn_N36115", serialNumber: "N36115", inventoryId: "inv_2", itemName: "DP-MS", itemType: "spreader", status: "shipped", clientName: "奥村塗料株式会社", endUserName: "", shipDate: "2026-03-07", docNumber: "INV-20260307-01", docId: "doc_20260307_01", note: "DP-5000(N10417)同時出荷", inDate: "2026-02-01", unitCost: 40000, updatedAt: new Date().toISOString() },
   { id: "sn_N36116", serialNumber: "N36116", inventoryId: "inv_2", itemName: "DP-MS", itemType: "spreader", status: "shipped", clientName: "有限会社近藤", endUserName: "", shipDate: "2026-10-13", docNumber: "INV-20261013", docId: "doc_20261013", note: "単体出荷", inDate: "2026-02-01", unitCost: 40000, updatedAt: new Date().toISOString() },
-  { id: "sn_N36707", serialNumber: "N36707", inventoryId: "inv_2", itemName: "DP-MS", itemType: "spreader", status: "shipped", clientName: "R・Cペイント販売株式会社", endUserName: "NK自動車 様", shipDate: "2026-07-06", docNumber: "INV-20260706-01", docId: "doc_20260706_01", note: "DP-5000(N10419)同時出荷", inDate: "2026-02-01", unitCost: 40000, updatedAt: new Date().toISOString() },
+  { id: "sn_N36707", serialNumber: "N36707", inventoryId: "inv_2", itemName: "DP-MS", itemType: "spreader", status: "shipped", clientName: "R・Cペイント販売株式会社", endUserName: "", shipDate: "2026-07-06", docNumber: "INV-20260706-01", docId: "doc_20260706_01", note: "DP-5000(N10419)同時出荷", inDate: "2026-02-01", unitCost: 40000, updatedAt: new Date().toISOString() },
   { id: "sn_N36709", serialNumber: "N36709", inventoryId: "inv_2", itemName: "DP-MS", itemType: "spreader", status: "shipped", clientName: "株式会社宮田自動車商会 苫小牧営業所", endUserName: "", shipDate: "2026-10-01", docNumber: "INV-20261001-02", docId: "doc_20261001_02", note: "DP-5000(N10938)同時出荷", inDate: "2026-02-01", unitCost: 40000, updatedAt: new Date().toISOString() },
   { id: "sn_N2001", serialNumber: "N2001", inventoryId: "inv_2", itemName: "DP-MS", itemType: "spreader", status: "in_stock", clientName: "", endUserName: "", shipDate: "", docNumber: "", docId: "", note: "在庫中", inDate: "2026-09-25", unitCost: 40000, updatedAt: new Date().toISOString() },
   { id: "sn_N2002", serialNumber: "N2002", inventoryId: "inv_2", itemName: "DP-MS", itemType: "spreader", status: "in_stock", clientName: "", endUserName: "", shipDate: "", docNumber: "", docId: "", note: "在庫中", inDate: "2026-09-25", unitCost: 40000, updatedAt: new Date().toISOString() },
@@ -1234,12 +1234,58 @@ export function getHistoryList() {
     // 各伝票の明細ユーザー名を自動同期・補完 ＆ スプレッダーの品名統一（価格は完全維持）
     let anyUpdated = false;
     list.forEach(docItem => {
-      if (syncEndUsersToDocItems(docItem)) anyUpdated = true;
-      if (unifyMechanicalSpreaderDocItems(docItem)) anyUpdated = true;
+      if (docItem.endUserName && docItem.endUserName.includes('NK自動車')) {
+        docItem.endUserName = '';
+        anyUpdated = true;
+      }
+      if (docItem.title && docItem.title.includes('NK自動車')) {
+        docItem.title = docItem.title.replace(/特別価格\s*NK自動車様分/g, '特別価格').trim();
+        anyUpdated = true;
+      }
+      if (docItem.notes && docItem.notes.includes('NK自動車')) {
+        docItem.notes = docItem.notes.replace(/特別価格\s*NK自動車様分/g, '特別価格').trim();
+        anyUpdated = true;
+      }
+      if (Array.isArray(docItem.items)) {
+        docItem.items.forEach(it => {
+          if (it.endUserName && it.endUserName.includes('NK自動車')) {
+            it.endUserName = '';
+            anyUpdated = true;
+          }
+          if (it.note && it.note.includes('NK自動車')) {
+            it.note = it.note.replace(/NK自動車様分?\s*/g, '').trim();
+            anyUpdated = true;
+          }
+        });
+      }
       if (docItem.fullDoc) {
-        if (syncEndUsersToDocItems(docItem.fullDoc)) anyUpdated = true;
+        if (docItem.fullDoc.endUserName && docItem.fullDoc.endUserName.includes('NK自動車')) {
+          docItem.fullDoc.endUserName = '';
+          anyUpdated = true;
+        }
+        if (docItem.fullDoc.title && docItem.fullDoc.title.includes('NK自動車')) {
+          docItem.fullDoc.title = docItem.fullDoc.title.replace(/特別価格\s*NK自動車様分/g, '特別価格').trim();
+          anyUpdated = true;
+        }
+        if (docItem.fullDoc.notes && docItem.fullDoc.notes.includes('NK自動車')) {
+          docItem.fullDoc.notes = docItem.fullDoc.notes.replace(/特別価格\s*NK自動車様分/g, '特別価格').trim();
+          anyUpdated = true;
+        }
+        if (Array.isArray(docItem.fullDoc.items)) {
+          docItem.fullDoc.items.forEach(it => {
+            if (it.endUserName && it.endUserName.includes('NK自動車')) {
+              it.endUserName = '';
+              anyUpdated = true;
+            }
+            if (it.note && it.note.includes('NK自動車')) {
+              it.note = it.note.replace(/NK自動車様分?\s*/g, '').trim();
+              anyUpdated = true;
+            }
+          });
+        }
         if (unifyMechanicalSpreaderDocItems(docItem.fullDoc)) anyUpdated = true;
       }
+      if (unifyMechanicalSpreaderDocItems(docItem)) anyUpdated = true;
     });
 
     if (anyUpdated) {
@@ -5540,6 +5586,19 @@ export function getInventorySerialList() {
       return [...filteredDefaults];
     }
 
+    // 既存シリアル内の NK自動車 を自動クリーンアップ
+    parsed.forEach(s => {
+      if (!s) return;
+      if (s.endUserName && s.endUserName.includes('NK自動車')) {
+        s.endUserName = '';
+        updated = true;
+      }
+      if (s.note && s.note.includes('NK自動車')) {
+        s.note = s.note.replace(/NK自動車様分?\s*/g, '').trim();
+        updated = true;
+      }
+    });
+
     // 伝票から判明した実シリアル（N8460系、N10411系等）および最新マスタを自動マージ・補完
     // ※ただしユーザーがゴミ箱で削除したシリアル（deletedSerials）は絶対に復活させない
     for (const def of DEFAULT_INVENTORY_SERIALS) {
@@ -5552,19 +5611,8 @@ export function getInventorySerialList() {
       if (idx === -1) {
         parsed.push({ ...def });
         updated = true;
-      } else {
-        const cur = parsed[idx];
-        if (def.status === 'shipped' && cur.status !== 'shipped') {
-          cur.status = def.status;
-          updated = true;
-        }
-        if (!cur.clientName && def.clientName) { cur.clientName = def.clientName; updated = true; }
-        if (!cur.endUserName && def.endUserName) { cur.endUserName = def.endUserName; updated = true; }
-        if (!cur.shipDate && def.shipDate) { cur.shipDate = def.shipDate; updated = true; }
-        if (!cur.docNumber && def.docNumber) { cur.docNumber = def.docNumber; updated = true; }
-        if (!cur.docId && def.docId) { cur.docId = def.docId; updated = true; }
-        if (!cur.note && def.note) { cur.note = def.note; updated = true; }
       }
+      // ⚠️ 既に台帳に存在するシリアルレコードに対しては、空欄にした値をデフォルトデータで上書きしてはならない！
     }
     if (updated) {
       localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(parsed));
