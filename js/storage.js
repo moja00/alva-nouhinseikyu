@@ -531,6 +531,32 @@ const DEFAULT_ITEMS_MASTER = [
     createdAt: "2026-09-25T06:32:42.497Z",
     lastUsedAt: "2026-09-29T05:06:55.002Z",
     updatedAt: "2026-09-29T05:06:55.007Z"
+  },
+  {
+    id: "prod_auto_6",
+    name: "KET.IC.2B エレクトロパワーバッテリ2個付",
+    unitPrice: 300000,
+    userPrice: 385000,
+    unit: "セット",
+    taxRate: 10,
+    note: "",
+    usageCount: 1,
+    createdAt: "2026-09-24T00:00:00.000Z",
+    updatedAt: "2026-10-27T06:37:16.228Z",
+    lastUsedAt: "2026-10-27T06:37:16.222Z"
+  },
+  {
+    id: "prod_auto_7",
+    name: "HIC-025　ホールドイットクランプ",
+    unitPrice: 10400,
+    userPrice: 11440,
+    unit: "セット",
+    taxRate: 10,
+    note: "",
+    usageCount: 2,
+    createdAt: "2026-09-24T00:00:00.000Z",
+    updatedAt: "2026-10-27T06:37:16.228Z",
+    lastUsedAt: "2026-10-27T06:37:16.222Z"
   }
 ];
 
@@ -701,8 +727,8 @@ export const DEFAULT_INVENTORY = [
   },
   {
     id: 'inv_2',
-    itemId: 'prod_1790320521317_adue',
-    name: 'DP-MS　スプレッダー',
+    itemId: 'prod_1790319200414_10bm',
+    name: 'DP-MS　メカニカルスプレッダー',
     sku: 'DP-MS-01',
     type: 'single',
     hasSerial: true,
@@ -710,12 +736,50 @@ export const DEFAULT_INVENTORY = [
     safetyStock: 1,
     unit: '個',
     unitCost: 40000,
-    unitPrice: 59612,
+    unitPrice: 73025,
     location: 'パーツ保管棚 B-2',
     lastInDate: '2026-09-25',
     note: '',
     history: [
       { id: 'log_init_2', date: '2026-09-25', type: 'in', qty: 3, reason: '初期棚卸在庫登録', currentStock: 3, timestamp: new Date().toISOString() }
+    ]
+  },
+  {
+    id: 'inv_prod_auto_7',
+    itemId: 'prod_auto_7',
+    name: 'HIC-025　ホールドイットクランプ',
+    sku: 'HIC-025',
+    type: 'single',
+    hasSerial: false,
+    currentStock: 5,
+    safetyStock: 2,
+    unit: 'セット',
+    unitCost: 6240,
+    unitPrice: 10400,
+    location: '本社倉庫',
+    lastInDate: '2026-09-24',
+    note: '固定クランプ（標準在庫品）',
+    history: [
+      { id: 'log_init_hic', date: '2026-09-24', type: 'in', qty: 5, reason: '初期棚卸在庫登録', currentStock: 5, timestamp: new Date().toISOString() }
+    ]
+  },
+  {
+    id: 'inv_prod_auto_6',
+    itemId: 'prod_auto_6',
+    name: 'KET.IC.2B エレクトロパワーバッテリ2個付',
+    sku: 'KET-IC-2B',
+    type: 'single',
+    hasSerial: true,
+    currentStock: 2,
+    safetyStock: 1,
+    unit: 'セット',
+    unitCost: 200000,
+    unitPrice: 300000,
+    location: '本社倉庫 A-1',
+    lastInDate: '2026-09-24',
+    note: '',
+    history: [
+      { id: 'log_init_ketic', date: '2026-09-24', type: 'in', qty: 2, reason: '初期棚卸在庫登録', currentStock: 2, timestamp: new Date().toISOString() }
     ]
   }
 ];
@@ -2195,7 +2259,18 @@ export function getItemMasterList(sortByFrequency = true) {
     // 重複およびサンプルの自動クリーンアップ（デデュプリケーション）
     if (Array.isArray(list)) {
       const cleanList = deduplicateItemMasterList(list);
-      if (cleanList.length !== list.length) {
+
+      // デフォルトマスタに定義されている正規商品（ホールドイットクランプ等）が欠落していれば自動補完
+      let anyAdded = false;
+      DEFAULT_ITEMS_MASTER.forEach(defItem => {
+        const defKey = getMasterKey(defItem.name);
+        if (!cleanList.some(it => getMasterKey(it.name) === defKey)) {
+          cleanList.push({ ...defItem });
+          anyAdded = true;
+        }
+      });
+
+      if (cleanList.length !== list.length || anyAdded) {
         localStorageSetItemAndSync(KEYS.ITEM_MASTER, JSON.stringify(cleanList));
         saveServerMasterItems(cleanList).catch(() => { });
         list = cleanList;

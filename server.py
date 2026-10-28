@@ -632,6 +632,32 @@ DEFAULT_ITEMS = [
         "createdAt": "2026-09-25T06:32:42.497Z",
         "lastUsedAt": "2026-09-29T05:06:55.002Z",
         "updatedAt": "2026-09-29T05:06:55.007Z"
+    },
+    {
+        "id": "prod_auto_6",
+        "name": "KET.IC.2B エレクトロパワーバッテリ2個付",
+        "unitPrice": 300000,
+        "userPrice": 385000,
+        "unit": "セット",
+        "taxRate": 10,
+        "note": "",
+        "usageCount": 1,
+        "createdAt": "2026-09-24T00:00:00.000Z",
+        "updatedAt": "2026-10-27T06:37:16.228Z",
+        "lastUsedAt": "2026-10-27T06:37:16.222Z"
+    },
+    {
+        "id": "prod_auto_7",
+        "name": "HIC-025　ホールドイットクランプ",
+        "unitPrice": 10400,
+        "userPrice": 11440,
+        "unit": "セット",
+        "taxRate": 10,
+        "note": "",
+        "usageCount": 2,
+        "createdAt": "2026-09-24T00:00:00.000Z",
+        "updatedAt": "2026-10-27T06:37:16.228Z",
+        "lastUsedAt": "2026-10-27T06:37:16.222Z"
     }
 ]
 
@@ -747,10 +773,45 @@ DEFAULT_INVENTORY = [
         "history": [
             {"date": "2026-09-25", "type": "in", "qty": 3, "reason": "初期棚卸在庫登録", "currentStock": 3}
         ]
+    },
+    {
+        "id": "inv_prod_auto_7",
+        "itemId": "prod_auto_7",
+        "name": "HIC-025　ホールドイットクランプ",
+        "sku": "HIC-025",
+        "currentStock": 5,
+        "safetyStock": 2,
+        "unit": "セット",
+        "unitCost": 6240,
+        "unitPrice": 10400,
+        "location": "本社倉庫",
+        "lastInDate": "2026-09-24",
+        "note": "固定クランプ（標準在庫品）",
+        "history": [
+            {"date": "2026-09-24", "type": "in", "qty": 5, "reason": "初期棚卸在庫登録", "currentStock": 5}
+        ]
+    },
+    {
+        "id": "inv_prod_auto_6",
+        "itemId": "prod_auto_6",
+        "name": "KET.IC.2B エレクトロパワーバッテリ2個付",
+        "sku": "KET-IC-2B",
+        "currentStock": 2,
+        "safetyStock": 1,
+        "unit": "セット",
+        "unitCost": 200000,
+        "unitPrice": 300000,
+        "location": "本社倉庫 A-1",
+        "lastInDate": "2026-09-24",
+        "note": "",
+        "history": [
+            {"date": "2026-09-24", "type": "in", "qty": 2, "reason": "初期棚卸在庫登録", "currentStock": 2}
+        ]
     }
 ]
 
 DEFAULT_PURCHASE_MAPPINGS = {
+    "ホールドイットクランプ": "inv_prod_auto_7",
     "メカニカルスプレッダー": "inv_2",
     "スプレッダー": "inv_2",
     "ベーシックセット": "inv_1"
