@@ -7736,6 +7736,7 @@ function renderInventoryLotTable() {
           <th style="text-align: right; min-width: 90px;">輸入消費税</th>
           <th style="text-align: center; min-width: 85px;">証憑画像</th>
           <th style="text-align: center; min-width: 80px;">会計連動</th>
+          <th style="text-align: center; min-width: 60px;">操作</th>
         </tr>
       </thead>
       <tbody>
@@ -7770,6 +7771,9 @@ function renderInventoryLotTable() {
         <td style="text-align: center;">
           ${lot.syncAccounting ? '<span style="color:#059669; font-weight:700; font-size:0.8rem;" title="財務会計へ仕訳登録済">✅ 連携済</span>' : '<span style="color:#94a3b8; font-size:0.75rem;">-</span>'}
         </td>
+        <td style="text-align: center;">
+          <button type="button" class="btn btn-xs" onclick="window.deleteInventoryLotFromUI('${escapeHtml(lot.id)}', '${escapeHtml(lot.lotNumber)}')" style="background:#fff1f2; border: 1px solid #fecdd3; color:#be123c; padding:2px 6px; border-radius:4px; font-size:0.75rem; cursor:pointer;" title="この入荷ロットを削除（在庫・財務会計連動取消）">🗑️</button>
+        </td>
       </tr>
     `;
   });
@@ -7779,6 +7783,23 @@ function renderInventoryLotTable() {
 }
 
 window.renderInventoryLotTable = renderInventoryLotTable;
+
+window.deleteInventoryLotFromUI = function(lotId, lotNumber) {
+  if (!confirm(`入荷ロット「${lotNumber}」を削除しますか？\n\n【連動して取り消される内容】\n・入庫された数量が在庫マスタから差し引かれます。\n・ロットで登録された未出荷シリアルは台帳から削除されます。\n・財務会計に計上された仕訳データも自動で取り消されます。`)) {
+    return;
+  }
+  const ok = typeof deleteInventoryLot === 'function' ? deleteInventoryLot(lotId) : false;
+  if (ok) {
+    renderInventoryLotTable();
+    if (typeof renderInventoryTable === 'function') renderInventoryTable();
+    if (typeof renderSerialsManagementTable === 'function') renderSerialsManagementTable();
+    if (typeof renderInventorySerialTable === 'function') renderInventorySerialTable();
+    if (typeof renderJournalTable === 'function') renderJournalTable();
+    showToast(`入荷ロット「${lotNumber}」を削除し、在庫・財務会計を連動取消しました`, 'success');
+  } else {
+    showToast('入荷ロットの削除に失敗しました', 'danger');
+  }
+};
 
 // ==========================================================================
 // 「📥 ロット入庫 ＆ 原価按分計算 (Multi-Item Landed Cost Calculator)」モーダル

@@ -2574,16 +2574,29 @@ export function findItemMasterByName(name) {
 }
 
 /**
- * 商品マスタから商品を削除
+ * 商品マスタから商品を削除（在庫品目マスタも連動削除）
  */
 export function deleteItemFromMaster(id) {
   try {
-    const list = getItemMasterList(false).filter(i => i.id !== id);
-    saveItemMasterList(list);
+    const list = getItemMasterList(false);
+    const targetItem = list.find(i => i.id === id);
+    const filtered = list.filter(i => i.id !== id);
+    saveItemMasterList(filtered);
     // サーバーのFirestoreから個別削除
     deleteServerEntity('items', id).catch(e => {
       console.warn('Server item delete failed:', e);
     });
+
+    // 在庫品目マスタ（KEYS.INVENTORY）からも連動して削除
+    const invList = getInventoryList();
+    const targetName = targetItem ? targetItem.name : '';
+    const newInvList = invList.filter(inv => inv.id !== id && inv.name !== targetName);
+    if (newInvList.length !== invList.length) {
+      localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(newInvList));
+      saveServerInventory(newInvList).catch(() => {});
+      deleteServerEntity('inventory', id).catch(() => {});
+    }
+
     return true;
   } catch (e) {
     console.error('Failed to delete item from master:', e);
@@ -5424,6 +5437,103 @@ export async function saveServerInventoryLots(lots) {
   }
 }
 
+/**
+ * 入荷ロットを削除（在庫マスタ・シリアル台帳・財務会計仕訳を完全連動取消）
+ */
+export function deleteInventoryLot(lotId) {
+  try {
+    if (!lotId) return false;
+    const lotList = getInventoryLotList();
+    const lotIndex = lotList.findIndex(l => l.id === lotId || l.lotNumber === lotId);
+    if (lotIndex === -1) return false;
+    const lot = lotList[lotIndex];
+
+    // ① 在庫マスタから数量を差し引く（入庫の取り消し）
+    if (Array.isArray(lot.items) && lot.items.length > 0) {
+      lot.items.forEach(it => {
+        const qty = Number(it.quantity || it.qty || 0);
+        if (qty > 0) {
+          if (it.itemId === 'inv_1' || (it.itemName && it.itemName.includes('ベーシックセット'))) {
+            adjustStock('inv_dp5000_body', -qty, 'ロット削除による取消', { lotNumber: lot.lotNumber });
+            adjustStock('inv_dp5000_bat', -(qty * 2), 'ロット削除による取消', { lotNumber: lot.lotNumber });
+            adjustStock('inv_chg_dp5k', -qty, 'ロット削除による取消', { lotNumber: lot.lotNumber });
+          } else {
+            adjustStock(it.itemId, -qty, 'ロット削除による取消', { lotNumber: lot.lotNumber });
+          }
+        }
+      });
+    } else {
+      const qty = Number(lot.quantity || 0);
+      if (qty > 0 && lot.itemId) {
+        if (lot.itemId === 'inv_1' || (lot.itemName && lot.itemName.includes('ベーシックセット'))) {
+          adjustStock('inv_dp5000_body', -qty, 'ロット削除による取消', { lotNumber: lot.lotNumber });
+          adjustStock('inv_dp5000_bat', -(qty * 2), 'ロット削除による取消', { lotNumber: lot.lotNumber });
+          adjustStock('inv_chg_dp5k', -qty, 'ロット削除による取消', { lotNumber: lot.lotNumber });
+        } else {
+          adjustStock(lot.itemId, -qty, 'ロット削除による取消', { lotNumber: lot.lotNumber });
+        }
+      }
+    }
+
+    // ② このロットで登録されたシリアル番号の削除
+    const serialList = getInventorySerialList();
+    const lotSerials = new Set();
+    if (Array.isArray(lot.items)) {
+      lot.items.forEach(it => {
+        if (Array.isArray(it.serials)) {
+          it.serials.forEach(s => lotSerials.add(String(s).trim().toUpperCase()));
+        }
+      });
+    }
+    const filteredSerials = serialList.filter(s => {
+      const sn = String(s.serialNumber || '').trim().toUpperCase();
+      const matchLot = (s.lotId && s.lotId === lot.id) || (s.lotNumber && s.lotNumber === lot.lotNumber);
+      const inLotSerials = lotSerials.has(sn);
+      if (matchLot || inLotSerials) {
+        // 先行出荷されたシリアル（納品書や顧客があるもの）は削除せずロット情報のみクリア
+        if (s.docNumber || s.clientName || s.status === 'shipped') {
+          delete s.lotId;
+          delete s.lotNumber;
+          s.costPrice = 0;
+          return true;
+        }
+        return false; // 新規入庫された未出荷シリアルは削除
+      }
+      return true;
+    });
+    localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(filteredSerials));
+    saveServerInventorySerials(filteredSerials).catch(() => {});
+
+    // ③ 財務会計の仕訳データを連動削除
+    if (typeof getManualJournals === 'function' && typeof deleteManualJournal === 'function') {
+      const journals = getManualJournals();
+      const targetJnl = journals.find(j => 
+        j.id === `jnl_lot_${lot.id}` || 
+        (j.sourceType === 'inventory_lot' && j.sourceId === lot.id) ||
+        (j.entryNumber === lot.lotNumber && j.sourceType === 'inventory_lot')
+      );
+      if (targetJnl) {
+        deleteManualJournal(targetJnl.id);
+        console.log('【財務会計連動取消】ロット仕訳を削除しました:', targetJnl.id);
+      }
+    }
+
+    // ④ ロット一覧から削除して保存
+    lotList.splice(lotIndex, 1);
+    localStorageSetItemAndSync(KEYS.INVENTORY_LOTS, JSON.stringify(lotList));
+    saveServerInventoryLots(lotList).catch(() => {});
+    deleteServerEntity('inventory_lots', lot.id).catch(() => {});
+
+    // 在庫マスタ同期
+    syncInventoryStockFromSerials();
+
+    return true;
+  } catch (e) {
+    console.error('Failed to delete inventory lot:', e);
+    return false;
+  }
+}
+
 // ==========================================================================
 // シリアル番号台帳（Inventory Serials）管理 & 在庫マスタ連動
 // ==========================================================================
@@ -6192,6 +6302,7 @@ if (typeof window !== 'undefined') {
   window.recordDeletedExpenseId = recordDeletedExpenseId;
   window.getInventoryLotList = getInventoryLotList;
   window.saveInventoryLot = saveInventoryLot;
+  window.deleteInventoryLot = deleteInventoryLot;
   window.getInventorySerialList = getInventorySerialList;
   window.saveInventorySerial = saveInventorySerial;
   window.saveBatchInventorySerials = saveBatchInventorySerials;
