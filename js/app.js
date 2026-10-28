@@ -1683,6 +1683,7 @@ function issueAndSyncAccountingDocument(options = {}) {
       }
 
       const itemEndUser = (it.endUserName || currentDoc.endUserName || '').trim();
+      const serialNote = (it.note || currentDoc.notes || '').trim();
 
       itemSerials.forEach(as => {
         updateSerialStatus(as.serialNumber, 'shipped', {
@@ -1694,7 +1695,8 @@ function issueAndSyncAccountingDocument(options = {}) {
           docId: currentDoc.id,
           invoiceId: currentDoc.id,
           shipDate: issueDateStr,
-          shippedDate: issueDateStr
+          shippedDate: issueDateStr,
+          note: serialNote
         });
         itemAssignedCogs += Number(as.costPrice) || 0;
       });

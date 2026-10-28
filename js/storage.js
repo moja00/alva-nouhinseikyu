@@ -5823,8 +5823,16 @@ export function updateSerialStatus(serialNumber, newStatus, details = {}) {
       if (details.docNumber !== undefined) target.docNumber = details.docNumber;
       if (details.invoiceNumber !== undefined) target.docNumber = details.invoiceNumber;
       if (details.docId !== undefined) target.docId = details.docId;
-      if (details.invoiceId !== undefined) target.docId = details.invoiceId;
-      if (details.note !== undefined) target.note = details.note;
+      if (details.note !== undefined && details.note) {
+        const cleanDetailNote = String(details.note).trim();
+        if (cleanDetailNote) {
+          if (target.note && target.note !== cleanDetailNote && !target.note.includes(cleanDetailNote)) {
+            target.note = `${target.note} / ${cleanDetailNote}`;
+          } else if (!target.note) {
+            target.note = cleanDetailNote;
+          }
+        }
+      }
 
       // セット品化された本体が出荷された場合、組込バッテリーも連動して出荷済みに更新
       if (newStatus === 'shipped' && target.isBundled && Array.isArray(target.batterySerials)) {
@@ -5838,7 +5846,9 @@ export function updateSerialStatus(serialNumber, newStatus, details = {}) {
             bat.docNumber = target.docNumber || '';
             bat.docId = target.docId || '';
             const baseNote = (bat.note || '').replace(/\s*\[DP-5000\([^)]+\)と共に出荷\]/g, '').trim();
-            bat.note = (baseNote ? baseNote + ' ' : '') + `[DP-5000(${target.serialNumber})と共に出荷]`;
+            const additionalNote = (target.note || '').replace(/\s*\[DP-5000\([^)]+\)と共に出荷\]/g, '').trim();
+            const combinedNote = [baseNote, additionalNote].filter((v, idx, arr) => v && arr.indexOf(v) === idx).join(' / ');
+            bat.note = (combinedNote ? combinedNote + ' ' : '') + `[DP-5000(${target.serialNumber})と共に出荷]`;
             bat.updatedAt = new Date().toISOString();
           }
         });
