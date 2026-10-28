@@ -8783,11 +8783,40 @@ function syncInventoryStockFromSerials() {
       }
     });
 
-    // セット品（DP-5000 ベーシックセット）の理論構成可能在庫数を再計算連動
     const bodyItem = invList.find(it => it.id === 'inv_dp5000_body');
     const batItem = invList.find(it => it.id === 'inv_dp5000_bat');
-    const chgItem = invList.find(it => it.id === 'inv_dp5000_chg');
+    const chgItem = invList.find(it => it.id === 'inv_dp5000_chg' || (it.name && it.name.includes('急速充電器')));
     const bundleItem = invList.find(it => it.id === 'inv_1' || (it.name && it.name.includes('ベーシックセット')));
+
+    // 急速充電器（非シリアル品目）が入荷ロット台帳に存在し、現在庫が0のままの場合はロット入庫数量から復元
+    if (chgItem && Number(chgItem.currentStock || 0) === 0) {
+      try {
+        const rawLots = localStorage.getItem(KEYS.INVENTORY_LOTS);
+        if (rawLots) {
+          const lots = JSON.parse(rawLots);
+          if (Array.isArray(lots)) {
+            let totalLotChgQty = 0;
+            lots.forEach(lot => {
+              if (Array.isArray(lot.items)) {
+                lot.items.forEach(it => {
+                  if (it && (it.itemId === chgItem.id || (it.itemName && it.itemName.includes('急速充電器')))) {
+                    totalLotChgQty += Number(it.quantity) || 0;
+                  }
+                });
+              } else if (lot.itemId === chgItem.id || (lot.itemName && lot.itemName.includes('急速充電器'))) {
+                totalLotChgQty += Number(lot.quantity) || 0;
+              }
+            });
+            if (totalLotChgQty > 0) {
+              chgItem.currentStock = totalLotChgQty;
+              modified = true;
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Sync charger stock from lots failed:', err);
+      }
+    }
 
     if (bundleItem && bodyItem && batItem) {
       const chgStock = chgItem ? Number(chgItem.currentStock || 0) : 999;
@@ -18085,14 +18114,19 @@ function submitInventoryLotStockIn() {
   }
 
   // 2. 各品目の在庫マスタ（現在庫 ＆ 確定仕入原価）を一括更新
-  const invList = getInventoryList();
   lotItemRows.forEach(r => {
-    adjustStock(r.itemId, r.qty, `混載ロット入庫: ${lotNumber} (確定実仕入原価: ¥${r.landedUnitCost.toLocaleString()}/台)`, { unitCost: r.landedUnitCost });
-    const targetItem = invList.find(i => i.id === r.itemId);
-    if (targetItem) {
-      targetItem.unitCost = r.landedUnitCost;
-      if (storageLocation) targetItem.location = storageLocation;
-      saveInventoryItem(targetItem);
+    adjustStock(r.itemId, r.qty, `混載ロット入庫: ${lotNumber} (確定実仕入原価: ¥${r.landedUnitCost.toLocaleString()}/台)`, { 
+      unitCost: r.landedUnitCost,
+      date: arrivalDate
+    });
+    // 保管場所の指定がある場合は最新の在庫リストから取得して更新
+    if (storageLocation) {
+      const currentInvList = getInventoryList();
+      const target = currentInvList.find(i => i.id === r.itemId);
+      if (target && target.location !== storageLocation) {
+        target.location = storageLocation;
+        saveInventoryItem(target);
+      }
     }
   });
 

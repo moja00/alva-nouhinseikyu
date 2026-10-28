@@ -8798,14 +8798,19 @@ function submitInventoryLotStockIn() {
   }
 
   // 2. 各品目の在庫マスタ（現在庫 ＆ 確定仕入原価）を一括更新
-  const invList = getInventoryList();
   lotItemRows.forEach(r => {
-    adjustStock(r.itemId, r.qty, `混載ロット入庫: ${lotNumber} (確定実仕入原価: ¥${r.landedUnitCost.toLocaleString()}/台)`, { unitCost: r.landedUnitCost });
-    const targetItem = invList.find(i => i.id === r.itemId);
-    if (targetItem) {
-      targetItem.unitCost = r.landedUnitCost;
-      if (storageLocation) targetItem.location = storageLocation;
-      saveInventoryItem(targetItem);
+    adjustStock(r.itemId, r.qty, `混載ロット入庫: ${lotNumber} (確定実仕入原価: ¥${r.landedUnitCost.toLocaleString()}/台)`, { 
+      unitCost: r.landedUnitCost,
+      date: arrivalDate
+    });
+    // 保管場所の指定がある場合は最新の在庫リストから取得して更新
+    if (storageLocation) {
+      const currentInvList = getInventoryList();
+      const target = currentInvList.find(i => i.id === r.itemId);
+      if (target && target.location !== storageLocation) {
+        target.location = storageLocation;
+        saveInventoryItem(target);
+      }
     }
   });
 
