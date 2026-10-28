@@ -4237,7 +4237,9 @@ function deduplicateItemMasterList(list) {
       item.unitPrice = 73025;
       item.userPrice = 98000;
       item.unit = '個';
-      item.category = 'アタッチメント';
+      if (!item.category) {
+        item.category = 'アタッチメント';
+      }
       key = getMasterKey(item.name);
     }
 
