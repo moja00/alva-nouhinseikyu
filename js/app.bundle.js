@@ -8898,27 +8898,42 @@ function syncInventoryStockFromSerials() {
     const chgItem = invList.find(it => it.id === 'inv_dp5000_chg' || (it.name && it.name.includes('急速充電器')));
     const bundleItem = invList.find(it => it.id === 'inv_1' || (it.name && it.name.includes('ベーシックセット')));
 
-    // 急速充電器（非シリアル品目）が入荷ロット台帳に存在し、現在庫が0のままの場合はロット入庫数量から復元
-    if (chgItem && Number(chgItem.currentStock || 0) === 0) {
+    // 急速充電器（非シリアル品目）の在庫数計算
+    // ※ DP-5000ベーシックセットに組み込まれている充電器はセット内に内包されるため、単品フリー在庫からは控除される
+    if (chgItem) {
       try {
         const rawLots = localStorage.getItem(KEYS.INVENTORY_LOTS);
         if (rawLots) {
           const lots = JSON.parse(rawLots);
           if (Array.isArray(lots)) {
-            let totalLotChgQty = 0;
+            let totalStandaloneChgIn = 0; // 単品として入庫された充電器数
             lots.forEach(lot => {
               if (Array.isArray(lot.items)) {
                 lot.items.forEach(it => {
-                  if (it && (it.itemId === chgItem.id || (it.itemName && it.itemName.includes('急速充電器')))) {
-                    totalLotChgQty += Number(it.quantity) || 0;
+                  const isBundle = it && (it.itemId === 'inv_1' || (it.itemName && it.itemName.includes('ベーシックセット')));
+                  if (!isBundle && (it.itemId === chgItem.id || (it.itemName && it.itemName.includes('急速充電器')))) {
+                    totalStandaloneChgIn += Number(it.quantity) || 0;
                   }
                 });
               } else if (lot.itemId === chgItem.id || (lot.itemName && lot.itemName.includes('急速充電器'))) {
-                totalLotChgQty += Number(lot.quantity) || 0;
+                const isBundle = lot.itemId === 'inv_1' || (lot.itemName && lot.itemName.includes('ベーシックセット'));
+                if (!isBundle) {
+                  totalStandaloneChgIn += Number(lot.quantity) || 0;
+                }
               }
             });
-            if (totalLotChgQty > 0) {
-              chgItem.currentStock = totalLotChgQty;
+
+            // 手動セット品化（バラの単品充電器をセットに組み込んだ回数）を差し引く
+            let manualBundledChgCount = 0;
+            serials.forEach(s => {
+              if (s && s.isBundled && s.chargerDeducted) {
+                manualBundledChgCount++;
+              }
+            });
+
+            const standaloneStock = Math.max(0, totalStandaloneChgIn - manualBundledChgCount);
+            if (chgItem.currentStock !== standaloneStock) {
+              chgItem.currentStock = standaloneStock;
               modified = true;
             }
           }
@@ -8928,15 +8943,31 @@ function syncInventoryStockFromSerials() {
       }
     }
 
-    if (bundleItem && bodyItem && batItem) {
-      const chgStock = chgItem ? Number(chgItem.currentStock || 0) : 999;
-      const possibleSets = Math.min(
-        Number(bodyItem.currentStock || 0),
-        Math.floor(Number(batItem.currentStock || 0) / 2),
-        chgStock
+    // ベーシックセット（完成品）の現在庫計算
+    // ① セット品化済（isBundled: true）で、かつ手元に在庫中（status: 'in_stock'）の本体シリアル数（即出荷可能なセット完成品数）
+    // ② 未キッティングの単品部品（本体、バッテリー/2、充電器）から追加で組める論理可能数
+    if (bundleItem) {
+      let readyBundleCount = 0;
+      serials.forEach(s => {
+        const itemName = String(s.itemName || '').toUpperCase();
+        const isBody = s.inventoryId === 'inv_dp5000_body' || (itemName.includes('DP-5000') && !itemName.includes('MS'));
+        if (isBody && s.isBundled && s.status === 'in_stock') {
+          readyBundleCount++;
+        }
+      });
+
+      const unbundledBodyStock = Number(bodyItem ? bodyItem.currentStock : 0);
+      const unbundledBatStock = Number(batItem ? batItem.currentStock : 0);
+      const unbundledChgStock = Number(chgItem ? chgItem.currentStock : 0);
+      const additionalPossibleSets = Math.min(
+        unbundledBodyStock,
+        Math.floor(unbundledBatStock / 2),
+        unbundledChgStock
       );
-      if (bundleItem.currentStock !== possibleSets) {
-        bundleItem.currentStock = possibleSets;
+
+      const totalAvailableSets = readyBundleCount + additionalPossibleSets;
+      if (bundleItem.currentStock !== totalAvailableSets) {
+        bundleItem.currentStock = totalAvailableSets;
         modified = true;
       }
     }
