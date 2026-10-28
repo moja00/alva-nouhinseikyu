@@ -11,6 +11,7 @@ const KEYS = {
   CLIENT_MASTER: 'quickdoc_client_master',
   ITEM_MASTER: 'quickdoc_item_master',
   ITEM_CATEGORIES: 'alva_item_categories',
+  NON_STOCK_CATEGORIES: 'alva_non_stock_categories',
   DISCOUNT_REASONS: 'quickdoc_discount_reasons',
   USER_PRICE_HISTORY: 'quickdoc_user_price_history',
   EXPENSES: 'quickdoc_expenses',
@@ -430,7 +431,7 @@ export const SAMPLE_ITEM_KEYS = new Set([
  */
 /**
  * 修理・オーバーホール・中古部品等の修理項目かどうかを判定
- * （商品マスタ・在庫マスタから完全排除・非表示）
+ * （※商品マスタでは「修理・工賃」カテゴリとして選択・明細引用可能。在庫マスタからは自動除外）
  * @param {string|object} item
  * @returns {boolean}
  */
@@ -480,11 +481,22 @@ const SAMPLE_CLIENT_KEYS = new Set([
   getMasterKey('スタジオ・ネクサス合同会社')
 ]);
 
+export const DEFAULT_NON_STOCK_CATEGORIES = [
+  '修理・工賃',
+  '修理・オーバーホール',
+  '工賃・役務',
+  '役務・工賃',
+  'サービス',
+  '配送料'
+];
+
 export const DEFAULT_ITEM_CATEGORIES = [
   '本体・セット',
   'アタッチメント',
   'アクセサリー',
-  '消耗品・クランプ'
+  '消耗品・クランプ',
+  '修理・工賃',
+  'その他'
 ];
 
 const DEFAULT_ITEMS_MASTER = [
@@ -571,6 +583,84 @@ const DEFAULT_ITEMS_MASTER = [
     createdAt: "2026-09-24T00:00:00.000Z",
     updatedAt: "2026-10-27T06:37:16.228Z",
     lastUsedAt: "2026-10-27T06:37:16.222Z"
+  },
+  {
+    id: "prod_repair_overhaul_2",
+    name: "研磨機オーバーホール②　基本料金",
+    category: "修理・工賃",
+    unitPrice: 100000,
+    userPrice: 100000,
+    unit: "式",
+    taxRate: 10,
+    note: "研磨機オーバーホール基本料金",
+    usageCount: 1,
+    createdAt: "2026-09-25T06:00:00.000Z",
+    updatedAt: "2026-10-28T10:00:00.000Z"
+  },
+  {
+    id: "prod_repair_body_parts",
+    name: "本体交換部品　（中古部品使用）",
+    category: "修理・工賃",
+    unitPrice: 94000,
+    userPrice: 94000,
+    unit: "式",
+    taxRate: 10,
+    note: "本体交換部品",
+    usageCount: 1,
+    createdAt: "2026-09-25T06:00:00.000Z",
+    updatedAt: "2026-10-28T10:00:00.000Z"
+  },
+  {
+    id: "prod_repair_motor_power",
+    name: "モーター及び電源関係　（中古部品使用）",
+    category: "修理・工賃",
+    unitPrice: 85000,
+    userPrice: 85000,
+    unit: "式",
+    taxRate: 10,
+    note: "モーター・電源関係部品",
+    usageCount: 1,
+    createdAt: "2026-09-25T06:00:00.000Z",
+    updatedAt: "2026-10-28T10:00:00.000Z"
+  },
+  {
+    id: "prod_repair_bite_stand",
+    name: "バイト台 （中古部品使用）",
+    category: "修理・工賃",
+    unitPrice: 43000,
+    userPrice: 43000,
+    unit: "式",
+    taxRate: 10,
+    note: "バイト台部品",
+    usageCount: 1,
+    createdAt: "2026-09-25T06:00:00.000Z",
+    updatedAt: "2026-10-28T10:00:00.000Z"
+  },
+  {
+    id: "prod_repair_overhaul_1",
+    name: "研磨機オーバーホール①　基本料金",
+    category: "修理・工賃",
+    unitPrice: 60000,
+    userPrice: 60000,
+    unit: "式",
+    taxRate: 10,
+    note: "研磨機オーバーホール基本料金",
+    usageCount: 0,
+    createdAt: "2026-09-25T06:00:00.000Z",
+    updatedAt: "2026-10-28T10:00:00.000Z"
+  },
+  {
+    id: "prod_repair_clutch_power",
+    name: "クラッチ用 スイッチング 電源基盤 （中古）",
+    category: "修理・工賃",
+    unitPrice: 6720,
+    userPrice: 6720,
+    unit: "式",
+    taxRate: 10,
+    note: "クラッチ用スイッチング電源基盤",
+    usageCount: 0,
+    createdAt: "2026-09-25T06:00:00.000Z",
+    updatedAt: "2026-10-28T10:00:00.000Z"
   }
 ];
 
@@ -891,8 +981,10 @@ export function deduplicateItemMasterList(list) {
     // サンプル商品は自動パージ（完全排除）
     if (SAMPLE_ITEM_KEYS.has(key)) continue;
 
-    // 修理・オーバーホール項目は商品マスタから完全排除（非表示）
-    if (isRepairItem(item)) continue;
+    // 修理・オーバーホール項目は「修理・工賃」カテゴリを補完（未設定時）
+    if (isRepairItem(item) && !item.category) {
+      item.category = '修理・工賃';
+    }
 
     // スプレッダーとメカニカルスプレッダーをメカニカルスプレッダーに統一（単価73,025円固定）
     if (key === 'dp-ms スプレッダー' || key === 'スプレッダー' || key === 'dp-ms メカニカルスプレッダー' || key === 'メカニカルスプレッダー') {
@@ -2446,6 +2538,11 @@ export function getItemCategoryList() {
       saveItemCategoryList(DEFAULT_ITEM_CATEGORIES);
       return [...DEFAULT_ITEM_CATEGORIES];
     }
+    // 「修理・工賃」が未登録なら自動補完
+    if (!parsed.includes('修理・工賃')) {
+      parsed.push('修理・工賃');
+      saveItemCategoryList(parsed);
+    }
     return parsed;
   } catch (e) {
     console.error('Failed to get item category list:', e);
@@ -2472,10 +2569,124 @@ export function saveItemCategoryList(list) {
 /**
  * 商品カテゴリを新規追加
  * @param {string} name カテゴリ名
+ * @param {boolean} [isNonStock=false] 在庫管理対象外とするか
  */
-export function addItemCategory(name) {
+export function addItemCategory(name, isNonStock = false) {
   const cleanName = String(name || '').trim();
   if (!cleanName) return false;
+  const list = getItemCategoryList();
+  if (!list.includes(cleanName)) {
+    list.push(cleanName);
+    saveItemCategoryList(list);
+  }
+  if (isNonStock) {
+    setCategoryNonStock(cleanName, true);
+  }
+  return true;
+}
+
+/**
+ * 商品カテゴリの並び順を上下に移動
+ * @param {string} name カテゴリ名
+ * @param {'up'|'down'} direction 移動方向
+ * @returns {string[]} 更新後のカテゴリリスト
+ */
+export function moveItemCategory(name, direction) {
+  const cleanName = String(name || '').trim();
+  if (!cleanName) return getItemCategoryList();
+  const list = [...getItemCategoryList()];
+  const idx = list.indexOf(cleanName);
+  if (idx === -1) return list;
+
+  if (direction === 'up' && idx > 0) {
+    const temp = list[idx - 1];
+    list[idx - 1] = list[idx];
+    list[idx] = temp;
+    saveItemCategoryList(list);
+  } else if (direction === 'down' && idx < list.length - 1) {
+    const temp = list[idx + 1];
+    list[idx + 1] = list[idx];
+    list[idx] = temp;
+    saveItemCategoryList(list);
+  }
+  return list;
+}
+
+/**
+ * 非在庫対象（在庫マスタ連携除外）カテゴリ一覧を取得
+ * @returns {string[]}
+ */
+export function getNonStockCategories() {
+  try {
+    const raw = localStorage.getItem(KEYS.NON_STOCK_CATEGORIES);
+    if (!raw) {
+      return [...DEFAULT_NON_STOCK_CATEGORIES];
+    }
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [...DEFAULT_NON_STOCK_CATEGORIES];
+  } catch (e) {
+    return [...DEFAULT_NON_STOCK_CATEGORIES];
+  }
+}
+
+/**
+ * 非在庫対象カテゴリ一覧を保存
+ * @param {string[]} list
+ */
+export function saveNonStockCategories(list) {
+  try {
+    if (!Array.isArray(list)) return false;
+    const clean = Array.from(new Set(list.map(c => String(c || '').trim()).filter(Boolean)));
+    localStorageSetItemAndSync(KEYS.NON_STOCK_CATEGORIES, JSON.stringify(clean));
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * カテゴリが在庫管理対象外（役務・工賃・修理等）かどうかを判定
+ * @param {string} categoryName
+ * @returns {boolean}
+ */
+export function isNonStockCategory(categoryName) {
+  if (!categoryName) return false;
+  const name = String(categoryName).trim();
+  const nonStockList = getNonStockCategories();
+  if (nonStockList.includes(name)) return true;
+  return /修理|工賃|役務|点検|保守|送料|配送料/i.test(name);
+}
+
+/**
+ * 商品が在庫管理対象外（在庫マスタ非連携）かどうかを判定
+ * @param {object|string} item
+ * @returns {boolean}
+ */
+export function isNonStockItem(item) {
+  if (!item) return false;
+  if (typeof item === 'string') return isRepairItem(item);
+  if (item.category && isNonStockCategory(item.category)) return true;
+  return isRepairItem(item);
+}
+
+/**
+ * カテゴリの在庫管理対象/対象外属性を切り替え
+ * @param {string} categoryName
+ * @param {boolean} isNonStock
+ */
+export function setCategoryNonStock(categoryName, isNonStock) {
+  const name = String(categoryName || '').trim();
+  if (!name) return;
+  const list = getNonStockCategories();
+  const exists = list.includes(name);
+  if (isNonStock && !exists) {
+    list.push(name);
+    saveNonStockCategories(list);
+  } else if (!isNonStock && exists) {
+    const updated = list.filter(c => c !== name);
+    saveNonStockCategories(updated);
+  }
+}
   const list = getItemCategoryList();
   if (!list.includes(cleanName)) {
     list.push(cleanName);
@@ -3075,14 +3286,16 @@ export function autoRegisterMastersFromDoc(doc) {
       const currentList = getItemMasterList(false);
       doc.items.forEach(it => {
         const name = (it.name || '').trim();
-        if (!name || SAMPLE_ITEM_KEYS.has(getMasterKey(name)) || isRepairItem(it)) return;
+        if (!name || SAMPLE_ITEM_KEYS.has(getMasterKey(name))) return;
 
         const key = getMasterKey(name);
         const exists = currentList.some(m => getMasterKey(m.name) === key);
         if (!exists) {
           // 未登録の完全新規品目のみマスタに追加（isExplicitEdit: false で価格を保護）
+          const autoCat = it.category || (isRepairItem(it) ? '修理・工賃' : '');
           saveItemToMaster({
             name: name,
+            category: autoCat,
             unitPrice: Number(it.unitPrice) || 0,
             userPrice: Number(it.userPrice !== undefined ? it.userPrice : it.unitPrice) || 0,
             unit: it.unit || '式',
@@ -4081,8 +4294,8 @@ export function deduplicateInventoryList(rawList) {
     // 1. サンプル品目の完全排除
     if (isSampleItem(inv)) continue;
 
-    // 2. 修理・オーバーホール項目の完全排除（在庫マスタ非表示）
-    if (isRepairItem(inv)) continue;
+    // 2. 修理・オーバーホール項目および非在庫カテゴリの完全排除（在庫マスタ非表示）
+    if (isRepairItem(inv) || isNonStockItem(inv)) continue;
 
     const key = getMasterKey(inv.name);
     if (!key) continue;
@@ -4163,7 +4376,7 @@ export function getInventoryList() {
     let modified = (list.length !== beforeLen);
 
     cleanItems.forEach(prod => {
-      if (isRepairItem(prod)) return; // 修理項目は在庫マスタに追加しない
+      if (isRepairItem(prod) || isNonStockItem(prod)) return; // 修理項目・非在庫カテゴリは在庫マスタに追加しない
       const prodKey = getMasterKey(prod.name);
       const existing = list.find(inv => (inv.itemId && inv.itemId === prod.id) || (getMasterKey(inv.name) === prodKey));
       if (existing) {
@@ -5974,6 +6187,12 @@ if (typeof window !== 'undefined') {
   window.saveItemCategoryList = saveItemCategoryList;
   window.addItemCategory = addItemCategory;
   window.deleteItemCategory = deleteItemCategory;
+  window.moveItemCategory = moveItemCategory;
+  window.getNonStockCategories = getNonStockCategories;
+  window.saveNonStockCategories = saveNonStockCategories;
+  window.isNonStockCategory = isNonStockCategory;
+  window.isNonStockItem = isNonStockItem;
+  window.setCategoryNonStock = setCategoryNonStock;
   window.restoreAttendanceFromBackup = function() {
     const backup = localStorage.getItem(KEYS.ATTENDANCE + '_backup');
     if (backup && backup !== '[]') {

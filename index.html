@@ -328,7 +328,7 @@
         </button>
         <div style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
-          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.28-default-first-category</span>
+          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.28-repair-category-and-reorder</span>
         </div>
       </div>
 
@@ -1465,6 +1465,7 @@
                 <option value="">（未分類）</option>
                 <!-- JSで動的生成 -->
               </select>
+              <div id="itemCategoryStockStatusHint" style="font-size: 0.725rem; margin-top: 4px; display: none;"></div>
             </div>
           </div>
 
@@ -1597,13 +1598,22 @@
               ＋ 追加
             </button>
           </div>
+          <div style="margin-top: 8px; display: flex; align-items: center; gap: 6px;">
+            <input type="checkbox" id="chkNewCategoryNonStock" style="width: 15px; height: 15px; cursor: pointer;">
+            <label for="chkNewCategoryNonStock" style="font-size: 0.775rem; color: #475569; cursor: pointer; user-select: none;">
+              🚫 在庫管理しない（役務・修理・工賃・配送料など）
+            </label>
+          </div>
         </div>
 
         <!-- 既存カテゴリ一覧エリア -->
         <div>
-          <label style="display: block; font-size: 0.775rem; font-weight: 700; color: #334155; margin-bottom: 8px;">
-            登録中カテゴリ一覧
-          </label>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <label style="display: block; font-size: 0.775rem; font-weight: 700; color: #334155; margin: 0;">
+              登録中カテゴリ一覧（▲▼で並べ替え）
+            </label>
+            <span style="font-size: 0.7rem; color: #64748b;">一番上がデフォルト表示</span>
+          </div>
           <div id="categoryManageList" style="display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; padding-right: 4px;">
             <!-- JSで各カテゴリタグ・削除ボタンを動的描画 -->
           </div>
@@ -6682,7 +6692,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261028_default_first_category"></script>
+  <script src="js/app.bundle.js?v=20261028_repair_category_and_reorder"></script>
 </body>
 
 </html>

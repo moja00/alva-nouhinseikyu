@@ -334,6 +334,8 @@ const DOM = {
   inputNewCategoryName: document.getElementById('inputNewCategoryName'),
   btnSubmitAddCategory: document.getElementById('btnSubmitAddCategory'),
   categoryManageList: document.getElementById('categoryManageList'),
+  chkNewCategoryNonStock: document.getElementById('chkNewCategoryNonStock'),
+  itemCategoryStockStatusHint: document.getElementById('itemCategoryStockStatusHint'),
 
   // 取引先マスタ関連
   btnOpenClientMaster: document.getElementById('btnOpenClientMaster'),
@@ -3432,6 +3434,13 @@ function setupEventListeners() {
       }
     });
   }
+  if (DOM.itemMasterSelectCategory) {
+    DOM.itemMasterSelectCategory.addEventListener('change', () => {
+      if (typeof updateCategoryStockStatusHint === 'function') {
+        updateCategoryStockStatusHint();
+      }
+    });
+  }
 
   // 取引先マスタ制御
   if (DOM.btnOpenClientMaster) {
@@ -4856,6 +4865,9 @@ function resetItemMasterForm() {
   DOM.itemMasterSelectTax.value = '10';
   DOM.itemMasterInputNote.value = '';
   updateMasterCalculator(false);
+  if (typeof updateCategoryStockStatusHint === 'function') {
+    updateCategoryStockStatusHint();
+  }
   toggleItemMasterForm(false);
 }
 
@@ -4875,6 +4887,26 @@ function populateItemCategoryDropdown(selectedCategory = '') {
     html += `<option value="${escapeHtml(selectedCategory)}" selected>${escapeHtml(selectedCategory)}</option>`;
   }
   DOM.itemMasterSelectCategory.innerHTML = html;
+  updateCategoryStockStatusHint();
+}
+
+/**
+ * 選択されたカテゴリの在庫管理ステータス案内を更新
+ */
+function updateCategoryStockStatusHint() {
+  if (!DOM.itemMasterSelectCategory || !DOM.itemCategoryStockStatusHint) return;
+  const cat = (DOM.itemMasterSelectCategory.value || '').trim();
+  if (!cat) {
+    DOM.itemCategoryStockStatusHint.style.display = 'none';
+    return;
+  }
+  const isNonStock = (typeof isNonStockCategory === 'function') ? isNonStockCategory(cat) : false;
+  DOM.itemCategoryStockStatusHint.style.display = 'block';
+  if (isNonStock) {
+    DOM.itemCategoryStockStatusHint.innerHTML = '<span style="color: #dc2626; font-weight: 700;">🚫 在庫管理：対象外</span> <span style="color: #64748b;">（役務・修理・工賃等のため、在庫マスタには登録されません）</span>';
+  } else {
+    DOM.itemCategoryStockStatusHint.innerHTML = '<span style="color: #16a34a; font-weight: 700;">📦 在庫管理：対象</span> <span style="color: #64748b;">（通常商品として在庫マスタと自動連携されます）</span>';
+  }
 }
 
 /**
@@ -4883,7 +4915,7 @@ function populateItemCategoryDropdown(selectedCategory = '') {
 function renderItemCategoryTabs() {
   if (!DOM.itemCategoryTabs) return;
   const categories = (typeof getItemCategoryList === 'function') ? getItemCategoryList() : [];
-  const allItems = (typeof getItemMasterList === 'function') ? getItemMasterList(false).filter(i => !isRepairItem(i)) : [];
+  const allItems = (typeof getItemMasterList === 'function') ? getItemMasterList(false) : [];
 
   // 選択中カテゴリのバリデーション・初期化（未設定または無効な場合は一番左のカテゴリを優先選択）
   if (!currentItemCategory || (currentItemCategory !== 'all' && currentItemCategory !== '__uncategorized__' && !categories.includes(currentItemCategory))) {
@@ -4986,21 +5018,79 @@ function renderCategoryManageList() {
     if (c) countMap[c] = (countMap[c] || 0) + 1;
   });
 
-  DOM.categoryManageList.innerHTML = categories.map(cat => {
+  DOM.categoryManageList.innerHTML = categories.map((cat, idx) => {
     const cnt = countMap[cat] || 0;
+    const isNonStock = (typeof isNonStockCategory === 'function') ? isNonStockCategory(cat) : false;
+    const isFirst = idx === 0;
+    const isLast = idx === categories.length - 1;
+
     return `
-      <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;">
-        <span style="font-size: 0.85rem; font-weight: 600; color: #1e293b; display: inline-flex; align-items: center; gap: 6px;">
-          <span>🏷️</span> ${escapeHtml(cat)}
-          <span style="font-size: 0.72rem; color: #64748b; font-weight: normal;">(${cnt}件)</span>
-        </span>
-        <button type="button" class="btn-icon-danger btn-delete-category" data-category="${escapeHtml(cat)}" style="font-size: 0.775rem; padding: 3px 8px; cursor: pointer; border-radius: 4px;" title="このカテゴリを削除">
-          ✕ 削除
-        </button>
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; gap: 8px;">
+        <div style="display: flex; align-items: center; gap: 4px;">
+          <button type="button" class="btn-move-category-up" data-category="${escapeHtml(cat)}" ${isFirst ? 'disabled style="opacity: 0.3; cursor: not-allowed;"' : 'style="cursor: pointer;"'} style="border: 1px solid #cbd5e1; background: #fff; border-radius: 4px; padding: 2px 6px; font-size: 0.7rem;" title="上へ移動（並び順を繰り上げ）">▲</button>
+          <button type="button" class="btn-move-category-down" data-category="${escapeHtml(cat)}" ${isLast ? 'disabled style="opacity: 0.3; cursor: not-allowed;"' : 'style="cursor: pointer;"'} style="border: 1px solid #cbd5e1; background: #fff; border-radius: 4px; padding: 2px 6px; font-size: 0.7rem;" title="下へ移動（並び順を繰り下げ）">▼</button>
+        </div>
+        <div style="flex: 1; display: flex; align-items: center; gap: 6px; overflow: hidden;">
+          <span style="font-size: 0.85rem; font-weight: 600; color: #1e293b; white-space: nowrap; text-overflow: ellipsis; overflow: hidden;">
+            🏷️ ${escapeHtml(cat)}
+          </span>
+          <span style="font-size: 0.72rem; color: #64748b; white-space: nowrap;">(${cnt}件)</span>
+          ${isNonStock ? '<span style="font-size: 0.68rem; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 0 5px; border-radius: 4px; white-space: nowrap; font-weight: 600;">🚫 在庫対象外</span>' : '<span style="font-size: 0.68rem; background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; padding: 0 5px; border-radius: 4px; white-space: nowrap; font-weight: 600;">📦 在庫あり</span>'}
+        </div>
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <label style="display: flex; align-items: center; gap: 3px; font-size: 0.7rem; color: #475569; cursor: pointer;" title="チェックを入れるとこのカテゴリの商品は在庫マスタから除外されます">
+            <input type="checkbox" class="chk-toggle-category-nonstock" data-category="${escapeHtml(cat)}" ${isNonStock ? 'checked' : ''} style="cursor: pointer;">
+            非在庫
+          </label>
+          <button type="button" class="btn-icon-danger btn-delete-category" data-category="${escapeHtml(cat)}" style="font-size: 0.75rem; padding: 2px 6px; cursor: pointer; border-radius: 4px;" title="このカテゴリを削除">
+            ✕
+          </button>
+        </div>
       </div>
     `;
   }).join('');
 
+  // 1. 上へ移動イベント
+  DOM.categoryManageList.querySelectorAll('.btn-move-category-up').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const cat = btn.dataset.category;
+      if (typeof moveItemCategory === 'function') {
+        moveItemCategory(cat, 'up');
+        renderCategoryManageList();
+        renderItemCategoryTabs();
+        populateItemCategoryDropdown(DOM.itemMasterSelectCategory ? DOM.itemMasterSelectCategory.value : '');
+        renderItemMasterList(DOM.inputSearchItemMaster ? DOM.inputSearchItemMaster.value : '');
+      }
+    });
+  });
+
+  // 2. 下へ移動イベント
+  DOM.categoryManageList.querySelectorAll('.btn-move-category-down').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const cat = btn.dataset.category;
+      if (typeof moveItemCategory === 'function') {
+        moveItemCategory(cat, 'down');
+        renderCategoryManageList();
+        renderItemCategoryTabs();
+        populateItemCategoryDropdown(DOM.itemMasterSelectCategory ? DOM.itemMasterSelectCategory.value : '');
+        renderItemMasterList(DOM.inputSearchItemMaster ? DOM.inputSearchItemMaster.value : '');
+      }
+    });
+  });
+
+  // 3. 在庫管理対象外属性トグル
+  DOM.categoryManageList.querySelectorAll('.chk-toggle-category-nonstock').forEach(chk => {
+    chk.addEventListener('change', (e) => {
+      const cat = chk.dataset.category;
+      if (typeof setCategoryNonStock === 'function') {
+        setCategoryNonStock(cat, e.target.checked);
+        renderCategoryManageList();
+        updateCategoryStockStatusHint();
+      }
+    });
+  });
+
+  // 4. 削除イベント
   DOM.categoryManageList.querySelectorAll('.btn-delete-category').forEach(btn => {
     btn.addEventListener('click', () => {
       const cat = btn.dataset.category;
@@ -5010,6 +5100,7 @@ function renderCategoryManageList() {
           renderCategoryManageList();
           renderItemCategoryTabs();
           populateItemCategoryDropdown();
+          renderItemMasterList(DOM.inputSearchItemMaster ? DOM.inputSearchItemMaster.value : '');
         }
       }
     });
@@ -5027,13 +5118,15 @@ function handleAddNewCategory() {
     DOM.inputNewCategoryName.focus();
     return;
   }
+  const isNonStock = DOM.chkNewCategoryNonStock ? DOM.chkNewCategoryNonStock.checked : false;
   if (typeof addItemCategory === 'function') {
-    addItemCategory(name);
+    addItemCategory(name, isNonStock);
     DOM.inputNewCategoryName.value = '';
+    if (DOM.chkNewCategoryNonStock) DOM.chkNewCategoryNonStock.checked = false;
     renderCategoryManageList();
     renderItemCategoryTabs();
     populateItemCategoryDropdown(name);
-    showToast(`カテゴリ「${name}」を追加しました`, 'success');
+    showToast(`カテゴリ「${name}」を追加しました${isNonStock ? '（在庫管理対象外）' : ''}`, 'success');
   }
 }
 
@@ -5198,9 +5291,9 @@ function handleSaveItemMaster(e) {
 }
 
 function renderItemMasterList(searchQuery = '') {
-  // 全商品マスタを取得（非修理品）
+  // 全商品マスタを取得
   const allItems = (typeof getItemMasterList === 'function')
-    ? getItemMasterList(false).filter(item => !isRepairItem(item))
+    ? getItemMasterList(false)
     : [];
   const q = (searchQuery || '').trim().toLowerCase();
   const usageMap = (typeof getItemMasterUsageMap === 'function') ? getItemMasterUsageMap() : {};
