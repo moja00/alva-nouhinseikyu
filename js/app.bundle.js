@@ -10275,6 +10275,9 @@ function switchAppView(viewName) {
         }
         try {
           if (DOM.inputSearchItemMaster) DOM.inputSearchItemMaster.value = '';
+          if (typeof getDefaultItemCategory === 'function') {
+            currentItemCategory = getDefaultItemCategory();
+          }
           if (typeof resetItemMasterForm === 'function') resetItemMasterForm();
           if (typeof renderItemCategoryTabs === 'function') renderItemCategoryTabs();
           if (typeof populateItemCategoryDropdown === 'function') populateItemCategoryDropdown();
@@ -13961,7 +13964,16 @@ function closeBackupModal() {
 // ==========================================================================
 // 商品マスタ管理 ＆ 販売店仕切り価格自動計算
 // ==========================================================================
-let currentItemCategory = 'all';
+let currentItemCategory = null;
+
+/**
+ * デフォルト表示となるカテゴリを取得（カテゴリの一番左にあるもの、無ければ 'all'）
+ * @returns {string}
+ */
+function getDefaultItemCategory() {
+  const categories = (typeof getItemCategoryList === 'function') ? getItemCategoryList() : [];
+  return (Array.isArray(categories) && categories.length > 0) ? categories[0] : 'all';
+}
 
 function openItemMasterModal() {
   if (typeof switchAppView === 'function') {
@@ -13969,6 +13981,7 @@ function openItemMasterModal() {
   } else if (DOM.itemMasterModal) {
     DOM.itemMasterModal.classList.add('active');
     if (DOM.inputSearchItemMaster) DOM.inputSearchItemMaster.value = '';
+    currentItemCategory = getDefaultItemCategory();
     resetItemMasterForm();
     renderItemCategoryTabs();
     populateItemCategoryDropdown();
@@ -14037,6 +14050,11 @@ function renderItemCategoryTabs() {
   const categories = (typeof getItemCategoryList === 'function') ? getItemCategoryList() : [];
   const allItems = (typeof getItemMasterList === 'function') ? getItemMasterList(false).filter(i => !isRepairItem(i)) : [];
 
+  // 選択中カテゴリのバリデーション・初期化（未設定または無効な場合は一番左のカテゴリを優先選択）
+  if (!currentItemCategory || (currentItemCategory !== 'all' && currentItemCategory !== '__uncategorized__' && !categories.includes(currentItemCategory))) {
+    currentItemCategory = getDefaultItemCategory();
+  }
+
   // 各カテゴリの登録件数を集計
   const countMap = { all: allItems.length };
   categories.forEach(cat => { countMap[cat] = 0; });
@@ -14051,12 +14069,9 @@ function renderItemCategoryTabs() {
     }
   });
 
-  let html = `
-    <button type="button" class="item-category-tab ${currentItemCategory === 'all' ? 'active' : ''}" data-category="all">
-      すべて <span class="tab-count">${countMap.all || 0}</span>
-    </button>
-  `;
+  let html = '';
 
+  // 1. 登録されたカテゴリ一覧（一番左・先頭から順に配置）
   categories.forEach(cat => {
     const cnt = countMap[cat] || 0;
     html += `
@@ -14066,6 +14081,14 @@ function renderItemCategoryTabs() {
     `;
   });
 
+  // 2. 「すべて」タブ（カテゴリ一覧の後ろ・右側に配置）
+  html += `
+    <button type="button" class="item-category-tab ${currentItemCategory === 'all' ? 'active' : ''}" data-category="all">
+      すべて <span class="tab-count">${countMap.all || 0}</span>
+    </button>
+  `;
+
+  // 3. 未分類タブ（未分類商品がある場合のみ）
   if (uncategorizedCount > 0) {
     html += `
       <button type="button" class="item-category-tab ${currentItemCategory === '__uncategorized__' ? 'active' : ''}" data-category="__uncategorized__">
@@ -24238,6 +24261,7 @@ window.handleSaveItemMaster = typeof handleSaveItemMaster !== 'undefined' ? hand
 window.openCategoryModal = typeof openCategoryModal !== 'undefined' ? openCategoryModal : null;
 window.closeCategoryModal = typeof closeCategoryModal !== 'undefined' ? closeCategoryModal : null;
 window.renderItemCategoryTabs = typeof renderItemCategoryTabs !== 'undefined' ? renderItemCategoryTabs : null;
+window.getDefaultItemCategory = typeof getDefaultItemCategory !== 'undefined' ? getDefaultItemCategory : null;
 window.populateItemCategoryDropdown = typeof populateItemCategoryDropdown !== 'undefined' ? populateItemCategoryDropdown : null;
 window.openClientMasterModal = typeof openClientMasterModal !== 'undefined' ? openClientMasterModal : null;
 window.closeClientMasterModal = typeof closeClientMasterModal !== 'undefined' ? closeClientMasterModal : null;
