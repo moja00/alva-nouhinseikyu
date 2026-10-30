@@ -8628,6 +8628,7 @@ const LOT_DRAFT_KEY = 'alva_inventory_lot_draft_v1';
  */
 function saveLotDraftState() {
   if (currentEditingLotId) return; // 既存ロット編集時はドラフト保存しない
+  syncLotItemRowsFromDOM();
   if (!lotItemRows || lotItemRows.length === 0) return;
 
   // 品目テーブルのシリアル入力値を取得
@@ -8871,6 +8872,7 @@ function getLotCurrencySymbol() {
 window.getLotCurrencySymbol = getLotCurrencySymbol;
 
 function updateForeignCalculation() {
+  if (typeof syncLotItemRowsFromDOM === 'function') syncLotItemRowsFromDOM();
   const amount = Number(DOM.lotForeignAmount ? DOM.lotForeignAmount.value : 0) || 0;
   const rate = Number(DOM.lotExchangeRate ? DOM.lotExchangeRate.value : 0) || 0;
   const curr = DOM.lotForeignCurrency ? DOM.lotForeignCurrency.value : 'EUR';
@@ -8893,6 +8895,7 @@ function updateForeignCalculation() {
 }
 
 function applyForeignToGoodsTotal() {
+  if (typeof syncLotItemRowsFromDOM === 'function') syncLotItemRowsFromDOM();
   const amount = Number(DOM.lotForeignAmount ? DOM.lotForeignAmount.value : 0) || 0;
   const rate = Number(DOM.lotExchangeRate ? DOM.lotExchangeRate.value : 0) || 0;
   if (amount <= 0 || rate <= 0) {
@@ -9217,7 +9220,7 @@ function renderLotItemRows() {
 }
 
 function onLotItemSelectChange(rowId, selectElem) {
-  const row = lotItemRows.find(r => r.rowId === rowId);
+  const row = lotItemRows.find(r => String(r.rowId) === String(rowId));
   if (!row) return;
 
   const opt = selectElem.options[selectElem.selectedIndex];
@@ -9234,6 +9237,7 @@ function onLotItemSelectChange(rowId, selectElem) {
     }
   }
 
+  syncLotItemRowsFromDOM();
   renderLotItemRows();
   updateLandedCostCalculation(true);
 }
@@ -9242,12 +9246,63 @@ function onLotItemSelectChange(rowId, selectElem) {
 // 品目別外貨 ＆ 為替レートからの日本円切り上げ＆端数調整連動計算（要件1 ＆ 要件2）
 // --------------------------------------------------------------------------
 
+/**
+ * テーブルDOM上の入力値（数量、外貨単価、外貨小計、円単価、円小計）を lotItemRows に漏れなく同期
+ */
+function syncLotItemRowsFromDOM() {
+  if (!DOM.lotItemsTableBody) return;
+  const trs = DOM.lotItemsTableBody.querySelectorAll('tr[data-row-id]');
+  trs.forEach(tr => {
+    const rId = tr.dataset.rowId;
+    const r = lotItemRows.find(item => String(item.rowId) === String(rId));
+    if (!r) return;
+
+    const sel = tr.querySelector('.lot-item-select');
+    if (sel && sel.value) {
+      r.itemId = sel.value;
+      const opt = sel.options[sel.selectedIndex];
+      if (opt) {
+        r.itemName = opt.dataset.name || opt.text.split('[')[0].trim();
+        r.isBundle = opt.dataset.isBundle === '1' || opt.value === 'inv_1' || (r.itemName && r.itemName.includes('ベーシックセット'));
+        r.hasSerial = opt.dataset.hasSerial === '1' || isItemSerialTracked(r);
+      }
+    }
+
+    const qtyInp = tr.querySelector('.lot-item-qty');
+    if (qtyInp && qtyInp.value !== '') {
+      r.qty = Math.max(1, Number(qtyInp.value) || 1);
+    }
+
+    const fSubInp = tr.querySelector('.lot-item-foreign-subtotal');
+    if (fSubInp && fSubInp.value !== '') {
+      r.foreignSubtotal = Math.max(0, Number(fSubInp.value) || 0);
+    }
+
+    const fPriceInp = tr.querySelector('.lot-item-foreign-price');
+    if (fPriceInp && fPriceInp.value !== '') {
+      r.foreignPrice = Math.max(0, Number(fPriceInp.value) || 0);
+    }
+
+    const uPriceInp = tr.querySelector('.lot-item-unit-price');
+    if (uPriceInp && uPriceInp.value !== '') {
+      r.unitPrice = Math.max(0, Number(uPriceInp.value) || 0);
+    }
+
+    const subInp = tr.querySelector('.lot-item-subtotal');
+    if (subInp && subInp.value !== '') {
+      r.subtotal = Math.max(0, Number(subInp.value) || 0);
+    }
+  });
+}
+window.syncLotItemRowsFromDOM = syncLotItemRowsFromDOM;
+
 function recalcLotForeignAndGoods(sourceRowId = null, sourceField = null) {
+  syncLotItemRowsFromDOM();
   const rate = Number(DOM.lotExchangeRate ? DOM.lotExchangeRate.value : 0) || 0;
 
   // 1. 各行の外貨小計・単価の整合
   lotItemRows.forEach(r => {
-    if (r.rowId === sourceRowId) {
+    if (sourceRowId && String(r.rowId) === String(sourceRowId)) {
       if (sourceField === 'foreignPrice') {
         const fp = Number(r.foreignPrice) || 0;
         r.foreignSubtotal = fp > 0 ? Math.round(r.qty * fp * 100) / 100 : 0;
@@ -9341,21 +9396,21 @@ function recalcLotForeignAndGoods(sourceRowId = null, sourceField = null) {
 window.recalcLotForeignAndGoods = recalcLotForeignAndGoods;
 
 function onLotItemForeignPriceInput(rowId, val) {
-  const row = lotItemRows.find(r => r.rowId === rowId);
+  const row = lotItemRows.find(r => String(r.rowId) === String(rowId));
   if (!row) return;
   row.foreignPrice = Math.max(0, Number(val) || 0);
   recalcLotForeignAndGoods(rowId, 'foreignPrice');
 }
 
 function onLotItemForeignSubtotalInput(rowId, val) {
-  const row = lotItemRows.find(r => r.rowId === rowId);
+  const row = lotItemRows.find(r => String(r.rowId) === String(rowId));
   if (!row) return;
   row.foreignSubtotal = Math.max(0, Number(val) || 0);
   recalcLotForeignAndGoods(rowId, 'foreignSubtotal');
 }
 
 function onLotItemQtyInput(rowId, val) {
-  const row = lotItemRows.find(r => r.rowId === rowId);
+  const row = lotItemRows.find(r => String(r.rowId) === String(rowId));
   if (!row) return;
 
   row.qty = Math.max(1, Number(val) || 1);
@@ -9371,7 +9426,7 @@ function onLotItemQtyInput(rowId, val) {
 }
 
 function onLotItemUnitPriceInput(rowId, val) {
-  const row = lotItemRows.find(r => r.rowId === rowId);
+  const row = lotItemRows.find(r => String(r.rowId) === String(rowId));
   if (!row) return;
 
   row.unitPrice = Math.max(0, Number(val) || 0);
@@ -9384,7 +9439,7 @@ function onLotItemUnitPriceInput(rowId, val) {
 }
 
 function onLotItemSubtotalInput(rowId, val) {
-  const row = lotItemRows.find(r => r.rowId === rowId);
+  const row = lotItemRows.find(r => String(r.rowId) === String(rowId));
   if (!row) return;
 
   row.subtotal = Math.max(0, Number(val) || 0);
@@ -9401,6 +9456,7 @@ function onLotItemSubtotalInput(rowId, val) {
 // --------------------------------------------------------------------------
 
 function updateLandedCostCalculation(syncSerials = false) {
+  syncLotItemRowsFromDOM();
   const shouldSyncSerials = (syncSerials === true);
   const typeRadio = document.querySelector('input[name="lotProcurementType"]:checked');
   const type = typeRadio ? typeRadio.value : 'import';
@@ -10191,6 +10247,7 @@ function clearGroupSerialNumbers(groupKey) {
 // --------------------------------------------------------------------------
 
 function submitInventoryLotStockIn() {
+  syncLotItemRowsFromDOM();
   console.log('【混載ロット入庫】確定保存処理 開始', { rowsCount: lotItemRows.length });
 
   if (lotItemRows.length === 0) {
