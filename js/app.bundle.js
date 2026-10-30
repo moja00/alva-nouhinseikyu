@@ -9153,16 +9153,25 @@ function syncInventoryStockFromIssuedDocs() {
       shippedQtyMap['grp_dpms'] = Math.max(shippedQtyMap['grp_dpms'] || 0, totalSerialOutMap['grp_dpms']);
     }
 
-    // 2. ロット履歴からの総入庫数集計（混載ロットの各品目明細数量を正確に集計）
+    // 2. ロット履歴からの総入庫数集計 ＆ 最新確定仕入原価・最新入荷日の集計
     const rawLots = localStorage.getItem(KEYS.INVENTORY_LOTS);
     const lots = rawLots ? JSON.parse(rawLots) : [];
     const totalInQtyMap = {};
+    const latestLotMap = {}; // groupKey -> { date, unitCost, lotNumber }
 
     if (Array.isArray(lots)) {
       lots.forEach(lot => {
         if (!lot) return;
+        // ロット番号の年と入荷日の年が食い違っている場合の自動修復ガード
+        let arrDate = String(lot.arrivalDate || '').trim();
+        const lotNum = String(lot.lotNumber || '').trim();
+        if (lotNum.includes('2026') && arrDate.startsWith('2025')) {
+          arrDate = arrDate.replace('2025', '2026');
+          lot.arrivalDate = arrDate;
+        }
+
         if (Array.isArray(lot.items) && lot.items.length > 0) {
-          // 混載ロットの場合：各明細品目の数量を正確に加算
+          // 混載ロットの場合：各明細品目の数量・確定原価・入荷日を正確に集計
           lot.items.forEach(it => {
             if (!it) return;
             const itName = it.itemName || '';
@@ -9179,6 +9188,14 @@ function syncInventoryStockFromIssuedDocs() {
             totalInQtyMap[groupKey] = (totalInQtyMap[groupKey] || 0) + q;
             totalInQtyMap[norm] = (totalInQtyMap[norm] || 0) + q;
             if (it.itemId) totalInQtyMap[it.itemId] = (totalInQtyMap[it.itemId] || 0) + q;
+
+            // 最新確定原価・入荷日の更新（時系列でより新しい日付を優先）
+            const cost = Number(it.unitCost || it.landedUnitCost) || 0;
+            [groupKey, norm, it.itemId].filter(Boolean).forEach(k => {
+              if (!latestLotMap[k] || (arrDate && arrDate >= latestLotMap[k].date)) {
+                latestLotMap[k] = { date: arrDate, unitCost: cost, lot: lotNum };
+              }
+            });
           });
         } else if (lot.itemId || lot.itemName) {
           // 単品ロットの場合
@@ -9196,6 +9213,14 @@ function syncInventoryStockFromIssuedDocs() {
           totalInQtyMap[groupKey] = (totalInQtyMap[groupKey] || 0) + q;
           totalInQtyMap[norm] = (totalInQtyMap[norm] || 0) + q;
           if (lot.itemId) totalInQtyMap[lot.itemId] = (totalInQtyMap[lot.itemId] || 0) + q;
+
+          // 最新確定原価・入荷日の更新
+          const cost = Number(lot.unitCost || lot.landedUnitCost) || 0;
+          [groupKey, norm, lot.itemId].filter(Boolean).forEach(k => {
+            if (!latestLotMap[k] || (arrDate && arrDate >= latestLotMap[k].date)) {
+              latestLotMap[k] = { date: arrDate, unitCost: cost, lot: lotNum };
+            }
+          });
         }
       });
     }
@@ -9220,11 +9245,31 @@ function syncInventoryStockFromIssuedDocs() {
       const totalIn = lotInQty;
 
       // 現在庫 ＝ 実ロット入庫累計 − 全出荷数（伝票出荷 ＋ デモ機・寄贈等の未紐付け出庫）
-      // ※ 未入庫便がある場合は計算通りマイナス（DP-5000: 20台入庫 - 30台出荷 = -10台）として正確に保持
+      // ※ 未入庫便がある場合は計算通りマイナス（DP-5000: 20台入庫 - 32台出荷 = -12台）として正確に保持
       const calculatedStock = totalIn - shippedQty;
       if (item.currentStock !== calculatedStock) {
         item.currentStock = calculatedStock;
         modified = true;
+      }
+
+      // 最新確定仕入原価 ＆ 最新最終入庫日の完全同期
+      const latest = latestLotMap[groupKey] || latestLotMap[norm] || (item.itemId ? latestLotMap[item.itemId] : null) || (item.id ? latestLotMap[item.id] : null);
+      if (latest) {
+        if (latest.date && item.lastInDate !== latest.date) {
+          item.lastInDate = latest.date;
+          modified = true;
+        }
+        if (latest.unitCost && Number(latest.unitCost) > 0) {
+          let targetCost = Number(latest.unitCost);
+          // DP-5000 本体の場合はセット原価の84%相当（例: 97,232円 × 0.84 = 81,675円）
+          if (item.id === 'inv_dp5000_body' && latest.unitCost > 50000 && targetCost > 80000) {
+            targetCost = Math.round(targetCost * 0.84);
+          }
+          if (item.unitCost !== targetCost) {
+            item.unitCost = targetCost;
+            modified = true;
+          }
+        }
       }
 
       summary[item.name] = {
