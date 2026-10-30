@@ -8371,7 +8371,11 @@ function openEditInventoryLotModal(lotId) {
     nextLotRowId = 1;
     lotItemRows = lot.items.map(it => {
       const isB = isBundleLotRow(it);
-      const itemSns = Array.isArray(it.serials) && it.serials.length > 0 ? it.serials : combinedSerials;
+      const isReqSerial = isLotRowRequireSerial(it);
+      // シリアル管理対象品目のみシリアル配列をセット。非対象品目（急速充電器・DP-EG・DP-AC等）には他品目のシリアルを流し込まない
+      const itemSns = isReqSerial
+        ? (Array.isArray(it.serials) && it.serials.length > 0 ? it.serials : combinedSerials)
+        : [];
       const bodySns = itemSns.filter(s => !String(s).toUpperCase().startsWith('BAT'));
       const batSns = itemSns.filter(s => String(s).toUpperCase().startsWith('BAT'));
       const fPrice = Number(it.foreignPrice) || 0;
@@ -8380,7 +8384,7 @@ function openEditInventoryLotModal(lotId) {
         rowId: nextLotRowId++,
         itemId: it.itemId,
         itemName: it.itemName,
-        hasSerial: it.hasSerial !== false,
+        hasSerial: isReqSerial,
         isBundle: isB,
         qty: Number(it.quantity || it.qty) || 1,
         foreignPrice: fPrice > 0 ? fPrice : (fSub > 0 && Number(it.quantity || it.qty) > 0 ? Math.round((fSub / Number(it.quantity || it.qty)) * 100) / 100 : 0),
@@ -9033,12 +9037,15 @@ function isItemSerialTracked(item) {
   if (!item) return false;
   const name = String(item.name || item.itemName || '').toUpperCase();
   const id = String(item.id || item.itemId || '');
-  // DP-EG（3点引きアタッチメント）や消耗品等はシリアル追跡対象外
-  if (name.includes('DP-EG') || name.includes('3点引き') || name.includes('アタッチメント') || name.includes('DP-AC') || name.includes('アクセサリー')) {
+
+  // 急速充電器、DP-EG、DP-AC、クランプ等はシリアル追跡対象外
+  if (name.includes('充電器') || name.includes('CHG') || id === 'inv_dp5000_chg' ||
+      name.includes('DP-EG') || name.includes('3点引き') || name.includes('アタッチメント') || 
+      name.includes('DP-AC') || name.includes('アクセサリー') || name.includes('クランプ')) {
     return false;
   }
   return Boolean(
-    (item.hasSerial === true && !name.includes('DP-EG') && !name.includes('3点引き')) ||
+    (item.hasSerial === true) ||
     item.type === 'bundle' ||
     id === 'inv_1' || id === 'inv_2' || id === 'inv_dp5000_body' || id === 'inv_dp5000_bat' ||
     name.includes('DP-5000') ||
@@ -9061,6 +9068,13 @@ window.isBundleLotRow = isBundleLotRow;
 
 function isLotRowRequireSerial(r) {
   if (!r) return false;
+  const name = String(r.itemName || r.name || '').toUpperCase();
+  const id = String(r.itemId || r.id || '');
+  if (name.includes('充電器') || name.includes('CHG') || id === 'inv_dp5000_chg' ||
+      name.includes('DP-EG') || name.includes('3点引き') || name.includes('アタッチメント') || 
+      name.includes('DP-AC') || name.includes('アクセサリー') || name.includes('クランプ')) {
+    return false;
+  }
   return Boolean(r.hasSerial || isBundleLotRow(r) || isItemSerialTracked(r));
 }
 window.isLotRowRequireSerial = isLotRowRequireSerial;
