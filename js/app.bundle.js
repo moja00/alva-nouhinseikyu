@@ -17685,21 +17685,57 @@ function renderInventoryLotTable() {
       </div>
     ` : '';
 
+    const hasMultipleItems = Array.isArray(lot.items) && lot.items.length > 1;
+
     html += `
       <tr style="border-bottom: 1px solid #e2e8f0;">
-        <td style="font-family: monospace; font-weight: 700; color: #0f172a;">${escapeHtml(lot.lotNumber)}</td>
-        <td style="font-size: 0.8rem; color: #475569;">${escapeHtml(lot.arrivalDate || '-')}</td>
-        <td>
-          <div style="font-weight: 600; font-size: 0.85rem; color: #0f172a;">${escapeHtml(lot.itemName || '-')}</div>
-          <span style="font-size: 0.725rem; color: #64748b;">${escapeHtml(lot.supplier || (lot.payerName ? `立替: ${lot.payerName}` : '-'))}</span>
+        <td style="font-family: monospace; font-weight: 700; color: #0f172a; vertical-align: top; padding-top: 10px;">${escapeHtml(lot.lotNumber)}</td>
+        <td style="font-size: 0.8rem; color: #475569; vertical-align: top; padding-top: 10px;">${escapeHtml(lot.arrivalDate || '-')}</td>
+        <td style="vertical-align: top; padding-top: 8px;">
+          ${hasMultipleItems ? `
+            <div style="font-weight: 600; font-size: 0.825rem; color: #0f172a; line-height: 1.6;">
+              ${lot.items.map(it => `
+                <div style="display: flex; align-items: center; gap: 4px; border-bottom: 1px dotted #f1f5f9; padding: 2px 0;">
+                  <span style="color: #047857; font-size: 0.75rem;">▪</span>
+                  <span>${escapeHtml(it.itemName || '-')}</span>
+                </div>
+              `).join('')}
+            </div>
+          ` : `
+            <div style="font-weight: 600; font-size: 0.85rem; color: #0f172a;">${escapeHtml(lot.itemName || '-')}</div>
+          `}
+          <div style="font-size: 0.725rem; color: #64748b; margin-top: 4px;">${escapeHtml(lot.supplier || (lot.payerName ? `立替: ${lot.payerName}` : '-'))}</div>
           ${forexBadge}
         </td>
-        <td style="text-align: right; font-weight: 700; font-size: 0.95rem;">${Number(lot.quantity || 0).toLocaleString()}</td>
-        <td style="text-align: center;">${typeLabel}</td>
-        <td style="text-align: right; font-family: monospace; font-weight: 700; color: #047857;">¥${unitCost.toLocaleString()}</td>
-        <td style="text-align: right; font-family: monospace;">¥${totalCost.toLocaleString()}</td>
-        <td style="text-align: right; font-family: monospace; color: ${isImport ? '#b91c1c' : '#1e40af'};">${taxAmount > 0 ? `¥${taxAmount.toLocaleString()}${taxBadge}` : '-'}</td>
-        <td style="text-align: center;">${receiptBtn}</td>
+        <td style="text-align: right; vertical-align: top; font-weight: 700; font-size: 0.9rem; line-height: 1.6; padding-top: 8px;">
+          ${hasMultipleItems ? `
+            ${lot.items.map(it => `
+              <div style="padding: 2px 0; border-bottom: 1px dotted #f1f5f9; color: #0f172a;">
+                ${Number(it.quantity || it.qty || 0).toLocaleString()}
+              </div>
+            `).join('')}
+            <div style="font-size: 0.675rem; color: #64748b; font-weight: 600; border-top: 1px dashed #cbd5e1; margin-top: 3px;" title="混載ロットの総数量">
+              (計 ${Number(lot.quantity || 0).toLocaleString()})
+            </div>
+          ` : `
+            <span>${Number(lot.quantity || 0).toLocaleString()}</span>
+          `}
+        </td>
+        <td style="text-align: center; vertical-align: top; padding-top: 10px;">${typeLabel}</td>
+        <td style="text-align: right; vertical-align: top; font-family: monospace; font-weight: 700; color: #047857; font-size: 0.85rem; line-height: 1.6; padding-top: 8px;">
+          ${hasMultipleItems ? `
+            ${lot.items.map(it => `
+              <div style="padding: 2px 0; border-bottom: 1px dotted #f1f5f9;">
+                ¥${Number(it.unitCost || it.landedUnitCost || 0).toLocaleString()}
+              </div>
+            `).join('')}
+          ` : `
+            ¥${unitCost.toLocaleString()}
+          `}
+        </td>
+        <td style="text-align: right; font-family: monospace; vertical-align: top; padding-top: 10px;">¥${totalCost.toLocaleString()}</td>
+        <td style="text-align: right; font-family: monospace; color: ${isImport ? '#b91c1c' : '#1e40af'}; vertical-align: top; padding-top: 10px;">${taxAmount > 0 ? `¥${taxAmount.toLocaleString()}${taxBadge}` : '-'}</td>
+        <td style="text-align: center; vertical-align: top; padding-top: 8px;">${receiptBtn}</td>
         <td style="text-align: center;">
           ${lot.syncAccounting ? '<span style="color:#059669; font-weight:700; font-size:0.8rem;" title="財務会計へ仕訳登録済">✅ 連携済</span>' : '<span style="color:#94a3b8; font-size:0.75rem;">-</span>'}
         </td>
