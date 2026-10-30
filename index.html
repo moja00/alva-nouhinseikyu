@@ -309,7 +309,7 @@
         </button>
         <div style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
-          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.30-dpms-serial-support</span>
+          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.30-lot-modal-persistent-draft</span>
         </div>
       </div>
 
@@ -2020,6 +2020,17 @@
       </div>
 
       <div class="modal-body" style="padding: 16px 20px; overflow-y: auto; flex: 1;">
+        <!-- 下書き復元バナー（前回の入力内容を保持・復元時に表示） -->
+        <div id="lotDraftNoticeBar" style="display: none; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; align-items: center; justify-content: space-between; font-size: 0.775rem;">
+          <div style="display: flex; align-items: center; gap: 6px; color: #92400e;">
+            <span>💡</span>
+            <span><strong>前回の入力内容を保持しています。</strong>（途中で閉じても内容は保持されます）</span>
+          </div>
+          <button type="button" class="btn btn-xs" id="btnResetLotDraft" style="background: #ffffff; border: 1px solid #fca5a5; color: #dc2626; font-weight: 700; padding: 2px 8px; border-radius: 4px;" title="前回の入力を破棄して最初から入力する">
+            🗑️ 入力をクリアして新規作成
+          </button>
+        </div>
+
         <!-- 仕入種別スイッチ（輸入 / 国内） -->
         <div style="display: flex; gap: 8px; margin-bottom: 14px;">
           <label style="flex: 1; text-align: center; padding: 10px 8px; border: 2px solid #059669; background: #ecfdf5; border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 700; color: #065f46;" id="labelLotTypeImport">
@@ -6791,7 +6802,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261030_dpms_serial_support"></script>
+  <script src="js/app.bundle.js?v=20261030_lot_modal_persistent_draft"></script>
 </body>
 
 </html>

@@ -3841,9 +3841,13 @@ function setupEventListeners() {
     r.addEventListener('change', () => switchLotProcurementType(r.value));
   });
 
+  // モーダル外側クリックで勝手に閉じないよう保護（キャンセルボタン・✕ボタンのみで閉じる）
   if (DOM.inventoryLotModal) {
     DOM.inventoryLotModal.addEventListener('click', (e) => {
-      if (e.target === DOM.inventoryLotModal) closeInventoryLotModal();
+      // 外側クリック時は閉じずに無視
+      if (e.target === DOM.inventoryLotModal) {
+        // 何もしない（誤操作による入力内容消失を防止）
+      }
     });
   }
 
@@ -8532,8 +8536,188 @@ function addLotDp5000BundleSet(setCount = 1) {
 }
 window.addLotDp5000BundleSet = addLotDp5000BundleSet;
 
-function openInventoryLotModal(defaultItemId = null) {
+const LOT_DRAFT_KEY = 'alva_inventory_lot_draft_v1';
+
+/**
+ * 現在のロット入庫モーダルの入力内容を下書きとして保存
+ */
+function saveLotDraftState() {
+  if (currentEditingLotId) return; // 既存ロット編集時はドラフト保存しない
+  if (!lotItemRows || lotItemRows.length === 0) return;
+
+  // 品目テーブルのシリアル入力値を取得
+  const serialValuesByGroupKey = {};
+  if (DOM.lotSerialGroupsContainer) {
+    const inputs = DOM.lotSerialGroupsContainer.querySelectorAll('.lot-serial-group-input');
+    inputs.forEach(inp => {
+      const gKey = inp.dataset.groupKey || inp.dataset.rowId;
+      if (gKey) {
+        if (!serialValuesByGroupKey[gKey]) serialValuesByGroupKey[gKey] = [];
+        serialValuesByGroupKey[gKey].push(inp.value || '');
+      }
+    });
+  }
+
+  const procurementType = document.querySelector('input[name="lotProcurementType"]:checked')?.value || 'import';
+  const payerType = document.querySelector('input[name="lotPayerType"]:checked')?.value || 'company';
+
+  const draft = {
+    lotNumber: DOM.lotInputNumber ? DOM.lotInputNumber.value : '',
+    date: DOM.lotInputDate ? DOM.lotInputDate.value : '',
+    supplier: DOM.lotInputSupplier ? DOM.lotInputSupplier.value : '',
+    location: DOM.lotInputStorageLocation ? DOM.lotInputStorageLocation.value : '',
+    procurementType,
+    payerType,
+    payerName: DOM.lotInputPayerName ? DOM.lotInputPayerName.value : '',
+    creditAccount: DOM.lotSelectCreditAccount ? DOM.lotSelectCreditAccount.value : '102',
+    foreignCurrency: DOM.lotForeignCurrency ? DOM.lotForeignCurrency.value : 'USD',
+    foreignAmount: DOM.lotForeignAmount ? DOM.lotForeignAmount.value : '',
+    exchangeRate: DOM.lotExchangeRate ? DOM.lotExchangeRate.value : '',
+    foreignJpyCalculated: DOM.lotForeignJpyCalculated ? DOM.lotForeignJpyCalculated.value : '',
+    // 各種諸費用
+    costGoods: DOM.lotCostGoods ? DOM.lotCostGoods.value : '',
+    costConsulting: DOM.lotCostConsulting ? DOM.lotCostConsulting.value : '',
+    costIntlShipping: DOM.lotCostIntlShipping ? DOM.lotCostIntlShipping.value : '',
+    costCustomsClearance: DOM.lotCostCustomsClearance ? DOM.lotCostCustomsClearance.value : '',
+    costDomesticShipping: DOM.lotCostDomesticShipping ? DOM.lotCostDomesticShipping.value : '',
+    costRemittanceFee: DOM.lotCostRemittanceFee ? DOM.lotCostRemittanceFee.value : '',
+    importTax: DOM.lotCostImportTax ? DOM.lotCostImportTax.value : '',
+    // 品目データ
+    lotItemRows: JSON.parse(JSON.stringify(lotItemRows)),
+    serialValuesByGroupKey,
+    updatedAt: new Date().toISOString()
+  };
+
+  try {
+    localStorage.setItem(LOT_DRAFT_KEY, JSON.stringify(draft));
+  } catch (e) {
+    console.warn('下書き保存失敗:', e);
+  }
+}
+window.saveLotDraftState = saveLotDraftState;
+
+/**
+ * ロット入庫モーダルの下書きをクリア
+ */
+function clearLotDraftState() {
+  try {
+    localStorage.removeItem(LOT_DRAFT_KEY);
+  } catch (e) {}
+  const noticeBar = document.getElementById('lotDraftNoticeBar');
+  if (noticeBar) noticeBar.style.display = 'none';
+}
+window.clearLotDraftState = clearLotDraftState;
+
+/**
+ * 保存された下書きをロット入庫モーダルに復元
+ */
+function restoreLotDraftState() {
+  try {
+    const raw = localStorage.getItem(LOT_DRAFT_KEY);
+    if (!raw) return false;
+    const draft = JSON.parse(raw);
+    if (!draft || !Array.isArray(draft.lotItemRows) || draft.lotItemRows.length === 0) return false;
+
+    // 基本情報復元
+    if (DOM.lotInputNumber && draft.lotNumber) DOM.lotInputNumber.value = draft.lotNumber;
+    if (DOM.lotInputDate && draft.date) DOM.lotInputDate.value = draft.date;
+    if (DOM.lotInputSupplier && draft.supplier !== undefined) DOM.lotInputSupplier.value = draft.supplier;
+    if (DOM.lotInputStorageLocation && draft.location !== undefined) DOM.lotInputStorageLocation.value = draft.location;
+
+    // 仕入種別
+    if (draft.procurementType) {
+      const radio = document.querySelector(`input[name="lotProcurementType"][value="${draft.procurementType}"]`);
+      if (radio) {
+        radio.checked = true;
+        switchLotProcurementType(draft.procurementType);
+      }
+    }
+
+    // 建て替え区分
+    if (draft.payerType) {
+      const radio = document.querySelector(`input[name="lotPayerType"][value="${draft.payerType}"]`);
+      if (radio) {
+        radio.checked = true;
+        if (draft.payerType === 'company') {
+          if (DOM.lotPayerCompanyRow) DOM.lotPayerCompanyRow.style.display = 'flex';
+          if (DOM.lotPayerOtherRow) DOM.lotPayerOtherRow.style.display = 'none';
+        } else {
+          if (DOM.lotPayerCompanyRow) DOM.lotPayerCompanyRow.style.display = 'none';
+          if (DOM.lotPayerOtherRow) DOM.lotPayerOtherRow.style.display = 'flex';
+        }
+      }
+    }
+    if (DOM.lotInputPayerName && draft.payerName) DOM.lotInputPayerName.value = draft.payerName;
+    if (DOM.lotSelectCreditAccount && draft.creditAccount) DOM.lotSelectCreditAccount.value = draft.creditAccount;
+
+    // 外貨情報
+    if (DOM.lotForeignCurrency && draft.foreignCurrency) DOM.lotForeignCurrency.value = draft.foreignCurrency;
+    if (DOM.lotForeignAmount && draft.foreignAmount !== undefined) DOM.lotForeignAmount.value = draft.foreignAmount;
+    if (DOM.lotExchangeRate && draft.exchangeRate !== undefined) DOM.lotExchangeRate.value = draft.exchangeRate;
+    if (DOM.lotForeignJpyCalculated && draft.foreignJpyCalculated !== undefined) DOM.lotForeignJpyCalculated.value = draft.foreignJpyCalculated;
+
+    // 諸費用
+    if (DOM.lotCostGoods && draft.costGoods !== undefined) DOM.lotCostGoods.value = draft.costGoods;
+    if (DOM.lotCostConsulting && draft.costConsulting !== undefined) DOM.lotCostConsulting.value = draft.costConsulting;
+    if (DOM.lotCostIntlShipping && draft.costIntlShipping !== undefined) DOM.lotCostIntlShipping.value = draft.costIntlShipping;
+    if (DOM.lotCostCustomsClearance && draft.costCustomsClearance !== undefined) DOM.lotCostCustomsClearance.value = draft.costCustomsClearance;
+    if (DOM.lotCostDomesticShipping && draft.costDomesticShipping !== undefined) DOM.lotCostDomesticShipping.value = draft.costDomesticShipping;
+    if (DOM.lotCostRemittanceFee && draft.costRemittanceFee !== undefined) DOM.lotCostRemittanceFee.value = draft.costRemittanceFee;
+    if (DOM.lotCostImportTax && draft.importTax !== undefined) DOM.lotCostImportTax.value = draft.importTax;
+
+    // 品目データ復元
+    lotItemRows = draft.lotItemRows;
+    renderLotItemRows();
+    updateLandedCostCalculation(false);
+
+    // シリアルスロット復元
+    renderLotSerialGroups(true);
+    if (draft.serialValuesByGroupKey && DOM.lotSerialGroupsContainer) {
+      Object.keys(draft.serialValuesByGroupKey).forEach(gKey => {
+        const vals = draft.serialValuesByGroupKey[gKey] || [];
+        const inps = DOM.lotSerialGroupsContainer.querySelectorAll(`.lot-serial-group-input[data-group-key="${gKey}"], .lot-serial-group-input[data-row-id="${gKey}"]`);
+        inps.forEach((inp, idx) => {
+          if (vals[idx] !== undefined) inp.value = vals[idx];
+        });
+      });
+      updateAllSerialValidationAndBadges();
+    }
+
+    const noticeBar = document.getElementById('lotDraftNoticeBar');
+    if (noticeBar) noticeBar.style.display = 'flex';
+
+    return true;
+  } catch (e) {
+    console.warn('下書き復元失敗:', e);
+    return false;
+  }
+}
+window.restoreLotDraftState = restoreLotDraftState;
+
+function openInventoryLotModal(defaultItemId = null, forceNew = false) {
   if (!DOM.inventoryLotModal) return;
+
+  // クリアボタンのイベントリスナー設定
+  const btnReset = document.getElementById('btnResetLotDraft');
+  if (btnReset && !btnReset.dataset.hasListener) {
+    btnReset.dataset.hasListener = '1';
+    btnReset.addEventListener('click', () => {
+      clearLotDraftState();
+      openInventoryLotModal(null, true);
+      showToast('入力内容をクリアし、新規作成状態にリセットしました', 'info');
+    });
+  }
+
+  // 強制新規でない場合、保存された前回の入力内容（下書き）があれば自動復元
+  if (!forceNew && restoreLotDraftState()) {
+    DOM.inventoryLotModal.classList.add('active');
+    DOM.inventoryLotModal.style.display = 'flex';
+    return;
+  }
+
+  // 下書き通知バーを非表示
+  const noticeBar = document.getElementById('lotDraftNoticeBar');
+  if (noticeBar) noticeBar.style.display = 'none';
 
   // ロット番号自動生成
   autoGenerateLotNumber();
@@ -8562,6 +8746,15 @@ function openInventoryLotModal(defaultItemId = null) {
   if (DOM.lotForeignAmount) DOM.lotForeignAmount.value = '';
   if (DOM.lotExchangeRate) DOM.lotExchangeRate.value = '';
   if (DOM.lotForeignJpyCalculated) DOM.lotForeignJpyCalculated.value = '';
+
+  // 諸費用のリセット
+  if (DOM.lotCostGoods) DOM.lotCostGoods.value = '';
+  if (DOM.lotCostConsulting) DOM.lotCostConsulting.value = '';
+  if (DOM.lotCostIntlShipping) DOM.lotCostIntlShipping.value = '';
+  if (DOM.lotCostCustomsClearance) DOM.lotCostCustomsClearance.value = '';
+  if (DOM.lotCostDomesticShipping) DOM.lotCostDomesticShipping.value = '';
+  if (DOM.lotCostRemittanceFee) DOM.lotCostRemittanceFee.value = '';
+  if (DOM.lotCostImportTax) DOM.lotCostImportTax.value = '';
 
   // 建て替え者初期値: 会社直接
   const companyRadio = document.querySelector('input[name="lotPayerType"][value="company"]');
@@ -8672,6 +8865,10 @@ window.applyForeignToGoodsTotal = applyForeignToGoodsTotal;
 
 function closeInventoryLotModal() {
   if (!DOM.inventoryLotModal) return;
+  // 新規作成時のみ、閉じる直前の入力内容を下書きとして保存
+  if (!currentEditingLotId) {
+    saveLotDraftState();
+  }
   DOM.inventoryLotModal.classList.remove('active');
   DOM.inventoryLotModal.style.display = 'none';
   currentEditingLotId = null;
@@ -10415,6 +10612,7 @@ function submitInventoryLotStockIn() {
     renderAccountingJournals();
   }
 
+  clearLotDraftState();
   closeInventoryLotModal();
   renderInventoryTable();
   renderInventorySerialTable();
