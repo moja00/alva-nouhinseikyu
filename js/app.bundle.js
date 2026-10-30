@@ -10068,8 +10068,23 @@ const DOM = {
   btnLotReceiptModalRotate: document.getElementById('btnLotReceiptModalRotate'),
   btnLotReceiptModalDelete: document.getElementById('btnLotReceiptModalDelete'),
   btnCloseLotReceiptModal: document.getElementById('btnCloseLotReceiptModal'),
-  btnCancelLotReceiptModal: document.getElementById('btnCancelLotReceiptModal'),
   btnSaveLotReceiptModal: document.getElementById('btnSaveLotReceiptModal'),
+
+  // 外貨・為替レート換算
+  lotForeignCurrency: document.getElementById('lotForeignCurrency'),
+  lotForeignAmount: document.getElementById('lotForeignAmount'),
+  lotExchangeRate: document.getElementById('lotExchangeRate'),
+  lotForeignJpyCalculated: document.getElementById('lotForeignJpyCalculated'),
+  btnApplyForeignToGoods: document.getElementById('btnApplyForeignToGoods'),
+
+  // ロット詳細確認モーダル
+  lotDetailModal: document.getElementById('lotDetailModal'),
+  lotDetailModalTitle: document.getElementById('lotDetailModalTitle'),
+  lotDetailModalSubtitle: document.getElementById('lotDetailModalSubtitle'),
+  lotDetailModalBody: document.getElementById('lotDetailModalBody'),
+  lotDetailFooterActions: document.getElementById('lotDetailFooterActions'),
+  btnCloseLotDetailModal: document.getElementById('btnCloseLotDetailModal'),
+  btnCloseLotDetailModalFooter: document.getElementById('btnCloseLotDetailModalFooter'),
 
   // シリアル番号管理台帳 ＆ ロット履歴
   inputSearchSerial: document.getElementById('inputSearchSerial'),
@@ -13235,6 +13250,27 @@ function setupEventListeners() {
   }
   if (DOM.btnAutoLotNumber) {
     DOM.btnAutoLotNumber.addEventListener('click', autoGenerateLotNumber);
+  }
+  // 外貨・為替レート換算イベント
+  if (DOM.lotForeignAmount) {
+    DOM.lotForeignAmount.addEventListener('input', updateForeignCalculation);
+  }
+  if (DOM.lotExchangeRate) {
+    DOM.lotExchangeRate.addEventListener('input', updateForeignCalculation);
+  }
+  if (DOM.lotForeignCurrency) {
+    DOM.lotForeignCurrency.addEventListener('change', updateForeignCalculation);
+  }
+  if (DOM.btnApplyForeignToGoods) {
+    DOM.btnApplyForeignToGoods.addEventListener('click', applyForeignToGoodsTotal);
+  }
+
+  // ロット詳細確認モーダル イベント
+  if (DOM.btnCloseLotDetailModal) {
+    DOM.btnCloseLotDetailModal.addEventListener('click', closeLotDetailModal);
+  }
+  if (DOM.btnCloseLotDetailModalFooter) {
+    DOM.btnCloseLotDetailModalFooter.addEventListener('click', closeLotDetailModal);
   }
   if (DOM.btnAddLotDp5000Bundle) {
     DOM.btnAddLotDp5000Bundle.addEventListener('click', () => {
@@ -17338,13 +17374,23 @@ function renderInventoryLotTable() {
       ? `<button type="button" class="btn btn-xs btn-open-lot-receipt" data-lot-id="${escapeHtml(lot.id)}" style="background:#ecfdf5; border-color:#a7f3d0; color:#047857; font-weight:700; padding:2px 8px; border-radius:4px; font-size:0.75rem;" title="領収書・インボイス画像を確認/差替">🖼️ あり</button>`
       : `<button type="button" class="btn btn-xs btn-open-lot-receipt" data-lot-id="${escapeHtml(lot.id)}" style="background:#f1f5f9; border-color:#cbd5e1; color:#475569; padding:2px 8px; border-radius:4px; font-size:0.75rem;" title="領収書・インボイス画像を追加">➕ 追加</button>`;
 
+    const hasForex = lot.foreignAmount && Number(lot.foreignAmount) > 0;
+    const forexBadge = hasForex ? `
+      <div style="margin-top: 3px;">
+        <span class="badge" style="background:#f0f9ff; color:#0369a1; border:1px solid #bae6fd; font-size:0.675rem; font-weight:700; padding:1px 5px; border-radius:3px;" title="外貨建て仕入・為替レート記録">
+          💱 ${escapeHtml(lot.foreignCurrency || 'USD')} ${Number(lot.foreignAmount).toLocaleString()} (@${lot.exchangeRate || '-'})
+        </span>
+      </div>
+    ` : '';
+
     html += `
-      <tr>
+      <tr style="border-bottom: 1px solid #e2e8f0;">
         <td style="font-family: monospace; font-weight: 700; color: #0f172a;">${escapeHtml(lot.lotNumber)}</td>
         <td style="font-size: 0.8rem; color: #475569;">${escapeHtml(lot.arrivalDate || '-')}</td>
         <td>
           <div style="font-weight: 600; font-size: 0.85rem; color: #0f172a;">${escapeHtml(lot.itemName || '-')}</div>
           <span style="font-size: 0.725rem; color: #64748b;">${escapeHtml(lot.supplier || (lot.payerName ? `立替: ${lot.payerName}` : '-'))}</span>
+          ${forexBadge}
         </td>
         <td style="text-align: right; font-weight: 700; font-size: 0.95rem;">${Number(lot.quantity || 0).toLocaleString()}</td>
         <td style="text-align: center;">${typeLabel}</td>
@@ -17356,7 +17402,12 @@ function renderInventoryLotTable() {
           ${lot.syncAccounting ? '<span style="color:#059669; font-weight:700; font-size:0.8rem;" title="財務会計へ仕訳登録済">✅ 連携済</span>' : '<span style="color:#94a3b8; font-size:0.75rem;">-</span>'}
         </td>
         <td style="text-align: center;">
-          <button type="button" class="btn btn-xs" onclick="window.deleteInventoryLotFromUI('${escapeHtml(lot.id)}', '${escapeHtml(lot.lotNumber)}')" style="background:#fff1f2; border: 1px solid #fecdd3; color:#be123c; padding:2px 6px; border-radius:4px; font-size:0.75rem; cursor:pointer;" title="この入荷ロットを削除（在庫・財務会計連動取消）">🗑️</button>
+          <div style="display: flex; gap: 3px; justify-content: center; align-items: center;">
+            <button type="button" class="btn btn-xs btn-outline-primary btn-view-lot-detail" data-lot-id="${escapeHtml(lot.id)}" style="padding: 2px 7px; font-size: 0.725rem; font-weight: 700; white-space: nowrap;" title="この入荷ロットの詳細内容・混載品目・シリアル・外貨・費用内訳を確認">
+              👁️ 内容
+            </button>
+            <button type="button" class="btn btn-xs" onclick="window.deleteInventoryLotFromUI('${escapeHtml(lot.id)}', '${escapeHtml(lot.lotNumber)}')" style="background:#fff1f2; border: 1px solid #fecdd3; color:#be123c; padding:2px 6px; border-radius:4px; font-size:0.725rem; cursor:pointer;" title="この入荷ロットを削除（在庫・財務会計連動取消）">🗑️</button>
+          </div>
         </td>
       </tr>
     `;
@@ -17364,9 +17415,296 @@ function renderInventoryLotTable() {
 
   html += `</tbody></table>`;
   DOM.inventoryLotTableContainer.innerHTML = html;
+
+  // 「👁️ 内容」ボタンのイベント接続
+  DOM.inventoryLotTableContainer.querySelectorAll('.btn-view-lot-detail').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const lotId = e.currentTarget.dataset.lotId;
+      if (lotId) openLotDetailModal(lotId);
+    });
+  });
 }
 
 window.renderInventoryLotTable = renderInventoryLotTable;
+
+// --------------------------------------------------------------------------
+// 👁️ 入荷ロット詳細確認モーダル（Lot Detail Inspector）
+// --------------------------------------------------------------------------
+
+function openLotDetailModal(lotId) {
+  if (!DOM.lotDetailModal) return;
+  const lotList = getInventoryLotList();
+  const lot = lotList.find(l => l.id === lotId || l.lotNumber === lotId);
+  if (!lot) {
+    showToast('指定された入荷ロットが見つかりませんでした', 'warning');
+    return;
+  }
+
+  const isImport = lot.procurementType === 'import';
+  const unitCost = Number(lot.unitCost) || 0;
+  const totalCost = Number(lot.totalCost) || (unitCost * (Number(lot.quantity) || 1));
+  const taxAmount = Number(isImport ? (lot.importTax || lot.taxTotal) : (lot.domesticTax || lot.taxTotal)) || 0;
+  const grandTotal = Number(lot.grandTotal) || (totalCost + taxAmount);
+
+  if (DOM.lotDetailModalTitle) {
+    DOM.lotDetailModalTitle.innerHTML = `入荷ロット詳細: <span style="font-family: monospace; color: #047857; font-weight: 800;">${escapeHtml(lot.lotNumber)}</span>`;
+  }
+  if (DOM.lotDetailModalSubtitle) {
+    DOM.lotDetailModalSubtitle.innerHTML = `入荷日: <strong>${escapeHtml(lot.arrivalDate || '-')}</strong> ｜ 区分: ${isImport ? '<span class="badge" style="background:#ecfdf5; color:#047857; font-weight:700; padding:1px 6px; border-radius:4px;">🌐 輸入仕入</span>' : '<span class="badge" style="background:#eff6ff; color:#1d4ed8; font-weight:700; padding:1px 6px; border-radius:4px;">🇯🇵 国内仕入</span>'}`;
+  }
+
+  // 混載品目明細
+  const items = Array.isArray(lot.items) && lot.items.length > 0 ? lot.items : [{
+    itemId: lot.itemId,
+    itemName: lot.itemName,
+    hasSerial: lot.hasSerial,
+    quantity: lot.quantity,
+    unitPrice: lot.unitCost,
+    subtotal: totalCost,
+    allocatedCost: 0,
+    unitCost: lot.unitCost,
+    serials: lot.serials || []
+  }];
+
+  let itemsHtml = `
+    <table class="data-table" style="width: 100%; font-size: 0.8rem; margin-top: 8px; border-collapse: collapse;">
+      <thead>
+        <tr style="background: #f8fafc; border-bottom: 2px solid #e2e8f0; text-align: left; color: #475569;">
+          <th style="padding: 6px 8px;">品名</th>
+          <th style="padding: 6px 6px; text-align: right; width: 60px;">数量</th>
+          <th style="padding: 6px 8px; text-align: right; width: 100px;">仕入単価</th>
+          <th style="padding: 6px 8px; text-align: right; width: 105px;">本体小計</th>
+          <th style="padding: 6px 8px; text-align: right; width: 95px;">按分諸費用</th>
+          <th style="padding: 6px 8px; text-align: right; width: 115px;">確定原価(1台)</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+
+  let totalAllocatedSum = 0;
+  let totalSubtotalSum = 0;
+
+  items.forEach((item) => {
+    const itemQty = Number(item.quantity || item.qty) || 0;
+    const itemUnitPrice = Number(item.unitPrice) || 0;
+    const itemSubtotal = Number(item.subtotal) || (itemUnitPrice * itemQty);
+    const itemAllocated = Number(item.allocatedCost) || 0;
+    const itemUnitCost = Number(item.unitCost) || (itemQty > 0 ? Math.round((itemSubtotal + itemAllocated) / itemQty) : 0);
+    totalSubtotalSum += itemSubtotal;
+    totalAllocatedSum += itemAllocated;
+
+    const serialsList = Array.isArray(item.serials) ? item.serials : [];
+    let serialsHtml = '';
+    if (serialsList.length > 0) {
+      serialsHtml = `
+        <div style="margin-top: 6px; padding: 6px 8px; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 6px;">
+          <div style="font-size: 0.7rem; font-weight: 700; color: #475569; margin-bottom: 4px;">🔢 登録シリアル (${serialsList.length} 件):</div>
+          <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+            ${serialsList.map(sn => `
+              <span class="badge" style="background: #ffffff; color: #0f172a; border: 1px solid #cbd5e1; font-family: monospace; font-size: 0.725rem; font-weight: 700; padding: 1px 6px; border-radius: 4px; cursor: pointer;" title="クリックしてコピー" onclick="navigator.clipboard && navigator.clipboard.writeText('${escapeHtml(sn)}').then(() => showToast('コピーしました: ${escapeHtml(sn)}', 'info'))">
+                ${escapeHtml(sn)} 📋
+              </span>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    itemsHtml += `
+      <tr style="border-bottom: 1px solid #e2e8f0;">
+        <td style="padding: 8px 8px;">
+          <strong style="color: #0f172a; font-size: 0.85rem;">${escapeHtml(item.itemName || '-')}</strong>
+          ${serialsHtml}
+        </td>
+        <td style="padding: 8px 6px; text-align: right; font-weight: 700;">${itemQty.toLocaleString()}</td>
+        <td style="padding: 8px 8px; text-align: right; font-family: monospace;">¥${itemUnitPrice.toLocaleString()}</td>
+        <td style="padding: 8px 8px; text-align: right; font-family: monospace;">¥${itemSubtotal.toLocaleString()}</td>
+        <td style="padding: 8px 8px; text-align: right; font-family: monospace; color: #0284c7;">¥${itemAllocated.toLocaleString()}</td>
+        <td style="padding: 8px 8px; text-align: right; font-family: monospace; font-weight: 700; color: #047857;">¥${itemUnitCost.toLocaleString()}</td>
+      </tr>
+    `;
+  });
+
+  itemsHtml += `</tbody></table>`;
+
+  // 外貨情報セクション（ある場合）
+  let forexHtml = '';
+  if (lot.foreignAmount && Number(lot.foreignAmount) > 0) {
+    const fCurr = lot.foreignCurrency || 'USD';
+    const fAmt = Number(lot.foreignAmount) || 0;
+    const fRate = Number(lot.exchangeRate) || 0;
+    const fJpy = Number(lot.foreignJpyAmount) || Math.round(fAmt * fRate);
+
+    forexHtml = `
+      <div style="background: linear-gradient(135deg, #f0f9ff, #e0f2fe); border: 1px solid #bae6fd; border-radius: 8px; padding: 12px 16px; margin-bottom: 14px;">
+        <div style="font-size: 0.8rem; font-weight: 700; color: #0369a1; display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
+          <span>💱 外貨建仕入 ＆ 為替レート情報</span>
+          <span class="badge" style="background: #0284c7; color: #fff; font-size: 0.675rem; padding: 1px 6px; border-radius: 4px;">為替換算記録</span>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; font-size: 0.825rem;">
+          <div>
+            <span style="color: #64748b; font-size: 0.725rem; display: block;">仕入通貨 / 外貨金額</span>
+            <strong style="font-family: monospace; font-size: 1.05rem; color: #0c4a6e;">${escapeHtml(fCurr)} ${fAmt.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
+          </div>
+          <div>
+            <span style="color: #64748b; font-size: 0.725rem; display: block;">適用為替レート</span>
+            <strong style="font-family: monospace; font-size: 1.05rem; color: #0c4a6e;">${fRate.toLocaleString(undefined, { minimumFractionDigits: 2 })} 円/${escapeHtml(fCurr)}</strong>
+          </div>
+          <div>
+            <span style="color: #64748b; font-size: 0.725rem; display: block;">日本円換算本体代金</span>
+            <strong style="font-family: monospace; font-size: 1.05rem; color: #047857;">¥${fJpy.toLocaleString()}</strong>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // 費用内訳
+  const cost = lot.costDetails || {};
+  let costDetailsHtml = '';
+  if (isImport) {
+    costDetailsHtml = `
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; font-size: 0.8rem;">
+        <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 12px;">
+          <span style="color: #64748b; font-size: 0.725rem;">① 本体代金合計:</span>
+          <div style="font-family: monospace; font-weight: 700; font-size: 0.95rem; color: #0f172a;">¥${(Number(cost.costGoods) || totalSubtotalSum).toLocaleString()}</div>
+        </div>
+        <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 12px;">
+          <span style="color: #64748b; font-size: 0.725rem;">② 海外コンサル料:</span>
+          <div style="font-family: monospace; font-weight: 700; font-size: 0.95rem; color: #334155;">¥${(Number(cost.costConsulting) || 0).toLocaleString()}</div>
+        </div>
+        <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 12px;">
+          <span style="color: #64748b; font-size: 0.725rem;">③ 国際送料・保険:</span>
+          <div style="font-family: monospace; font-weight: 700; font-size: 0.95rem; color: #334155;">¥${(Number(cost.costShipping) || 0).toLocaleString()}</div>
+        </div>
+        <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 12px;">
+          <span style="color: #64748b; font-size: 0.725rem;">④ 通関関税:</span>
+          <div style="font-family: monospace; font-weight: 700; font-size: 0.95rem; color: #334155;">¥${(Number(cost.costTariff) || 0).toLocaleString()}</div>
+        </div>
+        <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 12px;">
+          <span style="color: #64748b; font-size: 0.725rem;">⑤ 国内配送運賃:</span>
+          <div style="font-family: monospace; font-weight: 700; font-size: 0.95rem; color: #334155;">¥${(Number(cost.costDomesticDelivery) || 0).toLocaleString()}</div>
+        </div>
+        <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 12px;">
+          <span style="color: #64748b; font-size: 0.725rem;">⑥ 海外送金手数料:</span>
+          <div style="font-family: monospace; font-weight: 700; font-size: 0.95rem; color: #334155;">¥${(Number(cost.costRemittance) || 0).toLocaleString()}</div>
+        </div>
+        <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 8px 12px;">
+          <span style="color: #991b1b; font-size: 0.725rem; font-weight: 700;">⑦ 【別枠】輸入消費税:</span>
+          <div style="font-family: monospace; font-weight: 700; font-size: 0.95rem; color: #b91c1c;">¥${(Number(lot.importTax || cost.costImportTax || lot.taxTotal) || 0).toLocaleString()}</div>
+        </div>
+      </div>
+    `;
+  } else {
+    costDetailsHtml = `
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; font-size: 0.8rem;">
+        <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 12px;">
+          <span style="color: #64748b; font-size: 0.725rem;">① 本体代金合計:</span>
+          <div style="font-family: monospace; font-weight: 700; font-size: 0.95rem; color: #0f172a;">¥${(Number(cost.costGoods) || totalSubtotalSum).toLocaleString()}</div>
+        </div>
+        <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 12px;">
+          <span style="color: #64748b; font-size: 0.725rem;">② 国内送料・手数料:</span>
+          <div style="font-family: monospace; font-weight: 700; font-size: 0.95rem; color: #334155;">¥${(Number(cost.domShipping) || 0).toLocaleString()}</div>
+        </div>
+        <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 8px 12px;">
+          <span style="color: #1e40af; font-size: 0.725rem; font-weight: 700;">③ 【別枠】国内仕入消費税 (10%):</span>
+          <div style="font-family: monospace; font-weight: 700; font-size: 0.95rem; color: #1d4ed8;">¥${(Number(lot.domesticTax || lot.taxTotal) || 0).toLocaleString()}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  // 領収書プレビュー
+  let receiptSectionHtml = '';
+  if (lot.receiptImage || lot.receiptDataUrl) {
+    const imgSrc = lot.receiptImage || lot.receiptDataUrl;
+    receiptSectionHtml = `
+      <div style="margin-top: 14px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px;">
+        <div style="font-size: 0.8rem; font-weight: 700; color: #0f172a; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
+          <span>🖼️ 添付領収書・インボイス証憑</span>
+          <button type="button" class="btn btn-xs btn-outline-primary" onclick="window.openLotReceiptModal('${escapeHtml(lot.id)}')">差替・拡大表示</button>
+        </div>
+        <div style="max-height: 240px; overflow: hidden; border-radius: 6px; border: 1px solid #cbd5e1; display: flex; justify-content: center; background: #f8fafc; cursor: pointer;" onclick="window.openLotReceiptModal('${escapeHtml(lot.id)}')">
+          <img src="${imgSrc}" alt="領収書" style="max-height: 240px; max-width: 100%; object-fit: contain;">
+        </div>
+      </div>
+    `;
+  }
+
+  if (DOM.lotDetailModalBody) {
+    DOM.lotDetailModalBody.innerHTML = `
+      <!-- 基本サマリー -->
+      <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin-bottom: 14px;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; font-size: 0.8rem;">
+          <div>
+            <span style="color: #64748b; font-size: 0.725rem;">仕入先・発送元:</span>
+            <div style="font-weight: 700; color: #0f172a; font-size: 0.875rem;">${escapeHtml(lot.supplier || '-')}</div>
+          </div>
+          <div>
+            <span style="color: #64748b; font-size: 0.725rem;">格納保管場所:</span>
+            <div style="font-weight: 600; color: #334155;">${escapeHtml(lot.storageLocation || '-')}</div>
+          </div>
+          <div>
+            <span style="color: #64748b; font-size: 0.725rem;">立替・支払区分:</span>
+            <div style="font-weight: 600; color: #334155;">${escapeHtml(lot.payerName || '会社直接')}</div>
+          </div>
+          <div>
+            <span style="color: #64748b; font-size: 0.725rem;">財務会計仕訳連動:</span>
+            <div>${lot.syncAccounting ? '<span style="color:#059669; font-weight:700;">✅ 連動済</span>' : '<span style="color:#94a3b8;">未連動</span>'}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 外貨情報（輸入時） -->
+      ${forexHtml}
+
+      <!-- 入庫品目明細 -->
+      <div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px 14px; margin-bottom: 14px;">
+        <div style="font-size: 0.85rem; font-weight: 700; color: #0f172a; margin-bottom: 4px;">
+          📦 入庫品目明細 ＆ シリアル追跡
+        </div>
+        ${itemsHtml}
+      </div>
+
+      <!-- 諸費用・原価内訳 -->
+      <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px 14px; margin-bottom: 14px;">
+        <div style="font-size: 0.85rem; font-weight: 700; color: #0f172a; margin-bottom: 8px;">
+          📊 諸費用・原価按分内訳
+        </div>
+        ${costDetailsHtml}
+
+        <div style="margin-top: 10px; padding-top: 8px; border-top: 2px solid #cbd5e1; display: flex; justify-content: flex-end; gap: 20px; font-size: 0.85rem;">
+          <div>原価総額 (税抜): <strong style="font-family: monospace; font-size: 1.05rem; color: #047857;">¥${totalCost.toLocaleString()}</strong></div>
+          <div>総合支払総額 (税込): <strong style="font-family: monospace; font-size: 1.05rem; color: #0f172a;">¥${grandTotal.toLocaleString()}</strong></div>
+        </div>
+      </div>
+
+      <!-- 領収書プレビュー -->
+      ${receiptSectionHtml}
+    `;
+  }
+
+  if (DOM.lotDetailFooterActions) {
+    DOM.lotDetailFooterActions.innerHTML = `
+      <button type="button" class="btn btn-secondary btn-xs" onclick="window.openLotReceiptModal('${escapeHtml(lot.id)}')">
+        🖼️ 領収書・証憑の確認/差替
+      </button>
+    `;
+  }
+
+  DOM.lotDetailModal.classList.add('active');
+  DOM.lotDetailModal.style.display = 'flex';
+}
+
+window.openLotDetailModal = openLotDetailModal;
+
+function closeLotDetailModal() {
+  if (!DOM.lotDetailModal) return;
+  DOM.lotDetailModal.classList.remove('active');
+  DOM.lotDetailModal.style.display = 'none';
+}
+
+window.closeLotDetailModal = closeLotDetailModal;
 
 window.deleteInventoryLotFromUI = function(lotId, lotNumber) {
   if (!confirm(`入荷ロット「${lotNumber}」を削除しますか？\n\n【連動して取り消される内容】\n・入庫された数量が在庫マスタから差し引かれます。\n・ロットで登録された未出荷シリアルは台帳から削除されます。\n・財務会計に計上された仕訳データも自動で取り消されます。`)) {
@@ -17505,6 +17843,12 @@ function openInventoryLotModal(defaultItemId = null) {
   // 証憑画像のリセット
   clearLotReceiptImage();
 
+  // 外貨・為替レート換算のリセット
+  if (DOM.lotForeignCurrency) DOM.lotForeignCurrency.value = 'USD';
+  if (DOM.lotForeignAmount) DOM.lotForeignAmount.value = '';
+  if (DOM.lotExchangeRate) DOM.lotExchangeRate.value = '';
+  if (DOM.lotForeignJpyCalculated) DOM.lotForeignJpyCalculated.value = '';
+
   // 建て替え者初期値: 会社直接
   const companyRadio = document.querySelector('input[name="lotPayerType"][value="company"]');
   if (companyRadio) companyRadio.checked = true;
@@ -17521,6 +17865,45 @@ function openInventoryLotModal(defaultItemId = null) {
 }
 
 window.openInventoryLotModal = openInventoryLotModal;
+
+function updateForeignCalculation() {
+  const amount = Number(DOM.lotForeignAmount ? DOM.lotForeignAmount.value : 0) || 0;
+  const rate = Number(DOM.lotExchangeRate ? DOM.lotExchangeRate.value : 0) || 0;
+  const curr = DOM.lotForeignCurrency ? DOM.lotForeignCurrency.value : 'USD';
+  
+  if (amount > 0 && rate > 0) {
+    const jpy = Math.round(amount * rate);
+    if (DOM.lotForeignJpyCalculated) {
+      DOM.lotForeignJpyCalculated.value = `¥${jpy.toLocaleString()} (${curr} ${amount.toLocaleString()} × @${rate})`;
+    }
+  } else {
+    if (DOM.lotForeignJpyCalculated) DOM.lotForeignJpyCalculated.value = '';
+  }
+}
+
+function applyForeignToGoodsTotal() {
+  const amount = Number(DOM.lotForeignAmount ? DOM.lotForeignAmount.value : 0) || 0;
+  const rate = Number(DOM.lotExchangeRate ? DOM.lotExchangeRate.value : 0) || 0;
+  if (amount <= 0 || rate <= 0) {
+    showToast('外貨本体金額と適用為替レートを入力してください', 'warning');
+    return;
+  }
+  const jpy = Math.round(amount * rate);
+  
+  if (lotItemRows && lotItemRows.length === 1) {
+    const r = lotItemRows[0];
+    r.subtotal = jpy;
+    r.unitPrice = r.qty > 0 ? Math.round(jpy / r.qty) : jpy;
+    renderLotItemsTable();
+  } else if (DOM.lotCostGoods) {
+    DOM.lotCostGoods.value = jpy;
+  }
+  updateLandedCostCalculation(false);
+  showToast(`円換算額 ¥${jpy.toLocaleString()} を本体代金に反映しました`, 'success');
+}
+
+window.updateForeignCalculation = updateForeignCalculation;
+window.applyForeignToGoodsTotal = applyForeignToGoodsTotal;
 
 function closeInventoryLotModal() {
   if (!DOM.inventoryLotModal) return;
@@ -18659,6 +19042,12 @@ function submitInventoryLotStockIn() {
   const payerName = DOM.lotInputPayerName ? DOM.lotInputPayerName.value.trim() : '代表取締役';
   const creditAccountRaw = DOM.lotSelectCreditAccount ? DOM.lotSelectCreditAccount.value : '102';
 
+  // 外貨情報の取得（輸入仕入時）
+  const foreignCurrency = DOM.lotForeignCurrency ? DOM.lotForeignCurrency.value : 'USD';
+  const foreignAmount = Number(DOM.lotForeignAmount ? DOM.lotForeignAmount.value : 0) || 0;
+  const exchangeRate = Number(DOM.lotExchangeRate ? DOM.lotExchangeRate.value : 0) || 0;
+  const foreignJpyAmount = (foreignAmount > 0 && exchangeRate > 0) ? Math.round(foreignAmount * exchangeRate) : null;
+
   const itemNamesSummary = lotItemRows.map(r => `${r.itemName}×${r.qty}`).join(', ');
 
   const lotData = {
@@ -18688,6 +19077,10 @@ function submitInventoryLotStockIn() {
     }),
     // 後方互換用フィールド（先頭品目）
     procurementType,
+    foreignCurrency: procurementType === 'import' && foreignAmount > 0 ? foreignCurrency : null,
+    foreignAmount: procurementType === 'import' && foreignAmount > 0 ? foreignAmount : null,
+    exchangeRate: procurementType === 'import' && exchangeRate > 0 ? exchangeRate : null,
+    foreignJpyAmount: procurementType === 'import' && foreignJpyAmount > 0 ? foreignJpyAmount : null,
     itemId: lotItemRows[0].itemId,
     itemName: lotItemRows[0].itemName,
     quantity: totalQty,
