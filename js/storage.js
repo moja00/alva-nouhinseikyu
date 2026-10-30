@@ -6448,10 +6448,12 @@ export function getAvailableBundleComponents() {
   const serials = getInventorySerialList();
   const invList = getInventoryList();
 
-  // 1. 在庫中かつ未セット化のDP-5000本体
+  // 1. 未セット化のDP-5000本体（在庫中および出荷済みの両方を含む）
   const availableBodies = serials.filter(s => {
-    if (!s || s.status !== 'in_stock') return false;
+    if (!s) return false;
     if (s.isBundled) return false;
+    // 在庫中または出荷済みで未セット化のもの
+    if (s.status !== 'in_stock' && s.status !== 'shipped') return false;
     const itemName = String(s.itemName || '').toUpperCase();
     return s.inventoryId === 'inv_dp5000_body' || (itemName.includes('DP-5000') && !itemName.includes('MS'));
   });
@@ -6505,8 +6507,9 @@ export function assembleDP5000Bundle(bodySerialNumber, batterySerialNumbers, opt
     if (!bodySerial) {
       return { success: false, message: `指定されたDP-5000本体(S/N: ${cleanBodySn})が見つかりません。` };
     }
-    if (bodySerial.status !== 'in_stock') {
-      return { success: false, message: `DP-5000本体(S/N: ${cleanBodySn})は在庫中ではありません。(状態: ${bodySerial.status})` };
+    // 在庫中または出荷済みの未セット化本体をセット品化可能とする
+    if (bodySerial.status !== 'in_stock' && bodySerial.status !== 'shipped') {
+      return { success: false, message: `DP-5000本体(S/N: ${cleanBodySn})はセット品化可能な状態ではありません。(状態: ${bodySerial.status})` };
     }
     if (bodySerial.isBundled) {
       return { success: false, message: `DP-5000本体(S/N: ${cleanBodySn})は既にセット品化されています。` };
@@ -6546,13 +6549,22 @@ export function assembleDP5000Bundle(bodySerialNumber, batterySerialNumbers, opt
       timestamp: new Date().toISOString()
     });
 
-    // 3. バッテリー2個のステータスを bundled に更新（在庫から自動で落ちる！）
+    const isBodyShipped = bodySerial.status === 'shipped';
+
+    // 3. バッテリー2個のステータスを更新（本体が出荷済みなら自動で出荷連動！）
     cleanBatSns.forEach(batSn => {
       const bat = serialList.find(s => s && String(s.serialNumber).trim().toUpperCase() === batSn);
       if (bat) {
-        bat.status = 'bundled';
+        bat.status = isBodyShipped ? 'shipped' : 'bundled';
         bat.bundledWith = cleanBodySn;
         bat.bundledAt = new Date().toISOString();
+        if (isBodyShipped) {
+          bat.clientName = bodySerial.clientName || '';
+          bat.endUserName = bodySerial.endUserName || '';
+          bat.shippedDate = bodySerial.shippedDate || bodySerial.shipDate || '';
+          bat.docNumber = bodySerial.docNumber || bodySerial.invoiceNumber || '';
+          bat.docId = bodySerial.docId || bodySerial.invoiceId || '';
+        }
         const baseNote = (bat.note || '').replace(/\s*\[DP-5000\([^)]+\)セット組込\]/g, '').trim();
         bat.note = (baseNote ? baseNote + ' ' : '') + `[DP-5000(${cleanBodySn})セット組込]`;
         bat.updatedAt = new Date().toISOString();

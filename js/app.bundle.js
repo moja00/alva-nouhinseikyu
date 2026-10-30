@@ -9744,10 +9744,12 @@ function getAvailableBundleComponents() {
   const serials = getInventorySerialList();
   const invList = getInventoryList();
 
-  // 1. 在庫中かつ未セット化のDP-5000本体
+  // 1. 未セット化のDP-5000本体（在庫中および出荷済みの両方を含む）
   const availableBodies = serials.filter(s => {
-    if (!s || s.status !== 'in_stock') return false;
+    if (!s) return false;
     if (s.isBundled) return false;
+    // 在庫中または出荷済みで未セット化のもの
+    if (s.status !== 'in_stock' && s.status !== 'shipped') return false;
     const itemName = String(s.itemName || '').toUpperCase();
     return s.inventoryId === 'inv_dp5000_body' || (itemName.includes('DP-5000') && !itemName.includes('MS'));
   });
@@ -9801,8 +9803,9 @@ function assembleDP5000Bundle(bodySerialNumber, batterySerialNumbers, options = 
     if (!bodySerial) {
       return { success: false, message: `指定されたDP-5000本体(S/N: ${cleanBodySn})が見つかりません。` };
     }
-    if (bodySerial.status !== 'in_stock') {
-      return { success: false, message: `DP-5000本体(S/N: ${cleanBodySn})は在庫中ではありません。(状態: ${bodySerial.status})` };
+    // 在庫中または出荷済みの未セット化本体をセット品化可能とする
+    if (bodySerial.status !== 'in_stock' && bodySerial.status !== 'shipped') {
+      return { success: false, message: `DP-5000本体(S/N: ${cleanBodySn})はセット品化可能な状態ではありません。(状態: ${bodySerial.status})` };
     }
     if (bodySerial.isBundled) {
       return { success: false, message: `DP-5000本体(S/N: ${cleanBodySn})は既にセット品化されています。` };
@@ -9842,13 +9845,22 @@ function assembleDP5000Bundle(bodySerialNumber, batterySerialNumbers, options = 
       timestamp: new Date().toISOString()
     });
 
-    // 3. バッテリー2個のステータスを bundled に更新（在庫から自動で落ちる！）
+    const isBodyShipped = bodySerial.status === 'shipped';
+
+    // 3. バッテリー2個のステータスを更新（本体が出荷済みなら自動で出荷連動！）
     cleanBatSns.forEach(batSn => {
       const bat = serialList.find(s => s && String(s.serialNumber).trim().toUpperCase() === batSn);
       if (bat) {
-        bat.status = 'bundled';
+        bat.status = isBodyShipped ? 'shipped' : 'bundled';
         bat.bundledWith = cleanBodySn;
         bat.bundledAt = new Date().toISOString();
+        if (isBodyShipped) {
+          bat.clientName = bodySerial.clientName || '';
+          bat.endUserName = bodySerial.endUserName || '';
+          bat.shippedDate = bodySerial.shippedDate || bodySerial.shipDate || '';
+          bat.docNumber = bodySerial.docNumber || bodySerial.invoiceNumber || '';
+          bat.docId = bodySerial.docId || bodySerial.invoiceId || '';
+        }
         const baseNote = (bat.note || '').replace(/\s*\[DP-5000\([^)]+\)セット組込\]/g, '').trim();
         bat.note = (baseNote ? baseNote + ' ' : '') + `[DP-5000(${cleanBodySn})セット組込]`;
         bat.updatedAt = new Date().toISOString();
@@ -16914,8 +16926,8 @@ function renderSerialsManagementTable() {
               <button type="button" class="btn btn-xs" onclick="window.disassembleBundleConfirm('${escapeHtml(s.serialNumber)}')" title="セット品化を解除" style="background:#fee2e2; color:#991b1b; border: 1px solid #fca5a5; font-size: 0.65rem; font-weight: 700; padding: 1px 3px;">
                 解除
               </button>
-            ` : (isDp5k && s.status === 'in_stock' ? `
-              <button type="button" class="btn btn-xs" onclick="window.openBundleAssemblyModal('inv_dp5000_body', '${escapeHtml(s.serialNumber)}')" title="セット品化" style="background:#e0e7ff; color:#3730a3; border: 1px solid #c7d2fe; font-size: 0.65rem; font-weight: 700; padding: 1px 3px;">
+            ` : (isDp5k && !s.isBundled ? `
+              <button type="button" class="btn btn-xs" onclick="window.openBundleAssemblyModal('inv_dp5000_body', '${escapeHtml(s.serialNumber)}')" title="${s.status === 'shipped' ? '出荷済み本体をセット品化（バッテリー2個と紐付け）' : 'セット品化'}" style="background:#e0e7ff; color:#3730a3; border: 1px solid #c7d2fe; font-size: 0.65rem; font-weight: 700; padding: 1px 3px;">
                 📦セット
               </button>
             ` : '')}
@@ -17207,7 +17219,8 @@ function renderBundleAssemblyModal() {
         if (isSelected && !currentBundleTargetBodySn) {
           currentBundleTargetBodySn = b.serialNumber;
         }
-        return `<option value="${escapeHtml(b.serialNumber)}" ${isSelected ? 'selected' : ''}>S/N: ${escapeHtml(b.serialNumber)} (仕入原価: ¥${Number(b.unitCost || 152000).toLocaleString()})</option>`;
+        const statusLabel = b.status === 'shipped' ? ` [出荷済: ${b.clientName || '顧客未定'}]` : ' [在庫中]';
+        return `<option value="${escapeHtml(b.serialNumber)}" ${isSelected ? 'selected' : ''}>S/N: ${escapeHtml(b.serialNumber)}${escapeHtml(statusLabel)} (仕入原価: ¥${Number(b.unitCost || 81675).toLocaleString()})</option>`;
       });
       selectBody.innerHTML = bodyOpts.join('');
 

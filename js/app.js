@@ -6998,8 +6998,8 @@ function renderSerialsManagementTable() {
               <button type="button" class="btn btn-xs" onclick="window.disassembleBundleConfirm('${escapeHtml(s.serialNumber)}')" title="セット品化を解除" style="background:#fee2e2; color:#991b1b; border: 1px solid #fca5a5; font-size: 0.65rem; font-weight: 700; padding: 1px 3px;">
                 解除
               </button>
-            ` : (isDp5k && s.status === 'in_stock' ? `
-              <button type="button" class="btn btn-xs" onclick="window.openBundleAssemblyModal('inv_dp5000_body', '${escapeHtml(s.serialNumber)}')" title="セット品化" style="background:#e0e7ff; color:#3730a3; border: 1px solid #c7d2fe; font-size: 0.65rem; font-weight: 700; padding: 1px 3px;">
+            ` : (isDp5k && !s.isBundled ? `
+              <button type="button" class="btn btn-xs" onclick="window.openBundleAssemblyModal('inv_dp5000_body', '${escapeHtml(s.serialNumber)}')" title="${s.status === 'shipped' ? '出荷済み本体をセット品化（バッテリー2個と紐付け）' : 'セット品化'}" style="background:#e0e7ff; color:#3730a3; border: 1px solid #c7d2fe; font-size: 0.65rem; font-weight: 700; padding: 1px 3px;">
                 📦セット
               </button>
             ` : '')}
@@ -7291,7 +7291,8 @@ function renderBundleAssemblyModal() {
         if (isSelected && !currentBundleTargetBodySn) {
           currentBundleTargetBodySn = b.serialNumber;
         }
-        return `<option value="${escapeHtml(b.serialNumber)}" ${isSelected ? 'selected' : ''}>S/N: ${escapeHtml(b.serialNumber)} (仕入原価: ¥${Number(b.unitCost || 152000).toLocaleString()})</option>`;
+        const statusLabel = b.status === 'shipped' ? ` [出荷済: ${b.clientName || '顧客未定'}]` : ' [在庫中]';
+        return `<option value="${escapeHtml(b.serialNumber)}" ${isSelected ? 'selected' : ''}>S/N: ${escapeHtml(b.serialNumber)}${escapeHtml(statusLabel)} (仕入原価: ¥${Number(b.unitCost || 81675).toLocaleString()})</option>`;
       });
       selectBody.innerHTML = bodyOpts.join('');
 
