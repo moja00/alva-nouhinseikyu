@@ -5961,6 +5961,7 @@ export function syncInventoryStockFromIssuedDocs() {
 
       const shippedQty = shippedQtyMap[groupKey] || shippedQtyMap[norm] || (item.itemId ? shippedQtyMap[item.itemId] : 0) || 0;
       const lotInQty = totalInQtyMap[groupKey] || totalInQtyMap[norm] || (item.itemId ? totalInQtyMap[item.itemId] : 0) || 0;
+      const totalIn = lotInQty;
 
       // 現在庫 ＝ 実ロット入庫累計 − 全出荷数
       // ※ 急速充電器の場合は、単品仕入(10個)からシリアル台帳で実際にセット品化された本体数を減算して手元実在庫を確定！
