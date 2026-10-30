@@ -17904,17 +17904,68 @@ function openEditInventoryLotModal(lotId) {
       itemId: it.itemId,
       itemName: it.itemName,
       hasSerial: it.hasSerial !== false,
-      isBundle: it.itemId === 'inv_1' || (it.itemName && it.itemName.includes('ベーシックセット')),
+      isBundle: isBundleLotRow(it),
       qty: Number(it.quantity || it.qty) || 1,
       unitPrice: Number(it.unitPrice) || 0,
       subtotal: Number(it.subtotal) || 0,
       allocatedCost: Number(it.allocatedCost) || 0,
       landedUnitCost: Number(it.unitCost) || 0
     }));
-    renderLotItemsTable();
+    renderLotItemRows();
   }
 
   updateLandedCostCalculation(false);
+
+  // シリアルスロットの生成 ＆ 既存シリアル番号の完全復元
+  renderLotSerialGroups(false);
+
+  // 既存のシリアル番号群を収集（lot.itemsのserials、またはシリアル台帳から）
+  const allSerialsInLot = [];
+  if (Array.isArray(lot.items)) {
+    lot.items.forEach(it => {
+      if (Array.isArray(it.serials)) allSerialsInLot.push(...it.serials);
+    });
+  }
+  const registeredList = getInventorySerialList();
+  const dbSerials = registeredList.filter(s => s.lotNumber === lot.lotNumber || s.lotId === lot.id).map(s => s.serialNumber);
+  const combinedSerials = Array.from(new Set([...allSerialsInLot, ...dbSerials])).filter(Boolean);
+
+  // 品目ごとにスロットへシリアルを流し込み
+  lotItemRows.forEach((r, idx) => {
+    if (!isLotRowRequireSerial(r)) return;
+
+    if (isBundleLotRow(r)) {
+      // セット品の場合：本体用（r.qty個）とバッテリー用（r.qty*2個）
+      const bodyInputs = document.querySelectorAll(`[data-row-id="${r.rowId}_body"] .lot-serial-input`);
+      const batInputs = document.querySelectorAll(`[data-row-id="${r.rowId}_bat"] .lot-serial-input`);
+
+      // バッテリーシリアル（BAT- で始まるもの）
+      const batSerials = combinedSerials.filter(s => String(s).toUpperCase().startsWith('BAT'));
+      // 本体シリアル（BAT- 以外）
+      const bodySerials = combinedSerials.filter(s => !String(s).toUpperCase().startsWith('BAT'));
+
+      // 本体スロットへ代入
+      bodyInputs.forEach((inp, i) => {
+        if (bodySerials[i]) inp.value = bodySerials[i];
+      });
+      // バッテリースロットへ代入
+      batInputs.forEach((inp, i) => {
+        if (batSerials[i]) inp.value = batSerials[i];
+      });
+    } else {
+      // 通常品目の場合
+      const inputs = document.querySelectorAll(`[data-row-id="${r.rowId}"] .lot-serial-input`);
+      const itemSerials = (lot.items && lot.items[idx] && Array.isArray(lot.items[idx].serials))
+        ? lot.items[idx].serials
+        : combinedSerials;
+      inputs.forEach((inp, i) => {
+        if (itemSerials[i]) inp.value = itemSerials[i];
+      });
+    }
+  });
+
+  // バリデーションとバッジの更新
+  updateAllSerialValidationAndBadges();
 }
 
 window.openEditInventoryLotModal = openEditInventoryLotModal;
