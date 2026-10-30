@@ -8177,8 +8177,8 @@ function openLotDetailModal(lotId) {
     const r = Number(rateInput ? rateInput.value : 0) || 0;
     const c = currSelect ? currSelect.value : 'USD';
     if (a > 0 && r > 0) {
-      const j = Math.round(a * r);
-      previewDiv.innerHTML = `💱 日本円換算概算: <strong>¥${j.toLocaleString()}</strong> (${escapeHtml(c)} ${a.toLocaleString()} × @${r})`;
+      const j = Math.ceil(a * r); // 切り上げ
+      previewDiv.innerHTML = `💱 日本円換算概算: <strong>¥${j.toLocaleString()}</strong> (${escapeHtml(c)} ${a.toLocaleString()} × @${r}) [切上]`;
     } else {
       previewDiv.innerHTML = '';
     }
@@ -8219,7 +8219,7 @@ function saveQuickLotForex(lotId) {
   lot.foreignCurrency = curr;
   lot.foreignAmount = amt;
   lot.exchangeRate = rate;
-  lot.foreignJpyAmount = Math.round(amt * rate);
+  lot.foreignJpyAmount = Math.ceil(amt * rate); // 切り上げ
 
   if (!lot.costDetails) lot.costDetails = {};
   lot.costDetails.foreignCurrency = curr;
@@ -8230,7 +8230,7 @@ function saveQuickLotForex(lotId) {
   saveInventoryLot(lot);
   renderInventoryLotTable();
   openLotDetailModal(lot.id);
-  showToast(`外貨情報 (${curr} ${amt.toLocaleString()} @${rate}) を保存しました！`, 'success');
+  showToast(`外貨情報 (${curr} ${amt.toLocaleString()} @${rate} 換算: ¥${lot.foreignJpyAmount.toLocaleString()}) を保存しました！`, 'success');
 }
 
 window.saveQuickLotForex = saveQuickLotForex;
@@ -8331,22 +8331,27 @@ function openEditInventoryLotModal(lotId) {
   // シリアルスロットの生成 ＆ 既存シリアル番号の完全復元
   renderLotSerialGroups(false);
 
-  // 既存のシリアル番号群を収集（lot.itemsのserials、またはシリアル台帳から）
+  // 既存のシリアル番号群を収集（lot.itemsのserials、lot.serials、またはシリアル台帳から）
   const allSerialsInLot = [];
   if (Array.isArray(lot.items)) {
     lot.items.forEach(it => {
       if (Array.isArray(it.serials)) allSerialsInLot.push(...it.serials);
     });
   }
-  const registeredList = getInventorySerialList();
+  if (Array.isArray(lot.serials)) {
+    allSerialsInLot.push(...lot.serials);
+  }
+  const registeredList = typeof getInventorySerialList === 'function' ? getInventorySerialList() : [];
   const dbSerials = registeredList.filter(s => s.lotNumber === lot.lotNumber || s.lotId === lot.id).map(s => s.serialNumber);
   const combinedSerials = Array.from(new Set([...allSerialsInLot, ...dbSerials])).filter(Boolean);
 
   // 品目ごとにスロットへシリアルを流し込み
   lotItemRows.forEach((r, idx) => {
-    if (!isLotRowRequireSerial(r)) return;
+    const isBundle = isBundleLotRow(r);
+    const needSerial = r.hasSerial || isBundle;
+    if (!needSerial) return;
 
-    if (isBundleLotRow(r)) {
+    if (isBundle) {
       // セット品の場合：本体用（r.qty個）とバッテリー用（r.qty*2個）
       const bodyInputs = document.querySelectorAll(`[data-row-id="${r.rowId}_body"] .lot-serial-input`);
       const batInputs = document.querySelectorAll(`[data-row-id="${r.rowId}_bat"] .lot-serial-input`);
@@ -8358,11 +8363,17 @@ function openEditInventoryLotModal(lotId) {
 
       // 本体スロットへ代入
       bodyInputs.forEach((inp, i) => {
-        if (bodySerials[i]) inp.value = bodySerials[i];
+        if (bodySerials[i]) {
+          inp.value = bodySerials[i];
+          inp.dispatchEvent(new Event('input', { bubbles: true }));
+        }
       });
       // バッテリースロットへ代入
       batInputs.forEach((inp, i) => {
-        if (batSerials[i]) inp.value = batSerials[i];
+        if (batSerials[i]) {
+          inp.value = batSerials[i];
+          inp.dispatchEvent(new Event('input', { bubbles: true }));
+        }
       });
     } else {
       // 通常品目の場合
@@ -8371,13 +8382,18 @@ function openEditInventoryLotModal(lotId) {
         ? lot.items[idx].serials
         : combinedSerials;
       inputs.forEach((inp, i) => {
-        if (itemSerials[i]) inp.value = itemSerials[i];
+        if (itemSerials[i]) {
+          inp.value = itemSerials[i];
+          inp.dispatchEvent(new Event('input', { bubbles: true }));
+        }
       });
     }
   });
 
   // バリデーションとバッジの更新
-  updateAllSerialValidationAndBadges();
+  if (typeof updateAllSerialValidationAndBadges === 'function') {
+    updateAllSerialValidationAndBadges();
+  }
 }
 
 window.openEditInventoryLotModal = openEditInventoryLotModal;
@@ -8548,9 +8564,9 @@ function updateForeignCalculation() {
   const curr = DOM.lotForeignCurrency ? DOM.lotForeignCurrency.value : 'USD';
   
   if (amount > 0 && rate > 0) {
-    const jpy = Math.round(amount * rate);
+    const jpy = Math.ceil(amount * rate); // 外貨レートからの日本円換算は切り上げ
     if (DOM.lotForeignJpyCalculated) {
-      DOM.lotForeignJpyCalculated.value = `¥${jpy.toLocaleString()} (${curr} ${amount.toLocaleString()} × @${rate})`;
+      DOM.lotForeignJpyCalculated.value = `¥${jpy.toLocaleString()} (${curr} ${amount.toLocaleString()} × @${rate}) [切上]`;
     }
   } else {
     if (DOM.lotForeignJpyCalculated) DOM.lotForeignJpyCalculated.value = '';
@@ -8564,18 +8580,18 @@ function applyForeignToGoodsTotal() {
     showToast('外貨本体金額と適用為替レートを入力してください', 'warning');
     return;
   }
-  const jpy = Math.round(amount * rate);
+  const jpy = Math.ceil(amount * rate); // 外貨レートからの日本円換算は切り上げ
   
   if (lotItemRows && lotItemRows.length === 1) {
     const r = lotItemRows[0];
     r.subtotal = jpy;
-    r.unitPrice = r.qty > 0 ? Math.round(jpy / r.qty) : jpy;
-    renderLotItemsTable();
+    r.unitPrice = r.qty > 0 ? Math.ceil(jpy / r.qty) : jpy;
+    renderLotItemRows();
   } else if (DOM.lotCostGoods) {
     DOM.lotCostGoods.value = jpy;
   }
   updateLandedCostCalculation(false);
-  showToast(`円換算額 ¥${jpy.toLocaleString()} を本体代金に反映しました`, 'success');
+  showToast(`円換算額（切り上げ） ¥${jpy.toLocaleString()} を本体代金に反映しました`, 'success');
 }
 
 window.updateForeignCalculation = updateForeignCalculation;
@@ -8784,6 +8800,12 @@ function isBundleLotRow(r) {
          (r.itemName && r.itemName.includes('ベーシックセット'));
 }
 window.isBundleLotRow = isBundleLotRow;
+
+function isLotRowRequireSerial(r) {
+  if (!r) return false;
+  return Boolean(r.hasSerial || isBundleLotRow(r));
+}
+window.isLotRowRequireSerial = isLotRowRequireSerial;
 
 function onLotItemSelectChange(rowId, selectElem) {
   const row = lotItemRows.find(r => r.rowId === rowId);
@@ -9726,7 +9748,7 @@ function submitInventoryLotStockIn() {
   const foreignCurrency = DOM.lotForeignCurrency ? DOM.lotForeignCurrency.value : 'USD';
   const foreignAmount = Number(DOM.lotForeignAmount ? DOM.lotForeignAmount.value : 0) || 0;
   const exchangeRate = Number(DOM.lotExchangeRate ? DOM.lotExchangeRate.value : 0) || 0;
-  const foreignJpyAmount = (foreignAmount > 0 && exchangeRate > 0) ? Math.round(foreignAmount * exchangeRate) : null;
+  const foreignJpyAmount = (foreignAmount > 0 && exchangeRate > 0) ? Math.ceil(foreignAmount * exchangeRate) : null; // 外貨換算は切り上げ
 
   const itemNamesSummary = lotItemRows.map(r => `${r.itemName}×${r.qty}`).join(', ');
 
