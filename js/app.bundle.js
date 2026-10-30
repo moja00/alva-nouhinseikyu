@@ -17527,33 +17527,80 @@ function openLotDetailModal(lotId) {
 
   itemsHtml += `</tbody></table>`;
 
-  // 外貨情報セクション（ある場合）
+  // 外貨情報セクション（輸入仕入時：未入力でも入力枠を表示し、入力済でも編集可能）
   let forexHtml = '';
-  if (lot.foreignAmount && Number(lot.foreignAmount) > 0) {
+  if (isImport) {
+    const hasForex = lot.foreignAmount && Number(lot.foreignAmount) > 0;
     const fCurr = lot.foreignCurrency || 'USD';
-    const fAmt = Number(lot.foreignAmount) || 0;
-    const fRate = Number(lot.exchangeRate) || 0;
-    const fJpy = Number(lot.foreignJpyAmount) || Math.round(fAmt * fRate);
+    const fAmt = hasForex ? Number(lot.foreignAmount) : '';
+    const fRate = hasForex ? Number(lot.exchangeRate) : '';
+    const fJpy = hasForex ? (Number(lot.foreignJpyAmount) || Math.round(Number(fAmt) * Number(fRate))) : 0;
 
     forexHtml = `
-      <div style="background: linear-gradient(135deg, #f0f9ff, #e0f2fe); border: 1px solid #bae6fd; border-radius: 8px; padding: 12px 16px; margin-bottom: 14px;">
-        <div style="font-size: 0.8rem; font-weight: 700; color: #0369a1; display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
-          <span>💱 外貨建仕入 ＆ 為替レート情報</span>
-          <span class="badge" style="background: #0284c7; color: #fff; font-size: 0.675rem; padding: 1px 6px; border-radius: 4px;">為替換算記録</span>
+      <div style="background: linear-gradient(135deg, #f0f9ff, #e0f2fe); border: 1px solid #bae6fd; border-radius: 8px; padding: 12px 16px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+        <div style="font-size: 0.825rem; font-weight: 700; color: #0369a1; display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span>💱 外貨建仕入 ＆ 為替レート記録（ドル / ユーロ等）</span>
+            <span class="badge" style="background: ${hasForex ? '#0284c7' : '#f59e0b'}; color: #fff; font-size: 0.675rem; padding: 1px 6px; border-radius: 4px;">
+              ${hasForex ? '記録済' : '未登録・追記可能'}
+            </span>
+          </div>
+          ${hasForex ? `
+            <button type="button" class="btn btn-xs" id="btnToggleForexEdit" style="background: #ffffff; border: 1px solid #7dd3fc; color: #0369a1; font-weight: 700; padding: 2px 8px; border-radius: 4px; cursor: pointer;">
+              ✏️ レート・外貨を変更
+            </button>
+          ` : ''}
         </div>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; font-size: 0.825rem;">
-          <div>
-            <span style="color: #64748b; font-size: 0.725rem; display: block;">仕入通貨 / 外貨金額</span>
-            <strong style="font-family: monospace; font-size: 1.05rem; color: #0c4a6e;">${escapeHtml(fCurr)} ${fAmt.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
+
+        ${hasForex ? `
+          <!-- 表示モード -->
+          <div id="forexDisplayBox" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; font-size: 0.825rem;">
+            <div>
+              <span style="color: #64748b; font-size: 0.725rem; display: block;">仕入通貨 / 外貨金額</span>
+              <strong style="font-family: monospace; font-size: 1.05rem; color: #0c4a6e;">${escapeHtml(fCurr)} ${Number(fAmt).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
+            </div>
+            <div>
+              <span style="color: #64748b; font-size: 0.725rem; display: block;">適用為替レート</span>
+              <strong style="font-family: monospace; font-size: 1.05rem; color: #0c4a6e;">${Number(fRate).toLocaleString(undefined, { minimumFractionDigits: 2 })} 円/${escapeHtml(fCurr)}</strong>
+            </div>
+            <div>
+              <span style="color: #64748b; font-size: 0.725rem; display: block;">日本円換算本体代金</span>
+              <strong style="font-family: monospace; font-size: 1.05rem; color: #047857;">¥${fJpy.toLocaleString()}</strong>
+            </div>
           </div>
-          <div>
-            <span style="color: #64748b; font-size: 0.725rem; display: block;">適用為替レート</span>
-            <strong style="font-family: monospace; font-size: 1.05rem; color: #0c4a6e;">${fRate.toLocaleString(undefined, { minimumFractionDigits: 2 })} 円/${escapeHtml(fCurr)}</strong>
+        ` : ''}
+
+        <!-- 入力・編集フォーム（未入力時は最初から表示、入力済時はトグルで表示） -->
+        <div id="forexEditForm" style="display: ${hasForex ? 'none' : 'block'}; margin-top: ${hasForex ? '10px' : '0'}; padding-top: ${hasForex ? '10px' : '0'}; border-top: ${hasForex ? '1px dashed #7dd3fc' : 'none'};">
+          <div style="font-size: 0.75rem; color: #475569; margin-bottom: 6px;">
+            輸入時の外貨建て金額および適用為替レートを入力して「💾 外貨情報を保存」を押すと即座に反映されます。
           </div>
-          <div>
-            <span style="color: #64748b; font-size: 0.725rem; display: block;">日本円換算本体代金</span>
-            <strong style="font-family: monospace; font-size: 1.05rem; color: #047857;">¥${fJpy.toLocaleString()}</strong>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; align-items: flex-end;">
+            <div>
+              <label style="font-size: 0.7rem; color: #475569; font-weight: 600; display: block; margin-bottom: 2px;">通貨区分</label>
+              <select id="quickForexCurrency" class="form-select" style="font-size: 0.8rem; font-weight: 700; height: 32px;">
+                <option value="USD" ${fCurr === 'USD' ? 'selected' : ''}>USD (米ドル $)</option>
+                <option value="EUR" ${fCurr === 'EUR' ? 'selected' : ''}>EUR (ユーロ €)</option>
+                <option value="CNY" ${fCurr === 'CNY' ? 'selected' : ''}>CNY (人民元 ¥)</option>
+                <option value="GBP" ${fCurr === 'GBP' ? 'selected' : ''}>GBP (英ポンド £)</option>
+                <option value="OTHER" ${fCurr === 'OTHER' ? 'selected' : ''}>その他外貨</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size: 0.7rem; color: #475569; font-weight: 600; display: block; margin-bottom: 2px;">外貨本体金額</label>
+              <input type="number" id="quickForexAmount" class="form-input" placeholder="例: 5800.00" step="0.01" min="0" value="${fAmt}" style="font-size: 0.85rem; font-family: monospace; text-align: right; height: 32px;">
+            </div>
+            <div>
+              <label style="font-size: 0.7rem; color: #475569; font-weight: 600; display: block; margin-bottom: 2px;">為替レート (円/外貨)</label>
+              <input type="number" id="quickForexRate" class="form-input" placeholder="例: 152.50" step="0.01" min="0" value="${fRate}" style="font-size: 0.85rem; font-family: monospace; text-align: right; height: 32px;">
+            </div>
+            <div>
+              <button type="button" class="btn btn-sm" id="btnSaveQuickForex" style="background: #0284c7; color: #ffffff; font-size: 0.775rem; font-weight: 700; height: 32px; width: 100%; border: none; border-radius: 4px; box-shadow: 0 1px 2px rgba(2,132,199,0.3); cursor: pointer;">
+                💾 外貨情報を保存
+              </button>
+            </div>
           </div>
+          <div id="quickForexPreview" style="margin-top: 6px; font-size: 0.75rem; color: #047857; font-weight: 700;"></div>
         </div>
       </div>
     `;
@@ -17689,7 +17736,52 @@ function openLotDetailModal(lotId) {
       <button type="button" class="btn btn-secondary btn-xs" onclick="window.openLotReceiptModal('${escapeHtml(lot.id)}')">
         🖼️ 領収書・証憑の確認/差替
       </button>
+      <button type="button" class="btn btn-primary btn-xs" onclick="window.openEditInventoryLotModal('${escapeHtml(lot.id)}')" style="background: #2563eb; color: #fff; font-weight: 700; border-radius: 4px; padding: 3px 10px;">
+        ✏️ ロット全体を再編集
+      </button>
     `;
+  }
+
+  // クイック外貨編集フォームのイベント接続
+  const btnToggle = document.getElementById('btnToggleForexEdit');
+  const formBox = document.getElementById('forexEditForm');
+  const displayBox = document.getElementById('forexDisplayBox');
+  if (btnToggle && formBox) {
+    btnToggle.addEventListener('click', () => {
+      const isHidden = formBox.style.display === 'none';
+      formBox.style.display = isHidden ? 'block' : 'none';
+      btnToggle.textContent = isHidden ? '✕ 編集を閉じる' : '✏️ レート・外貨を変更';
+    });
+  }
+
+  const amtInput = document.getElementById('quickForexAmount');
+  const rateInput = document.getElementById('quickForexRate');
+  const currSelect = document.getElementById('quickForexCurrency');
+  const previewDiv = document.getElementById('quickForexPreview');
+
+  function updateQuickPreview() {
+    if (!previewDiv) return;
+    const a = Number(amtInput ? amtInput.value : 0) || 0;
+    const r = Number(rateInput ? rateInput.value : 0) || 0;
+    const c = currSelect ? currSelect.value : 'USD';
+    if (a > 0 && r > 0) {
+      const j = Math.round(a * r);
+      previewDiv.innerHTML = `💱 日本円換算概算: <strong>¥${j.toLocaleString()}</strong> (${escapeHtml(c)} ${a.toLocaleString()} × @${r})`;
+    } else {
+      previewDiv.innerHTML = '';
+    }
+  }
+
+  if (amtInput) amtInput.addEventListener('input', updateQuickPreview);
+  if (rateInput) rateInput.addEventListener('input', updateQuickPreview);
+  if (currSelect) currSelect.addEventListener('change', updateQuickPreview);
+  updateQuickPreview();
+
+  const btnSaveForex = document.getElementById('btnSaveQuickForex');
+  if (btnSaveForex) {
+    btnSaveForex.addEventListener('click', () => {
+      saveQuickLotForex(lot.id);
+    });
   }
 
   DOM.lotDetailModal.classList.add('active');
@@ -17698,6 +17790,39 @@ function openLotDetailModal(lotId) {
 
 window.openLotDetailModal = openLotDetailModal;
 
+function saveQuickLotForex(lotId) {
+  const lotList = getInventoryLotList();
+  const lot = lotList.find(l => l.id === lotId || l.lotNumber === lotId);
+  if (!lot) return;
+
+  const curr = document.getElementById('quickForexCurrency')?.value || 'USD';
+  const amt = Number(document.getElementById('quickForexAmount')?.value || 0);
+  const rate = Number(document.getElementById('quickForexRate')?.value || 0);
+
+  if (amt <= 0 || rate <= 0) {
+    showToast('外貨本体金額と適用為替レートを入力してください', 'warning');
+    return;
+  }
+
+  lot.foreignCurrency = curr;
+  lot.foreignAmount = amt;
+  lot.exchangeRate = rate;
+  lot.foreignJpyAmount = Math.round(amt * rate);
+
+  if (!lot.costDetails) lot.costDetails = {};
+  lot.costDetails.foreignCurrency = curr;
+  lot.costDetails.foreignAmount = amt;
+  lot.costDetails.exchangeRate = rate;
+  lot.costDetails.foreignJpyAmount = lot.foreignJpyAmount;
+
+  saveInventoryLot(lot);
+  renderInventoryLotTable();
+  openLotDetailModal(lot.id);
+  showToast(`外貨情報 (${curr} ${amt.toLocaleString()} @${rate}) を保存しました！`, 'success');
+}
+
+window.saveQuickLotForex = saveQuickLotForex;
+
 function closeLotDetailModal() {
   if (!DOM.lotDetailModal) return;
   DOM.lotDetailModal.classList.remove('active');
@@ -17705,6 +17830,94 @@ function closeLotDetailModal() {
 }
 
 window.closeLotDetailModal = closeLotDetailModal;
+
+// --------------------------------------------------------------------------
+// ✏️ ロット全体の再編集モード（既存ロットの復元・更新）
+// --------------------------------------------------------------------------
+
+let currentEditingLotId = null;
+
+function openEditInventoryLotModal(lotId) {
+  const lotList = getInventoryLotList();
+  const lot = lotList.find(l => l.id === lotId || l.lotNumber === lotId);
+  if (!lot) {
+    showToast('編集対象の入荷ロットが見つかりませんでした', 'warning');
+    return;
+  }
+
+  closeLotDetailModal();
+
+  currentEditingLotId = lot.id;
+
+  // 入庫モーダルを開く
+  openInventoryLotModal();
+
+  // モーダルタイトルと保存ボタンの表記を「編集」に変更
+  const modalTitleEl = document.querySelector('#inventoryLotModal .modal-title');
+  if (modalTitleEl) modalTitleEl.textContent = `✏️ 入荷ロット編集 (${lot.lotNumber})`;
+  if (DOM.btnSubmitInventoryLotModal) DOM.btnSubmitInventoryLotModal.textContent = '💾 ロット変更内容を更新保存';
+
+  // 基本情報を復元
+  if (DOM.lotInputNumber) DOM.lotInputNumber.value = lot.lotNumber || '';
+  if (DOM.lotInputDate) DOM.lotInputDate.value = lot.arrivalDate || '';
+  if (DOM.lotInputSupplier) DOM.lotInputSupplier.value = lot.supplier || '';
+  if (DOM.lotInputStorageLocation) DOM.lotInputStorageLocation.value = lot.storageLocation || '';
+
+  // 仕入区分
+  const isImport = lot.procurementType === 'import';
+  const importRadio = document.querySelector('input[name="lotProcurementType"][value="import"]');
+  const domRadio = document.querySelector('input[name="lotProcurementType"][value="domestic"]');
+  if (isImport && importRadio) {
+    importRadio.checked = true;
+    switchLotProcurementType('import');
+  } else if (!isImport && domRadio) {
+    domRadio.checked = true;
+    switchLotProcurementType('domestic');
+  }
+
+  // 外貨情報の復元
+  if (DOM.lotForeignCurrency && lot.foreignCurrency) DOM.lotForeignCurrency.value = lot.foreignCurrency;
+  if (DOM.lotForeignAmount && lot.foreignAmount) DOM.lotForeignAmount.value = lot.foreignAmount;
+  if (DOM.lotExchangeRate && lot.exchangeRate) DOM.lotExchangeRate.value = lot.exchangeRate;
+  updateForeignCalculation();
+
+  // 費用情報の復元
+  const cost = lot.costDetails || {};
+  if (isImport) {
+    if (DOM.lotCostGoods) DOM.lotCostGoods.value = cost.costGoods || lot.totalCost || 0;
+    if (DOM.lotCostConsulting) DOM.lotCostConsulting.value = cost.costConsulting || 0;
+    if (DOM.lotCostShipping) DOM.lotCostShipping.value = cost.costShipping || 0;
+    if (DOM.lotCostTariff) DOM.lotCostTariff.value = cost.costTariff || 0;
+    if (DOM.lotCostDomesticDelivery) DOM.lotCostDomesticDelivery.value = cost.costDomesticDelivery || 0;
+    if (DOM.lotCostRemittance) DOM.lotCostRemittance.value = cost.costRemittance || 0;
+    if (DOM.lotCostImportTax) DOM.lotCostImportTax.value = lot.importTax || cost.costImportTax || 0;
+  } else {
+    if (DOM.lotDomShipping) DOM.lotDomShipping.value = cost.domShipping || 0;
+    if (DOM.lotDomTaxRate) DOM.lotDomTaxRate.value = cost.domTaxRate || 10;
+  }
+
+  // 品目リストの復元
+  if (Array.isArray(lot.items) && lot.items.length > 0) {
+    nextLotRowId = 1;
+    lotItemRows = lot.items.map(it => ({
+      rowId: nextLotRowId++,
+      itemId: it.itemId,
+      itemName: it.itemName,
+      hasSerial: it.hasSerial !== false,
+      isBundle: it.itemId === 'inv_1' || (it.itemName && it.itemName.includes('ベーシックセット')),
+      qty: Number(it.quantity || it.qty) || 1,
+      unitPrice: Number(it.unitPrice) || 0,
+      subtotal: Number(it.subtotal) || 0,
+      allocatedCost: Number(it.allocatedCost) || 0,
+      landedUnitCost: Number(it.unitCost) || 0
+    }));
+    renderLotItemsTable();
+  }
+
+  updateLandedCostCalculation(false);
+}
+
+window.openEditInventoryLotModal = openEditInventoryLotModal;
 
 window.deleteInventoryLotFromUI = function(lotId, lotNumber) {
   if (!confirm(`入荷ロット「${lotNumber}」を削除しますか？\n\n【連動して取り消される内容】\n・入庫された数量が在庫マスタから差し引かれます。\n・ロットで登録された未出荷シリアルは台帳から削除されます。\n・財務会計に計上された仕訳データも自動で取り消されます。`)) {
@@ -17909,6 +18122,10 @@ function closeInventoryLotModal() {
   if (!DOM.inventoryLotModal) return;
   DOM.inventoryLotModal.classList.remove('active');
   DOM.inventoryLotModal.style.display = 'none';
+  currentEditingLotId = null;
+  const modalTitleEl = document.querySelector('#inventoryLotModal .modal-title');
+  if (modalTitleEl) modalTitleEl.textContent = 'ロット入庫 ＆ 原価按分計算 (Landed Cost Calculator)';
+  if (DOM.btnSubmitInventoryLotModal) DOM.btnSubmitInventoryLotModal.textContent = '📥 ロット入庫を確定して保存';
 }
 
 window.closeInventoryLotModal = closeInventoryLotModal;
@@ -19035,7 +19252,7 @@ function submitInventoryLotStockIn() {
   }
 
   // 1. ロットデータの構築 & 保存
-  const lotId = `lot_${Date.now()}`;
+  const lotId = currentEditingLotId || `lot_${Date.now()}`;
   const syncAccounting = DOM.lotCheckSyncAccounting ? DOM.lotCheckSyncAccounting.checked : true;
   const payerTypeRadio = document.querySelector('input[name="lotPayerType"]:checked');
   const payerType = payerTypeRadio ? payerTypeRadio.value : 'company';
