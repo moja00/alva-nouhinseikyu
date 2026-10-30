@@ -17534,7 +17534,7 @@ function openLotDetailModal(lotId) {
     const fCurr = lot.foreignCurrency || 'USD';
     const fAmt = hasForex ? Number(lot.foreignAmount) : '';
     const fRate = hasForex ? Number(lot.exchangeRate) : '';
-    const fJpy = hasForex ? (Number(lot.foreignJpyAmount) || Math.round(Number(fAmt) * Number(fRate))) : 0;
+    const fJpy = hasForex ? (Number(lot.foreignJpyAmount) || Math.ceil(Number(fAmt) * Number(fRate))) : 0;
 
     forexHtml = `
       <div style="background: linear-gradient(135deg, #f0f9ff, #e0f2fe); border: 1px solid #bae6fd; border-radius: 8px; padding: 12px 16px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
@@ -17896,29 +17896,6 @@ function openEditInventoryLotModal(lotId) {
     if (DOM.lotDomTaxRate) DOM.lotDomTaxRate.value = cost.domTaxRate || 10;
   }
 
-  // 品目リストの復元
-  if (Array.isArray(lot.items) && lot.items.length > 0) {
-    nextLotRowId = 1;
-    lotItemRows = lot.items.map(it => ({
-      rowId: nextLotRowId++,
-      itemId: it.itemId,
-      itemName: it.itemName,
-      hasSerial: it.hasSerial !== false,
-      isBundle: isBundleLotRow(it),
-      qty: Number(it.quantity || it.qty) || 1,
-      unitPrice: Number(it.unitPrice) || 0,
-      subtotal: Number(it.subtotal) || 0,
-      allocatedCost: Number(it.allocatedCost) || 0,
-      landedUnitCost: Number(it.unitCost) || 0
-    }));
-    renderLotItemRows();
-  }
-
-  updateLandedCostCalculation(false);
-
-  // シリアルスロットの生成 ＆ 既存シリアル番号の完全復元
-  renderLotSerialGroups(false);
-
   // 既存のシリアル番号群を収集（lot.itemsのserials、lot.serials、またはシリアル台帳から）
   const allSerialsInLot = [];
   if (Array.isArray(lot.items)) {
@@ -17933,7 +17910,39 @@ function openEditInventoryLotModal(lotId) {
   const dbSerials = registeredList.filter(s => s.lotNumber === lot.lotNumber || s.lotId === lot.id).map(s => s.serialNumber);
   const combinedSerials = Array.from(new Set([...allSerialsInLot, ...dbSerials])).filter(Boolean);
 
-  // 品目ごとにスロットへシリアルを流し込み
+  // 品目リストの復元
+  if (Array.isArray(lot.items) && lot.items.length > 0) {
+    nextLotRowId = 1;
+    lotItemRows = lot.items.map(it => {
+      const isB = isBundleLotRow(it);
+      const itemSns = Array.isArray(it.serials) && it.serials.length > 0 ? it.serials : combinedSerials;
+      const bodySns = itemSns.filter(s => !String(s).toUpperCase().startsWith('BAT'));
+      const batSns = itemSns.filter(s => String(s).toUpperCase().startsWith('BAT'));
+      return {
+        rowId: nextLotRowId++,
+        itemId: it.itemId,
+        itemName: it.itemName,
+        hasSerial: it.hasSerial !== false,
+        isBundle: isB,
+        qty: Number(it.quantity || it.qty) || 1,
+        unitPrice: Number(it.unitPrice) || 0,
+        subtotal: Number(it.subtotal) || 0,
+        allocatedCost: Number(it.allocatedCost) || 0,
+        landedUnitCost: Number(it.unitCost) || 0,
+        serials: itemSns,
+        bodySerials: bodySns,
+        batSerials: batSns
+      };
+    });
+    renderLotItemRows();
+  }
+
+  updateLandedCostCalculation(false);
+
+  // シリアルスロットの強制生成（HTML構築時点でシリアル値が初期流し込みされる）
+  renderLotSerialGroups(true);
+
+  // 万全を期してDOM要素（.lot-serial-group-input）へ直接代入＆inputイベント発火
   lotItemRows.forEach((r, idx) => {
     const isBundle = isBundleLotRow(r);
     const needSerial = r.hasSerial || isBundle;
@@ -17941,22 +17950,18 @@ function openEditInventoryLotModal(lotId) {
 
     if (isBundle) {
       // セット品の場合：本体用（r.qty個）とバッテリー用（r.qty*2個）
-      const bodyInputs = document.querySelectorAll(`[data-row-id="${r.rowId}_body"] .lot-serial-input`);
-      const batInputs = document.querySelectorAll(`[data-row-id="${r.rowId}_bat"] .lot-serial-input`);
+      const bodyInputs = document.querySelectorAll(`.lot-serial-group-input[data-group-key="${r.rowId}_body"], .lot-serial-group-input[data-row-id="${r.rowId}_body"]`);
+      const batInputs = document.querySelectorAll(`.lot-serial-group-input[data-group-key="${r.rowId}_bat"], .lot-serial-group-input[data-row-id="${r.rowId}_bat"]`);
 
-      // バッテリーシリアル（BAT- で始まるもの）
-      const batSerials = combinedSerials.filter(s => String(s).toUpperCase().startsWith('BAT'));
-      // 本体シリアル（BAT- 以外）
-      const bodySerials = combinedSerials.filter(s => !String(s).toUpperCase().startsWith('BAT'));
+      const batSerials = r.batSerials || combinedSerials.filter(s => String(s).toUpperCase().startsWith('BAT'));
+      const bodySerials = r.bodySerials || combinedSerials.filter(s => !String(s).toUpperCase().startsWith('BAT'));
 
-      // 本体スロットへ代入
       bodyInputs.forEach((inp, i) => {
         if (bodySerials[i]) {
           inp.value = bodySerials[i];
           inp.dispatchEvent(new Event('input', { bubbles: true }));
         }
       });
-      // バッテリースロットへ代入
       batInputs.forEach((inp, i) => {
         if (batSerials[i]) {
           inp.value = batSerials[i];
@@ -17965,10 +17970,8 @@ function openEditInventoryLotModal(lotId) {
       });
     } else {
       // 通常品目の場合
-      const inputs = document.querySelectorAll(`[data-row-id="${r.rowId}"] .lot-serial-input`);
-      const itemSerials = (lot.items && lot.items[idx] && Array.isArray(lot.items[idx].serials))
-        ? lot.items[idx].serials
-        : combinedSerials;
+      const inputs = document.querySelectorAll(`.lot-serial-group-input[data-group-key="${r.rowId}"], .lot-serial-group-input[data-row-id="${r.rowId}"]`);
+      const itemSerials = r.serials || combinedSerials;
       inputs.forEach((inp, i) => {
         if (itemSerials[i]) {
           inp.value = itemSerials[i];
@@ -18778,8 +18781,17 @@ function renderLotSerialGroups(syncSlots = false) {
     // 既存スロットに入力されていた値を取得
     const existingInps = DOM.lotSerialGroupsContainer.querySelectorAll(`.lot-serial-group-input[data-group-key="${cfg.groupKey}"], .lot-serial-group-input[data-row-id="${cfg.groupKey}"]`);
     let currentValues = Array.from(existingInps).map(inp => (inp.value || '').trim());
-    if (currentValues.length === 0 && cfg.parentRow && cfg.parentRow.serials && cfg.parentRow.serials.length > 0 && !cfg.isBundlePart) {
-      currentValues = cfg.parentRow.serials;
+    if (currentValues.length === 0 && cfg.parentRow) {
+      const p = cfg.parentRow;
+      if (cfg.isBundlePart) {
+        if (cfg.role === 'body') {
+          currentValues = p.bodySerials || (Array.isArray(p.serials) ? p.serials.filter(s => !String(s).toUpperCase().startsWith('BAT')) : []);
+        } else if (cfg.role === 'battery') {
+          currentValues = p.batSerials || (Array.isArray(p.serials) ? p.serials.filter(s => String(s).toUpperCase().startsWith('BAT')) : []);
+        }
+      } else if (Array.isArray(p.serials)) {
+        currentValues = p.serials;
+      }
     }
 
     let slotsHtml = '';
