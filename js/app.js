@@ -8305,8 +8305,8 @@ function openEditInventoryLotModal(lotId) {
 
   currentEditingLotId = lot.id;
 
-  // 入庫モーダルを開く
-  openInventoryLotModal();
+  // 入庫モーダルを開く（編集対象ロットを正しく展開するため下書き復元はバイパス）
+  openInventoryLotModal(null, true);
 
   // モーダルタイトルと保存ボタンの表記を「編集」に変更
   const modalTitleEl = document.querySelector('#inventoryLotModal .modal-title');
@@ -8373,6 +8373,7 @@ function openEditInventoryLotModal(lotId) {
       const isB = isBundleLotRow(it);
       const itemSns = Array.isArray(it.serials) && it.serials.length > 0 ? it.serials : combinedSerials;
       const bodySns = itemSns.filter(s => !String(s).toUpperCase().startsWith('BAT'));
+      const batSns = itemSns.filter(s => String(s).toUpperCase().startsWith('BAT'));
       const fPrice = Number(it.foreignPrice) || 0;
       const fSub = Number(it.foreignSubtotal) || (lot.items.length === 1 && Number(lot.foreignAmount) > 0 ? Number(lot.foreignAmount) : 0);
       return {
