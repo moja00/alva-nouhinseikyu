@@ -1228,7 +1228,8 @@ export function getHistoryList(includeSuperseded = false) {
     if (!includeSuperseded) {
       list = list.filter(item => {
         const doc = item.fullDoc || item;
-        return doc.status !== 'superseded' && !doc.isSuperseded;
+        const isSup = item.status === 'superseded' || item.isSuperseded === true || doc.status === 'superseded' || doc.isSuperseded === true;
+        return !isSup;
       });
     }
 
@@ -1244,9 +1245,9 @@ export function getHistoryList(includeSuperseded = false) {
  */
 export function saveDocToHistory(doc) {
   try {
-    // ⚠️ ユーザーが編集した内容（空欄にしたユーザー名等）を勝手に上書き補完しないよう、syncEndUsersToDocItems は呼ばない
-    const list = getHistoryList();
-    const existingIndex = list.findIndex(item => item.id === doc.id);
+    // ⚠️ 既存伝票の上書き時は全件（superseded含む）を対象に探す
+    const list = getHistoryList(true);
+    const existingIndex = list.findIndex(item => item.id === doc.id || (item.docNumber && doc.docNumber && item.docNumber === doc.docNumber));
 
     // 金額・税金の計算
     let subtotal = 0;
@@ -1272,7 +1273,7 @@ export function saveDocToHistory(doc) {
       endUserName: doc.endUserName || doc.client?.endUserName || '',
       clientName: doc.client?.name || '名称未設定',
       client: doc.client || { name: '名称未設定' },
-      issueDate: doc.issueDate || '',
+      issueDate: doc.issueDate || doc.date || '',
       dueDate: doc.dueDate || '',
       items: doc.items || [],
       subtotal,
@@ -1284,6 +1285,13 @@ export function saveDocToHistory(doc) {
       isIssued: !!doc.isIssued,
       isCancelled: !!doc.isCancelled,
       issuedAt: doc.issuedAt || (doc.isIssued ? new Date().toISOString() : null),
+      status: doc.status || 'draft',
+      isSuperseded: !!doc.isSuperseded,
+      supersededBy: doc.supersededBy || '',
+      supersededAt: doc.supersededAt || '',
+      supersededReason: doc.supersededReason || '',
+      replacesDocNumber: doc.replacesDocNumber || '',
+      replacesDocId: doc.replacesDocId || '',
       updatedAt: new Date().toISOString(),
       fullDoc: doc
     };

@@ -4564,7 +4564,8 @@ function getHistoryList(includeSuperseded = false) {
     if (!includeSuperseded) {
       list = list.filter(item => {
         const doc = item.fullDoc || item;
-        return doc.status !== 'superseded' && !doc.isSuperseded;
+        const isSup = item.status === 'superseded' || item.isSuperseded === true || doc.status === 'superseded' || doc.isSuperseded === true;
+        return !isSup;
       });
     }
 
@@ -4580,9 +4581,9 @@ function getHistoryList(includeSuperseded = false) {
  */
 function saveDocToHistory(doc) {
   try {
-    // ⚠️ ユーザーが編集した内容（空欄にしたユーザー名等）を勝手に上書き補完しないよう、syncEndUsersToDocItems は呼ばない
-    const list = getHistoryList();
-    const existingIndex = list.findIndex(item => item.id === doc.id);
+    // ⚠️ 既存伝票の上書き時は全件（superseded含む）を対象に探す
+    const list = getHistoryList(true);
+    const existingIndex = list.findIndex(item => item.id === doc.id || (item.docNumber && doc.docNumber && item.docNumber === doc.docNumber));
 
     // 金額・税金の計算
     let subtotal = 0;
@@ -4608,7 +4609,7 @@ function saveDocToHistory(doc) {
       endUserName: doc.endUserName || doc.client?.endUserName || '',
       clientName: doc.client?.name || '名称未設定',
       client: doc.client || { name: '名称未設定' },
-      issueDate: doc.issueDate || '',
+      issueDate: doc.issueDate || doc.date || '',
       dueDate: doc.dueDate || '',
       items: doc.items || [],
       subtotal,
@@ -4620,6 +4621,13 @@ function saveDocToHistory(doc) {
       isIssued: !!doc.isIssued,
       isCancelled: !!doc.isCancelled,
       issuedAt: doc.issuedAt || (doc.isIssued ? new Date().toISOString() : null),
+      status: doc.status || 'draft',
+      isSuperseded: !!doc.isSuperseded,
+      supersededBy: doc.supersededBy || '',
+      supersededAt: doc.supersededAt || '',
+      supersededReason: doc.supersededReason || '',
+      replacesDocNumber: doc.replacesDocNumber || '',
+      replacesDocId: doc.replacesDocId || '',
       updatedAt: new Date().toISOString(),
       fullDoc: doc
     };
@@ -28731,10 +28739,30 @@ function startDocCorrection(origDocNumber) {
   // 2. 新しい訂正伝票のドラフトを生成
   const newDoc = JSON.parse(JSON.stringify(origDoc));
   newDoc.id = 'doc_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
-  // 新しい伝票番号を自動生成（例: 枝番または最新番号）
-  const todayStr = new Date().toISOString().split('T')[0].replace(/-/g, '');
-  newDoc.docNumber = `INV-${todayStr}-CORR`;
-  newDoc.invoiceNumber = newDoc.docNumber;
+  
+  // 伝票番号のスマートリビジョン採番（-R1, -R2, -R3...）
+  // 元伝票が INV-20261030-275 なら INV-20261030-275-R1
+  // 元伝票がすでに INV-20261030-275-R1 なら INV-20261030-275-R2
+  let baseNum = cleanNum;
+  let revNum = 1;
+  const matchRev = cleanNum.match(/^(.*?)-R(\d+)$/i);
+  if (matchRev) {
+    baseNum = matchRev[1];
+    revNum = parseInt(matchRev[2], 10) + 1;
+  }
+  
+  // すでに同じ番号が存在しないかチェックし、空いているリビジョン番号を自動決定
+  let candidateNum = `${baseNum}-R${revNum}`;
+  while (allHistory.some(h => {
+    const d = h.fullDoc || h;
+    return (d.docNumber === candidateNum || d.invoiceNumber === candidateNum);
+  })) {
+    revNum++;
+    candidateNum = `${baseNum}-R${revNum}`;
+  }
+
+  newDoc.docNumber = candidateNum;
+  newDoc.invoiceNumber = candidateNum;
   newDoc.date = new Date().toISOString().split('T')[0];
   newDoc.invoiceDate = newDoc.date;
   newDoc.status = 'issued';
@@ -28743,10 +28771,10 @@ function startDocCorrection(origDocNumber) {
   newDoc.replacesDocNumber = cleanNum;
   newDoc.replacesDocId = origDoc.id;
   newDoc.title = `価格訂正（${cleanNum}分）`;
-  newDoc.notes = `※ 本伝票は ${cleanNum} の訂正伝票です。\n` + (origDoc.notes || '');
+  newDoc.notes = `※ 本伝票は ${cleanNum} の訂正伝票（改訂版: ${candidateNum}）です。\n` + (origDoc.notes || '');
 
   // 3. 元伝票側にも新伝票番号を紐付け
-  origDoc.supersededBy = newDoc.docNumber;
+  origDoc.supersededBy = candidateNum;
   origDoc.supersededById = newDoc.id;
   if (typeof saveDocToHistory === 'function') {
     saveDocToHistory(origDoc);
@@ -28766,7 +28794,7 @@ function startDocCorrection(origDocNumber) {
     switchAppView('invoice');
   }
 
-  showToast(`伝票【${cleanNum}】の訂正伝票を作成しました。金額等を修正して保存してください。`, 'success');
+  showToast(`伝票【${cleanNum}】の訂正伝票【${candidateNum}】を作成しました。金額等を修正して保存してください。`, 'success');
 }
 window.startDocCorrection = startDocCorrection;
 
