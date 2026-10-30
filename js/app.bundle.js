@@ -4147,17 +4147,15 @@ const DEFAULT_INVENTORY = [
     sku: 'CHG-DP5K',
     type: 'single',
     hasSerial: false,
-    currentStock: 5,
+    currentStock: 0,
     safetyStock: 2,
     unit: '個',
     unitCost: 4000,
     unitPrice: 8000,
     location: 'パーツ保管棚 B-2',
-    lastInDate: '2026-10-21',
+    lastInDate: '2026-03-24',
     note: '国内仕入PSE認証充電器',
-    history: [
-      { id: 'log_init_chg', date: '2026-10-21', type: 'in', qty: 5, reason: '国内仕入入庫', currentStock: 5, timestamp: new Date().toISOString() }
-    ]
+    history: []
   },
   {
     id: 'inv_2',
@@ -9218,17 +9216,10 @@ function syncInventoryStockFromIssuedDocs() {
       const shippedQty = shippedQtyMap[groupKey] || shippedQtyMap[norm] || (item.itemId ? shippedQtyMap[item.itemId] : 0) || 0;
       const lotInQty = totalInQtyMap[groupKey] || totalInQtyMap[norm] || (item.itemId ? totalInQtyMap[item.itemId] : 0) || 0;
 
-      // 初期棚卸在庫
-      let initialStock = 0;
-      if (Array.isArray(item.history)) {
-        const initLog = item.history.find(h => h && (h.reason?.includes('初期') || h.id?.includes('init')));
-        if (initLog) initialStock = Number(initLog.qty) || 0;
-      }
+      // 実際のロット入庫累計を絶対正とする（初期ダミー登録の架空在庫5個等を完全排除）
+      const totalIn = lotInQty;
 
-      // 入庫累計（ロット入庫累計 + 初期棚卸在庫）
-      const totalIn = lotInQty + initialStock;
-
-      // 現在庫 ＝ 入庫累計 − 全出荷数（伝票出荷 ＋ デモ機・寄贈等の未紐付け出庫）
+      // 現在庫 ＝ 実ロット入庫累計 − 全出荷数（伝票出荷 ＋ デモ機・寄贈等の未紐付け出庫）
       // ※ 未入庫便がある場合は計算通りマイナス（DP-5000: 20台入庫 - 30台出荷 = -10台）として正確に保持
       const calculatedStock = totalIn - shippedQty;
       if (item.currentStock !== calculatedStock) {
