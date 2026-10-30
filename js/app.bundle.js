@@ -13259,7 +13259,10 @@ function setupEventListeners() {
     DOM.lotExchangeRate.addEventListener('input', updateForeignCalculation);
   }
   if (DOM.lotForeignCurrency) {
-    DOM.lotForeignCurrency.addEventListener('change', updateForeignCalculation);
+    DOM.lotForeignCurrency.addEventListener('change', () => {
+      updateForeignCalculation();
+      renderLotItemRows();
+    });
   }
   if (DOM.btnApplyForeignToGoods) {
     DOM.btnApplyForeignToGoods.addEventListener('click', applyForeignToGoodsTotal);
@@ -13297,6 +13300,10 @@ function setupEventListeners() {
       const rowId = Number(target.dataset.rowId);
       if (target.classList.contains('lot-item-qty')) {
         onLotItemQtyInput(rowId, target.value);
+      } else if (target.classList.contains('lot-item-foreign-price')) {
+        onLotItemForeignPriceInput(rowId, target.value);
+      } else if (target.classList.contains('lot-item-foreign-subtotal')) {
+        onLotItemForeignSubtotalInput(rowId, target.value);
       } else if (target.classList.contains('lot-item-unit-price')) {
         onLotItemUnitPriceInput(rowId, target.value);
       } else if (target.classList.contains('lot-item-subtotal')) {
@@ -17926,7 +17933,8 @@ function openEditInventoryLotModal(lotId) {
       const isB = isBundleLotRow(it);
       const itemSns = Array.isArray(it.serials) && it.serials.length > 0 ? it.serials : combinedSerials;
       const bodySns = itemSns.filter(s => !String(s).toUpperCase().startsWith('BAT'));
-      const batSns = itemSns.filter(s => String(s).toUpperCase().startsWith('BAT'));
+      const fPrice = Number(it.foreignPrice) || 0;
+      const fSub = Number(it.foreignSubtotal) || (lot.items.length === 1 && Number(lot.foreignAmount) > 0 ? Number(lot.foreignAmount) : 0);
       return {
         rowId: nextLotRowId++,
         itemId: it.itemId,
@@ -17934,6 +17942,8 @@ function openEditInventoryLotModal(lotId) {
         hasSerial: it.hasSerial !== false,
         isBundle: isB,
         qty: Number(it.quantity || it.qty) || 1,
+        foreignPrice: fPrice > 0 ? fPrice : (fSub > 0 && Number(it.quantity || it.qty) > 0 ? Math.round((fSub / Number(it.quantity || it.qty)) * 100) / 100 : 0),
+        foreignSubtotal: fSub,
         unitPrice: Number(it.unitPrice) || 0,
         subtotal: Number(it.subtotal) || 0,
         allocatedCost: Number(it.allocatedCost) || 0,
@@ -18155,14 +18165,24 @@ function openInventoryLotModal(defaultItemId = null) {
   DOM.inventoryLotModal.classList.add('active');
   DOM.inventoryLotModal.style.display = 'flex';
 }
-
 window.openInventoryLotModal = openInventoryLotModal;
+
+function getLotCurrencySymbol() {
+  const curr = DOM.lotForeignCurrency ? DOM.lotForeignCurrency.value : 'EUR';
+  if (curr === 'EUR') return '€';
+  if (curr === 'USD') return '$';
+  if (curr === 'CNY') return '¥';
+  if (curr === 'GBP') return '£';
+  return '外貨';
+}
+window.getLotCurrencySymbol = getLotCurrencySymbol;
 
 function updateForeignCalculation() {
   const amount = Number(DOM.lotForeignAmount ? DOM.lotForeignAmount.value : 0) || 0;
   const rate = Number(DOM.lotExchangeRate ? DOM.lotExchangeRate.value : 0) || 0;
-  const curr = DOM.lotForeignCurrency ? DOM.lotForeignCurrency.value : 'USD';
-  
+  const curr = DOM.lotForeignCurrency ? DOM.lotForeignCurrency.value : 'EUR';
+  const sym = getLotCurrencySymbol();
+
   if (amount > 0 && rate > 0) {
     const jpy = Math.ceil(amount * rate); // 外貨レートからの日本円換算は切り上げ
     if (DOM.lotForeignJpyCalculated) {
@@ -18170,6 +18190,12 @@ function updateForeignCalculation() {
     }
   } else {
     if (DOM.lotForeignJpyCalculated) DOM.lotForeignJpyCalculated.value = '';
+  }
+
+  // 品目に外貨小計または外貨単価が1件でも入っていれば、レート変更時に即座に全品目再計算＆①本体代金へ連動
+  const hasItemForeign = lotItemRows.some(r => (Number(r.foreignSubtotal) || 0) > 0 || (Number(r.foreignPrice) || 0) > 0);
+  if (hasItemForeign && rate > 0 && typeof recalcLotForeignAndGoods === 'function') {
+    recalcLotForeignAndGoods();
   }
 }
 
@@ -18181,17 +18207,52 @@ function applyForeignToGoodsTotal() {
     return;
   }
   const jpy = Math.ceil(amount * rate); // 外貨レートからの日本円換算は切り上げ
-  
-  if (lotItemRows && lotItemRows.length === 1) {
-    const r = lotItemRows[0];
-    r.subtotal = jpy;
-    r.unitPrice = r.qty > 0 ? Math.ceil(jpy / r.qty) : jpy;
-    renderLotItemRows();
-  } else if (DOM.lotCostGoods) {
+
+  // 品目テーブルに外貨が設定されている場合は、recalcLotForeignAndGoods で完全同期
+  const hasItemForeign = lotItemRows.some(r => (Number(r.foreignSubtotal) || 0) > 0);
+  if (hasItemForeign && typeof recalcLotForeignAndGoods === 'function') {
+    recalcLotForeignAndGoods();
+  } else {
+    // 品目テーブルに外貨がない場合：jpy を各品目の現在小計比率（または均等比率）で各品目に再配分
+    let currentGoodsTotal = lotItemRows.reduce((sum, r) => sum + (Number(r.subtotal) || 0), 0);
+    let totalQty = lotItemRows.reduce((sum, r) => sum + (Number(r.qty) || 0), 0);
+
+    let allocatedSum = 0;
+    let maxRow = lotItemRows.length > 0 ? lotItemRows[0] : null;
+    lotItemRows.forEach(r => {
+      if (!maxRow || r.subtotal > maxRow.subtotal) maxRow = r;
+      let ratio = currentGoodsTotal > 0 ? (r.subtotal / currentGoodsTotal) : (totalQty > 0 ? r.qty / totalQty : 1 / lotItemRows.length);
+      r.subtotal = Math.round(jpy * ratio);
+      allocatedSum += r.subtotal;
+    });
+
+    const diff = jpy - allocatedSum;
+    if (maxRow && diff !== 0) {
+      maxRow.subtotal += diff;
+    }
+
+    lotItemRows.forEach(r => {
+      r.unitPrice = r.qty > 0 ? Math.round(r.subtotal / r.qty) : r.subtotal;
+      if (DOM.lotItemsTableBody) {
+        const inpSub = DOM.lotItemsTableBody.querySelector(`.lot-item-subtotal[data-row-id="${r.rowId}"]`);
+        if (inpSub) inpSub.value = r.subtotal;
+        const inpUnit = DOM.lotItemsTableBody.querySelector(`.lot-item-unit-price[data-row-id="${r.rowId}"]`);
+        if (inpUnit) inpUnit.value = r.unitPrice;
+      }
+    });
+  }
+
+  // ① 本体代金合計に確実に代入
+  if (DOM.lotCostGoods) {
     DOM.lotCostGoods.value = jpy;
   }
+  if (DOM.lotForeignJpyCalculated) {
+    const curr = DOM.lotForeignCurrency ? DOM.lotForeignCurrency.value : 'EUR';
+    DOM.lotForeignJpyCalculated.value = `¥${jpy.toLocaleString()} (${curr} ${amount.toLocaleString()} × @${rate}) [切上]`;
+  }
+
   updateLandedCostCalculation(false);
-  showToast(`円換算額（切り上げ） ¥${jpy.toLocaleString()} を本体代金に反映しました`, 'success');
+  showToast(`円換算額（切り上げ） ¥${jpy.toLocaleString()} を本体代金と各品目に反映しました！`, 'success');
 }
 
 window.updateForeignCalculation = updateForeignCalculation;
@@ -18337,10 +18398,17 @@ function removeLotItemRow(rowId) {
 function renderLotItemRows() {
   if (!DOM.lotItemsTableBody) return;
   const singleItems = getSingleItemList();
+  const sym = typeof getLotCurrencySymbol === 'function' ? getLotCurrencySymbol() : '€';
 
   let html = '';
+  let totalForeignSubtotal = 0;
+
   lotItemRows.forEach((r, idx) => {
     const isSingle = lotItemRows.length === 1;
+    const fPriceVal = (r.foreignPrice !== undefined && r.foreignPrice !== null && r.foreignPrice > 0) ? r.foreignPrice : '';
+    const fSubVal = (r.foreignSubtotal !== undefined && r.foreignSubtotal !== null && r.foreignSubtotal > 0) ? r.foreignSubtotal : '';
+    totalForeignSubtotal += Number(r.foreignSubtotal) || 0;
+
     const optionsHtml = singleItems.map(item => {
       const isBundle = item.type === 'bundle';
       const bundlePrefix = isBundle ? '📦【セット仕入】' : '';
@@ -18360,37 +18428,48 @@ function renderLotItemRows() {
 
     html += `
       <tr data-row-id="${r.rowId}" style="border-bottom: 1px solid #e2e8f0;">
-        <td style="padding: 6px 4px; text-align: center; color: #64748b; font-weight: 700;">${idx + 1}</td>
-        <td style="padding: 6px 8px;">
-          <select class="form-select lot-item-select" data-row-id="${r.rowId}" style="font-size: 0.8rem; font-weight: 600; width: 100%; padding: 4px 6px;">
+        <td style="padding: 4px 2px; text-align: center; color: #64748b; font-weight: 700; font-size: 0.75rem;">${idx + 1}</td>
+        <td style="padding: 4px 6px;">
+          <select class="form-select lot-item-select" data-row-id="${r.rowId}" style="font-size: 0.775rem; font-weight: 600; width: 100%; padding: 3px 6px;">
             ${optionsHtml}
           </select>
         </td>
-        <td style="padding: 6px 6px; text-align: right;">
-          <input type="number" class="form-input lot-item-qty" data-row-id="${r.rowId}" min="1" value="${r.qty}" style="font-size: 0.85rem; font-weight: 700; text-align: right; width: 100%; padding: 4px 6px;">
+        <td style="padding: 4px 4px; text-align: right;">
+          <input type="number" class="form-input lot-item-qty" data-row-id="${r.rowId}" min="1" value="${r.qty}" style="font-size: 0.8rem; font-weight: 700; text-align: right; width: 100%; padding: 3px 4px;">
         </td>
-        <td style="padding: 6px 6px; text-align: right;">
-          <input type="number" class="form-input lot-item-unit-price" data-row-id="${r.rowId}" min="0" value="${r.unitPrice}" style="font-size: 0.85rem; text-align: right; width: 100%; padding: 4px 6px;">
+        <td style="padding: 4px 4px; text-align: right; background: #f0fdf4;">
+          <input type="number" class="form-input lot-item-foreign-price" data-row-id="${r.rowId}" min="0" step="0.01" value="${fPriceVal}" placeholder="${sym}単価" style="font-size: 0.8rem; font-family: monospace; text-align: right; width: 100%; padding: 3px 4px; border-color: #86efac; color: #166534;" title="外貨単価（数量と掛けて外貨小計を算出）">
         </td>
-        <td style="padding: 6px 6px; text-align: right;">
-          <input type="number" class="form-input lot-item-subtotal" data-row-id="${r.rowId}" min="0" value="${r.subtotal}" style="font-size: 0.85rem; font-weight: 700; text-align: right; width: 100%; padding: 4px 6px; color: #047857;">
+        <td style="padding: 4px 4px; text-align: right; background: #f0fdf4;">
+          <input type="number" class="form-input lot-item-foreign-subtotal" data-row-id="${r.rowId}" min="0" step="0.01" value="${fSubVal}" placeholder="${sym}小計" style="font-size: 0.8rem; font-family: monospace; font-weight: 700; text-align: right; width: 100%; padding: 3px 4px; border-color: #86efac; color: #166534;" title="外貨小計（全品目を合算して合計ユーロを算出）">
         </td>
-        <td style="padding: 6px 6px; text-align: right;">
-          <span class="lot-item-landed-badge" data-row-id="${r.rowId}" style="font-weight: 800; color: #047857; font-size: 0.85rem; display: block;">
-            ¥${(r.landedUnitCost || 0).toLocaleString()} <small style="font-weight: normal; font-size: 0.7rem; color: #64748b;">/台</small>
+        <td style="padding: 4px 4px; text-align: right;">
+          <input type="number" class="form-input lot-item-unit-price" data-row-id="${r.rowId}" min="0" value="${r.unitPrice || 0}" style="font-size: 0.8rem; font-family: monospace; text-align: right; width: 100%; padding: 3px 4px;">
+        </td>
+        <td style="padding: 4px 4px; text-align: right;">
+          <input type="number" class="form-input lot-item-subtotal" data-row-id="${r.rowId}" min="0" value="${r.subtotal || 0}" style="font-size: 0.8rem; font-family: monospace; font-weight: 700; text-align: right; width: 100%; padding: 3px 4px; color: #047857;">
+        </td>
+        <td style="padding: 4px 4px; text-align: right;">
+          <span class="lot-item-landed-badge" data-row-id="${r.rowId}" style="font-weight: 800; color: #047857; font-size: 0.8rem; display: block; white-space: nowrap;">
+            ¥${(r.landedUnitCost || 0).toLocaleString()} <small style="font-weight: normal; font-size: 0.65rem; color: #64748b;">/台</small>
           </span>
-          <span class="lot-item-alloc-note" data-row-id="${r.rowId}" style="font-size: 0.65rem; color: #64748b; display: block;">
+          <span class="lot-item-alloc-note" data-row-id="${r.rowId}" style="font-size: 0.625rem; color: #64748b; display: block; white-space: nowrap;">
             諸費用按分: +¥${(r.allocatedCost || 0).toLocaleString()}
           </span>
         </td>
-        <td style="padding: 6px 4px; text-align: center;">
-          ${isSingle ? '<span style="color: #cbd5e1; font-size: 0.9rem;">✕</span>' : `<button type="button" class="btn-icon-danger btn-delete-lot-item" data-row-id="${r.rowId}" style="font-size: 0.9rem; padding: 2px 4px;" title="この品目を削除">✕</button>`}
+        <td style="padding: 4px 2px; text-align: center;">
+          ${isSingle ? '<span style="color: #cbd5e1; font-size: 0.85rem;">✕</span>' : `<button type="button" class="btn-icon-danger btn-delete-lot-item" data-row-id="${r.rowId}" style="font-size: 0.85rem; padding: 2px 4px;" title="この品目を削除">✕</button>`}
         </td>
       </tr>
     `;
   });
 
   DOM.lotItemsTableBody.innerHTML = html;
+
+  const elFootForeign = document.getElementById('lotItemsSummaryForeignSubtotal');
+  if (elFootForeign) {
+    elFootForeign.textContent = totalForeignSubtotal > 0 ? (Math.round(totalForeignSubtotal * 100) / 100).toFixed(2) : '0.00';
+  }
 }
 
 function isBundleLotRow(r) {
@@ -18419,7 +18498,7 @@ function onLotItemSelectChange(rowId, selectElem) {
     row.isBundle = isBundle;
     row.hasSerial = opt.dataset.hasSerial === '1' || isBundle;
     const cost = Number(opt.dataset.unitCost) || 0;
-    if (cost > 0) {
+    if (cost > 0 && !row.foreignPrice && !row.foreignSubtotal) {
       row.unitPrice = cost;
       row.subtotal = Math.round(row.qty * row.unitPrice);
     }
@@ -18429,17 +18508,136 @@ function onLotItemSelectChange(rowId, selectElem) {
   updateLandedCostCalculation(true);
 }
 
+// --------------------------------------------------------------------------
+// 品目別外貨 ＆ 為替レートからの日本円切り上げ＆端数調整連動計算（要件1 ＆ 要件2）
+// --------------------------------------------------------------------------
+
+function recalcLotForeignAndGoods(sourceRowId = null, sourceField = null) {
+  const rate = Number(DOM.lotExchangeRate ? DOM.lotExchangeRate.value : 0) || 0;
+
+  // 1. 各行の外貨小計・単価の整合
+  lotItemRows.forEach(r => {
+    if (r.rowId === sourceRowId) {
+      if (sourceField === 'foreignPrice') {
+        const fp = Number(r.foreignPrice) || 0;
+        r.foreignSubtotal = fp > 0 ? Math.round(r.qty * fp * 100) / 100 : 0;
+      } else if (sourceField === 'foreignSubtotal') {
+        const fs = Number(r.foreignSubtotal) || 0;
+        r.foreignPrice = (fs > 0 && r.qty > 0) ? Math.round((fs / r.qty) * 100) / 100 : 0;
+      } else if (sourceField === 'qty') {
+        const fp = Number(r.foreignPrice) || 0;
+        if (fp > 0) {
+          r.foreignSubtotal = Math.round(r.qty * fp * 100) / 100;
+        } else if ((Number(r.foreignSubtotal) || 0) > 0) {
+          r.foreignPrice = r.qty > 0 ? Math.round(((Number(r.foreignSubtotal) || 0) / r.qty) * 100) / 100 : 0;
+        }
+      }
+    }
+  });
+
+  // 2. 全品目の外貨合計（合計ユーロ等）を算出
+  const totalForeign = lotItemRows.reduce((sum, r) => sum + (Number(r.foreignSubtotal) || 0), 0);
+  const totalForeignRounded = Math.round(totalForeign * 100) / 100;
+
+  // 外貨本体金額欄に自動反映
+  if (DOM.lotForeignAmount) {
+    DOM.lotForeignAmount.value = totalForeignRounded > 0 ? totalForeignRounded : '';
+  }
+
+  // フッターの外貨合計表示を更新
+  const elFoot = document.getElementById('lotItemsSummaryForeignSubtotal');
+  if (elFoot) {
+    elFoot.textContent = totalForeignRounded > 0 ? totalForeignRounded.toFixed(2) : '0.00';
+  }
+
+  // 3. 為替レートから合計日本円を切り上げ計算（要件2：合計ユーロから切り上げ計算）
+  if (rate > 0 && totalForeignRounded > 0) {
+    const totalJpy = Math.ceil(totalForeignRounded * rate); // 合計ユーロから切り上げ計算！
+
+    if (DOM.lotForeignJpyCalculated) {
+      const sym = typeof getLotCurrencySymbol === 'function' ? getLotCurrencySymbol() : '€';
+      DOM.lotForeignJpyCalculated.value = `¥${totalJpy.toLocaleString()} (${sym} ${totalForeignRounded.toLocaleString()} × @${rate}) [切上]`;
+    }
+
+    // ① 本体代金合計に即時反映
+    if (DOM.lotCostGoods) {
+      DOM.lotCostGoods.value = totalJpy;
+    }
+
+    // 4. 各品目の日本円小計を按分し、端数調整（全品目の小計和が totalJpy と完全一致）
+    let allocatedJpySum = 0;
+    let maxRow = lotItemRows.length > 0 ? lotItemRows[0] : null;
+
+    lotItemRows.forEach(r => {
+      const fSub = Number(r.foreignSubtotal) || 0;
+      if (!maxRow || fSub > (Number(maxRow.foreignSubtotal) || 0)) {
+        maxRow = r;
+      }
+      r.subtotal = Math.round(fSub * rate);
+      allocatedJpySum += r.subtotal;
+    });
+
+    const diff = totalJpy - allocatedJpySum;
+    if (maxRow && diff !== 0) {
+      maxRow.subtotal += diff; // 端数差額を最大金額行で吸収
+    }
+
+    // 各行の円単価とDOM表示を同期
+    lotItemRows.forEach(r => {
+      r.unitPrice = r.qty > 0 ? Math.round(r.subtotal / r.qty) : r.subtotal;
+
+      if (DOM.lotItemsTableBody) {
+        const inpSub = DOM.lotItemsTableBody.querySelector(`.lot-item-subtotal[data-row-id="${r.rowId}"]`);
+        if (inpSub) inpSub.value = r.subtotal;
+
+        const inpUnit = DOM.lotItemsTableBody.querySelector(`.lot-item-unit-price[data-row-id="${r.rowId}"]`);
+        if (inpUnit) inpUnit.value = r.unitPrice;
+
+        const inpFPrice = DOM.lotItemsTableBody.querySelector(`.lot-item-foreign-price[data-row-id="${r.rowId}"]`);
+        if (inpFPrice && sourceField !== 'foreignPrice') {
+          inpFPrice.value = (r.foreignPrice !== undefined && r.foreignPrice !== null && r.foreignPrice > 0) ? r.foreignPrice : '';
+        }
+
+        const inpFSub = DOM.lotItemsTableBody.querySelector(`.lot-item-foreign-subtotal[data-row-id="${r.rowId}"]`);
+        if (inpFSub && sourceField !== 'foreignSubtotal') {
+          inpFSub.value = (r.foreignSubtotal !== undefined && r.foreignSubtotal !== null && r.foreignSubtotal > 0) ? r.foreignSubtotal : '';
+        }
+      }
+    });
+  }
+
+  updateLandedCostCalculation(false);
+}
+window.recalcLotForeignAndGoods = recalcLotForeignAndGoods;
+
+function onLotItemForeignPriceInput(rowId, val) {
+  const row = lotItemRows.find(r => r.rowId === rowId);
+  if (!row) return;
+  row.foreignPrice = Math.max(0, Number(val) || 0);
+  recalcLotForeignAndGoods(rowId, 'foreignPrice');
+}
+
+function onLotItemForeignSubtotalInput(rowId, val) {
+  const row = lotItemRows.find(r => r.rowId === rowId);
+  if (!row) return;
+  row.foreignSubtotal = Math.max(0, Number(val) || 0);
+  recalcLotForeignAndGoods(rowId, 'foreignSubtotal');
+}
+
 function onLotItemQtyInput(rowId, val) {
   const row = lotItemRows.find(r => r.rowId === rowId);
   if (!row) return;
 
   row.qty = Math.max(1, Number(val) || 1);
-  row.subtotal = Math.round(row.qty * row.unitPrice);
 
-  const subtotalInput = DOM.lotItemsTableBody.querySelector(`.lot-item-subtotal[data-row-id="${rowId}"]`);
-  if (subtotalInput) subtotalInput.value = row.subtotal;
-
-  updateLandedCostCalculation(true);
+  if ((Number(row.foreignPrice) || 0) > 0 || (Number(row.foreignSubtotal) || 0) > 0) {
+    recalcLotForeignAndGoods(rowId, 'qty');
+  } else {
+    row.subtotal = Math.round(row.qty * row.unitPrice);
+    const subtotalInput = DOM.lotItemsTableBody ? DOM.lotItemsTableBody.querySelector(`.lot-item-subtotal[data-row-id="${rowId}"]`) : null;
+    if (subtotalInput) subtotalInput.value = row.subtotal;
+    updateLandedCostCalculation(true);
+  }
 }
 
 function onLotItemUnitPriceInput(rowId, val) {
@@ -18449,7 +18647,7 @@ function onLotItemUnitPriceInput(rowId, val) {
   row.unitPrice = Math.max(0, Number(val) || 0);
   row.subtotal = Math.round(row.qty * row.unitPrice);
 
-  const subtotalInput = DOM.lotItemsTableBody.querySelector(`.lot-item-subtotal[data-row-id="${rowId}"]`);
+  const subtotalInput = DOM.lotItemsTableBody ? DOM.lotItemsTableBody.querySelector(`.lot-item-subtotal[data-row-id="${rowId}"]`) : null;
   if (subtotalInput) subtotalInput.value = row.subtotal;
 
   updateLandedCostCalculation(false);
@@ -18462,7 +18660,7 @@ function onLotItemSubtotalInput(rowId, val) {
   row.subtotal = Math.max(0, Number(val) || 0);
   row.unitPrice = row.qty > 0 ? Math.round(row.subtotal / row.qty) : 0;
 
-  const unitPriceInput = DOM.lotItemsTableBody.querySelector(`.lot-item-unit-price[data-row-id="${rowId}"]`);
+  const unitPriceInput = DOM.lotItemsTableBody ? DOM.lotItemsTableBody.querySelector(`.lot-item-unit-price[data-row-id="${rowId}"]`) : null;
   if (unitPriceInput) unitPriceInput.value = row.unitPrice;
 
   updateLandedCostCalculation(false);
@@ -19379,6 +19577,8 @@ function submitInventoryLotStockIn() {
         itemName: r.itemName,
         hasSerial: r.hasSerial,
         quantity: r.qty,
+        foreignPrice: Number(r.foreignPrice) || 0,
+        foreignSubtotal: Number(r.foreignSubtotal) || 0,
         unitPrice: r.unitPrice,
         subtotal: r.subtotal,
         allocatedCost: r.allocatedCost,
