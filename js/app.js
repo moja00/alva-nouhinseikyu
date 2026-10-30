@@ -6357,8 +6357,21 @@ function saveInventoryItemHandler() {
 
 function renderInventoryTable() {
   if (!DOM.inventoryTableContainer) return;
+
+  // 納品請求書履歴およびシリアル台帳未紐付け出庫から、常に最新の帳簿実在庫を自動同期
+  if (typeof syncInventoryStockFromIssuedDocs === 'function') {
+    try {
+      syncInventoryStockFromIssuedDocs();
+    } catch (e) {
+      console.warn('syncInventoryStockFromIssuedDocs error:', e);
+    }
+  }
   if (typeof syncInventoryStockFromSerials === 'function') {
-    syncInventoryStockFromSerials();
+    try {
+      syncInventoryStockFromSerials();
+    } catch (e) {
+      console.warn('syncInventoryStockFromSerials error:', e);
+    }
   }
   const list = getInventoryList();
   const q = DOM.inputSearchInventory ? DOM.inputSearchInventory.value.trim().toLowerCase() : '';
@@ -6459,10 +6472,16 @@ function renderInventoryTable() {
           </div>
         </td>
         <td style="text-align: right;">
-          <span style="font-size: 1.05rem; font-weight: 700; color: ${isZero ? '#dc2626' : (isLow ? '#d97706' : '#059669')};">
+          <span style="font-size: 1.05rem; font-weight: 700; color: ${item.currentStock < 0 ? '#b91c1c' : (isZero ? '#dc2626' : (isLow ? '#d97706' : '#059669'))};">
             ${Number(item.currentStock).toLocaleString()}
           </span>
-          ${isBundle ? '<span style="font-size: 0.65rem; color: #2563eb; display: block;">(理論構成可能数)</span>' : `<span style="font-size: 0.725rem; color: #64748b; display: block;">適正: ${Number(item.safetyStock).toLocaleString()}</span>`}
+          ${item.currentStock < 0 
+            ? `<span style="font-size: 0.65rem; color: #b91c1c; font-weight: 700; display: block; background: #fee2e2; border-radius: 3px; padding: 1px 4px; margin-top: 2px;">🚨 未入庫不足: ${Math.abs(item.currentStock)}台</span>` 
+            : (isBundle 
+              ? '<span style="font-size: 0.65rem; color: #2563eb; display: block;">(理論構成可能数)</span>' 
+              : `<span style="font-size: 0.725rem; color: #64748b; display: block;">適正: ${Number(item.safetyStock).toLocaleString()}</span>`
+            )
+          }
         </td>
         <td style="text-align: center;">${statusBadge}</td>
         <td>${escapeHtml(item.unit || '個')}</td>

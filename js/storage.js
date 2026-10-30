@@ -5646,19 +5646,11 @@ export function syncInventoryStockFromSerials() {
       }
     });
 
+    // バッテリー単品（現在庫20等）について手元の在庫シリアル数を同期
+    // ※ DP-5000本体・スプレッダー・ベーシックセットの現在庫は、ロット入庫と全出荷に基づく帳簿実在庫（-10等のマイナス不足を含む）を絶対正として保持する
     invList.forEach(item => {
       const itemName = String(item.name || '').toUpperCase();
-      if (item.id === 'inv_dp5000_body' || (itemName.includes('DP-5000') && item.type !== 'bundle')) {
-        if (item.currentStock !== inStockCounts['inv_dp5000_body']) {
-          item.currentStock = inStockCounts['inv_dp5000_body'];
-          modified = true;
-        }
-      } else if (item.id === 'inv_2' || itemName.includes('DP-MS')) {
-        if (item.currentStock !== inStockCounts['inv_2']) {
-          item.currentStock = inStockCounts['inv_2'];
-          modified = true;
-        }
-      } else if (item.id === 'inv_dp5000_bat' || itemName.includes('バッテリー')) {
+      if (item.id === 'inv_dp5000_bat' || (itemName.includes('バッテリー') && !itemName.includes('セット'))) {
         if (item.currentStock !== inStockCounts['inv_dp5000_bat']) {
           item.currentStock = inStockCounts['inv_dp5000_bat'];
           modified = true;
@@ -5671,55 +5663,9 @@ export function syncInventoryStockFromSerials() {
     const chgItem = invList.find(it => it.id === 'inv_dp5000_chg' || (it.name && it.name.includes('急速充電器')));
     const bundleItem = invList.find(it => it.id === 'inv_1' || (it.name && it.name.includes('ベーシックセット')));
 
-    // 急速充電器（非シリアル品目）の在庫数計算
-    // ※ DP-5000ベーシックセットに組み込まれている充電器はセット内に内包されるため、単品フリー在庫からは控除される
-    if (chgItem) {
-      try {
-        const rawLots = localStorage.getItem(KEYS.INVENTORY_LOTS);
-        if (rawLots) {
-          const lots = JSON.parse(rawLots);
-          if (Array.isArray(lots)) {
-            let totalStandaloneChgIn = 0; // 単品として入庫された充電器数
-            lots.forEach(lot => {
-              if (Array.isArray(lot.items)) {
-                lot.items.forEach(it => {
-                  const isBundle = it && (it.itemId === 'inv_1' || (it.itemName && it.itemName.includes('ベーシックセット')));
-                  if (!isBundle && (it.itemId === chgItem.id || (it.itemName && it.itemName.includes('急速充電器')))) {
-                    totalStandaloneChgIn += Number(it.quantity) || 0;
-                  }
-                });
-              } else if (lot.itemId === chgItem.id || (lot.itemName && lot.itemName.includes('急速充電器'))) {
-                const isBundle = lot.itemId === 'inv_1' || (lot.itemName && lot.itemName.includes('ベーシックセット'));
-                if (!isBundle) {
-                  totalStandaloneChgIn += Number(lot.quantity) || 0;
-                }
-              }
-            });
-
-            // 手動セット品化（バラの単品充電器をセットに組み込んだ回数）を差し引く
-            let manualBundledChgCount = 0;
-            serials.forEach(s => {
-              if (s && s.isBundled && s.chargerDeducted) {
-                manualBundledChgCount++;
-              }
-            });
-
-            const standaloneStock = Math.max(0, totalStandaloneChgIn - manualBundledChgCount);
-            if (chgItem.currentStock !== standaloneStock) {
-              chgItem.currentStock = standaloneStock;
-              modified = true;
-            }
-          }
-        }
-      } catch (err) {
-        console.warn('Sync charger stock from lots failed:', err);
-      }
-    }
-
     // ベーシックセット（完成品）の現在庫計算
-    // ① セット品化済（isBundled: true）で、かつ手元に在庫中（status: 'in_stock'）の本体シリアル数（即出荷可能なセット完成品数）
-    // ② 未キッティングの単品部品（本体、バッテリー/2、充電器）から追加で組める論理可能数
-    if (bundleItem) {
+    // ※ 帳簿在庫がマイナス（未入庫不足: -10台など）の場合は、そのマイナス値を厳格に尊重・保持する！
+    if (bundleItem && bundleItem.currentStock >= 0) {
       let readyBundleCount = 0;
       serials.forEach(s => {
         const itemName = String(s.itemName || '').toUpperCase();
@@ -5729,9 +5675,9 @@ export function syncInventoryStockFromSerials() {
         }
       });
 
-      const unbundledBodyStock = Number(bodyItem ? bodyItem.currentStock : 0);
-      const unbundledBatStock = Number(batItem ? batItem.currentStock : 0);
-      const unbundledChgStock = Number(chgItem ? chgItem.currentStock : 0);
+      const unbundledBodyStock = Math.max(0, Number(bodyItem ? bodyItem.currentStock : 0));
+      const unbundledBatStock = Math.max(0, Number(batItem ? batItem.currentStock : 0));
+      const unbundledChgStock = Math.max(0, Number(chgItem ? chgItem.currentStock : 0));
       const additionalPossibleSets = Math.min(
         unbundledBodyStock,
         Math.floor(unbundledBatStock / 2),
@@ -5739,8 +5685,7 @@ export function syncInventoryStockFromSerials() {
       );
 
       const totalAvailableSets = readyBundleCount + additionalPossibleSets;
-      // 伝票出荷引き落としによるマイナス在庫（未入庫不足）がある場合は計算値を尊重
-      if (bundleItem.currentStock >= 0 && bundleItem.currentStock !== totalAvailableSets) {
+      if (bundleItem.currentStock !== totalAvailableSets) {
         bundleItem.currentStock = totalAvailableSets;
         modified = true;
       }
@@ -5808,13 +5753,17 @@ export function syncInventoryStockFromIssuedDocs() {
 
     docs.forEach(doc => {
       // 見積書または取消済伝票は除外
-      if (!doc || doc.isCancelled || doc.docType === 'estimate') return;
-      // 確定済伝票（docNumberが存在し、明細があるもの）
-      if (!Array.isArray(doc.items) || doc.items.length === 0) return;
+      if (!doc || doc.isCancelled === true || doc.isCancelled === 'true' || doc.docType === 'estimate') return;
+      
+      // 確定済伝票明細（doc.items または doc.fullDoc.items を網羅的に取得）
+      const docItems = (Array.isArray(doc.items) && doc.items.length > 0)
+        ? doc.items
+        : (doc.fullDoc && Array.isArray(doc.fullDoc.items) ? doc.fullDoc.items : []);
+      if (docItems.length === 0) return;
 
       validDocCount++;
 
-      doc.items.forEach(it => {
+      docItems.forEach(it => {
         if (!it || !it.name) return;
         const itName = it.name.trim();
         // 値引き・割引等の金額調整行は出荷数量集計から完全除外
@@ -5829,7 +5778,6 @@ export function syncInventoryStockFromIssuedDocs() {
         let groupKey = norm;
         if (norm.includes('dp-5000') || norm.includes('ベーシックセット') || norm.includes('ket.ic.2b') || norm.includes('エレクトロパワー')) {
           groupKey = 'grp_dp5000';
-          // 注: ベーシックセットに付属する充電器はセット内に内包されるため、単品充電器（grp_charger）からは二重控除しない
         } else if (norm.includes('dp-ms') || norm.includes('スプレッダー')) {
           groupKey = 'grp_dpms';
         } else if (norm.includes('dp-eg') || norm.includes('3点引き') || norm.includes('３点引き')) {
@@ -5879,7 +5827,31 @@ export function syncInventoryStockFromIssuedDocs() {
       });
     }
 
-    // 2. ロット履歴からの総入庫数集計
+    // シリアル管理品目（DP-5000本体、DP-MS）については、シリアル台帳上の出庫実績数（30台、8台等）を下回らないよう安全保証
+    const totalSerialOutMap = {};
+    if (Array.isArray(serialList)) {
+      serialList.forEach(s => {
+        if (!s || s.status === 'in_stock') return;
+        const sName = String(s.itemName || '').toUpperCase();
+        let groupKey = '';
+        if (s.inventoryId === 'inv_dp5000_body' || (sName.includes('DP-5000') && !sName.includes('MS'))) {
+          groupKey = 'grp_dp5000';
+        } else if (s.inventoryId === 'inv_2' || sName.includes('DP-MS') || sName.includes('スプレッダー')) {
+          groupKey = 'grp_dpms';
+        }
+        if (groupKey) {
+          totalSerialOutMap[groupKey] = (totalSerialOutMap[groupKey] || 0) + 1;
+        }
+      });
+    }
+    if (totalSerialOutMap['grp_dp5000']) {
+      shippedQtyMap['grp_dp5000'] = Math.max(shippedQtyMap['grp_dp5000'] || 0, totalSerialOutMap['grp_dp5000']);
+    }
+    if (totalSerialOutMap['grp_dpms']) {
+      shippedQtyMap['grp_dpms'] = Math.max(shippedQtyMap['grp_dpms'] || 0, totalSerialOutMap['grp_dpms']);
+    }
+
+    // 2. ロット履歴からの総入庫数集計（混載ロットの各品目明細数量を正確に集計）
     const rawLots = localStorage.getItem(KEYS.INVENTORY_LOTS);
     const lots = rawLots ? JSON.parse(rawLots) : [];
     const totalInQtyMap = {};
@@ -5887,8 +5859,10 @@ export function syncInventoryStockFromIssuedDocs() {
     if (Array.isArray(lots)) {
       lots.forEach(lot => {
         if (!lot) return;
-        if (Array.isArray(lot.items)) {
+        if (Array.isArray(lot.items) && lot.items.length > 0) {
+          // 混載ロットの場合：各明細品目の数量を正確に加算
           lot.items.forEach(it => {
+            if (!it) return;
             const itName = it.itemName || '';
             const norm = getMasterKey(itName);
             let groupKey = norm;
@@ -5899,12 +5873,13 @@ export function syncInventoryStockFromIssuedDocs() {
             else if (norm.includes('hic-025') || norm.includes('クランプ')) groupKey = 'grp_hic';
             else if (norm.includes('急速充電器')) groupKey = 'grp_charger';
 
-            const q = Number(it.quantity) || 0;
+            const q = Number(it.quantity || it.qty) || 0;
             totalInQtyMap[groupKey] = (totalInQtyMap[groupKey] || 0) + q;
             totalInQtyMap[norm] = (totalInQtyMap[norm] || 0) + q;
             if (it.itemId) totalInQtyMap[it.itemId] = (totalInQtyMap[it.itemId] || 0) + q;
           });
         } else if (lot.itemId || lot.itemName) {
+          // 単品ロットの場合
           const itName = lot.itemName || '';
           const norm = getMasterKey(itName);
           let groupKey = norm;
@@ -5915,7 +5890,7 @@ export function syncInventoryStockFromIssuedDocs() {
           else if (norm.includes('hic-025') || norm.includes('クランプ')) groupKey = 'grp_hic';
           else if (norm.includes('急速充電器')) groupKey = 'grp_charger';
 
-          const q = Number(lot.quantity) || 0;
+          const q = Number(lot.quantity || lot.qty) || 0;
           totalInQtyMap[groupKey] = (totalInQtyMap[groupKey] || 0) + q;
           totalInQtyMap[norm] = (totalInQtyMap[norm] || 0) + q;
           if (lot.itemId) totalInQtyMap[lot.itemId] = (totalInQtyMap[lot.itemId] || 0) + q;
@@ -5945,12 +5920,12 @@ export function syncInventoryStockFromIssuedDocs() {
         const initLog = item.history.find(h => h && (h.reason?.includes('初期') || h.id?.includes('init')));
         if (initLog) initialStock = Number(initLog.qty) || 0;
       }
-      if (initialStock === 0 && lotInQty === 0 && item.currentStock > 0) {
-        initialStock = item.currentStock;
-      }
 
-      // 全品目について「入庫累計（ロット履歴＋初期在庫） - 全出荷数（伝票 + デモ・寄贈）」を実直に計算
-      // ※まだロット入庫処理を行っていない便がある場合、計算通りマイナス（例: 20台入庫 - 30台出荷 = -10台）として不足分を正確に表示する
+      // 入庫累計（ロット入庫累計 + 初期棚卸在庫）
+      const totalIn = lotInQty + initialStock;
+
+      // 現在庫 ＝ 入庫累計 − 全出荷数（伝票出荷 ＋ デモ機・寄贈等の未紐付け出庫）
+      // ※ 未入庫便がある場合は計算通りマイナス（DP-5000: 20台入庫 - 30台出荷 = -10台）として正確に保持
       const calculatedStock = totalIn - shippedQty;
       if (item.currentStock !== calculatedStock) {
         item.currentStock = calculatedStock;
