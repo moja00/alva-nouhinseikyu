@@ -6858,10 +6858,13 @@ function renderSerialsManagementTable() {
 
     let itemBadge = '';
     if (isDp5k) {
+      const isSet = Boolean(s.isBundled);
       itemBadge = `
         <div style="display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;">
-          <span class="badge" style="background: #eff6ff; color: #1d4ed8; font-weight: 700; padding: 2px 5px; border-radius: 4px; border: 1px solid #bfdbfe; font-size: 0.72rem; white-space: nowrap;">DP-5000</span>
-          ${s.isBundled ? `<span class="badge" style="background:#e0e7ff; color:#3730a3; font-size:0.65rem; font-weight:700; padding:1px 4px; border-radius:3px; border: 1px solid #c7d2fe; white-space: nowrap;">📦 セット化済</span>` : ''}
+          <span class="badge" style="background: ${isSet ? '#eff6ff' : '#ecfdf5'}; color: ${isSet ? '#1d4ed8' : '#047857'}; font-weight: 700; padding: 2px 5px; border-radius: 4px; border: 1px solid ${isSet ? '#bfdbfe' : '#a7f3d0'}; font-size: 0.72rem; white-space: nowrap;">
+            ${isSet ? 'DP-5000 セット品' : 'DP-5000 本体'}
+          </span>
+          ${isSet ? `<span class="badge" style="background:#e0e7ff; color:#3730a3; font-size:0.65rem; font-weight:700; padding:1px 4px; border-radius:3px; border: 1px solid #c7d2fe; white-space: nowrap;">📦 セット化済</span>` : `<span class="badge" style="background:#f1f5f9; color:#475569; font-size:0.65rem; font-weight:700; padding:1px 4px; border-radius:3px; border: 1px solid #cbd5e1; white-space: nowrap;">単体本体</span>`}
         </div>
       `;
     } else if (isMs) {

@@ -9681,10 +9681,47 @@ function saveBatchInventorySerials(serialsArray = []) {
 }
 function getAvailableSerialsByItem(inventoryIdOrName) {
   const list = getInventorySerialList();
-  return list.filter(s => 
-    (s.inventoryId === inventoryIdOrName || s.itemName === inventoryIdOrName) && 
-    s.status === 'in_stock'
-  );
+  const targetKey = String(inventoryIdOrName || '').trim();
+  const isTargetDp5000Body = targetKey === 'inv_dp5000_body' || 
+    (targetKey.includes('DP-5000') && !targetKey.includes('MS') && !targetKey.includes('ベーシックセット') && !targetKey.includes('バッテリー'));
+
+  return list.filter(s => {
+    if (!s) return false;
+    if (s.status !== 'in_stock') return false;
+
+    const sId = String(s.itemId || s.inventoryId || '').trim();
+    const sName = String(s.itemName || '').trim();
+
+    // 1. 完全一致
+    if (sId === targetKey || sName === targetKey) {
+      if (isTargetDp5000Body && s.isBundled) return false;
+      return true;
+    }
+
+    // 2. DP-5000 本体の場合の柔軟マッチング（未セット品のみ）
+    if (isTargetDp5000Body) {
+      if (s.isBundled) return false;
+      if (sId === 'inv_dp5000_body') return true;
+      if (sName.includes('本体')) return true;
+      if (sName.includes('DP-5000') && !sName.includes('MS') && !sName.includes('バッテリー')) return true;
+      return false;
+    }
+
+    // 3. バッテリーの場合（組込済みは除外）
+    if (targetKey === 'inv_dp5000_bat' || targetKey.includes('バッテリー')) {
+      if (s.status === 'bundled' || s.bundledWith) return false;
+      if (sId === 'inv_dp5000_bat' || sName.includes('バッテリー')) return true;
+      return false;
+    }
+
+    // 4. スプレッダーの場合
+    if (targetKey === 'inv_2' || targetKey.includes('スプレッダー') || targetKey.includes('DP-MS')) {
+      if (sId === 'inv_2' || sName.includes('DP-MS') || sName.includes('スプレッダー')) return true;
+      return false;
+    }
+
+    return false;
+  });
 }
 
 /**
@@ -9884,9 +9921,12 @@ function disassembleDP5000Bundle(bodySerialNumber) {
       });
     }
 
-    // 3. 本体のセット品化フラグを解除
+    // 3. 本体のセット品化フラグを解除し、明示的に「DP-5000 本体」として再定義
     bodySerial.isBundled = false;
     bodySerial.bundleName = '';
+    bodySerial.itemId = 'inv_dp5000_body';
+    bodySerial.inventoryId = 'inv_dp5000_body';
+    bodySerial.itemName = 'DP-5000 本体';
     bodySerial.batterySerials = [];
     bodySerial.chargerDeducted = false;
     bodySerial.bundledAt = null;
@@ -16721,10 +16761,13 @@ function renderSerialsManagementTable() {
 
     let itemBadge = '';
     if (isDp5k) {
+      const isSet = Boolean(s.isBundled);
       itemBadge = `
         <div style="display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;">
-          <span class="badge" style="background: #eff6ff; color: #1d4ed8; font-weight: 700; padding: 2px 5px; border-radius: 4px; border: 1px solid #bfdbfe; font-size: 0.72rem; white-space: nowrap;">DP-5000</span>
-          ${s.isBundled ? `<span class="badge" style="background:#e0e7ff; color:#3730a3; font-size:0.65rem; font-weight:700; padding:1px 4px; border-radius:3px; border: 1px solid #c7d2fe; white-space: nowrap;">📦 セット化済</span>` : ''}
+          <span class="badge" style="background: ${isSet ? '#eff6ff' : '#ecfdf5'}; color: ${isSet ? '#1d4ed8' : '#047857'}; font-weight: 700; padding: 2px 5px; border-radius: 4px; border: 1px solid ${isSet ? '#bfdbfe' : '#a7f3d0'}; font-size: 0.72rem; white-space: nowrap;">
+            ${isSet ? 'DP-5000 セット品' : 'DP-5000 本体'}
+          </span>
+          ${isSet ? `<span class="badge" style="background:#e0e7ff; color:#3730a3; font-size:0.65rem; font-weight:700; padding:1px 4px; border-radius:3px; border: 1px solid #c7d2fe; white-space: nowrap;">📦 セット化済</span>` : `<span class="badge" style="background:#f1f5f9; color:#475569; font-size:0.65rem; font-weight:700; padding:1px 4px; border-radius:3px; border: 1px solid #cbd5e1; white-space: nowrap;">単体本体</span>`}
         </div>
       `;
     } else if (isMs) {

@@ -6385,10 +6385,47 @@ export function saveBatchInventorySerials(serialsArray = []) {
 
 export function getAvailableSerialsByItem(inventoryIdOrName) {
   const list = getInventorySerialList();
-  return list.filter(s => 
-    (s.inventoryId === inventoryIdOrName || s.itemName === inventoryIdOrName) && 
-    s.status === 'in_stock'
-  );
+  const targetKey = String(inventoryIdOrName || '').trim();
+  const isTargetDp5000Body = targetKey === 'inv_dp5000_body' || 
+    (targetKey.includes('DP-5000') && !targetKey.includes('MS') && !targetKey.includes('ベーシックセット') && !targetKey.includes('バッテリー'));
+
+  return list.filter(s => {
+    if (!s) return false;
+    if (s.status !== 'in_stock') return false;
+
+    const sId = String(s.itemId || s.inventoryId || '').trim();
+    const sName = String(s.itemName || '').trim();
+
+    // 1. 完全一致
+    if (sId === targetKey || sName === targetKey) {
+      if (isTargetDp5000Body && s.isBundled) return false;
+      return true;
+    }
+
+    // 2. DP-5000 本体の場合の柔軟マッチング（未セット品のみ）
+    if (isTargetDp5000Body) {
+      if (s.isBundled) return false;
+      if (sId === 'inv_dp5000_body') return true;
+      if (sName.includes('本体')) return true;
+      if (sName.includes('DP-5000') && !sName.includes('MS') && !sName.includes('バッテリー')) return true;
+      return false;
+    }
+
+    // 3. バッテリーの場合（組込済みは除外）
+    if (targetKey === 'inv_dp5000_bat' || targetKey.includes('バッテリー')) {
+      if (s.status === 'bundled' || s.bundledWith) return false;
+      if (sId === 'inv_dp5000_bat' || sName.includes('バッテリー')) return true;
+      return false;
+    }
+
+    // 4. スプレッダーの場合
+    if (targetKey === 'inv_2' || targetKey.includes('スプレッダー') || targetKey.includes('DP-MS')) {
+      if (sId === 'inv_2' || sName.includes('DP-MS') || sName.includes('スプレッダー')) return true;
+      return false;
+    }
+
+    return false;
+  });
 }
 
 /**
@@ -6588,9 +6625,12 @@ export function disassembleDP5000Bundle(bodySerialNumber) {
       });
     }
 
-    // 3. 本体のセット品化フラグを解除
+    // 3. 本体のセット品化フラグを解除し、明示的に「DP-5000 本体」として再定義
     bodySerial.isBundled = false;
     bodySerial.bundleName = '';
+    bodySerial.itemId = 'inv_dp5000_body';
+    bodySerial.inventoryId = 'inv_dp5000_body';
+    bodySerial.itemName = 'DP-5000 本体';
     bodySerial.batterySerials = [];
     bodySerial.chargerDeducted = false;
     bodySerial.bundledAt = null;
