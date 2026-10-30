@@ -5739,7 +5739,8 @@ export function syncInventoryStockFromSerials() {
       );
 
       const totalAvailableSets = readyBundleCount + additionalPossibleSets;
-      if (bundleItem.currentStock !== totalAvailableSets) {
+      // 伝票出荷引き落としによるマイナス在庫（未入庫不足）がある場合は計算値を尊重
+      if (bundleItem.currentStock >= 0 && bundleItem.currentStock !== totalAvailableSets) {
         bundleItem.currentStock = totalAvailableSets;
         modified = true;
       }
@@ -5948,31 +5949,19 @@ export function syncInventoryStockFromIssuedDocs() {
         initialStock = item.currentStock;
       }
 
-      const totalIn = Math.max(initialStock, lotInQty > 0 ? (initialStock + lotInQty) : initialStock);
-
-      // シリアル管理品目（本体・バッテリー・スプレッダー）、完成品セット（ベーシックセット）、
-      // および付属充電器は、デモ機や寄贈も含めて現物を管理している「シリアル台帳・ロット現物連動」を絶対正とする
-      const isBundleSet = item.type === 'bundle' || item.id === 'inv_1' || norm.includes('ベーシックセット');
-      const isSerialOrLinkedItem = item.hasSerial || norm.includes('dp-ms') || norm.includes('スプレッダー') || 
-                                   norm.includes('dp-5000') || isBundleSet || 
-                                   norm.includes('急速充電器') || item.id === 'inv_dp5000_chg';
-
-      let calculatedStock = item.currentStock;
-      if (!isSerialOrLinkedItem) {
-        // 非シリアル品目は入庫総数から伝票出荷数を引く（過去ロット未登録時のマイナス化を自動防止）
-        calculatedStock = Math.max(0, totalIn - shippedQty);
-        if (item.currentStock !== calculatedStock) {
-          item.currentStock = calculatedStock;
-          modified = true;
-        }
+      // 全品目について「入庫累計（ロット履歴＋初期在庫） - 全出荷数（伝票 + デモ・寄贈）」を実直に計算
+      // ※まだロット入庫処理を行っていない便がある場合、計算通りマイナス（例: 20台入庫 - 30台出荷 = -10台）として不足分を正確に表示する
+      const calculatedStock = totalIn - shippedQty;
+      if (item.currentStock !== calculatedStock) {
+        item.currentStock = calculatedStock;
+        modified = true;
       }
 
       summary[item.name] = {
         before: item.currentStock,
         after: calculatedStock,
         shipped: shippedQty,
-        totalIn: totalIn,
-        isSerialItem: isSerialOrLinkedItem
+        totalIn: totalIn
       };
 
       detailsList.push({
@@ -5980,8 +5969,7 @@ export function syncInventoryStockFromIssuedDocs() {
         before: item.currentStock,
         after: calculatedStock,
         shipped: shippedQty,
-        totalIn: totalIn,
-        isSerialItem: isSerialOrLinkedItem
+        totalIn: totalIn
       });
     });
 
