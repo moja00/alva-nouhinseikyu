@@ -7728,7 +7728,7 @@ function renderInventoryLotTable() {
           <th style="min-width: 80px; text-align: center;">仕入区分</th>
           <th style="text-align: right; min-width: 100px;">1台確定原価</th>
           <th style="text-align: right; min-width: 100px;">原価総額</th>
-          <th style="text-align: right; min-width: 90px;">輸入消費税</th>
+          <th style="text-align: right; min-width: 105px;">消費税額</th>
           <th style="text-align: center; min-width: 85px;">証憑画像</th>
           <th style="text-align: center; min-width: 80px;">会計連動</th>
           <th style="text-align: center; min-width: 60px;">操作</th>
@@ -7738,15 +7738,12 @@ function renderInventoryLotTable() {
   `;
 
   lotList.forEach(lot => {
-    const isImport = lot.procurementType === 'import' ||
-      lot.sourceType === 'import' ||
-      (lot.procurementType !== 'domestic' && Number(lot.importTax || (lot.costDetails && lot.costDetails.importTax) || 0) > 0) ||
-      (lot.costBreakdown && Number(lot.costBreakdown.importTax || 0) > 0) ||
-      (lot.supplier && /Shenzhen|China|Overseas|海外/i.test(lot.supplier));
-    const typeLabel = isImport ? '<span class="badge" style="background:#ecfdf5; color:#047857; font-size:0.7rem; font-weight:700; padding:2px 6px; border-radius:4px;">🌐 輸入仕入</span>' : '<span class="badge" style="background:#f1f5f9; color:#475569; font-size:0.7rem; font-weight:600; padding:2px 6px; border-radius:4px;">🇯🇵 国内仕入</span>';
+    const isImport = lot.procurementType === 'import';
+    const typeLabel = isImport ? '<span class="badge" style="background:#ecfdf5; color:#047857; font-size:0.7rem; font-weight:700; padding:2px 6px; border-radius:4px;">🌐 輸入仕入</span>' : '<span class="badge" style="background:#eff6ff; color:#1d4ed8; font-size:0.7rem; font-weight:700; padding:2px 6px; border-radius:4px;">🇯🇵 国内仕入</span>';
     const unitCost = Number(lot.unitCost) || 0;
     const totalCost = Number(lot.totalCost) || (unitCost * (Number(lot.quantity) || 1));
-    const importTax = Number(lot.importTax || lot.taxTotal) || 0;
+    const taxAmount = Number(isImport ? (lot.importTax || lot.taxTotal) : (lot.domesticTax || lot.taxTotal)) || 0;
+    const taxBadge = isImport ? '<small style="color:#047857; font-size:0.65rem; font-weight:700; margin-left:2px;">(輸入)</small>' : '<small style="color:#2563eb; font-size:0.65rem; font-weight:700; margin-left:2px;">(国内)</small>';
 
     const hasReceipt = Boolean(lot.receiptImage || lot.receiptDataUrl);
     const receiptBtn = hasReceipt
@@ -7765,7 +7762,7 @@ function renderInventoryLotTable() {
         <td style="text-align: center;">${typeLabel}</td>
         <td style="text-align: right; font-family: monospace; font-weight: 700; color: #047857;">¥${unitCost.toLocaleString()}</td>
         <td style="text-align: right; font-family: monospace;">¥${totalCost.toLocaleString()}</td>
-        <td style="text-align: right; font-family: monospace; color: #b91c1c;">${importTax > 0 ? `¥${importTax.toLocaleString()}` : '-'}</td>
+        <td style="text-align: right; font-family: monospace; color: ${isImport ? '#b91c1c' : '#1e40af'};">${taxAmount > 0 ? `¥${taxAmount.toLocaleString()}${taxBadge}` : '-'}</td>
         <td style="text-align: center;">${receiptBtn}</td>
         <td style="text-align: center;">
           ${lot.syncAccounting ? '<span style="color:#059669; font-weight:700; font-size:0.8rem;" title="財務会計へ仕訳登録済">✅ 連携済</span>' : '<span style="color:#94a3b8; font-size:0.75rem;">-</span>'}
@@ -9108,7 +9105,8 @@ function submitInventoryLotStockIn() {
     quantity: totalQty,
     unitCost: lotItemRows[0].landedUnitCost,
     totalCost,
-    importTax: taxTotal,
+    importTax: procurementType === 'import' ? taxTotal : 0,
+    domesticTax: procurementType === 'domestic' ? taxTotal : 0,
     taxTotal,
     grandTotal,
     supplier,

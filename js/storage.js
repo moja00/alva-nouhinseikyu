@@ -5392,15 +5392,37 @@ export function getInventoryLotList() {
     let list = raw ? JSON.parse(raw) : [...DEFAULT_INVENTORY_LOTS];
     if (!Array.isArray(list) || list.length === 0) list = [...DEFAULT_INVENTORY_LOTS];
 
-    // 輸入仕入判定の自己修復（輸入消費税や海外仕入先がある場合は procurementType: 'import' を確実に補正）
+    // 輸入仕入／国内仕入の自己修復（バッテリー・充電器は国内仕入れ、ベーシックセットは輸入仕入れ）
     let modified = false;
     list.forEach(l => {
-      if (!l.procurementType) {
-        const isImp = l.sourceType === 'import' ||
-          Number(l.importTax || (l.costDetails && l.costDetails.importTax) || 0) > 0 ||
-          (l.costBreakdown && Number(l.costBreakdown.importTax || 0) > 0) ||
-          (l.supplier && /Shenzhen|China|Overseas|海外/i.test(l.supplier));
-        l.procurementType = isImp ? 'import' : 'domestic';
+      const isKnownDomestic = l.lotNumber === 'LOT-20261028-01' || l.lotNumber === 'LOT-20261028-02' ||
+        (l.itemName && (l.itemName.includes('充電器') || l.itemName.includes('バッテリー')) && !l.itemName.includes('ベーシックセット') && !/Shenzhen|China|海外/i.test(l.supplier || ''));
+      const isKnownImport = l.lotNumber === 'LOT-20260115' || l.lotNumber === 'LOT-202610-01' ||
+        (l.itemName && l.itemName.includes('ベーシックセット')) ||
+        (l.supplier && /Shenzhen|China|Overseas|海外/i.test(l.supplier)) ||
+        Boolean(l.costDetails && (l.costDetails.costShipping > 0 || l.costDetails.costTariff > 0 || l.costDetails.costImportTax > 0));
+
+      if (isKnownDomestic) {
+        if (l.procurementType !== 'domestic') {
+          l.procurementType = 'domestic';
+          modified = true;
+        }
+        if (l.importTax && l.importTax > 0) {
+          l.domesticTax = l.importTax;
+          l.importTax = 0;
+          modified = true;
+        }
+      } else if (isKnownImport) {
+        if (l.procurementType !== 'import') {
+          l.procurementType = 'import';
+          modified = true;
+        }
+        if (!l.importTax && l.taxTotal > 0) {
+          l.importTax = l.taxTotal;
+          modified = true;
+        }
+      } else if (!l.procurementType) {
+        l.procurementType = 'domestic';
         modified = true;
       }
     });
