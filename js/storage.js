@@ -5439,9 +5439,22 @@ export function getInventoryLotList() {
       }
     });
 
+    // 重複IDの自己修復（各ロットに固有の一意なIDを保証し、編集時の相互引きずりを完全防止）
+    const seenIds = new Set();
+    list.forEach((l, idx) => {
+      if (!l.id || seenIds.has(l.id)) {
+        const uniqueSuffix = Math.random().toString(36).substr(2, 6);
+        const baseNum = l.lotNumber ? l.lotNumber.replace(/[^a-zA-Z0-9_-]/g, '_') : Date.now();
+        l.id = `lot_${baseNum}_${uniqueSuffix}`;
+        modified = true;
+      }
+      seenIds.add(l.id);
+    });
+
     if (modified && raw) {
       try {
         localStorageSetItemAndSync(KEYS.INVENTORY_LOTS, JSON.stringify(list));
+        saveServerInventoryLots(list).catch(() => {});
       } catch (_) {}
     }
 
@@ -5455,7 +5468,7 @@ export function saveInventoryLot(lotData) {
   try {
     if (!lotData) return false;
     const list = getInventoryLotList();
-    const entryId = lotData.id || `lot_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+    let entryId = lotData.id || `lot_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
     const newLot = {
       ...lotData,
       id: entryId,
@@ -5463,7 +5476,17 @@ export function saveInventoryLot(lotData) {
     };
     if (!newLot.createdAt) newLot.createdAt = newLot.updatedAt;
 
-    const existingIndex = list.findIndex(l => l.id === entryId || l.lotNumber === newLot.lotNumber);
+    // 既存ロットの検索：まず ID が一致するレコードを探す（編集モード優先）
+    let existingIndex = list.findIndex(l => l.id === entryId);
+
+    // ID で見つからない場合のみ、ロット番号が完全一致するレコードを探す
+    if (existingIndex < 0 && newLot.lotNumber) {
+      existingIndex = list.findIndex(l => l.lotNumber === newLot.lotNumber);
+      if (existingIndex >= 0) {
+        newLot.id = list[existingIndex].id;
+      }
+    }
+
     if (existingIndex >= 0) {
       list[existingIndex] = newLot;
     } else {
@@ -5472,7 +5495,7 @@ export function saveInventoryLot(lotData) {
 
     localStorageSetItemAndSync(KEYS.INVENTORY_LOTS, JSON.stringify(list));
     saveServerInventoryLots(list).catch(() => {});
-    return entryId;
+    return newLot.id;
   } catch (e) {
     console.error('Failed to save inventory lot:', e);
     return false;

@@ -8303,10 +8303,11 @@ function openEditInventoryLotModal(lotId) {
 
   closeLotDetailModal();
 
-  currentEditingLotId = lot.id;
-
   // 入庫モーダルを開く（編集対象ロットを正しく展開するため下書き復元はバイパス）
   openInventoryLotModal(null, true);
+
+  // 重要：openInventoryLotModalの後に確実に編集対象IDをセット！
+  currentEditingLotId = lot.id;
 
   // モーダルタイトルと保存ボタンの表記を「編集」に変更
   const modalTitleEl = document.querySelector('#inventoryLotModal .modal-title');
@@ -8725,6 +8726,9 @@ window.restoreLotDraftState = restoreLotDraftState;
 
 function openInventoryLotModal(defaultItemId = null, forceNew = false) {
   if (!DOM.inventoryLotModal) return;
+
+  // 新規モーダルを開く際は編集IDを確実にリセット
+  currentEditingLotId = null;
 
   // クリアボタンのイベントリスナー設定
   const btnReset = document.getElementById('btnResetLotDraft');
@@ -10239,8 +10243,8 @@ function submitInventoryLotStockIn() {
     console.log(`【先行出荷シリアル紐付け】既存台帳レコード ${conflicts.length} 件にロット仕入情報をマージ更新します:`, conflicts);
   }
 
-  // 1. ロットデータの構築 & 保存
-  const lotId = currentEditingLotId || `lot_${Date.now()}`;
+  // 1. ロットデータの構築 & 保存（編集時は既存ID、新規時は完全新規ユニークIDを発行）
+  const lotId = currentEditingLotId || `lot_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
   const syncAccounting = DOM.lotCheckSyncAccounting ? DOM.lotCheckSyncAccounting.checked : true;
   const payerTypeRadio = document.querySelector('input[name="lotPayerType"]:checked');
   const payerType = payerTypeRadio ? payerTypeRadio.value : 'company';
@@ -10669,6 +10673,7 @@ function submitInventoryLotStockIn() {
     renderAccountingJournals();
   }
 
+  currentEditingLotId = null; // 編集IDを確実に初期化
   clearLotDraftState();
   closeInventoryLotModal();
   renderInventoryTable();
