@@ -9055,9 +9055,6 @@ function syncInventoryStockFromSerials() {
       console.log('【在庫マスタ連動】シリアル台帳から現在庫数を同期更新しました:', inStockCounts);
     }
 
-    // 発行済伝票からの出荷数も自動引き落とし同期
-    syncInventoryStockFromIssuedDocs();
-
     return inStockCounts;
   } catch (e) {
     console.error('Failed to sync inventory from serials:', e);
@@ -9135,8 +9132,7 @@ function syncInventoryStockFromIssuedDocs() {
         let groupKey = norm;
         if (norm.includes('dp-5000') || norm.includes('ベーシックセット') || norm.includes('ket.ic.2b') || norm.includes('エレクトロパワー')) {
           groupKey = 'grp_dp5000';
-          // 付属急速充電器にも連動加算
-          shippedQtyMap['grp_charger'] = (shippedQtyMap['grp_charger'] || 0) + qty;
+          // 注: ベーシックセットに付属する充電器はセット内に内包されるため、単品充電器（grp_charger）からは二重控除しない
         } else if (norm.includes('dp-ms') || norm.includes('スプレッダー')) {
           groupKey = 'grp_dpms';
         } else if (norm.includes('dp-eg') || norm.includes('3点引き') || norm.includes('３点引き')) {
@@ -9229,13 +9225,17 @@ function syncInventoryStockFromIssuedDocs() {
 
       const totalIn = Math.max(initialStock, lotInQty > 0 ? (initialStock + lotInQty) : initialStock);
 
-      // 非シリアル品目（DP-EG、DP-AC、クランプ、充電器等）は伝票出荷数を引く
-      // シリアル管理品目（本体・バッテリー・スプレッダー）はシリアル台帳連動を優先しつつ集計内訳に記録
-      const isSerialItem = item.hasSerial || norm.includes('dp-ms') || norm.includes('スプレッダー') || (norm.includes('dp-5000') && !norm.includes('セット'));
+      // シリアル管理品目（本体・バッテリー・スプレッダー）、完成品セット（ベーシックセット）、
+      // および付属充電器は、デモ機や寄贈も含めて現物を管理している「シリアル台帳・ロット現物連動」を絶対正とする
+      const isBundleSet = item.type === 'bundle' || item.id === 'inv_1' || norm.includes('ベーシックセット');
+      const isSerialOrLinkedItem = item.hasSerial || norm.includes('dp-ms') || norm.includes('スプレッダー') || 
+                                   norm.includes('dp-5000') || isBundleSet || 
+                                   norm.includes('急速充電器') || item.id === 'inv_dp5000_chg';
 
       let calculatedStock = item.currentStock;
-      if (!isSerialItem) {
-        calculatedStock = totalIn - shippedQty;
+      if (!isSerialOrLinkedItem) {
+        // 非シリアル品目は入庫総数から伝票出荷数を引く（過去ロット未登録時のマイナス化を自動防止）
+        calculatedStock = Math.max(0, totalIn - shippedQty);
         if (item.currentStock !== calculatedStock) {
           item.currentStock = calculatedStock;
           modified = true;
@@ -9247,7 +9247,7 @@ function syncInventoryStockFromIssuedDocs() {
         after: calculatedStock,
         shipped: shippedQty,
         totalIn: totalIn,
-        isSerialItem: isSerialItem
+        isSerialItem: isSerialOrLinkedItem
       };
 
       detailsList.push({
