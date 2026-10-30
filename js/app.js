@@ -8752,7 +8752,7 @@ function initLotItemRows(defaultItemId = null) {
       rowId: nextLotRowId++,
       itemId: firstItem ? firstItem.id : '',
       itemName: firstItem ? firstItem.name : '',
-      hasSerial: firstItem ? (firstItem.hasSerial === true || isFirstBundle) : false,
+      hasSerial: firstItem ? (firstItem.hasSerial === true || isFirstBundle || isItemSerialTracked(firstItem)) : false,
       isBundle: isFirstBundle,
       qty: initialQty,
       unitPrice: initialUnitPrice,
@@ -8782,7 +8782,7 @@ function addLotItemRow() {
     rowId: nextLotRowId++,
     itemId: candidate ? candidate.id : '',
     itemName: candidate ? candidate.name : '',
-    hasSerial: candidate ? (candidate.hasSerial === true || isCandidateBundle) : false,
+    hasSerial: candidate ? (candidate.hasSerial === true || isCandidateBundle || isItemSerialTracked(candidate)) : false,
     isBundle: isCandidateBundle,
     qty: initialQty,
     unitPrice: initialUnitPrice,
@@ -8807,6 +8807,38 @@ function removeLotItemRow(rowId) {
   updateLandedCostCalculation(true);
 }
 
+function isItemSerialTracked(item) {
+  if (!item) return false;
+  const name = String(item.name || item.itemName || '').toUpperCase();
+  const id = String(item.id || item.itemId || '');
+  return Boolean(
+    item.hasSerial === true ||
+    item.type === 'bundle' ||
+    id === 'inv_1' || id === 'inv_2' || id === 'inv_dp5000_body' || id === 'inv_dp5000_bat' ||
+    name.includes('DP-5000') ||
+    name.includes('バッテリー') ||
+    name.includes('電池') ||
+    name.includes('DP-MS') ||
+    name.includes('メカニカルスプレッダー') ||
+    name.includes('スプレッダー')
+  );
+}
+window.isItemSerialTracked = isItemSerialTracked;
+
+function isBundleLotRow(r) {
+  if (!r) return false;
+  return r.itemId === 'inv_1' || 
+         r.isBundle === true || 
+         (r.itemName && r.itemName.includes('ベーシックセット'));
+}
+window.isBundleLotRow = isBundleLotRow;
+
+function isLotRowRequireSerial(r) {
+  if (!r) return false;
+  return Boolean(r.hasSerial || isBundleLotRow(r) || isItemSerialTracked(r));
+}
+window.isLotRowRequireSerial = isLotRowRequireSerial;
+
 function renderLotItemRows() {
   if (!DOM.lotItemsTableBody) return;
   const singleItems = getSingleItemList();
@@ -8822,15 +8854,16 @@ function renderLotItemRows() {
     totalForeignSubtotal += Number(r.foreignSubtotal) || 0;
 
     const optionsHtml = singleItems.map(item => {
-      const isBundle = item.type === 'bundle';
+      const isBundle = item.type === 'bundle' || isBundleLotRow(item);
+      const isSerial = isItemSerialTracked(item);
       const bundlePrefix = isBundle ? '📦【セット仕入】' : '';
-      const serialSuffix = (item.hasSerial || isBundle) ? '🔢(S/N追跡)' : '';
+      const serialSuffix = isSerial ? '🔢(S/N追跡)' : '';
       return `
         <option value="${item.id}"
           data-name="${escapeHtml(item.name)}"
           data-type="${item.type || 'single'}"
           data-is-bundle="${isBundle ? '1' : '0'}"
-          data-has-serial="${(item.hasSerial || isBundle) ? '1' : '0'}"
+          data-has-serial="${isSerial ? '1' : '0'}"
           data-unit-cost="${Number(item.unitCost || item.cost) || 0}"
           ${item.id === r.itemId ? 'selected' : ''}>
           ${bundlePrefix}${escapeHtml(item.name)} ${serialSuffix} [現在庫: ${item.currentStock}${item.unit || '個'}]
@@ -8884,20 +8917,6 @@ function renderLotItemRows() {
   }
 }
 
-function isBundleLotRow(r) {
-  if (!r) return false;
-  return r.itemId === 'inv_1' || 
-         r.isBundle === true || 
-         (r.itemName && r.itemName.includes('ベーシックセット'));
-}
-window.isBundleLotRow = isBundleLotRow;
-
-function isLotRowRequireSerial(r) {
-  if (!r) return false;
-  return Boolean(r.hasSerial || isBundleLotRow(r));
-}
-window.isLotRowRequireSerial = isLotRowRequireSerial;
-
 function onLotItemSelectChange(rowId, selectElem) {
   const row = lotItemRows.find(r => r.rowId === rowId);
   if (!row) return;
@@ -8908,7 +8927,7 @@ function onLotItemSelectChange(rowId, selectElem) {
     row.itemName = opt.dataset.name || opt.text.split('[')[0].trim();
     const isBundle = opt.dataset.isBundle === '1' || opt.value === 'inv_1' || (row.itemName && row.itemName.includes('ベーシックセット'));
     row.isBundle = isBundle;
-    row.hasSerial = opt.dataset.hasSerial === '1' || isBundle;
+    row.hasSerial = opt.dataset.hasSerial === '1' || isItemSerialTracked(row);
     const cost = Number(opt.dataset.unitCost) || 0;
     if (cost > 0 && !row.foreignPrice && !row.foreignSubtotal) {
       row.unitPrice = cost;
@@ -9312,17 +9331,28 @@ function getLotSerialConfigs() {
         isBundlePart: true,
         parentRow: r
       });
-    } else if (r.hasSerial) {
+    } else if (isLotRowRequireSerial(r)) {
       let prefix = 'SN';
-      if (r.itemName && (r.itemName.includes('DP-5000') || r.itemName.includes('本体'))) prefix = 'DP5K';
-      else if (r.itemName && (r.itemName.includes('バッテリー') || r.itemName.includes('電池'))) prefix = 'BAT';
+      let label = `🔢 ${r.itemName} (${r.qty} 台分)`;
+      const name = String(r.itemName || '').toUpperCase();
+
+      if (name.includes('DP-5000') || name.includes('本体')) {
+        prefix = 'DP5K';
+        label = `🔢 【DP-5000 本体】 (${r.qty} 台分)`;
+      } else if (name.includes('バッテリー') || name.includes('電池')) {
+        prefix = 'BAT';
+        label = `🔋 【バッテリー】 (${r.qty} 個分)`;
+      } else if (name.includes('DP-MS') || name.includes('メカニカルスプレッダー') || name.includes('スプレッダー') || r.itemId === 'inv_2') {
+        prefix = 'MS';
+        label = `🔢 【DP-MS メカニカルスプレッダー】 (${r.qty} 台分)`;
+      }
 
       configs.push({
         groupKey: String(r.rowId),
         rowId: r.rowId,
         itemId: r.itemId,
         itemName: r.itemName,
-        label: `🔢 ${r.itemName} (${r.qty} 台分)`,
+        label: label,
         qty: r.qty,
         prefix: prefix,
         role: 'single',
@@ -10136,7 +10166,7 @@ function submitInventoryLotStockIn() {
           shippedDate: ''
         });
       });
-    } else if (r.hasSerial) {
+    } else if (r.hasSerial || isItemSerialTracked(r)) {
       const serialList = serialsByGroupKey[String(r.rowId)] || [];
       serialList.forEach(sn => {
         allSerialObjects.push({

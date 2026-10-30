@@ -4190,7 +4190,9 @@ export function deduplicateInventoryList(rawList) {
         lastInDate: inv.lastInDate || '',
         note: inv.note || '',
         type: inv.type || (inv.id === 'inv_1' ? 'bundle' : 'single'),
-        hasSerial: inv.hasSerial !== undefined ? !!inv.hasSerial : (inv.id === 'inv_dp5000_body' || inv.id === 'inv_dp5000_bat'),
+        hasSerial: (inv.hasSerial !== undefined ? !!inv.hasSerial : false) || 
+                   (inv.id === 'inv_dp5000_body' || inv.id === 'inv_dp5000_bat' || inv.id === 'inv_2') || 
+                   (normName.includes('DP-5000') || normName.includes('バッテリー') || normName.includes('DP-MS') || normName.includes('メカニカルスプレッダー') || normName.includes('スプレッダー')),
         bundleItems: Array.isArray(inv.bundleItems) ? [...inv.bundleItems] : (inv.id === 'inv_1' ? [
           { inventoryId: 'inv_dp5000_body', name: 'DP-5000 本体', qty: 1, role: 'main' },
           { inventoryId: 'inv_dp5000_bat', name: 'PSE認証 リチウムイオンバッテリー', qty: 2, role: 'battery' },
@@ -4272,13 +4274,20 @@ export function getInventoryList() {
           existing.name = prod.name;
           modified = true;
         }
+        const isTracked = (prod.name.includes('DP-5000') || prod.name.includes('バッテリー') || prod.name.includes('DP-MS') || prod.name.includes('メカニカルスプレッダー') || prod.name.includes('スプレッダー'));
+        if (isTracked && !existing.hasSerial) {
+          existing.hasSerial = true;
+          modified = true;
+        }
       } else {
         // 商品マスタにあるが在庫リストにない商品を自動追加（初期在庫0）
+        const isTracked = (prod.name.includes('DP-5000') || prod.name.includes('バッテリー') || prod.name.includes('DP-MS') || prod.name.includes('メカニカルスプレッダー') || prod.name.includes('スプレッダー'));
         list.push({
           id: `inv_${prod.id}`,
           itemId: prod.id,
           name: prod.name,
           sku: prod.sku || '',
+          hasSerial: isTracked,
           currentStock: 0,
           safetyStock: 5,
           unit: prod.unit || '個',
