@@ -5941,8 +5941,21 @@ export function syncInventoryStockFromIssuedDocs() {
       const totalIn = lotInQty;
 
       // 現在庫 ＝ 実ロット入庫累計 − 全出荷数（伝票出荷 ＋ デモ機・寄贈等の未紐付け出庫）
-      // ※ 未入庫便がある場合は計算通りマイナス（DP-5000: 20台入庫 - 32台出荷 = -12台）として正確に保持
-      const calculatedStock = totalIn - shippedQty;
+      // ※ 急速充電器の場合は手動セット化解除（log_unbundle_: +1）および手動セット品化（log_bundle_: -1）の変動を正確に合算
+      let manualSetDelta = 0;
+      if (item.id === 'inv_dp5000_chg' || norm.includes('急速充電器')) {
+        if (Array.isArray(item.history)) {
+          item.history.forEach(h => {
+            if (h && h.id && String(h.id).startsWith('log_unbundle_')) {
+              manualSetDelta += (Number(h.qty) || 1);
+            } else if (h && h.id && String(h.id).startsWith('log_bundle_')) {
+              manualSetDelta -= (Number(h.qty) || 1);
+            }
+          });
+        }
+      }
+
+      const calculatedStock = totalIn - shippedQty + manualSetDelta;
       if (item.currentStock !== calculatedStock) {
         item.currentStock = calculatedStock;
         modified = true;
@@ -6608,10 +6621,10 @@ export function disassembleDP5000Bundle(bodySerialNumber) {
       }
     });
 
-    // 2. 急速充電器の在庫を +1 戻す
+    // 2. 急速充電器の在庫を +1 戻す（DP-5000セット品化解除時は無条件で充電器を1個通常在庫へ戻す）
     const invList = getInventoryList();
     const chgItem = invList.find(it => it.id === 'inv_dp5000_chg' || (it.name && it.name.includes('急速充電器')));
-    if (chgItem && bodySerial.chargerDeducted) {
+    if (chgItem) {
       chgItem.currentStock = Number(chgItem.currentStock || 0) + 1;
       if (!Array.isArray(chgItem.history)) chgItem.history = [];
       chgItem.history.unshift({
@@ -6619,7 +6632,7 @@ export function disassembleDP5000Bundle(bodySerialNumber) {
         date: new Date().toISOString().split('T')[0],
         type: 'in',
         qty: 1,
-        reason: `DP-5000(S/N: ${cleanBodySn})セット品化解除に伴う在庫戻し`,
+        reason: `DP-5000(S/N: ${cleanBodySn})セット品化解除に伴う急速充電器の在庫戻し`,
         currentStock: chgItem.currentStock,
         timestamp: new Date().toISOString()
       });
