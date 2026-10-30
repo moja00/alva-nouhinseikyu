@@ -3646,17 +3646,16 @@ function setupEventListeners() {
       renderInventoryTable();
       renderInventorySerialTable();
       const docCount = res.validDocCount || 0;
-      const updatedNames = Object.keys(res.summary || {});
-      if (res.updated && updatedNames.length > 0) {
-        const details = updatedNames.map(name => `・${name}: ${res.summary[name].before}個 → ${res.summary[name].after}個 (累計出荷: -${res.summary[name].shipped}個 / 総入庫: ${res.summary[name].totalIn}個)`).join('\n');
-        alert(`【発行伝票から在庫引落 完了】\n発行済伝票（計${docCount}件）から出荷数量を集計し、実在庫を最新に更新しました！\n\n${details}`);
+      const details = (res.detailsList && res.detailsList.length > 0)
+        ? res.detailsList.map(d => `・${d.name}: 伝票出荷 ${d.shipped}台 (現在庫: ${d.after}台 / 入庫総数: ${d.totalIn}台)`).join('\n')
+        : '（出荷集計対象なし）';
+
+      if (res.updated) {
+        alert(`【発行伝票から在庫集計 完了】\n確定発行済伝票（計${docCount}件）から出荷数量を集計し、実在庫を更新しました！\n\n【伝票出荷数 内訳】\n${details}\n\n※デモ機等の伝票未発行分は含まれていません。`);
         showToast(`発行伝票（${docCount}件）から出荷数量を実在庫へ引き落としました！`, 'success');
       } else {
-        const details = (res.detailsList && res.detailsList.length > 0)
-          ? '\n\n【現在の出荷集計内訳】\n' + res.detailsList.map(d => `・${d.name}: 現在庫 ${d.after}個 (累計出荷: -${d.shipped}個 / 総入庫: ${d.totalIn}個)`).join('\n')
-          : '';
-        alert(`【在庫・伝票完全一致】\n発行済伝票（計${docCount}件）の出荷数量と、現在の在庫数は完全に一致しています（すべて最新状態です）。${details}`);
-        showToast(`発行済伝票（${docCount}件）の出荷数量と現在の在庫はすべて一致しています`, 'info');
+        alert(`【伝票出荷集計 内訳】\n確定発行済伝票（計${docCount}件）から集計された出荷数量です：\n\n${details}\n\n※デモ機等の伝票未発行分は含まれていません。現在の在庫数は同期済みです。`);
+        showToast(`発行済伝票（${docCount}件）の出荷数量と現在の在庫はすべて同期済みです`, 'info');
       }
     });
   }
