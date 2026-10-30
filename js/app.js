@@ -4920,6 +4920,11 @@ function filterAndRenderHistoryList() {
             ${endUserBadge}
             <span style="font-weight: 800; font-size: 0.95rem; color: #0f172a;">${escapeHtml(item.clientName || item.client?.name || '名称未設定')}</span>
             <span style="font-size: 0.8rem; color: #64748b; font-family: monospace; background: #f1f5f9; padding: 1px 6px; border-radius: 4px;">${escapeHtml(item.docNumber || '-')}</span>
+            ${(item.replacesDocNumber || item.fullDoc?.replacesDocNumber) ? `
+              <button type="button" class="btn btn-xs" onclick="event.stopPropagation(); window.viewSupersededDoc('${escapeHtml(item.replacesDocNumber || item.fullDoc.replacesDocNumber)}')" style="background: #fef3c7; color: #92400e; border: 1px solid #fde68a; font-size: 0.7rem; font-weight: 700; padding: 1px 6px; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px; cursor: pointer;" title="訂正前の元伝票を確認">
+                <span>📄</span> 訂正前: ${escapeHtml(item.replacesDocNumber || item.fullDoc.replacesDocNumber)} を確認
+              </button>
+            ` : ''}
           </div>
           
           <div style="font-size: 0.8rem; color: #475569; display: flex; flex-wrap: wrap; gap: 12px; align-items: center;">
@@ -18573,3 +18578,107 @@ if (document.readyState === 'loading') {
 window.syncInventoryStockFromSerials = syncInventoryStockFromSerials;
 
 window.isRepairItem = isRepairItem;
+
+/**
+ * 訂正前の元伝票プレビューモーダルを開く
+ * @param {string} targetDocNumber - 参照したい元伝票番号
+ */
+function viewSupersededDoc(targetDocNumber) {
+  if (!targetDocNumber) return;
+  const cleanTarget = String(targetDocNumber).trim();
+  const allHistory = typeof getHistoryList === 'function' ? getHistoryList(true) : [];
+  
+  const found = allHistory.find(item => {
+    const doc = item.fullDoc || item;
+    return String(doc.docNumber || doc.invoiceNumber || item.docNumber || '').trim() === cleanTarget;
+  });
+
+  if (!found) {
+    showToast(`元伝票(${cleanTarget})のデータが見つかりませんでした。`, 'warning');
+    return;
+  }
+
+  const doc = found.fullDoc || found;
+  const modal = document.getElementById('modalSupersededViewer');
+  const body = document.getElementById('supersededModalBody');
+  const title = document.getElementById('supersededModalTitle');
+  if (!modal || !body) return;
+
+  if (title) {
+    title.textContent = `訂正前の元伝票: ${cleanTarget}（履歴保管データ）`;
+  }
+
+  const items = Array.isArray(doc.items) ? doc.items : [];
+  let itemsHtml = items.map((it, idx) => `
+    <tr style="border-bottom: 1px solid #f1f5f9;">
+      <td style="padding: 8px; text-align: center; color: #64748b;">${idx + 1}</td>
+      <td style="padding: 8px; font-weight: 700; color: #1e293b;">${escapeHtml(it.name || '名称未設定')}</td>
+      <td style="padding: 8px; text-align: right; font-family: monospace;">${Number(it.quantity || it.qty || 1)}</td>
+      <td style="padding: 8px; text-align: right; font-family: monospace;">¥${Number(it.unitPrice || it.price || 0).toLocaleString()}</td>
+      <td style="padding: 8px; text-align: right; font-weight: 700; font-family: monospace;">¥${Number(it.amount || ((it.quantity || 1) * (it.unitPrice || 0))).toLocaleString()}</td>
+    </tr>
+  `).join('');
+
+  body.innerHTML = `
+    <div style="background: #fffbeb; border: 1px solid #fef3c7; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+      <div>
+        <div style="font-weight: 800; color: #92400e; font-size: 0.95rem;">⚠️ 価格改訂・訂正前の元伝票です</div>
+        <div style="font-size: 0.775rem; color: #b45309; margin-top: 2px;">
+          改訂理由: ${escapeHtml(doc.supersededReason || '同行特価・価格訂正に伴う履歴保持')}
+          ${doc.supersededBy ? ` ➡ 新伝票: <strong>${escapeHtml(doc.supersededBy)}</strong> に改訂済` : ''}
+        </div>
+      </div>
+      <span style="background: #fef08a; color: #854d0e; font-weight: 700; font-size: 0.75rem; padding: 3px 8px; border-radius: 4px;">訂正前 (superseded)</span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px; font-size: 0.85rem;">
+      <div style="background: #f8fafc; padding: 10px 12px; border-radius: 6px; border: 1px solid #e2e8f0;">
+        <span style="color: #64748b; font-size: 0.75rem; display: block;">伝票番号</span>
+        <strong style="font-family: monospace; font-size: 0.95rem;">${escapeHtml(cleanTarget)}</strong>
+      </div>
+      <div style="background: #f8fafc; padding: 10px 12px; border-radius: 6px; border: 1px solid #e2e8f0;">
+        <span style="color: #64748b; font-size: 0.75rem; display: block;">発行日（作成日）</span>
+        <strong>${escapeHtml(doc.date || doc.invoiceDate || doc.issueDate || '-')}</strong>
+      </div>
+      <div style="background: #f8fafc; padding: 10px 12px; border-radius: 6px; border: 1px solid #e2e8f0;">
+        <span style="color: #64748b; font-size: 0.75rem; display: block;">宛名（取引先）</span>
+        <strong>${escapeHtml(doc.clientName || doc.customerName || '名称未設定')} 様</strong>
+      </div>
+      <div style="background: #f8fafc; padding: 10px 12px; border-radius: 6px; border: 1px solid #e2e8f0;">
+        <span style="color: #64748b; font-size: 0.75rem; display: block;">件名</span>
+        <strong>${escapeHtml(doc.title || doc.subject || '-')}</strong>
+      </div>
+    </div>
+
+    <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-bottom: 16px; border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden;">
+      <thead>
+        <tr style="background: #f8fafc; border-bottom: 2px solid #e2e8f0; font-size: 0.75rem; color: #475569;">
+          <th style="padding: 8px; width: 40px; text-align: center;">#</th>
+          <th style="padding: 8px; text-align: left;">品名・内訳</th>
+          <th style="padding: 8px; width: 60px; text-align: right;">数量</th>
+          <th style="padding: 8px; width: 100px; text-align: right;">単価</th>
+          <th style="padding: 8px; width: 120px; text-align: right;">金額</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${itemsHtml || '<tr><td colspan="5" style="text-align:center; padding:16px; color:#94a3b8;">明細なし</td></tr>'}
+      </tbody>
+      <tfoot>
+        <tr style="background: #f8fafc; border-top: 2px solid #e2e8f0;">
+          <td colspan="4" style="padding: 10px; text-align: right; font-weight: 700; color: #475569;">訂正前 税込合計金額:</td>
+          <td style="padding: 10px; text-align: right; font-weight: 900; font-size: 1.1rem; color: #0f172a; font-family: monospace;">¥${Number(doc.total || doc.grandTotal || 0).toLocaleString()}</td>
+        </tr>
+      </tfoot>
+    </table>
+  `;
+
+  modal.style.display = 'flex';
+}
+window.viewSupersededDoc = viewSupersededDoc;
+
+function closeSupersededModal() {
+  const modal = document.getElementById('modalSupersededViewer');
+  if (modal) modal.style.display = 'none';
+}
+window.closeSupersededModal = closeSupersededModal;
+

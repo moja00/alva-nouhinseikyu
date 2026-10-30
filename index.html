@@ -309,7 +309,7 @@
         </button>
         <div style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
-          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.30-charger-available-for-bundling</span>
+          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.30-superseded-revision-charger-link</span>
         </div>
       </div>
 
@@ -6799,11 +6799,35 @@
     </div>
   </div>
 
+  <!-- 訂正前元伝票確認モーダル -->
+  <div class="modal-backdrop" id="modalSupersededViewer" style="display: none; align-items: center; justify-content: center; z-index: 10050;">
+    <div class="modal-dialog" style="max-width: 800px; width: 95%; background: #ffffff; border-radius: 12px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.2); overflow: hidden; display: flex; flex-direction: column; max-height: 90vh;">
+      <div class="modal-header" style="padding: 14px 20px; background: #fef3c7; border-bottom: 1px solid #fde68a; display: flex; justify-content: space-between; align-items: center;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 1.2rem;">📄</span>
+          <div>
+            <h3 style="margin: 0; font-size: 1rem; font-weight: 800; color: #92400e;" id="supersededModalTitle">訂正前の元伝票プレビュー（履歴参照）</h3>
+            <span style="font-size: 0.75rem; color: #b45309;" id="supersededModalSubtitle">※ この伝票は価格改訂・訂正前の過去履歴データです（会計・在庫二重引当防止済）</span>
+          </div>
+        </div>
+        <button type="button" class="btn-close" onclick="window.closeSupersededModal && window.closeSupersededModal()" style="border: none; background: transparent; font-size: 1.2rem; cursor: pointer; color: #92400e;">✕</button>
+      </div>
+
+      <div class="modal-body" id="supersededModalBody" style="padding: 20px; overflow-y: auto; flex: 1;">
+        <!-- JSで動的に元伝票の詳細を描画 -->
+      </div>
+
+      <div class="modal-footer" style="padding: 12px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; justify-content: flex-end;">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="window.closeSupersededModal && window.closeSupersededModal()">閉じる</button>
+      </div>
+    </div>
+  </div>
+
   <!-- トースト通知コンテナ -->
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261030_charger_available_for_bundling"></script>
+  <script src="js/app.bundle.js?v=20261030_superseded_revision_charger_link"></script>
 </body>
 
 </html>
