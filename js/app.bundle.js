@@ -19826,42 +19826,56 @@ function generateSerialNumbersForGroup(groupKey) {
   const cfg = serialConfigs.find(c => c.groupKey === String(groupKey));
   if (!cfg) return;
 
-  const d = new Date();
-  const yymm = `${String(d.getFullYear()).slice(-2)}${String(d.getMonth() + 1).padStart(2, '0')}`;
-  const prefix = `${cfg.prefix}-${yymm}-`;
+  const card = DOM.lotSerialGroupsContainer.querySelector(`.lot-serial-group-card[data-group-key="${cfg.groupKey}"], .lot-serial-group-card[data-row-id="${cfg.groupKey}"]`);
+  const inps = card ? card.querySelectorAll('.lot-serial-group-input') : [];
 
-  const existingSerials = getInventorySerialList();
-  const existingNumbers = new Set(existingSerials.map(s => s.serialNumber));
-
-  // 他の品目グループで既に入力中の番号も含めて重複回避
-  const otherInputs = DOM.lotSerialGroupsContainer.querySelectorAll(`.lot-serial-group-input:not([data-group-key="${cfg.groupKey}"])`);
-  otherInputs.forEach(inp => {
-    const v = (inp.value || '').trim();
-    if (v) existingNumbers.add(v);
-  });
-
-  const generated = [];
-  let num = 1;
-  while (generated.length < cfg.qty) {
-    const sn = `${prefix}${String(num).padStart(3, '0')}`;
-    if (!existingNumbers.has(sn)) {
-      generated.push(sn);
-      existingNumbers.add(sn);
+  // ロットの入荷日（lotInputDate）から YYMM を正確に抽出（例: 2026-03-24 -> 2603）
+  let yymm = '';
+  if (DOM.lotInputDate && DOM.lotInputDate.value) {
+    const parts = DOM.lotInputDate.value.split('-');
+    if (parts.length >= 2) {
+      yymm = `${parts[0].slice(-2)}${parts[1].padStart(2, '0')}`;
     }
-    num++;
+  }
+  if (!yymm) {
+    const d = new Date();
+    yymm = `${String(d.getFullYear()).slice(-2)}${String(d.getMonth() + 1).padStart(2, '0')}`;
   }
 
-  const inps = DOM.lotSerialGroupsContainer.querySelectorAll(`.lot-serial-group-input[data-group-key="${cfg.groupKey}"], .lot-serial-group-input[data-row-id="${cfg.groupKey}"]`);
+  // もし #1（先頭スロット）にすでにシリアルが入っていれば、そのプレフィックスと開始番号を採用！
+  const firstVal = (inps[0] && inps[0].value ? inps[0].value.trim() : '');
+  let prefix = `${cfg.prefix}-${yymm}-`;
+  let startNum = 1;
+  let numLen = 3;
+
+  if (firstVal) {
+    const match = firstVal.match(/^(.*?)(\d+)$/);
+    if (match) {
+      prefix = match[1];
+      startNum = parseInt(match[2], 10);
+      numLen = match[2].length;
+    }
+  }
+
+  // 連番配列の生成
+  const generated = [];
+  for (let i = 0; i < cfg.qty; i++) {
+    const currentNum = startNum + i;
+    const sn = `${prefix}${String(currentNum).padStart(numLen, '0')}`;
+    generated.push(sn);
+  }
+
+  // スロットへ代入
   inps.forEach((inp, i) => {
     inp.value = generated[i] || '';
   });
 
   // 一括テキストエリアにも同期
-  const textarea = DOM.lotSerialGroupsContainer.querySelector(`.group-serial-textarea[data-group-key="${cfg.groupKey}"], .group-serial-textarea[data-row-id="${cfg.groupKey}"]`);
+  const textarea = card ? card.querySelector('.group-serial-textarea') : null;
   if (textarea) textarea.value = generated.join('\n');
 
   updateAllSerialValidationAndBadges();
-  showToast(`「${cfg.label}」に連番シリアル ${cfg.qty} 件を自動入力しました。`, 'info');
+  showToast(`「${cfg.label}」に連番シリアル ${cfg.qty} 件（${generated[0]} 〜 ${generated[generated.length - 1]}）を自動入力しました。`, 'success');
 }
 
 // 一括テキストエリアのトグル表示
