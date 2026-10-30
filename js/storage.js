@@ -5849,6 +5849,11 @@ export function syncInventoryStockFromIssuedDocs() {
       shippedQtyMap['grp_dpms'] = Math.max(shippedQtyMap['grp_dpms'] || 0, totalSerialOutMap['grp_dpms']);
     }
 
+    // セット品（DP-5000 ベーシックセット）の出荷に伴う急速充電器の消費を出庫数に完全連動
+    const setShippedTotal = shippedQtyMap['grp_dp5000'] || 0;
+    shippedQtyMap['grp_charger'] = (shippedQtyMap['grp_charger'] || 0) + setShippedTotal;
+    shippedQtyMap['inv_dp5000_chg'] = (shippedQtyMap['inv_dp5000_chg'] || 0) + setShippedTotal;
+
     // 2. ロット履歴からの総入庫数集計 ＆ 最新確定仕入原価・最新入荷日の集計
     const rawLots = localStorage.getItem(KEYS.INVENTORY_LOTS);
     const lots = rawLots ? JSON.parse(rawLots) : [];
@@ -5873,7 +5878,10 @@ export function syncInventoryStockFromIssuedDocs() {
             const itName = it.itemName || '';
             const norm = getMasterKey(itName);
             let groupKey = norm;
-            if (norm.includes('dp-5000') || norm.includes('ベーシックセット')) groupKey = 'grp_dp5000';
+            const isBasicSet = norm.includes('ベーシックセット') || (norm.includes('dp-5000') && !norm.includes('本体') && !norm.includes('ms'));
+
+            if (isBasicSet) groupKey = 'grp_dp5000';
+            else if (norm.includes('dp-5000') || norm.includes('本体')) groupKey = 'grp_dp5000';
             else if (norm.includes('dp-ms') || norm.includes('スプレッダー')) groupKey = 'grp_dpms';
             else if (norm.includes('dp-eg') || norm.includes('3点引き')) groupKey = 'grp_dpeg';
             else if (norm.includes('dp-ac') || norm.includes('アクセサリー')) groupKey = 'grp_dpac';
@@ -5884,6 +5892,13 @@ export function syncInventoryStockFromIssuedDocs() {
             totalInQtyMap[groupKey] = (totalInQtyMap[groupKey] || 0) + q;
             totalInQtyMap[norm] = (totalInQtyMap[norm] || 0) + q;
             if (it.itemId) totalInQtyMap[it.itemId] = (totalInQtyMap[it.itemId] || 0) + q;
+
+            // ベーシックセット仕入の場合：付属の急速充電器(+q)および本体(+q)の入庫としても自動連動
+            if (isBasicSet) {
+              totalInQtyMap['grp_charger'] = (totalInQtyMap['grp_charger'] || 0) + q;
+              totalInQtyMap['inv_dp5000_chg'] = (totalInQtyMap['inv_dp5000_chg'] || 0) + q;
+              totalInQtyMap['inv_dp5000_body'] = (totalInQtyMap['inv_dp5000_body'] || 0) + q;
+            }
 
             // 最新確定原価・入荷日の更新（時系列でより新しい日付を優先）
             const cost = Number(it.unitCost || it.landedUnitCost) || 0;
@@ -5898,7 +5913,10 @@ export function syncInventoryStockFromIssuedDocs() {
           const itName = lot.itemName || '';
           const norm = getMasterKey(itName);
           let groupKey = norm;
-          if (norm.includes('dp-5000') || norm.includes('ベーシックセット')) groupKey = 'grp_dp5000';
+          const isBasicSet = norm.includes('ベーシックセット') || (norm.includes('dp-5000') && !norm.includes('本体') && !norm.includes('ms'));
+
+          if (isBasicSet) groupKey = 'grp_dp5000';
+          else if (norm.includes('dp-5000') || norm.includes('本体')) groupKey = 'grp_dp5000';
           else if (norm.includes('dp-ms') || norm.includes('スプレッダー')) groupKey = 'grp_dpms';
           else if (norm.includes('dp-eg') || norm.includes('3点引き')) groupKey = 'grp_dpeg';
           else if (norm.includes('dp-ac') || norm.includes('アクセサリー')) groupKey = 'grp_dpac';
@@ -5909,6 +5927,13 @@ export function syncInventoryStockFromIssuedDocs() {
           totalInQtyMap[groupKey] = (totalInQtyMap[groupKey] || 0) + q;
           totalInQtyMap[norm] = (totalInQtyMap[norm] || 0) + q;
           if (lot.itemId) totalInQtyMap[lot.itemId] = (totalInQtyMap[lot.itemId] || 0) + q;
+
+          // ベーシックセット仕入の場合：付属の急速充電器(+q)および本体(+q)の入庫としても自動連動
+          if (isBasicSet) {
+            totalInQtyMap['grp_charger'] = (totalInQtyMap['grp_charger'] || 0) + q;
+            totalInQtyMap['inv_dp5000_chg'] = (totalInQtyMap['inv_dp5000_chg'] || 0) + q;
+            totalInQtyMap['inv_dp5000_body'] = (totalInQtyMap['inv_dp5000_body'] || 0) + q;
+          }
 
           // 最新確定原価・入荷日の更新
           const cost = Number(lot.unitCost || lot.landedUnitCost) || 0;
