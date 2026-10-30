@@ -309,7 +309,7 @@
         </button>
         <div style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
-          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.30-lot-modal-persistent-draft</span>
+          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.10.30-doc-stock-sync</span>
         </div>
       </div>
 
@@ -1625,6 +1625,11 @@
         <button type="button" id="btnSyncInventoryWithItems" class="btn btn-secondary btn-sm"
           style="display: inline-flex; align-items: center; gap: 6px;" title="商品マスタに登録されている商品で在庫マスタに未登録のものを一括取り込みます">
           🔄 商品取込
+        </button>
+        <button type="button" id="btnSyncStockFromDocs" class="btn btn-secondary btn-sm"
+          style="display: inline-flex; align-items: center; gap: 6px; background: #f0fdf4; border-color: #86efac; color: #166534; font-weight: 700;"
+          title="これまでに発行・確定した納品書・請求書の出荷数量を集計し、実在庫を自動引き落とし・同期します">
+          🚚 発行伝票から出荷引落
         </button>
         <button type="button" id="btnOpenInventoryLotModal" class="btn btn-success btn-sm"
           style="display: inline-flex; align-items: center; gap: 6px; background: #059669; border-color: #059669; color: #ffffff; font-weight: 700;"
@@ -6802,7 +6807,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261030_lot_modal_persistent_draft"></script>
+  <script src="js/app.bundle.js?v=20261030_doc_stock_sync"></script>
 </body>
 
 </html>

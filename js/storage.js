@@ -4190,9 +4190,11 @@ export function deduplicateInventoryList(rawList) {
         lastInDate: inv.lastInDate || '',
         note: inv.note || '',
         type: inv.type || (inv.id === 'inv_1' ? 'bundle' : 'single'),
-        hasSerial: (inv.hasSerial !== undefined ? !!inv.hasSerial : false) || 
-                   (inv.id === 'inv_dp5000_body' || inv.id === 'inv_dp5000_bat' || inv.id === 'inv_2') || 
-                   (normName.includes('DP-5000') || normName.includes('バッテリー') || normName.includes('DP-MS') || normName.includes('メカニカルスプレッダー') || normName.includes('スプレッダー')),
+        hasSerial: (!normName.includes('DP-EG') && !normName.includes('3点引き') && !normName.includes('アタッチメント')) && (
+                     (inv.hasSerial !== undefined ? !!inv.hasSerial : false) || 
+                     (inv.id === 'inv_dp5000_body' || inv.id === 'inv_dp5000_bat' || inv.id === 'inv_2') || 
+                     (normName.includes('DP-5000') || normName.includes('バッテリー') || normName.includes('DP-MS') || normName.includes('メカニカルスプレッダー') || normName.includes('スプレッダー'))
+                   ),
         bundleItems: Array.isArray(inv.bundleItems) ? [...inv.bundleItems] : (inv.id === 'inv_1' ? [
           { inventoryId: 'inv_dp5000_body', name: 'DP-5000 本体', qty: 1, role: 'main' },
           { inventoryId: 'inv_dp5000_bat', name: 'PSE認証 リチウムイオンバッテリー', qty: 2, role: 'battery' },
@@ -4211,7 +4213,9 @@ export function deduplicateInventoryList(rawList) {
       if (inv.safetyStock > existing.safetyStock) existing.safetyStock = inv.safetyStock;
       if (!existing.lastInDate && inv.lastInDate) existing.lastInDate = inv.lastInDate;
       if (inv.type) existing.type = inv.type;
-      if (inv.hasSerial !== undefined) existing.hasSerial = inv.hasSerial;
+      if (inv.hasSerial !== undefined) {
+        existing.hasSerial = (!existing.name.includes('DP-EG') && !existing.name.includes('3点引き')) ? inv.hasSerial : false;
+      }
       if (Array.isArray(inv.bundleItems) && inv.bundleItems.length > 0) existing.bundleItems = inv.bundleItems;
       // 履歴をマージ（重複IDを除外）
       if (Array.isArray(inv.history)) {
@@ -5724,9 +5728,137 @@ export function syncInventoryStockFromSerials() {
       saveServerInventory(invList).catch(() => {});
       console.log('【在庫マスタ連動】シリアル台帳から現在庫数を同期更新しました:', inStockCounts);
     }
+
+    // 発行済伝票からの出荷数も自動引き落とし同期
+    syncInventoryStockFromIssuedDocs();
+
     return inStockCounts;
   } catch (e) {
     console.error('Failed to sync inventory from serials:', e);
+  }
+}
+
+/**
+ * 発行済伝票（確定された納品書・請求書）から出荷数量を集計し、
+ * 非シリアル商品および単品在庫を自動引き落とし・同期する
+ */
+export function syncInventoryStockFromIssuedDocs() {
+  try {
+    const rawDocs = localStorage.getItem(KEYS.DOC_HISTORY);
+    if (!rawDocs) return { updated: false, summary: {} };
+    const docs = JSON.parse(rawDocs);
+    if (!Array.isArray(docs) || docs.length === 0) return { updated: false, summary: {} };
+
+    const rawInv = localStorage.getItem(KEYS.INVENTORY);
+    if (!rawInv) return { updated: false, summary: {} };
+    let invList = JSON.parse(rawInv);
+    if (!Array.isArray(invList) || invList.length === 0) return { updated: false, summary: {} };
+
+    // 1. 各品目の「発行済出荷累計数量」を集計
+    const shippedQtyMap = {};
+    let validDocCount = 0;
+
+    docs.forEach(doc => {
+      // 確定発行済みかつ有効（未取消・見積書除外）な伝票のみ対象
+      if (!doc || doc.isCancelled || doc.docType === 'estimate') return;
+      if (!doc.isIssued && doc.status !== 'issued') return;
+
+      validDocCount++;
+      if (Array.isArray(doc.items)) {
+        doc.items.forEach(it => {
+          if (!it || !it.name) return;
+          const qty = Number(it.quantity) || 0;
+          if (qty <= 0) return;
+
+          const norm = getMasterKey(it.name);
+          shippedQtyMap[norm] = (shippedQtyMap[norm] || 0) + qty;
+          if (it.itemId) {
+            shippedQtyMap[it.itemId] = (shippedQtyMap[it.itemId] || 0) + qty;
+          }
+
+          // DP-5000 ベーシックセットが出荷された場合、構成品の充電器にも出荷数を反映
+          if (norm.includes('ベーシックセット') || it.name.includes('ベーシックセット')) {
+            shippedQtyMap['pse認証 急速充電器'] = (shippedQtyMap['pse認証 急速充電器'] || 0) + qty;
+            shippedQtyMap['inv_dp5000_chg'] = (shippedQtyMap['inv_dp5000_chg'] || 0) + qty;
+          }
+        });
+      }
+    });
+
+    // 2. 入庫累計（ロット入庫＋初期登録）から出荷数を引く
+    const rawLots = localStorage.getItem(KEYS.INVENTORY_LOTS);
+    const lots = rawLots ? JSON.parse(rawLots) : [];
+    const totalInQtyMap = {};
+
+    if (Array.isArray(lots)) {
+      lots.forEach(lot => {
+        if (!lot) return;
+        if (Array.isArray(lot.items)) {
+          lot.items.forEach(it => {
+            const norm = getMasterKey(it.itemName || '');
+            const q = Number(it.quantity) || 0;
+            totalInQtyMap[norm] = (totalInQtyMap[norm] || 0) + q;
+            if (it.itemId) totalInQtyMap[it.itemId] = (totalInQtyMap[it.itemId] || 0) + q;
+          });
+        } else if (lot.itemId || lot.itemName) {
+          const norm = getMasterKey(lot.itemName || '');
+          const q = Number(lot.quantity) || 0;
+          totalInQtyMap[norm] = (totalInQtyMap[norm] || 0) + q;
+          if (lot.itemId) totalInQtyMap[lot.itemId] = (totalInQtyMap[lot.itemId] || 0) + q;
+        }
+      });
+    }
+
+    let modified = false;
+    const summary = {};
+
+    invList.forEach(item => {
+      // シリアル管理品目（DP-5000本体、バッテリー、DP-MS等）はシリアル台帳連動で既に管理されているため除外
+      const norm = getMasterKey(item.name);
+      const isSerialManaged = item.hasSerial || norm.includes('dp-5000') || norm.includes('バッテリー') || norm.includes('dp-ms');
+      if (isSerialManaged) return;
+
+      // 非シリアル品目（DP-EG 3点引きアタッチメント、DP-AC アクセサリーキット、急速充電器、クランプ等）
+      const shippedQty = shippedQtyMap[norm] || (item.itemId ? shippedQtyMap[item.itemId] : 0) || 0;
+      const lotInQty = totalInQtyMap[norm] || (item.itemId ? totalInQtyMap[item.itemId] : 0) || 0;
+
+      // 初期棚卸在庫（history内の初期入庫数、なければitem.safetyStockや固定初期値）
+      let initialStock = 0;
+      if (Array.isArray(item.history)) {
+        const initLog = item.history.find(h => h && (h.reason?.includes('初期') || h.id?.includes('init')));
+        if (initLog) initialStock = Number(initLog.qty) || 0;
+      }
+      if (initialStock === 0 && lotInQty === 0 && item.currentStock > 0) {
+        initialStock = item.currentStock;
+      }
+
+      // 総入庫数 = 初期在庫 + ロット入庫数
+      const totalIn = Math.max(initialStock, lotInQty > 0 ? (initialStock + lotInQty) : initialStock);
+      // 実在庫 = 総入庫数 - 発行済出荷数（0下限）
+      const calculatedStock = Math.max(0, totalIn - shippedQty);
+
+      if (item.currentStock !== calculatedStock) {
+        summary[item.name] = {
+          before: item.currentStock,
+          after: calculatedStock,
+          shipped: shippedQty,
+          totalIn: totalIn
+        };
+        item.currentStock = calculatedStock;
+        modified = true;
+      }
+    });
+
+    if (modified) {
+      localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(invList));
+      saveServerInventory(invList).catch(() => {});
+      console.log('【伝票在庫連動】発行済伝票から実在庫を自動引落・同期しました:', summary);
+    }
+
+    return { updated: modified, validDocCount, summary };
+  } catch (err) {
+    console.error('syncInventoryStockFromIssuedDocs エラー:', err);
+    return { updated: false, summary: {} };
   }
 }
 

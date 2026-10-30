@@ -98,6 +98,7 @@ import {
   getAvailableSerialsByItem,
   calculateBundleStockAndCost,
   syncInventoryStockFromSerials,
+  syncInventoryStockFromIssuedDocs,
   isRepairItem,
   isNonStockItem
 } from './storage.js';
@@ -379,6 +380,7 @@ const DOM = {
   inputSearchInventory: document.getElementById('inputSearchInventory'),
   selectInventoryFilter: document.getElementById('selectInventoryFilter'),
   btnSyncInventoryWithItems: document.getElementById('btnSyncInventoryWithItems'),
+  btnSyncStockFromDocs: document.getElementById('btnSyncStockFromDocs'),
   btnToggleNewInventoryForm: document.getElementById('btnToggleNewInventoryForm'),
   inventoryFormContainer: document.getElementById('inventoryFormContainer'),
   inventoryFormTitle: document.getElementById('inventoryFormTitle'),
@@ -3632,6 +3634,24 @@ function setupEventListeners() {
         showToast(`商品マスタから ${res.addedCount}件 の商品を在庫品目として取り込みました！`, 'success');
       } else {
         showToast('商品マスタの商品はすべて在庫マスタに連携済みです。', 'info');
+      }
+    });
+  }
+
+  // 発行済伝票から実在庫を自動引落・同期
+  if (DOM.btnSyncStockFromDocs) {
+    DOM.btnSyncStockFromDocs.addEventListener('click', () => {
+      const res = syncInventoryStockFromIssuedDocs();
+      syncInventoryStockFromSerials();
+      renderInventoryTable();
+      renderInventorySerialTable();
+      const updatedNames = Object.keys(res.summary || {});
+      if (updatedNames.length > 0) {
+        const details = updatedNames.map(name => `・${name}: ${res.summary[name].before} → ${res.summary[name].after}個 (累計出荷: -${res.summary[name].shipped}個)`).join('\n');
+        alert(`【発行伝票から在庫引落 完了】\n発行済伝票（計${res.validDocCount}件）の出荷数量を集計し、実在庫へ引き落としました！\n\n${details}`);
+        showToast(`発行伝票（${res.validDocCount}件）から出荷数量を実在庫へ引き落としました！`, 'success');
+      } else {
+        showToast(`発行済伝票（${res.validDocCount}件）の出荷数量と現在の在庫はすべて一致しています（最新状態です）`, 'info');
       }
     });
   }
@@ -9008,8 +9028,12 @@ function isItemSerialTracked(item) {
   if (!item) return false;
   const name = String(item.name || item.itemName || '').toUpperCase();
   const id = String(item.id || item.itemId || '');
+  // DP-EG（3点引きアタッチメント）や消耗品等はシリアル追跡対象外
+  if (name.includes('DP-EG') || name.includes('3点引き') || name.includes('アタッチメント') || name.includes('DP-AC') || name.includes('アクセサリー')) {
+    return false;
+  }
   return Boolean(
-    item.hasSerial === true ||
+    (item.hasSerial === true && !name.includes('DP-EG') && !name.includes('3点引き')) ||
     item.type === 'bundle' ||
     id === 'inv_1' || id === 'inv_2' || id === 'inv_dp5000_body' || id === 'inv_dp5000_bat' ||
     name.includes('DP-5000') ||
