@@ -16381,12 +16381,12 @@ function renderSerialsManagementTable() {
           <th style="width: 115px; padding: 8px 6px; white-space: nowrap;">シリアル (S/N)</th>
           <th style="width: 150px; padding: 8px 6px; white-space: nowrap;">対象商品</th>
           <th style="width: 90px; padding: 8px 4px; text-align: center; white-space: nowrap;">ステータス</th>
-          <th style="width: 145px; max-width: 155px; padding: 8px 6px; white-space: nowrap;">販売した販売店</th>
-          <th style="width: 75px; padding: 8px 6px; white-space: nowrap;">ユーザー</th>
-          <th style="width: 90px; padding: 8px 4px; white-space: nowrap;">出荷日</th>
-          <th style="width: 95px; padding: 8px 4px; white-space: nowrap;">納品書紐付け</th>
-          <th style="min-width: 220px; padding: 8px 6px; white-space: nowrap;">備考欄</th>
-          <th style="width: 55px; padding: 8px 4px; text-align: center; white-space: nowrap;">操作</th>
+          <th style="width: 200px; padding: 8px 6px; white-space: nowrap;">販売した販売店</th>
+          <th style="width: 120px; padding: 8px 6px; white-space: nowrap;">ユーザー</th>
+          <th style="width: 110px; padding: 8px 4px; white-space: nowrap;">出荷日</th>
+          <th style="width: 115px; padding: 8px 4px; white-space: nowrap;">納品書紐付け</th>
+          <th style="padding: 8px 6px; white-space: nowrap;">備考欄</th>
+          <th style="width: 60px; padding: 8px 4px; text-align: center; white-space: nowrap;">操作</th>
         </tr>
       </thead>
       <tbody>
@@ -16480,46 +16480,46 @@ function renderSerialsManagementTable() {
           </select>
         </td>
 
-        <!-- 販売した販売店（インライン編集：表示が切れない範囲でジャストサイズ） -->
-        <td style="padding: 4px 6px; width: 145px; max-width: 155px;">
+        <!-- 販売した販売店（インライン編集：全角14文字でも切れない程よい大きさ 200px） -->
+        <td style="padding: 4px 6px; width: 200px;">
           <input type="text" class="form-input form-input-xs serial-inline-input"
             data-sn="${escapeHtml(s.serialNumber)}" data-field="clientName"
             value="${escapeHtml(effectiveClient)}" placeholder="${parentBody ? `[本体 ${parentBody.serialNumber} 連動]` : '販売店を入力...'}"
-            style="font-size: 0.775rem; width: 100%; border: 1px solid ${isParentLinked ? '#bfdbfe' : 'transparent'}; background: ${isParentLinked ? '#eff6ff' : 'transparent'}; padding: 2px 4px; border-radius: 4px; text-overflow: ellipsis;"
+            style="font-size: 0.775rem; width: 100%; border: 1px solid ${isParentLinked ? '#bfdbfe' : 'transparent'}; background: ${isParentLinked ? '#eff6ff' : 'transparent'}; padding: 2px 4px; border-radius: 4px;"
             title="${escapeHtml(effectiveClient)}${isParentLinked ? ` (本体 ${parentBody.serialNumber} の販売店と自動連動)` : ''}"
             onfocus="this.style.borderColor='#3b82f6'; this.style.background='#ffffff';"
             onblur="this.style.borderColor='${isParentLinked ? '#bfdbfe' : 'transparent'}'; this.style.background='${isParentLinked ? '#eff6ff' : 'transparent'}';">
         </td>
 
-        <!-- ユーザー（インライン編集） -->
-        <td style="padding: 4px 6px; width: 75px;">
+        <!-- ユーザー（インライン編集：全角8文字でも切れない程よい大きさ 120px） -->
+        <td style="padding: 4px 6px; width: 120px;">
           <input type="text" class="form-input form-input-xs serial-inline-input"
             data-sn="${escapeHtml(s.serialNumber)}" data-field="endUserName"
             value="${escapeHtml(effectiveEndUser)}" placeholder="—"
-            style="font-size: 0.775rem; width: 100%; border: 1px solid ${isParentLinked ? '#bfdbfe' : 'transparent'}; background: ${isParentLinked ? '#eff6ff' : 'transparent'}; padding: 2px 4px; border-radius: 4px; text-overflow: ellipsis;"
+            style="font-size: 0.775rem; width: 100%; border: 1px solid ${isParentLinked ? '#bfdbfe' : 'transparent'}; background: ${isParentLinked ? '#eff6ff' : 'transparent'}; padding: 2px 4px; border-radius: 4px;"
             title="${escapeHtml(effectiveEndUser)}${isParentLinked ? ` (本体 ${parentBody.serialNumber} のユーザーと自動連動)` : ''}"
             onfocus="this.style.borderColor='#3b82f6'; this.style.background='#ffffff';"
             onblur="this.style.borderColor='${isParentLinked ? '#bfdbfe' : 'transparent'}'; this.style.background='${isParentLinked ? '#eff6ff' : 'transparent'}';">
         </td>
 
-        <!-- 出荷日（インライン日付） -->
-        <td style="padding: 4px 4px; width: 90px; white-space: nowrap;">
+        <!-- 出荷日（インライン日付：切れない 110px） -->
+        <td style="padding: 4px 4px; width: 110px; white-space: nowrap;">
           <input type="date" class="form-input form-input-xs serial-inline-input"
             data-sn="${escapeHtml(s.serialNumber)}" data-field="shipDate"
             value="${escapeHtml(effectiveShipDate)}"
-            style="font-size: 0.75rem; width: 90px; border: 1px solid ${isParentLinked ? '#bfdbfe' : 'transparent'}; background: ${isParentLinked ? '#eff6ff' : 'transparent'}; padding: 2px 2px; border-radius: 4px;"
+            style="font-size: 0.75rem; width: 105px; border: 1px solid ${isParentLinked ? '#bfdbfe' : 'transparent'}; background: ${isParentLinked ? '#eff6ff' : 'transparent'}; padding: 2px 2px; border-radius: 4px;"
             title="${isParentLinked ? `本体(${parentBody.serialNumber})の出荷日と自動連動しています` : ''}"
             onfocus="this.style.borderColor='#3b82f6'; this.style.background='#ffffff';"
             onblur="this.style.borderColor='${isParentLinked ? '#bfdbfe' : 'transparent'}'; this.style.background='${isParentLinked ? '#eff6ff' : 'transparent'}';">
         </td>
 
         <!-- 納品請求書紐付け -->
-        <td style="padding: 6px 4px; white-space: nowrap;">
+        <td style="padding: 6px 4px; width: 115px; white-space: nowrap;">
           ${docLinkHtml}
         </td>
 
-        <!-- 備考欄（インライン編集：大きく広々と表示） -->
-        <td style="padding: 4px 6px; min-width: 220px;">
+        <!-- 備考欄（帳尻合わせ：画面に合わせて可変伸縮） -->
+        <td style="padding: 4px 6px;">
           <input type="text" class="form-input form-input-xs serial-inline-input"
             data-sn="${escapeHtml(s.serialNumber)}" data-field="note"
             value="${escapeHtml(s.note || '')}" placeholder="備考を入力..."
