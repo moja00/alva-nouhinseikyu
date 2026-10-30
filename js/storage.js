@@ -5849,6 +5849,35 @@ export function syncInventoryStockFromIssuedDocs() {
       });
     });
 
+    // 1.5. 【ユーザー指定仕様】シリアル管理台帳の「納品請求書と紐づけしてないが、在庫中になってない物（デモ機・寄贈等）」をプラス
+    const serialList = getInventorySerialList();
+    const unlinkedOutMap = {};
+    if (Array.isArray(serialList)) {
+      serialList.forEach(s => {
+        if (!s) return;
+        const status = s.status || '';
+        // 「在庫中（in_stock）」以外のもの（出荷済、デモ機、寄贈、貸出中、廃棄等）
+        const isNotStock = (status !== 'in_stock');
+        // 「納品請求書と紐づけしてない」もの
+        const isUnlinked = !s.docNumber && !s.docId;
+
+        if (isNotStock && isUnlinked) {
+          const sName = String(s.itemName || '').toUpperCase();
+          let groupKey = 'other';
+          if (s.inventoryId === 'inv_dp5000_body' || (sName.includes('DP-5000') && !sName.includes('MS'))) {
+            groupKey = 'grp_dp5000';
+          } else if (s.inventoryId === 'inv_2' || sName.includes('DP-MS') || sName.includes('スプレッダー')) {
+            groupKey = 'grp_dpms';
+          } else if (s.inventoryId === 'inv_dp5000_bat' || s.itemType === 'battery' || sName.includes('バッテリー')) {
+            groupKey = 'grp_battery';
+          }
+
+          unlinkedOutMap[groupKey] = (unlinkedOutMap[groupKey] || 0) + 1;
+          shippedQtyMap[groupKey] = (shippedQtyMap[groupKey] || 0) + 1;
+        }
+      });
+    }
+
     // 2. ロット履歴からの総入庫数集計
     const rawLots = localStorage.getItem(KEYS.INVENTORY_LOTS);
     const lots = rawLots ? JSON.parse(rawLots) : [];
@@ -5952,7 +5981,7 @@ export function syncInventoryStockFromIssuedDocs() {
         after: calculatedStock,
         shipped: shippedQty,
         totalIn: totalIn,
-        isSerialItem: isSerialItem
+        isSerialItem: isSerialOrLinkedItem
       });
     });
 
