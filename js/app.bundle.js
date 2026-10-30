@@ -3784,6 +3784,11 @@ function isRepairItem(item) {
   if (!name) return false;
   const n = String(name).trim();
 
+  // 0. 値引き・割引・相殺・調整行（非商品・非在庫）
+  if (/値引|割引|相殺|調整|特別値引|出精値引/i.test(n)) {
+    return true;
+  }
+
   // 1. 具体的な指定修理品目パターン
   if (/オーバーホール|研磨機|クラッチ用|スイッチング|電源基盤|モーター及び電源関係|本体交換部品|バイト台/i.test(n)) {
     return true;
@@ -4284,9 +4289,9 @@ function deduplicateItemMasterList(list) {
     // サンプル商品は自動パージ（完全排除）
     if (SAMPLE_ITEM_KEYS.has(key)) continue;
 
-    // テスト品目および KET.IC.2B（DP-5000旧名称）の完全パージ
+    // テスト品目、KET.IC.2B（DP-5000旧名称）、および値引き・割引行の完全パージ
     const lowerName = cleanName.toLowerCase();
-    if (lowerName === 'てすと' || lowerName === 'test' || lowerName.includes('ket.ic.2b') || lowerName.includes('エレクトロパワー')) {
+    if (lowerName === 'てすと' || lowerName === 'test' || lowerName.includes('ket.ic.2b') || lowerName.includes('エレクトロパワー') || /値引|割引|相殺|調整|特別値引|出精値引/i.test(lowerName)) {
       continue;
     }
 
@@ -5795,10 +5800,13 @@ function isNonStockCategory(categoryName) {
   const name = String(categoryName).trim();
   const nonStockList = getNonStockCategories();
   if (nonStockList.includes(name)) return true;
-  return /修理|工賃|役務|点検|保守|送料|配送料/i.test(name);
+  return /修理|工賃|役務|点検|保守|送料|配送料|値引|割引|相殺|調整/i.test(name);
 }
 function isNonStockItem(item) {
   if (!item) return false;
+  const itemName = typeof item === 'string' ? item : (item.name || '');
+  if (/値引|割引|相殺|調整|特別値引|出精値引/i.test(itemName)) return true;
+
   if (typeof item === 'string') {
     const product = findItemMasterByName(item);
     if (product && product.category && String(product.category).trim()) {
@@ -7452,9 +7460,9 @@ function deduplicateInventoryList(rawList) {
     // 2. 修理・工賃等の非在庫カテゴリ品目の完全排除（在庫マスタ非表示）
     if (isNonStockItem(inv)) continue;
 
-    // 3. テスト品目および KET.IC.2B（DP-5000旧名称）の完全排除
+    // 3. テスト品目、KET.IC.2B（DP-5000旧名称）、および値引き・割引行の完全排除
     const rawName = String(inv.name || '').trim().toLowerCase();
-    if (rawName === 'てすと' || rawName === 'test' || rawName.includes('ket.ic.2b') || rawName.includes('エレクトロパワー')) {
+    if (rawName === 'てすと' || rawName === 'test' || rawName.includes('ket.ic.2b') || rawName.includes('エレクトロパワー') || /値引|割引|相殺|調整|特別値引|出精値引/i.test(rawName)) {
       continue;
     }
 
@@ -7551,7 +7559,7 @@ function getInventoryList() {
     const cleanItems = getItemMasterList(false);
     let modified = (list.length !== beforeLen);
 
-    // 非在庫カテゴリ、テスト品目、KET.IC.2B（DP-5000旧名称）を除去
+    // 非在庫カテゴリ、テスト品目、KET.IC.2B（DP-5000旧名称）、値引き行を除去
     const beforeCleanLen = list.length;
     list = list.filter(inv => {
       if (!inv || !inv.name) return false;
@@ -7559,6 +7567,7 @@ function getInventoryList() {
       const lower = inv.name.toLowerCase();
       if (lower.includes('てすと') || lower.includes('test')) return false;
       if (lower.includes('ket.ic.2b') || lower.includes('エレクトロパワー')) return false;
+      if (/値引|割引|相殺|調整|特別値引|出精値引/i.test(lower)) return false;
       return true;
     });
     if (list.length !== beforeCleanLen) modified = true;
@@ -7566,8 +7575,8 @@ function getInventoryList() {
     cleanItems.forEach(prod => {
       if (isNonStockItem(prod)) return; // 修理項目・非在庫カテゴリは在庫マスタに追加しない
       const lowerProd = (prod.name || '').toLowerCase();
-      if (lowerProd.includes('てすと') || lowerProd.includes('test') || lowerProd.includes('ket.ic.2b') || lowerProd.includes('エレクトロパワー')) {
-        return; // テスト・旧KET項目は在庫マスタに追加しない
+      if (lowerProd.includes('てすと') || lowerProd.includes('test') || lowerProd.includes('ket.ic.2b') || lowerProd.includes('エレクトロパワー') || /値引|割引|相殺|調整|特別値引|出精値引/i.test(lowerProd)) {
+        return; // テスト・旧KET・値引き項目は在庫マスタに追加しない
       }
       const prodKey = getMasterKey(prod.name);
       const existing = list.find(inv => (inv.itemId && inv.itemId === prod.id) || (getMasterKey(inv.name) === prodKey));
@@ -9049,24 +9058,25 @@ function syncInventoryStockFromIssuedDocs() {
     let invList = JSON.parse(rawInv);
     if (!Array.isArray(invList) || invList.length === 0) return { updated: false, validDocCount: 0, summary: {}, detailsList: [] };
 
-    // 不要品目（てすと、KET.IC.2B）を在庫マスタから完全自動排除
+    // 不要品目（てすと、KET.IC.2B、値引き行）を在庫マスタから完全自動排除
     const originalLen = invList.length;
     invList = invList.filter(item => {
       if (!item || !item.name) return false;
       const lower = item.name.toLowerCase();
       if (lower.includes('てすと') || lower.includes('test')) return false;
       if (lower.includes('ket.ic.2b') || lower.includes('エレクトロパワー')) return false;
+      if (/値引|割引|相殺|調整|特別値引|出精値引/i.test(lower)) return false;
       return true;
     });
     let modified = (invList.length !== originalLen);
 
-    // 商品マスタからも「てすと」を念のため除去
+    // 商品マスタからも「てすと」や値引き項目を念のため除去
     try {
       const rawItems = localStorage.getItem(KEYS.ITEMS);
       if (rawItems) {
         let items = JSON.parse(rawItems);
         if (Array.isArray(items)) {
-          const cleanItems = items.filter(it => !it.name || (!it.name.includes('てすと') && !it.name.toLowerCase().includes('test')));
+          const cleanItems = items.filter(it => !it.name || (!it.name.includes('てすと') && !it.name.toLowerCase().includes('test') && !/値引|割引|相殺|調整/i.test(it.name)));
           if (cleanItems.length !== items.length) {
             localStorageSetItemAndSync(KEYS.ITEMS, JSON.stringify(cleanItems));
             saveServerItemMaster(cleanItems).catch(() => {});
@@ -9089,10 +9099,13 @@ function syncInventoryStockFromIssuedDocs() {
 
       doc.items.forEach(it => {
         if (!it || !it.name) return;
+        const itName = it.name.trim();
+        // 値引き・割引等の金額調整行は出荷数量集計から完全除外
+        if (/値引|割引|相殺|調整|特別値引|出精値引/i.test(itName)) return;
+
         const qty = Number(it.quantity) || 0;
         if (qty <= 0) return;
 
-        const itName = it.name.trim();
         const norm = getMasterKey(itName);
 
         // 商品グループキーの特定
