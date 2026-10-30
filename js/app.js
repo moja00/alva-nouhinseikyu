@@ -18600,6 +18600,8 @@ async function viewSupersededDoc(targetDocNumber) {
   body.innerHTML = '<div style="text-align: center; padding: 30px; color: #64748b;">元伝票データを読み込み中...</div>';
   modal.style.display = 'flex';
   modal.classList.add('active');
+  modal.style.opacity = '1';
+  modal.style.pointerEvents = 'auto';
 
   let foundDoc = null;
 
@@ -18729,6 +18731,8 @@ function closeSupersededModal() {
   if (modal) {
     modal.style.display = 'none';
     modal.classList.remove('active');
+    modal.style.opacity = '0';
+    modal.style.pointerEvents = 'none';
   }
 }
 window.closeSupersededModal = closeSupersededModal;
