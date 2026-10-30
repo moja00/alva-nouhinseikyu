@@ -1226,8 +1226,20 @@ export function getHistoryList(includeSuperseded = false) {
 
     // 訂正前の元伝票(superseded)は、一覧表示では除外しスッキリ表示（訂正後伝票から参照可能）
     if (!includeSuperseded) {
+      // 一覧内の全伝票から「訂正された元伝票番号(replacesDocNumber)」を収集
+      const replacedNumbers = new Set();
+      list.forEach(item => {
+        const doc = item.fullDoc || item;
+        const rep = (item.replacesDocNumber || doc.replacesDocNumber || '').trim();
+        if (rep) replacedNumbers.add(rep);
+      });
+
       list = list.filter(item => {
         const doc = item.fullDoc || item;
+        const docNum = String(item.docNumber || doc.docNumber || item.invoiceNumber || doc.invoiceNumber || '').trim();
+        if (docNum && replacedNumbers.has(docNum)) {
+          return false; // 他の伝票によって「訂正前の元伝票」として指定されているため一覧から除外
+        }
         const isSup = item.status === 'superseded' || item.isSuperseded === true || doc.status === 'superseded' || doc.isSuperseded === true;
         return !isSup;
       });

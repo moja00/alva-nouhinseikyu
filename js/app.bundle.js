@@ -4562,8 +4562,20 @@ function getHistoryList(includeSuperseded = false) {
 
     // 訂正前の元伝票(superseded)は、一覧表示では除外しスッキリ表示（訂正後伝票から参照可能）
     if (!includeSuperseded) {
+      // 一覧内の全伝票から「訂正された元伝票番号(replacesDocNumber)」を収集
+      const replacedNumbers = new Set();
+      list.forEach(item => {
+        const doc = item.fullDoc || item;
+        const rep = (item.replacesDocNumber || doc.replacesDocNumber || '').trim();
+        if (rep) replacedNumbers.add(rep);
+      });
+
       list = list.filter(item => {
         const doc = item.fullDoc || item;
+        const docNum = String(item.docNumber || doc.docNumber || item.invoiceNumber || doc.invoiceNumber || '').trim();
+        if (docNum && replacedNumbers.has(docNum)) {
+          return false; // 他の伝票によって「訂正前の元伝票」として指定されているため一覧から除外
+        }
         const isSup = item.status === 'superseded' || item.isSuperseded === true || doc.status === 'superseded' || doc.isSuperseded === true;
         return !isSup;
       });
@@ -14746,7 +14758,24 @@ function filterAndRenderHistoryList() {
     : [];
 
   // フィルタリング実行
+  const replacedNumbersInList = new Set();
+  list.forEach(item => {
+    const doc = item.fullDoc || item;
+    const rep = (item.replacesDocNumber || doc.replacesDocNumber || '').trim();
+    if (rep) replacedNumbersInList.add(rep);
+  });
+
   let filtered = list.filter(item => {
+    // 0. 訂正前の元伝票(superseded) または 訂正先伝票が存在する元番号は一覧から完全除外
+    const doc = item.fullDoc || item;
+    const docNum = String(item.docNumber || doc.docNumber || item.invoiceNumber || doc.invoiceNumber || '').trim();
+    if (docNum && replacedNumbersInList.has(docNum)) {
+      return false;
+    }
+    if (item.status === 'superseded' || item.isSuperseded === true || doc.status === 'superseded' || doc.isSuperseded === true) {
+      return false;
+    }
+
     // 1. 対象年月
     if (monthQuery) {
       if (!item.issueDate || !item.issueDate.startsWith(monthQuery)) {
@@ -28779,6 +28808,15 @@ function startDocCorrection(origDocNumber) {
   if (typeof saveDocToHistory === 'function') {
     saveDocToHistory(origDoc);
   }
+
+  // サーバー(Firestore/バックエンド)へ元伝票の superseded 状態を即時送信してクラウド永続化
+  try {
+    fetch(`/api/documents/${encodeURIComponent(origDoc.id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(origDoc)
+    }).catch(e => console.warn('Server origDoc sync failed:', e));
+  } catch (e) {}
 
   // 4. エディタにロードして開く
   currentDoc = newDoc;

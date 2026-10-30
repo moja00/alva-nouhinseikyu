@@ -4785,7 +4785,24 @@ function filterAndRenderHistoryList() {
     : [];
 
   // フィルタリング実行
+  const replacedNumbersInList = new Set();
+  list.forEach(item => {
+    const doc = item.fullDoc || item;
+    const rep = (item.replacesDocNumber || doc.replacesDocNumber || '').trim();
+    if (rep) replacedNumbersInList.add(rep);
+  });
+
   let filtered = list.filter(item => {
+    // 0. 訂正前の元伝票(superseded) または 訂正先伝票が存在する元番号は一覧から完全除外
+    const doc = item.fullDoc || item;
+    const docNum = String(item.docNumber || doc.docNumber || item.invoiceNumber || doc.invoiceNumber || '').trim();
+    if (docNum && replacedNumbersInList.has(docNum)) {
+      return false;
+    }
+    if (item.status === 'superseded' || item.isSuperseded === true || doc.status === 'superseded' || doc.isSuperseded === true) {
+      return false;
+    }
+
     // 1. 対象年月
     if (monthQuery) {
       if (!item.issueDate || !item.issueDate.startsWith(monthQuery)) {
@@ -18818,6 +18835,15 @@ function startDocCorrection(origDocNumber) {
   if (typeof saveDocToHistory === 'function') {
     saveDocToHistory(origDoc);
   }
+
+  // サーバー(Firestore/バックエンド)へ元伝票の superseded 状態を即時送信してクラウド永続化
+  try {
+    fetch(`/api/documents/${encodeURIComponent(origDoc.id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(origDoc)
+    }).catch(e => console.warn('Server origDoc sync failed:', e));
+  } catch (e) {}
 
   // 4. エディタにロードして開く
   currentDoc = newDoc;
