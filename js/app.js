@@ -7738,7 +7738,11 @@ function renderInventoryLotTable() {
   `;
 
   lotList.forEach(lot => {
-    const isImport = lot.procurementType === 'import';
+    const isImport = lot.procurementType === 'import' ||
+      lot.sourceType === 'import' ||
+      (lot.procurementType !== 'domestic' && Number(lot.importTax || (lot.costDetails && lot.costDetails.importTax) || 0) > 0) ||
+      (lot.costBreakdown && Number(lot.costBreakdown.importTax || 0) > 0) ||
+      (lot.supplier && /Shenzhen|China|Overseas|海外/i.test(lot.supplier));
     const typeLabel = isImport ? '<span class="badge" style="background:#ecfdf5; color:#047857; font-size:0.7rem; font-weight:700; padding:2px 6px; border-radius:4px;">🌐 輸入仕入</span>' : '<span class="badge" style="background:#f1f5f9; color:#475569; font-size:0.7rem; font-weight:600; padding:2px 6px; border-radius:4px;">🇯🇵 国内仕入</span>';
     const unitCost = Number(lot.unitCost) || 0;
     const totalCost = Number(lot.totalCost) || (unitCost * (Number(lot.quantity) || 1));
@@ -9098,6 +9102,7 @@ function submitInventoryLotStockIn() {
       };
     }),
     // 後方互換用フィールド（先頭品目）
+    procurementType,
     itemId: lotItemRows[0].itemId,
     itemName: lotItemRows[0].itemName,
     quantity: totalQty,

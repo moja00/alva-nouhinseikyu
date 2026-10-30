@@ -5389,9 +5389,29 @@ export function calculateBundleStockAndCost(bundleItem, allItems = []) {
 export function getInventoryLotList() {
   try {
     const raw = localStorage.getItem(KEYS.INVENTORY_LOTS);
-    if (!raw) return [...DEFAULT_INVENTORY_LOTS];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : [...DEFAULT_INVENTORY_LOTS];
+    let list = raw ? JSON.parse(raw) : [...DEFAULT_INVENTORY_LOTS];
+    if (!Array.isArray(list) || list.length === 0) list = [...DEFAULT_INVENTORY_LOTS];
+
+    // 輸入仕入判定の自己修復（輸入消費税や海外仕入先がある場合は procurementType: 'import' を確実に補正）
+    let modified = false;
+    list.forEach(l => {
+      if (!l.procurementType) {
+        const isImp = l.sourceType === 'import' ||
+          Number(l.importTax || (l.costDetails && l.costDetails.importTax) || 0) > 0 ||
+          (l.costBreakdown && Number(l.costBreakdown.importTax || 0) > 0) ||
+          (l.supplier && /Shenzhen|China|Overseas|海外/i.test(l.supplier));
+        l.procurementType = isImp ? 'import' : 'domestic';
+        modified = true;
+      }
+    });
+
+    if (modified && raw) {
+      try {
+        localStorageSetItemAndSync(KEYS.INVENTORY_LOTS, JSON.stringify(list));
+      } catch (_) {}
+    }
+
+    return list;
   } catch (e) {
     return [...DEFAULT_INVENTORY_LOTS];
   }

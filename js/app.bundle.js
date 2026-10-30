@@ -8695,9 +8695,29 @@ function calculateBundleStockAndCost(bundleItem, allItems = []) {
 function getInventoryLotList() {
   try {
     const raw = localStorage.getItem(KEYS.INVENTORY_LOTS);
-    if (!raw) return [...DEFAULT_INVENTORY_LOTS];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : [...DEFAULT_INVENTORY_LOTS];
+    let list = raw ? JSON.parse(raw) : [...DEFAULT_INVENTORY_LOTS];
+    if (!Array.isArray(list) || list.length === 0) list = [...DEFAULT_INVENTORY_LOTS];
+
+    // 輸入仕入判定の自己修復（輸入消費税や海外仕入先がある場合は procurementType: 'import' を確実に補正）
+    let modified = false;
+    list.forEach(l => {
+      if (!l.procurementType) {
+        const isImp = l.sourceType === 'import' ||
+          Number(l.importTax || (l.costDetails && l.costDetails.importTax) || 0) > 0 ||
+          (l.costBreakdown && Number(l.costBreakdown.importTax || 0) > 0) ||
+          (l.supplier && /Shenzhen|China|Overseas|海外/i.test(l.supplier));
+        l.procurementType = isImp ? 'import' : 'domestic';
+        modified = true;
+      }
+    });
+
+    if (modified && raw) {
+      try {
+        localStorageSetItemAndSync(KEYS.INVENTORY_LOTS, JSON.stringify(list));
+      } catch (_) {}
+    }
+
+    return list;
   } catch (e) {
     return [...DEFAULT_INVENTORY_LOTS];
   }
@@ -17284,7 +17304,11 @@ function renderInventoryLotTable() {
   `;
 
   lotList.forEach(lot => {
-    const isImport = lot.procurementType === 'import';
+    const isImport = lot.procurementType === 'import' ||
+      lot.sourceType === 'import' ||
+      (lot.procurementType !== 'domestic' && Number(lot.importTax || (lot.costDetails && lot.costDetails.importTax) || 0) > 0) ||
+      (lot.costBreakdown && Number(lot.costBreakdown.importTax || 0) > 0) ||
+      (lot.supplier && /Shenzhen|China|Overseas|海外/i.test(lot.supplier));
     const typeLabel = isImport ? '<span class="badge" style="background:#ecfdf5; color:#047857; font-size:0.7rem; font-weight:700; padding:2px 6px; border-radius:4px;">🌐 輸入仕入</span>' : '<span class="badge" style="background:#f1f5f9; color:#475569; font-size:0.7rem; font-weight:600; padding:2px 6px; border-radius:4px;">🇯🇵 国内仕入</span>';
     const unitCost = Number(lot.unitCost) || 0;
     const totalCost = Number(lot.totalCost) || (unitCost * (Number(lot.quantity) || 1));
@@ -18644,6 +18668,7 @@ function submitInventoryLotStockIn() {
       };
     }),
     // 後方互換用フィールド（先頭品目）
+    procurementType,
     itemId: lotItemRows[0].itemId,
     itemName: lotItemRows[0].itemName,
     quantity: totalQty,
