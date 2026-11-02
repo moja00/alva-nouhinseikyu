@@ -7419,19 +7419,32 @@ function mergeInventoryServerAndLocal(serverList, localList) {
     const sHist = Array.isArray(sItem.history) ? sItem.history : [];
     const lHist = Array.isArray(lItem.history) ? lItem.history : [];
     const histMap = new Map();
+    const seenLots = new Set();
 
     const makeHistKey = (h) => {
       if (!h) return '';
-      return h.id || `${h.date || ''}_${h.type || ''}_${h.qty || ''}_${h.delta || ''}_${(h.reason || '').trim()}`;
+      const r = String(h.reason || '');
+      // ロット番号が含まれる場合はロット番号を一意キーとして重複を排除
+      const matchLot = r.match(/LOT-[0-9]+(-[0-9]+)?/);
+      if (matchLot) {
+        return `lot_${matchLot[0]}`;
+      }
+      return h.id || `${h.date || ''}_${h.type || ''}_${h.qty || ''}_${h.delta || ''}_${r.trim()}`;
     };
 
     sHist.forEach(h => {
+      if (!h) return;
+      const r = String(h.reason || '');
+      if (r.includes('商品マスタ連携により初期登録') && Number(h.qty) === 0) return;
       const hk = makeHistKey(h);
-      if (hk) histMap.set(hk, h);
+      if (hk && !histMap.has(hk)) histMap.set(hk, h);
     });
 
     let hasLocalOnlyHistory = false;
     lHist.forEach(h => {
+      if (!h) return;
+      const r = String(h.reason || '');
+      if (r.includes('商品マスタ連携により初期登録') && Number(h.qty) === 0) return;
       const hk = makeHistKey(h);
       if (hk && !histMap.has(hk)) {
         histMap.set(hk, h);
@@ -7631,11 +7644,20 @@ function deduplicateInventoryList(rawList) {
         existing.hasSerial = (!existing.name.includes('DP-EG') && !existing.name.includes('3点引き')) ? inv.hasSerial : false;
       }
       if (Array.isArray(inv.bundleItems) && inv.bundleItems.length > 0) existing.bundleItems = inv.bundleItems;
-      // 履歴をマージ（重複ID・キーを除外）
+      // 履歴をマージ（同一ロットの重複を完全排除・キー除外）
       if (Array.isArray(inv.history)) {
-        const makeKey = h => h.id || `${h.date}_${h.type}_${h.qty}_${h.delta || ''}_${(h.reason || '').trim()}`;
+        const makeKey = h => {
+          if (!h) return '';
+          const r = String(h.reason || '');
+          const matchLot = r.match(/LOT-[0-9]+(-[0-9]+)?/);
+          if (matchLot) return `lot_${matchLot[0]}`;
+          return h.id || `${h.date}_${h.type}_${h.qty}_${h.delta || ''}_${r.trim()}`;
+        };
         const histKeys = new Set(existing.history.map(makeKey));
         for (const h of inv.history) {
+          if (!h) continue;
+          const r = String(h.reason || '');
+          if (r.includes('商品マスタ連携により初期登録') && Number(h.qty) === 0) continue;
           const hk = makeKey(h);
           if (!histKeys.has(hk)) {
             existing.history.push(h);
@@ -10227,15 +10249,28 @@ function getInventoryHistoryWithShipments(item) {
   else if (norm.includes('hic-025') || norm.includes('クランプ')) groupKey = 'grp_hic';
   else if (norm.includes('急速充電器')) groupKey = 'grp_charger';
 
-  // 1. 基本履歴（ロット入庫、手動出庫、初期登録等）
+  // 1. 基本履歴（手動出庫・ロット入庫・調整）
   const baseLogs = Array.isArray(item.history) ? [...item.history] : [];
   const combined = [];
   const existingDocNums = new Set();
+  const seenLots = new Set();
 
   baseLogs.forEach(h => {
     if (!h) return;
+    const r = String(h.reason || '');
+    // 商品マスタ初期登録の0件ログは除外
+    if (r.includes('商品マスタ連携により初期登録') && Number(h.qty) === 0) return;
+
+    // ロット番号重複の完全排除
+    const matchLot = r.match(/LOT-[0-9]+(-[0-9]+)?/);
+    if (matchLot) {
+      const lotNum = matchLot[0];
+      if (seenLots.has(lotNum)) return; // 同一ロット番号の重複ログはスキップ！
+      seenLots.add(lotNum);
+    }
+
     const delta = h.delta !== undefined ? Number(h.delta) : (h.type === 'out' ? -Number(h.qty || 0) : Number(h.qty || 0));
-    const hid = h.id || `${h.date}_${h.type}_${h.qty}_${h.reason || ''}`;
+    const hid = h.id || `${h.date}_${h.type}_${h.qty}_${r}`;
     combined.push({
       ...h,
       id: hid,
@@ -10249,6 +10284,68 @@ function getInventoryHistoryWithShipments(item) {
       if (match) existingDocNums.add(match[0]);
     }
   });
+
+  // ロット台帳（inventory_lots）に存在してbaseLogsにまだないロット入庫を自動補完
+  const lots = (typeof getInventoryLotList === 'function') ? getInventoryLotList() : [];
+  if (Array.isArray(lots)) {
+    lots.forEach(l => {
+      if (!l) return;
+      const lNum = String(l.lotNumber || '').trim();
+      if (!lNum || seenLots.has(lNum)) return;
+
+      const arrDate = String(l.arrivalDate || '').trim();
+      if (Array.isArray(l.items) && l.items.length > 0) {
+        l.items.forEach(it => {
+          if (!it) return;
+          const itNorm = getMasterKey(it.itemName || '');
+          let itGk = itNorm;
+          if (itNorm.includes('dp-5000') || itNorm.includes('ベーシックセット')) itGk = 'grp_dp5000';
+          else if (itNorm.includes('dp-ms') || itNorm.includes('スプレッダー')) itGk = 'grp_dpms';
+          else if (itNorm.includes('dp-eg') || itNorm.includes('3点引き')) itGk = 'grp_dpeg';
+          else if (itNorm.includes('dp-ac') || itNorm.includes('アクセサリー')) itGk = 'grp_dpac';
+          else if (itNorm.includes('hic-025') || itNorm.includes('クランプ')) itGk = 'grp_hic';
+          else if (itNorm.includes('急速充電器')) itGk = 'grp_charger';
+
+          if (itGk === groupKey || itNorm === norm || (it.itemId && item.itemId && it.itemId === item.itemId)) {
+            const q = Number(it.quantity || it.qty) || 0;
+            const cost = Number(it.landedUnitCost || it.unitCost) || 0;
+            if (q > 0 && !seenLots.has(lNum)) {
+              seenLots.add(lNum);
+              combined.push({
+                id: `lot_${l.id || lNum}_${it.itemId || ''}`,
+                date: arrDate,
+                type: 'in',
+                qty: q,
+                delta: q,
+                reason: cost ? `混載ロット入庫: ${lNum} (確定実仕入原価: ¥${Math.round(cost).toLocaleString()}/台)` : `混載ロット入庫: ${lNum}`,
+                payee: '-',
+                timestamp: `${arrDate}T09:00:00.000Z`
+              });
+            }
+          }
+        });
+      } else if (l.itemName) {
+        const lNorm = getMasterKey(l.itemName || '');
+        if (lNorm === norm || (l.itemId && item.itemId && l.itemId === item.itemId)) {
+          const q = Number(l.quantity || l.qty) || 0;
+          const cost = Number(l.landedUnitCost || l.unitCost) || 0;
+          if (q > 0 && !seenLots.has(lNum)) {
+            seenLots.add(lNum);
+            combined.push({
+              id: `lot_${l.id || lNum}`,
+              date: arrDate,
+              type: 'in',
+              qty: q,
+              delta: q,
+              reason: cost ? `ロット入庫: ${lNum} (確定実仕入原価: ¥${Math.round(cost).toLocaleString()}/台)` : `ロット入庫: ${lNum}`,
+              payee: '-',
+              timestamp: `${arrDate}T09:00:00.000Z`
+            });
+          }
+        }
+      }
+    });
+  }
 
   // 2. 確定伝票（納品書・請求書）からの出荷明細を抽出
   const docs = (typeof getHistoryList === 'function') ? getHistoryList() : [];
@@ -10340,6 +10437,19 @@ function getInventoryHistoryWithShipments(item) {
     runningStock += Number(log.delta) || 0;
     log.computedRunningStock = runningStock;
   });
+
+  // 公式台帳現在庫との整合性担保
+  const officialStock = Number(item.currentStock) || 0;
+  if (combined.length > 0) {
+    const lastCalc = combined[combined.length - 1].computedRunningStock;
+    if (lastCalc !== officialStock) {
+      const diff = officialStock - lastCalc;
+      combined.forEach(log => {
+        log.computedRunningStock = Math.max(0, log.computedRunningStock + diff);
+      });
+      combined[combined.length - 1].computedRunningStock = officialStock;
+    }
+  }
 
   return combined.reverse();
 }
