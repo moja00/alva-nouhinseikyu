@@ -10477,30 +10477,19 @@ function submitInventoryLotStockIn() {
   // 2. 各品目の在庫マスタ（現在庫 ＆ 確定仕入原価）を一括更新
   lotItemRows.forEach(r => {
     if (isBundleLotRow(r)) {
-      // セット仕入行の場合：本体・バッテリー×2・急速充電器の各品目在庫を一括加算
-      const invList = getInventoryList();
-      const bodyItem = invList.find(i => i.id === 'inv_dp5000_body' || (i.name && i.name.includes('DP-5000') && i.type !== 'bundle'));
-      const batItem = invList.find(i => i.id === 'inv_dp5000_bat' || (i.name && i.name.includes('バッテリー')));
-      const chgItem = invList.find(i => i.id === 'inv_dp5000_chg' || (i.name && i.name.includes('急速充電器')));
-
-      const bodyUnitCost = Math.round(r.landedUnitCost * 0.84);
-      const batUnitCost = Math.round(r.landedUnitCost * 0.08);
-      const chgUnitCost = Math.round(r.landedUnitCost * 0.08);
-
-      if (bodyItem) adjustStock(bodyItem.id, r.qty, `混載ロット入庫(セット仕入本体): ${lotNumber}`, { unitCost: bodyUnitCost, date: arrivalDate });
-      if (batItem) adjustStock(batItem.id, r.qty * 2, `混載ロット入庫(セット仕入バッテリー): ${lotNumber}`, { unitCost: batUnitCost, date: arrivalDate });
-      if (chgItem) adjustStock(chgItem.id, r.qty, `混載ロット入庫(セット仕入急速充電器): ${lotNumber}`, { unitCost: chgUnitCost, date: arrivalDate });
-
+      // 完成品セット（ベーシックセット）の在庫を加算
+      const bundleTargetId = r.itemId || 'inv_1';
+      adjustStock(bundleTargetId, r.qty, `混載ロット入庫: ${lotNumber} (確定実仕入原価: ¥${r.landedUnitCost.toLocaleString()}/セット)`, { 
+        unitCost: r.landedUnitCost,
+        date: arrivalDate
+      });
       if (storageLocation) {
         const curList = getInventoryList();
-        [bodyItem, batItem, chgItem].forEach(it => {
-          if (!it) return;
-          const target = curList.find(x => x.id === it.id);
-          if (target && target.location !== storageLocation) {
-            target.location = storageLocation;
-            saveInventoryItem(target);
-          }
-        });
+        const target = curList.find(x => x.id === bundleTargetId);
+        if (target && target.location !== storageLocation) {
+          target.location = storageLocation;
+          saveInventoryItem(target);
+        }
       }
     } else {
       adjustStock(r.itemId, r.qty, `混載ロット入庫: ${lotNumber} (確定実仕入原価: ¥${r.landedUnitCost.toLocaleString()}/台)`, { 
