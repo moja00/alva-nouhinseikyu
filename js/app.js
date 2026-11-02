@@ -61,6 +61,8 @@ import {
   saveInventoryItem,
   deleteInventoryItem,
   adjustStock,
+  deleteManualInventoryLog,
+  updateManualInventoryLog,
   getInventoryHistoryWithShipments,
   syncInventoryWithItemsMaster,
   getPurchaseMappings,
@@ -559,6 +561,19 @@ const DOM = {
   btnCloseInventoryHistoryModal: document.getElementById('btnCloseInventoryHistoryModal'),
   btnCloseInventoryHistoryModal2: document.getElementById('btnCloseInventoryHistoryModal2'),
   inventoryHistoryTableContainer: document.getElementById('inventoryHistoryTableContainer'),
+
+  // 手動入出庫ログ編集モーダル
+  inventoryLogEditModal: document.getElementById('inventoryLogEditModal'),
+  editLogItemId: document.getElementById('editLogItemId'),
+  editLogId: document.getElementById('editLogId'),
+  inputEditLogDate: document.getElementById('inputEditLogDate'),
+  selectEditLogType: document.getElementById('selectEditLogType'),
+  inputEditLogQty: document.getElementById('inputEditLogQty'),
+  inputEditLogReason: document.getElementById('inputEditLogReason'),
+  inputEditLogPayee: document.getElementById('inputEditLogPayee'),
+  btnCloseLogEditModal: document.getElementById('btnCloseLogEditModal'),
+  btnCancelEditLog: document.getElementById('btnCancelEditLog'),
+  btnSaveEditLog: document.getElementById('btnSaveEditLog'),
 
   // クイック新規品目追加モーダル（商品マスタ＆在庫マスタ同時登録）
   quickNewItemModal: document.getElementById('quickNewItemModal'),
@@ -11251,8 +11266,11 @@ async function confirmAdjustHandler() {
   }
 }
 
+let currentHistoryModalItem = null;
+
 function openInventoryHistoryModal(item) {
   if (!DOM.inventoryHistoryModal) return;
+  currentHistoryModalItem = item;
   DOM.historyModalItemName.textContent = `入出庫・出荷履歴: ${item.name}`;
   DOM.historyModalItemSku.textContent = item.sku ? `SKU: ${item.sku} | 保管場所: ${item.location || '未設定'}` : '';
 
@@ -11277,6 +11295,7 @@ function openInventoryHistoryModal(item) {
             <th style="text-align: right; min-width: 75px;">処理後在庫</th>
             <th>理由 / 摘要</th>
             <th>取引先 / 相手先</th>
+            <th style="text-align: center; width: 100px;">操作</th>
           </tr>
         </thead>
         <tbody>
@@ -11310,28 +11329,40 @@ function openInventoryHistoryModal(item) {
         reasonCellHtml = `
           <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
             <span style="font-weight: 600; color: #0284c7;">📦 ${escapeHtml(log.reason)}</span>
-            <button type="button" onclick="window.toggleBundleHistoryDetail('${detailRowId}')" style="font-size: 11px; padding: 2px 8px; border-radius: 4px; border: 1px solid #0284c7; background: #f0f9ff; color: #0369a1; cursor: pointer; font-weight: 700;">
+            <button type="button" class="btn-toggle-bundle-detail" data-target="${detailRowId}" style="font-size: 11px; padding: 2px 8px; border-radius: 4px; border: 1px solid #0284c7; background: #f0f9ff; color: #0369a1; cursor: pointer; font-weight: 700;">
               詳細シリアル (${log.details.length}台) ▼
             </button>
           </div>
         `;
       }
 
+      // 操作列の生成（ユーザー手動操作ログのみ編集・削除可能、伝票出荷やロット入庫・セット品化は固定）
+      let actionCellHtml = '<span style="color: #94a3b8; font-size: 11px;">固定</span>';
+      if (log.isManual) {
+        actionCellHtml = `
+          <div style="display: flex; justify-content: center; gap: 4px;">
+            <button type="button" class="btn-edit-manual-log" data-log-id="${escapeHtml(log.id)}" style="padding: 2px 6px; font-size: 11px; border: 1px solid #0284c7; background: #f0f9ff; color: #0369a1; border-radius: 4px; cursor: pointer; font-weight: 600;" title="この手動ログを編集">✏️ 編集</button>
+            <button type="button" class="btn-delete-manual-log" data-log-id="${escapeHtml(log.id)}" style="padding: 2px 6px; font-size: 11px; border: 1px solid #f87171; background: #fef2f2; color: #dc2626; border-radius: 4px; cursor: pointer; font-weight: 600;" title="この手動ログを削除">🗑️ 削除</button>
+          </div>
+        `;
+      }
+
       html += `
-        <tr ${isSummary ? `style="background: #f0fdf4; cursor: pointer;" onclick="window.toggleBundleHistoryDetail('${detailRowId}')"` : ''}>
+        <tr ${isSummary ? 'style="background: #f0fdf4;"' : ''}>
           <td style="white-space: nowrap; font-family: monospace;">${escapeHtml(log.date || '-')}</td>
           <td style="text-align: center;">${typeBadge}</td>
           <td style="text-align: right; font-weight: 700; font-family: monospace;">${deltaDisp}</td>
           <td style="text-align: right; font-weight: 700; font-family: monospace; color: #0f172a;">${typeof dispStock === 'number' ? dispStock.toLocaleString() : escapeHtml(dispStock)}</td>
           <td>${reasonCellHtml}</td>
           <td>${escapeHtml(log.payee || log.sourceRef || '-')}</td>
+          <td style="text-align: center;">${actionCellHtml}</td>
         </tr>
       `;
 
       if (isSummary) {
         html += `
           <tr id="${detailRowId}" style="display: none; background: #f8fafc;">
-            <td colspan="6" style="padding: 10px 16px; border-left: 4px solid #0284c7; background: #f8fafc;">
+            <td colspan="7" style="padding: 10px 16px; border-left: 4px solid #0284c7; background: #f8fafc;">
               <div style="font-weight: 700; color: #1e293b; margin-bottom: 6px; font-size: 12px; display: flex; align-items: center; gap: 6px;">
                 <span>🛠️ セット品化された本体・バッテリー内訳（全 ${log.details.length} 台）:</span>
                 <span style="font-size: 11px; color: #64748b; font-weight: normal;">※クリックで閉じる</span>
@@ -11368,12 +11399,151 @@ function closeInventoryHistoryModal() {
 window.toggleBundleHistoryDetail = function(rowId) {
   const row = document.getElementById(rowId);
   if (!row) return;
-  if (row.style.display === 'none' || !row.style.display) {
-    row.style.display = 'table-row';
-  } else {
-    row.style.display = 'none';
-  }
+  const isHidden = (row.style.display === 'none' || !row.style.display);
+  row.style.display = isHidden ? 'table-row' : 'none';
+  console.log("【セット品化詳細表示】トグル切替:", rowId, "display=", row.style.display);
 };
+
+// 手動ログ編集モーダルの開閉と保存
+function openManualLogEditModal(log) {
+  if (!DOM.inventoryLogEditModal || !log || !currentHistoryModalItem) return;
+  console.log("【手動ログ編集】モーダル開く:", log);
+  DOM.editLogItemId.value = currentHistoryModalItem.id;
+  DOM.editLogId.value = log.id;
+  DOM.inputEditLogDate.value = log.date || new Date().toISOString().split('T')[0];
+  DOM.selectEditLogType.value = (log.delta !== undefined && log.delta < 0) || log.type === 'out' ? 'out' : 'in';
+  DOM.inputEditLogQty.value = log.qty || Math.abs(log.delta || 1);
+  DOM.inputEditLogReason.value = log.reason || '';
+  DOM.inputEditLogPayee.value = log.payee || '';
+
+  DOM.inventoryLogEditModal.style.display = 'flex';
+  DOM.inventoryLogEditModal.classList.add('active');
+}
+
+function closeManualLogEditModal() {
+  if (!DOM.inventoryLogEditModal) return;
+  DOM.inventoryLogEditModal.style.display = 'none';
+  DOM.inventoryLogEditModal.classList.remove('active');
+}
+
+function handleSaveManualLogEdit() {
+  if (!currentHistoryModalItem) return;
+  const itemId = DOM.editLogItemId.value;
+  const logId = DOM.editLogId.value;
+  const date = DOM.inputEditLogDate.value;
+  const type = DOM.selectEditLogType.value;
+  const qty = Number(DOM.inputEditLogQty.value) || 0;
+  const reason = DOM.inputEditLogReason.value.trim();
+  const payee = DOM.inputEditLogPayee.value.trim();
+
+  if (qty <= 0) {
+    alert('数量には1以上の数値を入力してください。');
+    return;
+  }
+
+  const delta = (type === 'out') ? -qty : qty;
+  console.log("【手動ログ編集】保存実行開始", { itemId, logId, date, delta, reason, payee });
+
+  const ok = (typeof updateManualInventoryLog === 'function') 
+    ? updateManualInventoryLog(itemId, logId, { date, delta, reason, payee })
+    : (window.updateManualInventoryLog ? window.updateManualInventoryLog(itemId, logId, { date, delta, reason, payee }) : false);
+
+  if (ok) {
+    closeManualLogEditModal();
+    // 履歴モーダルおよび一覧テーブルを即時再描画
+    const updatedList = getInventoryList();
+    const updatedItem = updatedList.find(i => i.id === itemId);
+    if (updatedItem) {
+      currentHistoryModalItem = updatedItem;
+      openInventoryHistoryModal(updatedItem);
+    }
+    if (typeof renderInventoryTable === 'function') renderInventoryTable();
+    showToast('手動出入庫ログを更新し、現在庫を再計算しました！', 'success');
+  } else {
+    alert('手動ログの更新に失敗しました。');
+  }
+}
+
+function handleDeleteManualLog(logId) {
+  if (!currentHistoryModalItem) return;
+  const item = currentHistoryModalItem;
+  if (!confirm(`この手動出入庫ログを履歴から削除しますか？\n\n※ 削除すると現在庫が自動的に再計算されます。`)) {
+    return;
+  }
+
+  console.log("【手動ログ削除】実行開始", { itemId: item.id, logId });
+  const ok = (typeof deleteManualInventoryLog === 'function')
+    ? deleteManualInventoryLog(item.id, logId)
+    : (window.deleteManualInventoryLog ? window.deleteManualInventoryLog(item.id, logId) : false);
+
+  if (ok) {
+    // 履歴モーダルおよび一覧テーブルを即時再描画
+    const updatedList = getInventoryList();
+    const updatedItem = updatedList.find(i => i.id === item.id);
+    if (updatedItem) {
+      currentHistoryModalItem = updatedItem;
+      openInventoryHistoryModal(updatedItem);
+    }
+    if (typeof renderInventoryTable === 'function') renderInventoryTable();
+    showToast('手動出入庫ログを削除し、現在庫を再計算しました！', 'info');
+  } else {
+    alert('手動ログの削除に失敗しました。');
+  }
+}
+
+// イベント委譲によるクリックハンドラ登録
+document.addEventListener('click', (e) => {
+  // 1. 詳細シリアルボタンのトグル
+  const bundleToggleBtn = e.target.closest('.btn-toggle-bundle-detail');
+  if (bundleToggleBtn) {
+    e.preventDefault();
+    e.stopPropagation();
+    const targetId = bundleToggleBtn.dataset.target;
+    if (targetId && typeof window.toggleBundleHistoryDetail === 'function') {
+      window.toggleBundleHistoryDetail(targetId);
+    }
+    return;
+  }
+
+  // 2. 手動ログ編集ボタン
+  const editLogBtn = e.target.closest('.btn-edit-manual-log');
+  if (editLogBtn) {
+    e.preventDefault();
+    e.stopPropagation();
+    const logId = editLogBtn.dataset.logId;
+    if (currentHistoryModalItem && Array.isArray(currentHistoryModalItem.history)) {
+      const targetLog = currentHistoryModalItem.history.find(h => String(h.id) === String(logId));
+      if (targetLog) {
+        openManualLogEditModal(targetLog);
+      }
+    }
+    return;
+  }
+
+  // 3. 手動ログ削除ボタン
+  const deleteLogBtn = e.target.closest('.btn-delete-manual-log');
+  if (deleteLogBtn) {
+    e.preventDefault();
+    e.stopPropagation();
+    const logId = deleteLogBtn.dataset.logId;
+    handleDeleteManualLog(logId);
+    return;
+  }
+
+  // 4. 手動ログ編集モーダルの閉じるボタン
+  if (e.target === DOM.btnCloseLogEditModal || e.target === DOM.btnCancelEditLog) {
+    e.preventDefault();
+    closeManualLogEditModal();
+    return;
+  }
+
+  // 5. 手動ログ編集モーダルの保存ボタン
+  if (e.target === DOM.btnSaveEditLog) {
+    e.preventDefault();
+    handleSaveManualLogEdit();
+    return;
+  }
+});
 
 // ==========================================================================
 // クイック新規品目モーダル（商品マスタ＆在庫マスタ同時自動登録）

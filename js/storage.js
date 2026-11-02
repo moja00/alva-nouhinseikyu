@@ -4788,6 +4788,79 @@ export function adjustStock(id, deltaQty, reason = '', metadata = {}, isDirectSe
 }
 
 /**
+ * 手動入出庫ログの削除
+ * @param {string} itemId - 在庫品目ID
+ * @param {string} logId - 履歴ログID
+ */
+export function deleteManualInventoryLog(itemId, logId) {
+  try {
+    const list = getInventoryList();
+    const item = list.find(i => i.id === itemId || i.itemId === itemId || (i.name && i.name.trim() === String(itemId).trim()));
+    if (!item || !Array.isArray(item.history)) return false;
+
+    const initialLen = item.history.length;
+    item.history = item.history.filter(h => String(h.id) !== String(logId));
+    if (item.history.length === initialLen) return false;
+
+    // 現在庫を再計算
+    const histLogs = getInventoryHistoryWithShipments(item);
+    if (Array.isArray(histLogs) && histLogs.length > 0) {
+      item.currentStock = histLogs[0].computedRunningStock !== undefined ? Number(histLogs[0].computedRunningStock) : 0;
+    }
+
+    localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(list));
+    saveServerInventory(list).catch(() => {});
+    console.log(`【手動ログ削除】完了: 品目「${item.name}」ログID: ${logId} 現在庫再計算: ${item.currentStock}`);
+    return true;
+  } catch (err) {
+    console.error('Failed to delete manual inventory log:', err);
+    return false;
+  }
+}
+
+/**
+ * 手動入出庫ログの編集・更新
+ * @param {string} itemId - 在庫品目ID
+ * @param {string} logId - 履歴ログID
+ * @param {object} updateData - { date, delta, reason, payee }
+ */
+export function updateManualInventoryLog(itemId, logId, updateData) {
+  try {
+    const list = getInventoryList();
+    const item = list.find(i => i.id === itemId || i.itemId === itemId || (i.name && i.name.trim() === String(itemId).trim()));
+    if (!item || !Array.isArray(item.history)) return false;
+
+    const log = item.history.find(h => String(h.id) === String(logId));
+    if (!log) return false;
+
+    if (updateData.date) log.date = updateData.date;
+    if (updateData.reason !== undefined) log.reason = updateData.reason;
+    if (updateData.payee !== undefined) log.payee = updateData.payee;
+    if (updateData.delta !== undefined) {
+      const d = Number(updateData.delta) || 0;
+      log.delta = d;
+      log.qty = Math.abs(d);
+      log.type = d >= 0 ? 'in' : 'out';
+    }
+    log.updatedAt = new Date().toISOString();
+
+    // 現在庫を再計算
+    const histLogs = getInventoryHistoryWithShipments(item);
+    if (Array.isArray(histLogs) && histLogs.length > 0) {
+      item.currentStock = histLogs[0].computedRunningStock !== undefined ? Number(histLogs[0].computedRunningStock) : 0;
+    }
+
+    localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(list));
+    saveServerInventory(list).catch(() => {});
+    console.log(`【手動ログ編集】完了: 品目「${item.name}」ログID: ${logId} 現在庫再計算: ${item.currentStock}`, updateData);
+    return true;
+  } catch (err) {
+    console.error('Failed to update manual inventory log:', err);
+    return false;
+  }
+}
+
+/**
  * 商品マスタ（ItemMaster）から未登録の商品を在庫マスタにインポート
  */
 export function syncInventoryWithItemsMaster() {
@@ -7171,7 +7244,8 @@ export function getInventoryHistoryWithShipments(item) {
       ...h,
       id: hid,
       delta: delta,
-      qty: Math.abs(delta)
+      qty: Math.abs(delta),
+      isManual: true // ユーザー様による手動出入庫・棚卸ログ（編集・削除対象）
     });
     if (h.sourceRef) existingDocNums.add(String(h.sourceRef).trim());
     if (h.docNumber) existingDocNums.add(String(h.docNumber).trim());
@@ -7495,6 +7569,8 @@ if (typeof window !== 'undefined') {
   window.updateSerialDetails = updateSerialDetails;
   window.updateSerialStatus = updateSerialStatus;
   window.calculateBundleStockAndCost = calculateBundleStockAndCost;
+  window.deleteManualInventoryLog = deleteManualInventoryLog;
+  window.updateManualInventoryLog = updateManualInventoryLog;
   window.getInventoryList = getInventoryList;
   window.saveInventoryList = saveInventoryList;
   window.saveInventoryItem = saveInventoryItem;

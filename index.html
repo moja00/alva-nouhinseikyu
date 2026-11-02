@@ -309,7 +309,7 @@
         </button>
         <div style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
-          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.02-serial-doc-sync-linkage</span>
+          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.02-manual-log-crud-and-toggle</span>
         </div>
       </div>
 
@@ -2004,6 +2004,50 @@
 
       <div class="modal-footer" style="display: flex; justify-content: flex-end; padding: 12px 18px;">
         <button type="button" class="btn btn-secondary btn-sm" id="btnCloseInventoryHistoryModal2">閉じる</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 手動入出庫ログ編集モーダル -->
+  <div class="modal-overlay" id="inventoryLogEditModal" style="z-index: 1060; display: none;">
+    <div class="modal-card" style="max-width: 440px; width: 90vw;">
+      <div class="modal-header" style="padding: 14px 18px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 1.2rem;">✏️</span>
+          <h3 class="modal-title" style="margin: 0; font-size: 1.05rem;" id="logEditModalTitle">手動ログの編集</h3>
+        </div>
+        <button type="button" class="btn-icon-danger" id="btnCloseLogEditModal" style="font-size: 1.2rem;">✕</button>
+      </div>
+      <div class="modal-body" style="padding: 16px 20px;">
+        <input type="hidden" id="editLogItemId">
+        <input type="hidden" id="editLogId">
+        <div class="form-group" style="margin-bottom: 12px;">
+          <label style="font-size: 0.8rem; font-weight: 600; color: #475569; margin-bottom: 4px; display: block;">処理日</label>
+          <input type="date" id="inputEditLogDate" class="form-control" style="width: 100%; font-size: 0.85rem;">
+        </div>
+        <div class="form-group" style="margin-bottom: 12px;">
+          <label style="font-size: 0.8rem; font-weight: 600; color: #475569; margin-bottom: 4px; display: block;">変動種別</label>
+          <select id="selectEditLogType" class="form-control" style="width: 100%; font-size: 0.85rem;">
+            <option value="in">➕ 入庫（在庫を増やす）</option>
+            <option value="out">➖ 出庫（在庫を減らす）</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin-bottom: 12px;">
+          <label style="font-size: 0.8rem; font-weight: 600; color: #475569; margin-bottom: 4px; display: block;">数量</label>
+          <input type="number" id="inputEditLogQty" class="form-control" min="1" step="1" style="width: 100%; font-size: 0.85rem;">
+        </div>
+        <div class="form-group" style="margin-bottom: 12px;">
+          <label style="font-size: 0.8rem; font-weight: 600; color: #475569; margin-bottom: 4px; display: block;">理由 / 摘要</label>
+          <input type="text" id="inputEditLogReason" class="form-control" placeholder="例: サンプル提供、社内利用、破損など" style="width: 100%; font-size: 0.85rem;">
+        </div>
+        <div class="form-group" style="margin-bottom: 12px;">
+          <label style="font-size: 0.8rem; font-weight: 600; color: #475569; margin-bottom: 4px; display: block;">取引先 / 相手先（任意）</label>
+          <input type="text" id="inputEditLogPayee" class="form-control" placeholder="例: ○○株式会社、社内" style="width: 100%; font-size: 0.85rem;">
+        </div>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px;">
+        <button type="button" class="btn btn-secondary btn-sm" id="btnCancelEditLog">キャンセル</button>
+        <button type="button" class="btn btn-primary btn-sm" id="btnSaveEditLog">保存して在庫再計算</button>
       </div>
     </div>
   </div>
