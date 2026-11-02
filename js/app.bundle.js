@@ -10351,11 +10351,14 @@ function getInventoryHistoryWithShipments(item) {
   baseLogs.forEach(h => {
     if (!h) return;
     const r = String(h.reason || '');
-    // 商品マスタ初期登録の0件ログは除外
-    if (r.includes('商品マスタ連携により初期登録') && Number(h.qty) === 0) return;
+    // 初期棚卸在庫登録や商品マスタ初期登録の架空ログは完全除外
+    if (r.includes('初期棚卸') || r.includes('商品マスタ連携により初期登録') || h.id === 'log_init_1' || String(h.id || '').startsWith('log_init_')) return;
 
     // セット品に対するバッテリー誤混入ログ（過去のバグデータ）を除外
     if (isBundle && r.includes('セット仕入バッテリー')) return;
+
+    // 個別のセット品化ログはサマリーとして集約表示するためbaseLogsからは除外
+    if (r.includes('セット品化組立完了') || r.includes('セット品化組込出庫')) return;
 
     // ロット番号重複の完全排除
     const matchLot = r.match(/LOT-[0-9]+(-[0-9]+)?/);
@@ -10363,11 +10366,6 @@ function getInventoryHistoryWithShipments(item) {
       const lotNum = matchLot[0];
       if (seenLots.has(lotNum)) return;
       seenLots.add(lotNum);
-    }
-
-    const matchSn = r.match(/(?:S\/N[:\s]*|DP-5000[:\s]*\(S\/N[:\s]*)([A-Z0-9]+)/i);
-    if (matchSn && matchSn[1]) {
-      seenBundleSn.add(matchSn[1].toUpperCase());
     }
 
     const delta = h.delta !== undefined ? Number(h.delta) : (h.type === 'out' ? -Number(h.qty || 0) : Number(h.qty || 0));
@@ -10443,56 +10441,73 @@ function getInventoryHistoryWithShipments(item) {
     });
   }
 
-  // 3. シリアル台帳（inventory_serials）からセット品化（組立／組込）の履歴を自動補完
+  // 3. シリアル台帳（inventory_serials）から後からセット品化した10台の履歴を日付別に集約補完
   const serials = (typeof getInventorySerialList === 'function') ? getInventorySerialList() : [];
   if (Array.isArray(serials)) {
+    // 本体単品として仕入れ、後からセット化したシリアル（LOT-20260316 または N10933〜N10942）のみを抽出
+    const assembledByDate = {}; // date -> [{ sn, bats, bundledAt }]
     serials.forEach(s => {
       if (!s || !s.isBundled) return;
       const bSn = String(s.serialNumber || '').trim().toUpperCase();
-      if (!bSn || seenBundleSn.has(bSn)) return;
+      const isPostAssembled = (s.lotNumber === 'LOT-20260316' || bSn.startsWith('N109'));
+      if (!isPostAssembled) return;
 
       const bundleDate = s.bundledAt ? s.bundledAt.split('T')[0] : (s.createdAt ? s.createdAt.split('T')[0] : '2026-10-30');
-      const bundleTime = s.bundledAt || s.createdAt || `${bundleDate}T10:00:00.000Z`;
+      if (!assembledByDate[bundleDate]) assembledByDate[bundleDate] = [];
+      assembledByDate[bundleDate].push({
+        sn: bSn,
+        bats: Array.isArray(s.batterySerials) ? s.batterySerials : [],
+        bundledAt: s.bundledAt || s.createdAt || `${bundleDate}T10:00:00.000Z`
+      });
+    });
+
+    Object.keys(assembledByDate).forEach(bundleDate => {
+      const list = assembledByDate[bundleDate];
+      if (list.length === 0) return;
+      const timestamp = list[0].bundledAt;
 
       if (isBundle) {
-        // セット品側：完成品としての入庫
-        seenBundleSn.add(bSn);
+        // セット品側：完成品としての入庫（10台まとめて1行表示）
         combined.push({
-          id: `bundle_in_${bSn}`,
+          id: `bundle_summary_in_${bundleDate}`,
           date: bundleDate,
           type: 'in',
-          qty: 1,
-          delta: 1,
-          reason: `セット品化組立完了: DP-5000 (S/N: ${bSn})`,
+          qty: list.length,
+          delta: list.length,
+          reason: `セット品化組立完了: DP-5000 (${list.length}台)`,
           payee: '社内キッティング',
-          timestamp: bundleTime
+          isBundleSummary: true,
+          details: list,
+          timestamp: timestamp
         });
       } else if (isBody) {
-        // 本体側：セット品への組込出庫
-        seenBundleSn.add(bSn);
+        // 本体側：セット品への組込出庫（10台まとめて1行表示）
         combined.push({
-          id: `bundle_out_body_${bSn}`,
+          id: `bundle_summary_out_body_${bundleDate}`,
           date: bundleDate,
           type: 'out',
-          qty: 1,
-          delta: -1,
-          reason: `セット品化組込出庫: S/N ${bSn}`,
+          qty: list.length,
+          delta: -list.length,
+          reason: `セット品化組込出庫: DP-5000 本体 (${list.length}台)`,
           payee: 'セット化',
-          timestamp: bundleTime
+          isBundleSummary: true,
+          details: list,
+          timestamp: timestamp
         });
       } else if (isBat) {
-        // バッテリー側：セット品への組込出庫（2個）
-        seenBundleSn.add(bSn);
-        const batNote = Array.isArray(s.batterySerials) ? s.batterySerials.join(', ') : '2個';
+        // バッテリー側：セット品への組込出庫（20個まとめて1行表示）
+        const totalBats = list.reduce((sum, d) => sum + (d.bats.length || 2), 0);
         combined.push({
-          id: `bundle_out_bat_${bSn}`,
+          id: `bundle_summary_out_bat_${bundleDate}`,
           date: bundleDate,
           type: 'out',
-          qty: 2,
-          delta: -2,
-          reason: `セット品化組込出庫: DP-5000(S/N: ${bSn})用 (${batNote})`,
+          qty: totalBats,
+          delta: -totalBats,
+          reason: `セット品化組込出庫: リチウムイオンバッテリー (${totalBats}個)`,
           payee: 'セット化',
-          timestamp: bundleTime
+          isBundleSummary: true,
+          details: list,
+          timestamp: timestamp
         });
       }
     });
@@ -21807,7 +21822,7 @@ function openInventoryHistoryModal(item) {
         <tbody>
     `;
 
-    logs.forEach(log => {
+    logs.forEach((log, logIdx) => {
       let typeBadge = '';
       if (log.type === 'in') {
         typeBadge = '<span style="color: #059669; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 2px 6px; border-radius: 4px;">➕ 入庫</span>';
@@ -21827,16 +21842,53 @@ function openInventoryHistoryModal(item) {
         ? log.computedRunningStock 
         : (log.currentStock !== undefined ? log.currentStock : '-');
 
+      const isSummary = log.isBundleSummary === true && Array.isArray(log.details) && log.details.length > 0;
+      const detailRowId = `bundle_detail_row_${logIdx}`;
+
+      let reasonCellHtml = escapeHtml(log.reason || '-');
+      if (isSummary) {
+        reasonCellHtml = `
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+            <span style="font-weight: 600; color: #0284c7;">📦 ${escapeHtml(log.reason)}</span>
+            <button type="button" onclick="window.toggleBundleHistoryDetail('${detailRowId}')" style="font-size: 11px; padding: 2px 8px; border-radius: 4px; border: 1px solid #0284c7; background: #f0f9ff; color: #0369a1; cursor: pointer; font-weight: 700;">
+              詳細シリアル (${log.details.length}台) ▼
+            </button>
+          </div>
+        `;
+      }
+
       html += `
-        <tr>
+        <tr ${isSummary ? `style="background: #f0fdf4; cursor: pointer;" onclick="window.toggleBundleHistoryDetail('${detailRowId}')"` : ''}>
           <td style="white-space: nowrap; font-family: monospace;">${escapeHtml(log.date || '-')}</td>
           <td style="text-align: center;">${typeBadge}</td>
           <td style="text-align: right; font-weight: 700; font-family: monospace;">${deltaDisp}</td>
           <td style="text-align: right; font-weight: 700; font-family: monospace; color: #0f172a;">${typeof dispStock === 'number' ? dispStock.toLocaleString() : escapeHtml(dispStock)}</td>
-          <td>${escapeHtml(log.reason || '-')}</td>
+          <td>${reasonCellHtml}</td>
           <td>${escapeHtml(log.payee || log.sourceRef || '-')}</td>
         </tr>
       `;
+
+      if (isSummary) {
+        html += `
+          <tr id="${detailRowId}" style="display: none; background: #f8fafc;">
+            <td colspan="6" style="padding: 10px 16px; border-left: 4px solid #0284c7; background: #f8fafc;">
+              <div style="font-weight: 700; color: #1e293b; margin-bottom: 6px; font-size: 12px; display: flex; align-items: center; gap: 6px;">
+                <span>🛠️ セット品化された本体・バッテリー内訳（全 ${log.details.length} 台）:</span>
+                <span style="font-size: 11px; color: #64748b; font-weight: normal;">※クリックで閉じる</span>
+              </div>
+              <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 6px; font-family: monospace; font-size: 11px;">
+                ${log.details.map((d, i) => `
+                  <div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 4px; padding: 5px 8px;">
+                    <div style="font-weight: 700; color: #0f172a;">${i + 1}. 本体: <span style="color: #0284c7;">${escapeHtml(d.sn)}</span></div>
+                    <div style="color: #475569; font-size: 10px; margin-top: 2px;">🔋 バッテリー: ${escapeHtml((d.bats && d.bats.length) ? d.bats.join(', ') : '2個付属')}</div>
+                    <div style="color: #475569; font-size: 10px;">🔌 専用急速充電器: 1個組込</div>
+                  </div>
+                `).join('')}
+              </div>
+            </td>
+          </tr>
+        `;
+      }
     });
 
     html += `</tbody></table>`;
@@ -21852,6 +21904,16 @@ function closeInventoryHistoryModal() {
   DOM.inventoryHistoryModal.classList.remove('active');
   DOM.inventoryHistoryModal.style.display = 'none';
 }
+
+window.toggleBundleHistoryDetail = function(rowId) {
+  const row = document.getElementById(rowId);
+  if (!row) return;
+  if (row.style.display === 'none' || !row.style.display) {
+    row.style.display = 'table-row';
+  } else {
+    row.style.display = 'none';
+  }
+};
 
 // ==========================================================================
 // クイック新規品目モーダル（商品マスタ＆在庫マスタ同時自動登録）
