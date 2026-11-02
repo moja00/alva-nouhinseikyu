@@ -5878,6 +5878,70 @@ export function syncInventoryStockFromIssuedDocs() {
       shippedQtyMap['grp_dpms'] = Math.max(shippedQtyMap['grp_dpms'] || 0, totalSerialOutMap['grp_dpms']);
     }
 
+    // 1.6. 【非伝票手動出庫・入出庫調整の完全集計】
+    // 在庫台帳の「➖出庫」「📝棚卸」から手動登録された変動（デモ機、破損、サンプル、社内利用等）を集計
+    // ※ 確定伝票（docs）にもシリアル台帳（serialList）にも載らない手動出庫を現在庫から確実に引き落とす
+    console.log("【伝票在庫連動】手動出庫・入出庫ログ集計開始");
+    const manualOutMap = {}; // item.id / norm / groupKey -> 手動出庫数量
+    const manualAdjustDeltaMap = {}; // item.id / norm / groupKey -> 棚卸差分合計
+
+    invList.forEach(item => {
+      if (!item || !Array.isArray(item.history)) return;
+      const norm = getMasterKey(item.name);
+      let groupKey = norm;
+      if (norm.includes('dp-5000') || norm.includes('ベーシックセット')) groupKey = 'grp_dp5000';
+      else if (norm.includes('dp-ms') || norm.includes('スプレッダー')) groupKey = 'grp_dpms';
+      else if (norm.includes('dp-eg') || norm.includes('3点引き')) groupKey = 'grp_dpeg';
+      else if (norm.includes('dp-ac') || norm.includes('アクセサリー')) groupKey = 'grp_dpac';
+      else if (norm.includes('hic-025') || norm.includes('クランプ')) groupKey = 'grp_hic';
+      else if (norm.includes('急速充電器')) groupKey = 'grp_charger';
+
+      let itemManualOut = 0;
+      let itemAdjustDelta = 0;
+
+      item.history.forEach(h => {
+        if (!h) return;
+        const reason = String(h.reason || '');
+        const hid = String(h.id || '');
+
+        // ロット削除による取消は除外（ロット履歴集計に含まれないため）
+        if (reason.includes('ロット削除')) return;
+        // 確定出荷引当など、伝票発行による自動引当は伝票集計（docs）と重複するため除外
+        if (reason.includes('確定出荷引当') || reason.includes('伝票連携') || reason.includes('自動引当')) return;
+        // キッティング（セット品化）による急速充電器消費等は除外
+        if (hid.startsWith('log_bundle_') || hid.startsWith('log_unbundle_') || reason.includes('セット品化')) return;
+        // 伝票番号が明示されている場合は伝票集計と重複するため除外
+        if (h.docNumber || (h.sourceRef && /INV-|EST-|ORD-/i.test(h.sourceRef))) return;
+
+        // 出庫（デモ機、破損、サンプル、社内使用、一般出庫等）
+        const isOut = (h.type === 'out') || (h.delta !== undefined && Number(h.delta) < 0 && h.type !== 'adjust');
+        if (isOut) {
+          const outQty = Math.abs(Number(h.delta !== undefined ? h.delta : h.qty)) || 0;
+          itemManualOut += outQty;
+        }
+
+        // 実地棚卸差異調整（adjust）
+        if (h.type === 'adjust' && h.delta !== undefined) {
+          itemAdjustDelta += Number(h.delta) || 0;
+        }
+      });
+
+      if (itemManualOut > 0) {
+        manualOutMap[groupKey] = (manualOutMap[groupKey] || 0) + itemManualOut;
+        manualOutMap[norm] = (manualOutMap[norm] || 0) + itemManualOut;
+        if (item.itemId) manualOutMap[item.itemId] = (manualOutMap[item.itemId] || 0) + itemManualOut;
+        if (item.id) manualOutMap[item.id] = (manualOutMap[item.id] || 0) + itemManualOut;
+      }
+
+      if (itemAdjustDelta !== 0) {
+        manualAdjustDeltaMap[groupKey] = (manualAdjustDeltaMap[groupKey] || 0) + itemAdjustDelta;
+        manualAdjustDeltaMap[norm] = (manualAdjustDeltaMap[norm] || 0) + itemAdjustDelta;
+        if (item.itemId) manualAdjustDeltaMap[item.itemId] = (manualAdjustDeltaMap[item.itemId] || 0) + itemAdjustDelta;
+        if (item.id) manualAdjustDeltaMap[item.id] = (manualAdjustDeltaMap[item.id] || 0) + itemAdjustDelta;
+      }
+    });
+    console.log("【伝票在庫連動】手動出庫集計完了:", manualOutMap, "棚卸差分:", manualAdjustDeltaMap);
+
     // 2. ロット履歴からの総入庫数集計 ＆ 最新確定仕入原価・最新入荷日の集計
     const rawLots = localStorage.getItem(KEYS.INVENTORY_LOTS);
     const lots = rawLots ? JSON.parse(rawLots) : [];
@@ -5983,9 +6047,18 @@ export function syncInventoryStockFromIssuedDocs() {
       const lotInQty = totalInQtyMap[groupKey] || totalInQtyMap[norm] || (item.itemId ? totalInQtyMap[item.itemId] : 0) || 0;
       const totalIn = lotInQty;
 
-      // 現在庫 ＝ 実ロット入庫累計 − 全出荷数
+      // 手動出庫（デモ機・寄贈・社内使用など）および棚卸差分の取得
+      let manualOut = (item.id && manualOutMap[item.id]) || (item.itemId && manualOutMap[item.itemId]) || manualOutMap[norm] || manualOutMap[groupKey] || 0;
+      // シリアル管理品目（DP-5000本体、DP-MS等）はシリアル台帳の未紐付け出庫（unlinkedOutMap）ですでに shippedQtyMap に加算されている場合があるため二重加算を防止
+      if (groupKey === 'grp_dp5000' || groupKey === 'grp_dpms' || groupKey === 'grp_battery') {
+        const serialUnlinked = unlinkedOutMap[groupKey] || 0;
+        manualOut = Math.max(0, manualOut - serialUnlinked);
+      }
+      const adjustDelta = (item.id && manualAdjustDeltaMap[item.id]) || (item.itemId && manualAdjustDeltaMap[item.itemId]) || manualAdjustDeltaMap[norm] || manualAdjustDeltaMap[groupKey] || 0;
+
+      // 現在庫 ＝ 実ロット入庫累計 − (全出荷数 ＋ 手動出庫数) ＋ 棚卸調整差分
       // ※ 急速充電器の場合は、単品仕入(10個)からシリアル台帳で実際にセット品化された本体数を減算して手元実在庫を確定！
-      let calculatedStock = totalIn - shippedQty;
+      let calculatedStock = totalIn - shippedQty - manualOut + adjustDelta;
       if (item.id === 'inv_dp5000_chg' || norm.includes('急速充電器')) {
         let manualBundledCount = 0;
         if (Array.isArray(serialList)) {
@@ -5999,7 +6072,7 @@ export function syncInventoryStockFromIssuedDocs() {
             }
           });
         }
-        calculatedStock = Math.max(0, 10 - manualBundledCount);
+        calculatedStock = Math.max(0, 10 - manualBundledCount - manualOut + adjustDelta);
       }
       if (item.currentStock !== calculatedStock) {
         item.currentStock = calculatedStock;
@@ -6030,6 +6103,8 @@ export function syncInventoryStockFromIssuedDocs() {
         before: item.currentStock,
         after: calculatedStock,
         shipped: shippedQty,
+        manualOut: manualOut,
+        adjustDelta: adjustDelta,
         totalIn: totalIn
       };
 
@@ -6038,6 +6113,8 @@ export function syncInventoryStockFromIssuedDocs() {
         before: item.currentStock,
         after: calculatedStock,
         shipped: shippedQty,
+        manualOut: manualOut,
+        adjustDelta: adjustDelta,
         totalIn: totalIn
       });
     });
