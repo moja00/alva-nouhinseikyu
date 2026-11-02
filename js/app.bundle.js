@@ -3677,6 +3677,48 @@ async function restoreDocFromTrash(id) {
     newHistory.unshift(restoredDoc);
     localStorageSetItemAndSync(KEYS.HISTORY, JSON.stringify(newHistory));
 
+    // 2.5. 【シリアル台帳連動】復元された書類に紐づくシリアル番号を再び「出荷済（shipped）」に復旧！
+    try {
+      const fullDoc = restoredDoc.fullDoc || restoredDoc;
+      if (fullDoc && Array.isArray(fullDoc.items) && !fullDoc.isCancelled) {
+        const docNo = fullDoc.docNumber || '';
+        const clientName = fullDoc.client ? (fullDoc.client.name || '') : (fullDoc.clientName || '');
+        const shipDate = fullDoc.issueDate || fullDoc.date || '';
+
+        fullDoc.items.forEach(it => {
+          if (!it) return;
+          const itemSerials = [];
+          if (Array.isArray(it.assignedSerials) && it.assignedSerials.length > 0) {
+            it.assignedSerials.forEach(as => {
+              if (as && as.serialNumber) itemSerials.push(as.serialNumber.trim().toUpperCase());
+            });
+          }
+          if (it.serialNumber && typeof it.serialNumber === 'string') {
+            const rawSns = it.serialNumber.split(/[,、\s]+/).map(s => s.trim().toUpperCase()).filter(s => /^N\s*\d{4,5}$/i.test(s));
+            rawSns.forEach(sn => {
+              const normSn = sn.replace(/\s+/g, '');
+              if (!itemSerials.includes(normSn)) itemSerials.push(normSn);
+            });
+          }
+
+          itemSerials.forEach(sn => {
+            updateSerialStatus(sn, 'shipped', {
+              clientName: clientName,
+              customerName: clientName,
+              docNumber: docNo,
+              docId: cleanId,
+              invoiceNumber: docNo,
+              invoiceId: cleanId,
+              shipDate: shipDate,
+              shippedDate: shipDate
+            });
+          });
+        });
+      }
+    } catch (snRestoreErr) {
+      console.warn('【書類復元】シリアル再出荷連動エラー:', snRestoreErr);
+    }
+
     // 3. ごみ箱から除外
     purgeTrashDoc(cleanId);
 
@@ -4687,6 +4729,50 @@ function deleteDocFromHistory(id) {
     const targetItem = existingList.find(item => String(item.id).trim() === cleanId);
     if (targetItem) {
       addDocToTrash(targetItem);
+    }
+
+    // 0.5. 【シリアル台帳連動】削除対象書類に紐づくシリアル番号を抽出し、ステータスを「在庫中（in_stock）」に自動復帰！
+    // ※ ユーザー様の指定仕様：伝票を消した時にシリアル台帳から消えるのではなく、出荷前（在庫中）に戻す
+    try {
+      const fullDoc = (targetItem && targetItem.fullDoc) || targetItem;
+      if (fullDoc && Array.isArray(fullDoc.items)) {
+        const itemSerials = [];
+        fullDoc.items.forEach(it => {
+          if (!it) return;
+          if (Array.isArray(it.assignedSerials) && it.assignedSerials.length > 0) {
+            it.assignedSerials.forEach(as => {
+              if (as && as.serialNumber) itemSerials.push(as.serialNumber.trim().toUpperCase());
+            });
+          }
+          if (it.serialNumber && typeof it.serialNumber === 'string') {
+            const rawSns = it.serialNumber.split(/[,、\s]+/).map(s => s.trim().toUpperCase()).filter(s => /^N\s*\d{4,5}$/i.test(s));
+            rawSns.forEach(sn => {
+              const normSn = sn.replace(/\s+/g, '');
+              if (!itemSerials.includes(normSn)) itemSerials.push(normSn);
+            });
+          }
+        });
+
+        itemSerials.forEach(sn => {
+          updateSerialStatus(sn, 'in_stock', {
+            clientName: '',
+            customerName: '',
+            endUserName: '',
+            docNumber: '',
+            docId: '',
+            invoiceNumber: '',
+            invoiceId: '',
+            shipDate: '',
+            shippedDate: '',
+            note: '伝票削除による在庫復帰'
+          });
+        });
+        if (itemSerials.length > 0) {
+          console.log(`【伝票削除連動】シリアル番号 ${itemSerials.join(', ')} を台帳上で「在庫中」に自動復帰しました`);
+        }
+      }
+    } catch (snErr) {
+      console.warn('【伝票削除連動】シリアル復帰エラー:', snErr);
     }
 
     // 1. ローカル削除済みIDセットに記録
@@ -10361,8 +10447,8 @@ function getInventoryHistoryWithShipments(item) {
     if (r.includes('仕入受入') && (item.id === 'inv_prod_1790319113830_war6' || norm.includes('アクセサリー'))) return;
 
     // 【最重要原則】ロット入庫はすべて正式なロット台帳（inventory_lots）から唯一の真実として動的に取得する！
-    // したがって、baseLogs（item.history）に含まれる過去の重複・汚染ロットログはすべて完全除外する
-    if (/混載ロット|ロット入庫|LOT-[0-9]+/i.test(r) || /LOT-[0-9]+/i.test(String(h.id || ''))) return;
+    // したがって、baseLogs（item.history）に含まれる過去の重複・汚染ロットログおよびロット削除ログはすべて完全除外する
+    if (/混載ロット|ロット入庫|LOT-[0-9]+/i.test(r) || /LOT-[0-9]+/i.test(String(h.id || '')) || r.includes('ロット削除')) return;
 
     // 確定出荷引当や伝票連携などの自動生成ログは伝票履歴（docs）から動的取得するため除外
     if (r.includes('確定出荷引当') || r.includes('伝票連携') || r.includes('出荷納品') || (r.includes('セット仕入') && !isBundle)) return;
