@@ -16727,16 +16727,24 @@ function renderAccInventoryIntegrationPanel(periodFilter = currentAccGlobalPerio
   const openingBalances = fiscalSettings.openingBalances || {};
   const startInv = Number(openingBalances['131'] || 0);
 
-  // 在庫マスタから全商品の理論評価額（現在庫数 × 仕入単価）を集計
+  // 在庫マスタから全商品の理論評価額を集計
+  // 【会計実務上の原則】
+  // 期末棚卸資産は倉庫に現存する実物資産の評価額であるため、qty > 0 の品目のみを評価額として集計します。
+  // 出荷先行や記帳漏れによるマイナス在庫（qty < 0）は、資産額を不当に減額させないため評価額0円（対象外）とし、別途注意喚起を表示します。
   const invList = typeof getInventoryList === 'function' ? getInventoryList() : [];
   let endInv = 0;
-  let itemCount = 0;
+  const inStockItems = [];
+  const negativeStockItems = [];
 
   invList.forEach(item => {
     const qty = Number(item.currentStock) || 0;
-    const cost = Number(item.unitCost) || 0;
-    if (qty > 0 || cost > 0) itemCount++;
-    endInv += (qty * cost);
+    const cost = Math.max(0, Number(item.unitCost) || 0);
+    if (qty > 0) {
+      endInv += (qty * cost);
+      inStockItems.push({ item, qty, cost, total: qty * cost });
+    } else if (qty < 0) {
+      negativeStockItems.push({ item, qty, cost });
+    }
   });
 
   const delta = endInv - startInv;
@@ -16748,9 +16756,27 @@ function renderAccInventoryIntegrationPanel(periodFilter = currentAccGlobalPerio
   const endEl = document.getElementById('accInvEndingValue');
   if (endEl) endEl.textContent = `¥${endInv.toLocaleString()}`;
 
-  const inStockCount = invList.filter(item => (Number(item.currentStock) || 0) > 0).length;
   const countBadge = document.getElementById('accInvItemCountBadge');
-  if (countBadge) countBadge.textContent = `${inStockCount}品目保有 (全${invList.length}品目)`;
+  if (countBadge) {
+    if (negativeStockItems.length > 0) {
+      countBadge.innerHTML = `<span style="color: #4338ca;">${inStockItems.length}品目保有</span> / <span style="color: #e11d48; font-weight: 700;">⚠️マイナス${negativeStockItems.length}品目</span>`;
+    } else {
+      countBadge.textContent = `${inStockItems.length}品目保有 (全${invList.length}品目)`;
+    }
+  }
+
+  // マイナス在庫警告コンテナの制御
+  const warningEl = document.getElementById('accInvNegativeWarning');
+  if (warningEl) {
+    if (negativeStockItems.length > 0) {
+      const names = negativeStockItems.map(n => `「${n.item.name} (${n.qty}個)」`).join('、');
+      warningEl.style.display = 'block';
+      warningEl.innerHTML = `⚠️ <strong>マイナス在庫の注意喚起（会計実務基準）:</strong> ${names} が現在マイナス在庫となっています。<br>現物資産（棚卸資産）の評価額がマイナス計上されるのを防ぐため、マイナス品目の評価額は <strong>¥0</strong> として計算しています。正確な管理のため入荷ロットまたは入庫登録を行ってください。`;
+    } else {
+      warningEl.style.display = 'none';
+      warningEl.innerHTML = '';
+    }
+  }
 
   const deltaEl = document.getElementById('accInvDeltaValue');
   const deltaHelp = document.getElementById('accInvDeltaHelp');
@@ -16816,10 +16842,18 @@ function syncInventoryToAccounting() {
 
   const invList = typeof getInventoryList === 'function' ? getInventoryList() : [];
   let endInv = 0;
+  const inStockItems = [];
+  const negativeStockItems = [];
+
   invList.forEach(item => {
     const qty = Number(item.currentStock) || 0;
-    const cost = Number(item.unitCost) || 0;
-    endInv += (qty * cost);
+    const cost = Math.max(0, Number(item.unitCost) || 0);
+    if (qty > 0) {
+      endInv += (qty * cost);
+      inStockItems.push(item);
+    } else if (qty < 0) {
+      negativeStockItems.push(item);
+    }
   });
 
   const delta = endInv - startInv;
@@ -16882,11 +16916,12 @@ function syncInventoryToAccounting() {
     }];
   }
 
+  const descExtra = negativeStockItems.length > 0 ? ` [※マイナス在庫${negativeStockItems.length}品目は¥0評価]` : '';
   const journalData = {
     id: entryId,
     date: closingDate,
     entryNumber: `INV-${Date.now().toString().slice(-6)}`,
-    description: `【期末棚卸】理論在庫評価額の計上・売上原価連動 (期首: ¥${startInv.toLocaleString()} → 期末: ¥${endInv.toLocaleString()})`,
+    description: `【期末棚卸】理論在庫評価額の計上・売上原価連動 (期首: ¥${startInv.toLocaleString()} → 期末: ¥${endInv.toLocaleString()})${descExtra}`,
     sourceType: 'inventory_closing',
     debitLines,
     creditLines
@@ -16909,7 +16944,11 @@ function syncInventoryToAccounting() {
 
   renderAccInventoryIntegrationPanel(currentAccGlobalPeriod);
 
-  showToast(`🎉 在庫マスタの理論評価額（¥${endInv.toLocaleString()}）をB/S（131 商品・棚卸資産）およびP/L（売上原価）に正常に反映しました！`, 'success');
+  let toastMsg = `🎉 在庫マスタの理論評価額（¥${endInv.toLocaleString()}）をB/S（131 商品・棚卸資産）およびP/L（売上原価）に正常に反映しました！`;
+  if (negativeStockItems.length > 0) {
+    toastMsg += `（※マイナス在庫 ${negativeStockItems.length} 品目は評価額0円として集計）`;
+  }
+  showToast(toastMsg, 'success');
 }
 
 window.syncInventoryToAccounting = syncInventoryToAccounting;
