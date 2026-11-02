@@ -9466,24 +9466,22 @@ function syncInventoryStockFromIssuedDocs() {
       }
       const adjustDelta = (item.id && manualAdjustDeltaMap[item.id]) || (item.itemId && manualAdjustDeltaMap[item.itemId]) || manualAdjustDeltaMap[norm] || manualAdjustDeltaMap[groupKey] || 0;
 
-      // 現在庫 ＝ 実ロット入庫累計 − (全出荷数 ＋ 手動出庫数) ＋ 棚卸調整差分
-      // ※ 急速充電器の場合は、単品仕入(10個)からシリアル台帳で実際にセット品化された本体数を減算して手元実在庫を確定！
-      let calculatedStock = totalIn - shippedQty - manualOut + adjustDelta;
-      if (item.id === 'inv_dp5000_chg' || norm.includes('急速充電器')) {
-        let manualBundledCount = 0;
-        if (Array.isArray(serialList)) {
-          serialList.forEach(s => {
-            if (s && s.isBundled) {
-              const sn = String(s.serialNumber || '');
-              // 直近ロット等で手動セット化された本体（N10933〜N10942等）
-              if (sn.startsWith('N109') || (s.lotNumber && s.lotNumber.includes('20260316'))) {
-                manualBundledCount++;
-              }
-            }
-          });
+      // 【統一計算エンジン】マスタ一覧の現在庫（currentStock）は、履歴モーダル（getInventoryHistoryWithShipments）が算出する
+      // 最新の処理後在庫（computedRunningStock）と100%同一の値を採用する！
+      let calculatedStock = 0;
+      try {
+        const histLogs = getInventoryHistoryWithShipments(item);
+        if (Array.isArray(histLogs) && histLogs.length > 0) {
+          // getInventoryHistoryWithShipments は reverse() 済みのため index 0 が最新ログ
+          calculatedStock = histLogs[0].computedRunningStock !== undefined ? Number(histLogs[0].computedRunningStock) : 0;
+        } else {
+          calculatedStock = totalIn - shippedQty - manualOut + adjustDelta;
         }
-        calculatedStock = Math.max(0, 10 - manualBundledCount - manualOut + adjustDelta);
+      } catch (err) {
+        console.warn('getInventoryHistoryWithShipments calculation fallback:', err);
+        calculatedStock = totalIn - shippedQty - manualOut + adjustDelta;
       }
+
       if (item.currentStock !== calculatedStock) {
         item.currentStock = calculatedStock;
         modified = true;
@@ -10362,28 +10360,19 @@ function getInventoryHistoryWithShipments(item) {
     // DP-AC アクセサリーキットの架空ログ「仕入受入」を完全除外
     if (r.includes('仕入受入') && (item.id === 'inv_prod_1790319113830_war6' || norm.includes('アクセサリー'))) return;
 
-    // セット品に対するバッテリー誤混入ログ（過去のバグデータ）を除外
-    if (isBundle && r.includes('セット仕入バッテリー')) return;
+    // 【最重要原則】ロット入庫はすべて正式なロット台帳（inventory_lots）から唯一の真実として動的に取得する！
+    // したがって、baseLogs（item.history）に含まれる過去の重複・汚染ロットログはすべて完全除外する
+    if (/混載ロット|ロット入庫|LOT-[0-9]+/i.test(r) || /LOT-[0-9]+/i.test(String(h.id || ''))) return;
 
-    // 急速充電器の過去の重複・汚染ログを除外
-    if (isChg && (r.includes('セット仕入急速充電器') || r.includes('確定出荷引当') || r.includes('出荷納品') || r.includes('国内仕入入庫') || r.includes('急速充電器在庫戻し') || r.includes('セット品化に伴う自動出庫'))) return;
+    // 確定出荷引当や伝票連携などの自動生成ログは伝票履歴（docs）から動的取得するため除外
+    if (r.includes('確定出荷引当') || r.includes('伝票連携') || r.includes('出荷納品') || (r.includes('セット仕入') && !isBundle)) return;
 
-    // バッテリーの過去の汚染ログを除外
-    if (isBat && (r.includes('セット仕入バッテリー') || r.includes('確定出荷引当') || r.includes('出荷納品') || r.includes('国内仕入') || r.includes('LOT-20261028-01') || r.includes('LOT-20260324') || r.includes('LOT-202603-01'))) return;
-
-    // 本体の過去の汚染ログを除外
-    if (isBody && (r.includes('出荷納品') || r.includes('セット仕入本体') || r.includes('輸入ロットLOT-202610-01入庫'))) return;
+    // 急速充電器・バッテリー・本体の過去の重複・汚染ログを除外
+    if (isChg && (r.includes('国内仕入入庫') || r.includes('急速充電器在庫戻し') || r.includes('セット品化に伴う自動出庫'))) return;
+    if (isBat && (r.includes('国内仕入') || r.includes('在庫戻し') || r.includes('自動出庫'))) return;
 
     // 個別のセット品化ログはサマリーとして集約表示するためbaseLogsからは除外
     if (r.includes('セット品化組立完了') || r.includes('セット品化組込出庫')) return;
-
-    // ロット番号重複の完全排除
-    const matchLot = r.match(/LOT-[0-9]+(-[0-9]+)?/);
-    if (matchLot) {
-      const lotNum = matchLot[0];
-      if (seenLots.has(lotNum)) return;
-      seenLots.add(lotNum);
-    }
 
     const delta = h.delta !== undefined ? Number(h.delta) : (h.type === 'out' ? -Number(h.qty || 0) : Number(h.qty || 0));
     const hid = h.id || `${h.date}_${h.type}_${h.qty}_${r}`;
@@ -10439,8 +10428,10 @@ function getInventoryHistoryWithShipments(item) {
           if (isLotMatch) {
             const q = Number(it.quantity || it.qty) || 0;
             const cost = Number(it.landedUnitCost || it.unitCost) || 0;
-            if (q > 0 && !seenLots.has(lNum)) {
-              seenLots.add(lNum);
+            const lotItemKey = `${lNum}_${it.itemId || itGk}`;
+            if (q > 0 && !seenLots.has(lotItemKey)) {
+              seenLots.add(lotItemKey);
+              const supplierName = l.supplier || l.supplierName || (l.procurementType === 'domestic' ? '国内仕入先' : 'CMO');
               combined.push({
                 id: `lot_${l.id || lNum}_${it.itemId || ''}`,
                 date: arrDate,
@@ -10448,7 +10439,7 @@ function getInventoryHistoryWithShipments(item) {
                 qty: q,
                 delta: q,
                 reason: cost ? `混載ロット入庫: ${lNum} (確定実仕入原価: ¥${Math.round(cost).toLocaleString()}/台)` : `混載ロット入庫: ${lNum}`,
-                payee: '-',
+                payee: supplierName,
                 timestamp: `${arrDate}T09:00:00.000Z`
               });
             }
