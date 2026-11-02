@@ -309,7 +309,7 @@
         </button>
         <div style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
-          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.02-manual-stock-out-sync</span>
+          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.02-pl-chart-period-sync</span>
         </div>
       </div>
 
@@ -3486,13 +3486,16 @@
             style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
               <span style="font-size: 0.875rem; font-weight: 700; color: #1e293b;">📈 月別収支推移（売上・経費・利益）</span>
-              <div style="display: flex; gap: 12px; font-size: 0.75rem;">
-                <span style="display: flex; align-items: center; gap: 4px;"><span
-                    style="width: 10px; height: 10px; background: var(--primary); border-radius: 2px;"></span>売上</span>
-                <span style="display: flex; align-items: center; gap: 4px;"><span
-                    style="width: 10px; height: 10px; background: #d97706; border-radius: 2px;"></span>経費</span>
-                <span style="display: flex; align-items: center; gap: 4px;"><span
-                    style="width: 10px; height: 10px; background: #059669; border-radius: 2px;"></span>純利益</span>
+              <div style="display: flex; gap: 14px; font-size: 0.75rem; font-weight: 600; color: #475569;">
+                <span style="display: inline-flex; align-items: center; gap: 5px;">
+                  <span style="width: 12px; height: 12px; background: #6366f1; border-radius: 3px; display: inline-block;"></span>売上
+                </span>
+                <span style="display: inline-flex; align-items: center; gap: 5px;">
+                  <span style="width: 12px; height: 12px; background: #f59e0b; border-radius: 3px; display: inline-block;"></span>経費
+                </span>
+                <span style="display: inline-flex; align-items: center; gap: 5px;">
+                  <span style="width: 12px; height: 12px; background: #10b981; border-radius: 3px; display: inline-block;"></span>純利益
+                </span>
               </div>
             </div>
             <!-- Canvas推移グラフ -->
@@ -6827,7 +6830,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261102_manual_stock_out_sync"></script> 
+  <script src="js/app.bundle.js?v=20261102_pl_chart_period_sync"></script> 
 </body>
 
 </html>

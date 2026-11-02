@@ -12146,7 +12146,7 @@ function renderAccountingDashboard(periodFilter = currentAccGlobalPeriod) {
   renderFormalProfitAndLossTable(pnl);
 
   // 月別推移グラフの描画
-  renderMonthlyBarChart();
+  renderMonthlyBarChart(periodFilter);
 
   // 消費税集計サマリーパネルの描画
   if (typeof renderTaxSummaryCard === 'function') {
@@ -12347,7 +12347,7 @@ function renderExpenseCategoryBreakdown(pnl) {
   DOM.accExpenseCategoryList.innerHTML = html;
 }
 
-function renderMonthlyBarChart() {
+function renderMonthlyBarChart(periodFilter = currentAccGlobalPeriod) {
   const canvas = DOM.accMonthlyChart;
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
@@ -12359,31 +12359,107 @@ function renderMonthlyBarChart() {
   const startMonth = Number(fiscal.fiscalStartMonth || 4);
   const fy = fiscal.fiscalYear ? Number(fiscal.fiscalYear) : new Date().getFullYear();
 
-  // 月キーの生成（今期が選ばれている場合は会計年度12ヶ月、それ以外は直近6ヶ月）
-  const months = [];
-  const isFiscalYearView = (typeof currentAccGlobalPeriod !== 'undefined' && currentAccGlobalPeriod.preset === 'thisYear');
+  // 選択された集計対象期間（periodFilter）に応じた表示対象月（months）の動的導出
+  const period = periodFilter || (typeof currentAccGlobalPeriod !== 'undefined' ? currentAccGlobalPeriod : { preset: 'all' });
+  const preset = period.preset || 'all';
+  const start = period.start || '';
+  const end = period.end || '';
 
-  if (isFiscalYearView) {
+  console.log("【財務ダッシュボード】月別推移グラフ描画開始 - 期間条件:", { preset, start, end });
+
+  const months = [];
+
+  if (preset === 'thisYear' || preset === 'thisFiscalYear') {
+    // 今期（会計年度12ヶ月）
     for (let i = 0; i < 12; i++) {
       const curM = ((startMonth - 1 + i) % 12) + 1;
       const curY = (startMonth - 1 + i >= 12) ? fy + 1 : fy;
       months.push(`${curY}-${String(curM).padStart(2, '0')}`);
     }
-  } else {
-    const now = new Date();
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const mStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      months.push(mStr);
+  } else if (preset === 'lastYear' || preset === 'lastFiscalYear') {
+    // 前期（前会計年度12ヶ月）
+    const lastFy = fy - 1;
+    for (let i = 0; i < 12; i++) {
+      const curM = ((startMonth - 1 + i) % 12) + 1;
+      const curY = (startMonth - 1 + i >= 12) ? lastFy + 1 : lastFy;
+      months.push(`${curY}-${String(curM).padStart(2, '0')}`);
+    }
+  } else if (start && end) {
+    // start 〜 end の全月を昇順で網羅（直近3ヶ月、今月、先月、カレンダー指定など）
+    const sDate = new Date(start);
+    const eDate = new Date(end);
+    let curY = sDate.getFullYear();
+    let curM = sDate.getMonth() + 1;
+    const endY = eDate.getFullYear();
+    const endM = eDate.getMonth() + 1;
+
+    let safetyCount = 0;
+    while ((curY < endY || (curY === endY && curM <= endM)) && safetyCount < 36) {
+      months.push(`${curY}-${String(curM).padStart(2, '0')}`);
+      curM++;
+      if (curM > 12) {
+        curM = 1;
+        curY++;
+      }
+      safetyCount++;
     }
   }
+
+  // start/end が未指定または 'all'（全期間）の場合
+  if (months.length === 0) {
+    let minMonth = '';
+    let maxMonth = '';
+    invoices.forEach(inv => {
+      const date = inv.issueDate || inv.date || '';
+      if (date && date.length >= 7) {
+        const m = date.substring(0, 7);
+        if (!minMonth || m < minMonth) minMonth = m;
+        if (!maxMonth || m > maxMonth) maxMonth = m;
+      }
+    });
+    expenses.forEach(exp => {
+      const date = exp.date || '';
+      if (date && date.length >= 7) {
+        const m = date.substring(0, 7);
+        if (!minMonth || m < minMonth) minMonth = m;
+        if (!maxMonth || m > maxMonth) maxMonth = m;
+      }
+    });
+
+    if (minMonth && maxMonth && minMonth <= maxMonth) {
+      const [sY, sM] = minMonth.split('-').map(Number);
+      const [eY, eM] = maxMonth.split('-').map(Number);
+      let curY = sY;
+      let curM = sM;
+      let count = 0;
+      while ((curY < eY || (curY === eY && curM <= eM)) && count < 24) {
+        months.push(`${curY}-${String(curM).padStart(2, '0')}`);
+        curM++;
+        if (curM > 12) { curM = 1; curY++; }
+        count++;
+      }
+    }
+
+    if (months.length === 0) {
+      const now = new Date();
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+      }
+    }
+  }
+
+  // 複数年にまたがる場合は年付きラベル（例: 26/12月）、同一年の場合は月のみ（例: 9月）
+  const years = new Set(months.map(m => m.split('-')[0]));
+  const isMultiYear = years.size > 1;
 
   // 各月の損益を計算
   const data = months.map(m => {
     const p = calculateProfitAndLoss(invoices, expenses, m);
-    const [_, mm] = m.split('-');
+    const [yy, mm] = m.split('-');
+    const label = isMultiYear ? `${yy.slice(2)}/${Number(mm)}月` : `${Number(mm)}月`;
     return {
-      label: `${Number(mm)}月`,
+      label,
       sales: p.totalSales,
       expenses: p.totalOperatingExpenses,
       profit: p.operatingProfit
@@ -12450,24 +12526,24 @@ function renderMonthlyBarChart() {
     }
   }
 
-  // 棒グラフの描画
+  // 棒グラフの描画（月数に応じた最適なバー幅を動的算出）
   const groupWidth = chartWidth / data.length;
-  const barWidth = Math.min(16, groupWidth / 3.5);
+  const barWidth = Math.min(22, Math.max(6, (groupWidth - 10) / 3.5));
 
   data.forEach((d, idx) => {
     const groupX = paddingLeft + idx * groupWidth + (groupWidth - (barWidth * 3 + 6)) / 2;
 
-    // 売上バー（インディゴ）
+    // 売上バー（インディゴ #6366f1）
     const salesH = Math.max(0, (d.sales / maxVal) * chartHeight);
     const salesY = paddingTop + chartHeight - salesH;
     drawBar(groupX, salesY, barWidth, salesH, '#6366f1');
 
-    // 経費バー（アンバー）
+    // 経費バー（アンバー #f59e0b）
     const expH = Math.max(0, (d.expenses / maxVal) * chartHeight);
     const expY = paddingTop + chartHeight - expH;
     drawBar(groupX + barWidth + 3, expY, barWidth, expH, '#f59e0b');
 
-    // 営業利益バー（エメラルド / ローズ）
+    // 営業利益バー（エメラルド #10b981 / ローズ #f43f5e）
     const profitH = Math.abs((d.profit / maxVal) * chartHeight);
     const profitY = d.profit >= 0 ? paddingTop + chartHeight - profitH : paddingTop + chartHeight;
     drawBar(groupX + (barWidth + 3) * 2, profitY, barWidth, profitH, d.profit >= 0 ? '#10b981' : '#f43f5e');
