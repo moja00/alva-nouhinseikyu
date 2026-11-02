@@ -298,7 +298,7 @@
         </a>
         <div style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
-          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.02-revert-inventory-clean</span>
+          <span style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.02-clean-exact-stock-final</span>
         </div>
       </div>
 
@@ -3593,7 +3593,7 @@
                   ¥0
                 </div>
                 <div style="font-size: 0.7rem; color: #6366f1; margin-top: 2px;">
-                  在庫マスタ全商品の [現在庫数 × 仕入単価] 合計
+                  実在庫（0個超）の現物評価額合計（マイナス在庫は¥0換算）
                 </div>
               </div>
 
@@ -3609,6 +3609,11 @@
                   在庫増加時は売上原価から控除されます
                 </div>
               </div>
+            </div>
+
+            <!-- ⚠️ マイナス在庫注意喚起アラート -->
+            <div id="accInvNegativeWarning" style="display: none; background: #fff1f2; border: 1.5px solid #fecdd3; border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; font-size: 0.775rem; color: #be123c; line-height: 1.5;">
+              <!-- JSで動的出力 -->
             </div>
 
             <!-- 操作アクションバー ＆ 現在の連動ステータス -->

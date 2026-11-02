@@ -796,17 +796,15 @@ export const DEFAULT_INVENTORY = [
       { inventoryId: 'inv_dp5000_bat', name: 'PSE認証 リチウムイオンバッテリー', qty: 2, role: 'battery' },
       { inventoryId: 'inv_dp5000_chg', name: 'PSE認証 専用急速充電器', qty: 1, role: 'charger' }
     ],
-    currentStock: 5,
+    currentStock: 0,
     safetyStock: 2,
     unit: '式',
-    unitCost: 172000,
+    unitCost: 81180,
     unitPrice: 268257,
     location: '本社倉庫 A-1',
-    lastInDate: '2026-09-25',
+    lastInDate: '2026-03-16',
     note: '主力セット商品（本体1台+バッテリー2個+充電器1個）',
-    history: [
-      { id: 'log_init_1', date: '2026-09-25', type: 'in', qty: 5, reason: '初期棚卸在庫登録', currentStock: 5, timestamp: new Date().toISOString() }
-    ]
+    history: []
   },
   {
     id: 'inv_dp5000_body',
@@ -814,17 +812,15 @@ export const DEFAULT_INVENTORY = [
     sku: 'DP-5000-MAIN',
     type: 'single', // 単品
     hasSerial: true, // シリアル管理対象
-    currentStock: 5,
+    currentStock: 0,
     safetyStock: 2,
     unit: '台',
-    unitCost: 152000,
+    unitCost: 68191,
     unitPrice: 220000,
     location: '本社倉庫 A-1',
-    lastInDate: '2026-10-21',
+    lastInDate: '2026-03-16',
     note: '海外輸入本体（シリアル番号管理対象）',
-    history: [
-      { id: 'log_init_body', date: '2026-10-21', type: 'in', qty: 5, reason: '輸入ロットLOT-202610-01入庫', currentStock: 5, timestamp: new Date().toISOString() }
-    ]
+    history: []
   },
   {
     id: 'inv_dp5000_bat',
@@ -832,17 +828,15 @@ export const DEFAULT_INVENTORY = [
     sku: 'BAT-DP5K',
     type: 'single',
     hasSerial: true, // シリアル管理対象
-    currentStock: 10,
+    currentStock: 0,
     safetyStock: 4,
     unit: '個',
-    unitCost: 8000,
+    unitCost: 7700,
     unitPrice: 15000,
     location: 'パーツ保管棚 B-1',
-    lastInDate: '2026-10-21',
+    lastInDate: '2026-03-24',
     note: '国内仕入PSE認証バッテリー（シリアル番号管理対象）',
-    history: [
-      { id: 'log_init_bat', date: '2026-10-21', type: 'in', qty: 10, reason: '国内仕入LOT-DOM-BAT-01入庫', currentStock: 10, timestamp: new Date().toISOString() }
-    ]
+    history: []
   },
   {
     id: 'inv_dp5000_chg',
@@ -853,7 +847,7 @@ export const DEFAULT_INVENTORY = [
     currentStock: 0,
     safetyStock: 2,
     unit: '個',
-    unitCost: 4000,
+    unitCost: 7700,
     unitPrice: 8000,
     location: 'パーツ保管棚 B-2',
     lastInDate: '2026-03-24',
@@ -867,17 +861,15 @@ export const DEFAULT_INVENTORY = [
     sku: 'DP-MS-01',
     type: 'single',
     hasSerial: true,
-    currentStock: 3,
+    currentStock: 0,
     safetyStock: 1,
     unit: '個',
-    unitCost: 40000,
+    unitCost: 29260,
     unitPrice: 73025,
     location: 'パーツ保管棚 B-2',
-    lastInDate: '2026-09-25',
+    lastInDate: '2026-07-29',
     note: '',
-    history: [
-      { id: 'log_init_2', date: '2026-09-25', type: 'in', qty: 3, reason: '初期棚卸在庫登録', currentStock: 3, timestamp: new Date().toISOString() }
-    ]
+    history: []
   },
   {
     id: 'inv_prod_auto_7',
@@ -886,7 +878,7 @@ export const DEFAULT_INVENTORY = [
     sku: 'HIC-025',
     type: 'single',
     hasSerial: false,
-    currentStock: 5,
+    currentStock: -1,
     safetyStock: 2,
     unit: 'セット',
     unitCost: 6240,
@@ -894,9 +886,41 @@ export const DEFAULT_INVENTORY = [
     location: '本社倉庫',
     lastInDate: '2026-09-24',
     note: '固定クランプ（標準在庫品）',
-    history: [
-      { id: 'log_init_hic', date: '2026-09-24', type: 'in', qty: 5, reason: '初期棚卸在庫登録', currentStock: 5, timestamp: new Date().toISOString() }
-    ]
+    history: []
+  },
+  {
+    id: 'inv_prod_1790319113830_war6',
+    itemId: 'prod_1790319113830_war6',
+    name: 'DP-AC　アクセサリーキット',
+    sku: 'DP-AC',
+    type: 'single',
+    hasSerial: false,
+    currentStock: 1,
+    safetyStock: 2,
+    unit: 'セット',
+    unitCost: 73902,
+    unitPrice: 120000,
+    location: '本社倉庫',
+    lastInDate: '2025-11-25',
+    note: '',
+    history: []
+  },
+  {
+    id: 'inv_prod_1790319164152_angp',
+    itemId: 'prod_1790319164152_angp',
+    name: 'DP-EG　3点引きアタッチメント',
+    sku: 'DP-EG',
+    type: 'single',
+    hasSerial: false,
+    currentStock: 0,
+    safetyStock: 2,
+    unit: 'セット',
+    unitCost: 73635,
+    unitPrice: 120000,
+    location: '本社倉庫',
+    lastInDate: '2026-07-29',
+    note: '',
+    history: []
   }
 ];
 
@@ -921,15 +945,15 @@ export const DEFAULT_INVENTORY_SERIALS = [
   { id: "sn_N10418", serialNumber: "N10418", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "shipped", clientName: "奥村塗料株式会社", endUserName: "", shipDate: "2026-09-15", docNumber: "INV-20260915-01", docId: "doc_20260915_01", note: "展示会特価", inDate: "2026-02-01", unitCost: 152000, updatedAt: new Date().toISOString() },
   { id: "sn_N10419", serialNumber: "N10419", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "shipped", clientName: "R・Cペイント販売株式会社", endUserName: "", shipDate: "2026-07-06", docNumber: "INV-20260706-01", docId: "doc_20260706_01", note: "DP-MS値引き", inDate: "2026-02-01", unitCost: 152000, updatedAt: new Date().toISOString() },
   { id: "sn_N10420", serialNumber: "N10420", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "shipped", clientName: "朝日エージェンシー", endUserName: "", shipDate: "2026-03-31", docNumber: "", docId: "", note: "在庫管理用", inDate: "2026-02-01", unitCost: 152000, updatedAt: new Date().toISOString() },
-  { id: "sn_N10933", serialNumber: "N10933", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "shipped", clientName: "株式会社宮田自動車商会 西営業所", endUserName: "ストリームズ 様", shipDate: "2026-10-01", docNumber: "INV-20261001-01", docId: "doc_20261001_01", note: "ストリームズ様分 (169-376200)", inDate: "2026-09-01", unitCost: 152000, updatedAt: new Date().toISOString() },
-  { id: "sn_N10934", serialNumber: "N10934", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "shipped", clientName: "株式会社BIC", endUserName: "", shipDate: "2026-10-01", docNumber: "", docId: "", note: "宣伝用寄贈", inDate: "2026-09-01", unitCost: 152000, updatedAt: new Date().toISOString() },
-  { id: "sn_N10935", serialNumber: "N10935", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "maintenance", clientName: "", endUserName: "", shipDate: "", docNumber: "", docId: "", note: "部品足らない (保守・貸出)", inDate: "2026-09-01", unitCost: 152000, updatedAt: new Date().toISOString() },
-  { id: "sn_N10936", serialNumber: "N10936", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "shipped", clientName: "日産部品北海道販売株式会社 岩見沢店", endUserName: "ボディリバイブK 様", shipDate: "2026-08-03", docNumber: "INV-20260813-01", docId: "doc_20260813_01", note: "展示会特価 ボディリバイブK様分", inDate: "2026-09-01", unitCost: 152000, updatedAt: new Date().toISOString() },
-  { id: "sn_N10937", serialNumber: "N10937", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "shipped", clientName: "マヒミアカラー東村", endUserName: "", shipDate: "2026-09-20", docNumber: "INV-20260920-01", docId: "doc_20260920_01", note: "展示会特価（価格訂正済）", inDate: "2026-09-01", unitCost: 152000, updatedAt: new Date().toISOString() },
-  { id: "sn_N10938", serialNumber: "N10938", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "shipped", clientName: "株式会社宮田自動車商会 苫小牧営業所", endUserName: "", shipDate: "2026-10-01", docNumber: "INV-20261001-02", docId: "doc_20261001_02", note: "スプレッダーN36709同時出荷", inDate: "2026-09-01", unitCost: 152000, updatedAt: new Date().toISOString() },
-  { id: "sn_N10939", serialNumber: "N10939", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "shipped", clientName: "有限会社いわさきオートラック", endUserName: "FAC 様", shipDate: "2026-07-11", docNumber: "INV-20260711-01", docId: "doc_20260711_01", note: "FAC様分特価", inDate: "2026-09-01", unitCost: 152000, updatedAt: new Date().toISOString() },
-  { id: "sn_N10940", serialNumber: "N10940", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "shipped", clientName: "日産部品千葉販売株式会社 本社", endUserName: "戸倉 様", shipDate: "2026-08-03", docNumber: "INV-20260813-02", docId: "doc_20260813_02", note: "戸倉様分", inDate: "2026-09-01", unitCost: 152000, updatedAt: new Date().toISOString() },
-  { id: "sn_N10942", serialNumber: "N10942", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "shipped", clientName: "中村塗料株式会社", endUserName: "", shipDate: "2026-09-24", docNumber: "INV-20260924-01", docId: "doc_20260924_01", note: "ホールドイットクランプ同時出荷", inDate: "2026-09-01", unitCost: 152000, updatedAt: new Date().toISOString() },
+  { id: "sn_N10933", serialNumber: "N10933", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "shipped", isBundled: true, lotNumber: "LOT-20260316", clientName: "株式会社宮田自動車商会 西営業所", endUserName: "ストリームズ 様", shipDate: "2026-10-01", docNumber: "INV-20261001-01", docId: "doc_20261001_01", note: "ストリームズ様分 (169-376200)", inDate: "2026-03-16", unitCost: 152000, updatedAt: new Date().toISOString() },
+  { id: "sn_N10934", serialNumber: "N10934", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "shipped", isBundled: true, lotNumber: "LOT-20260316", clientName: "株式会社BIC", endUserName: "", shipDate: "2026-10-01", docNumber: "", docId: "", note: "宣伝用寄贈", inDate: "2026-03-16", unitCost: 152000, updatedAt: new Date().toISOString() },
+  { id: "sn_N10935", serialNumber: "N10935", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "maintenance", isBundled: true, lotNumber: "LOT-20260316", clientName: "", endUserName: "", shipDate: "", docNumber: "", docId: "", note: "部品足らない (保守・貸出)", inDate: "2026-03-16", unitCost: 152000, updatedAt: new Date().toISOString() },
+  { id: "sn_N10936", serialNumber: "N10936", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "shipped", isBundled: true, lotNumber: "LOT-20260316", clientName: "日産部品北海道販売株式会社 岩見沢店", endUserName: "ボディリバイブK 様", shipDate: "2026-08-03", docNumber: "INV-20260813-01", docId: "doc_20260813_01", note: "展示会特価 ボディリバイブK様分", inDate: "2026-03-16", unitCost: 152000, updatedAt: new Date().toISOString() },
+  { id: "sn_N10937", serialNumber: "N10937", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "shipped", isBundled: true, lotNumber: "LOT-20260316", clientName: "マヒミアカラー東村", endUserName: "", shipDate: "2026-09-20", docNumber: "INV-20260920-01", docId: "doc_20260920_01", note: "展示会特価（価格訂正済）", inDate: "2026-03-16", unitCost: 152000, updatedAt: new Date().toISOString() },
+  { id: "sn_N10938", serialNumber: "N10938", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "shipped", isBundled: true, lotNumber: "LOT-20260316", clientName: "株式会社宮田自動車商会 苫小牧営業所", endUserName: "", shipDate: "2026-10-01", docNumber: "INV-20261001-02", docId: "doc_20261001_02", note: "スプレッダーN36709同時出荷", inDate: "2026-03-16", unitCost: 152000, updatedAt: new Date().toISOString() },
+  { id: "sn_N10939", serialNumber: "N10939", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "shipped", isBundled: true, lotNumber: "LOT-20260316", clientName: "有限会社いわさきオートラック", endUserName: "FAC 様", shipDate: "2026-07-11", docNumber: "INV-20260711-01", docId: "doc_20260711_01", note: "FAC様分特価", inDate: "2026-03-16", unitCost: 152000, updatedAt: new Date().toISOString() },
+  { id: "sn_N10940", serialNumber: "N10940", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "shipped", isBundled: true, lotNumber: "LOT-20260316", clientName: "日産部品千葉販売株式会社 本社", endUserName: "戸倉 様", shipDate: "2026-08-03", docNumber: "INV-20260813-02", docId: "doc_20260813_02", note: "戸倉様分", inDate: "2026-03-16", unitCost: 152000, updatedAt: new Date().toISOString() },
+  { id: "sn_N10942", serialNumber: "N10942", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "shipped", isBundled: true, lotNumber: "LOT-20260316", clientName: "中村塗料株式会社", endUserName: "", shipDate: "2026-09-24", docNumber: "INV-20260924-01", docId: "doc_20260924_01", note: "ホールドイットクランプ同時出荷", inDate: "2026-03-16", unitCost: 152000, updatedAt: new Date().toISOString() },
   { id: "sn_N35600", serialNumber: "N35600", inventoryId: "inv_2", itemName: "DP-MS", itemType: "spreader", status: "shipped", clientName: "バンザイ沖縄販売株式会社", endUserName: "", shipDate: "2025-08-12", docNumber: "INV-20250729-01", docId: "doc_20250729_01", note: "DP-5000(N8464)同時出荷", inDate: "2025-07-01", unitCost: 40000, updatedAt: new Date().toISOString() },
   { id: "sn_N35601", serialNumber: "N35601", inventoryId: "inv_2", itemName: "DP-MS", itemType: "spreader", status: "shipped", clientName: "有限会社いわさきオートラック", endUserName: "", shipDate: "2025-11-26", docNumber: "INV-20251126-01", docId: "doc_20251126_01", note: "DP-5000(N8475)同時出荷", inDate: "2025-07-01", unitCost: 40000, updatedAt: new Date().toISOString() },
   { id: "sn_N36115", serialNumber: "N36115", inventoryId: "inv_2", itemName: "DP-MS", itemType: "spreader", status: "shipped", clientName: "奥村塗料株式会社", endUserName: "", shipDate: "2026-03-07", docNumber: "INV-20260307-01", docId: "doc_20260307_01", note: "DP-5000(N10417)同時出荷", inDate: "2026-02-01", unitCost: 40000, updatedAt: new Date().toISOString() },
@@ -945,31 +969,7 @@ export const DEFAULT_INVENTORY_SERIALS = [
   { id: "sn_N8005", serialNumber: "N8005", inventoryId: "inv_dp5000_bat", itemName: "PSE認証リチウムイオンバッテリー", itemType: "battery", status: "in_stock", clientName: "", endUserName: "", shipDate: "", docNumber: "", docId: "", note: "社内管理用", isCompanyOnly: true, inDate: "2026-10-21", unitCost: 8000, updatedAt: new Date().toISOString() },
 ];
 
-export const DEFAULT_INVENTORY_LOTS = [
-  {
-    id: 'lot_202610_01',
-    lotNumber: 'LOT-202610-01',
-    inventoryId: 'inv_dp5000_body',
-    itemName: 'DP-5000 本体',
-    date: '2026-10-21',
-    qty: 5,
-    sourceType: 'import',
-    supplier: 'Shenzhen Tech Ltd.',
-    costBreakdown: {
-      baseProductCost: 600000,
-      overseasConsultingFee: 75000,
-      shippingAndInsurance: 40000,
-      customsDuty: 30000,
-      domesticDeliveryFee: 15000,
-      importTax: 76000
-    },
-    totalCost: 760000,
-    unitCost: 152000,
-    importTax: 76000,
-    note: '2026年10月度輸入第1便',
-    createdAt: new Date().toISOString()
-  }
-];
+export const DEFAULT_INVENTORY_LOTS = [];
 
 export const DEFAULT_PURCHASE_MAPPINGS = {
   "スプレッダー": "inv_2",
@@ -4231,12 +4231,8 @@ export function mergeInventoryServerAndLocal(serverList, localList) {
       return timeB - timeA;
     });
 
-    let chosenStock = sItem.currentStock;
-    if (combinedHistory.length > 0 && combinedHistory[0].currentStock !== undefined) {
-      chosenStock = Number(combinedHistory[0].currentStock);
-    } else if (hasLocalOnlyHistory && lItem.currentStock !== undefined) {
-      chosenStock = Number(lItem.currentStock);
-    }
+    // サーバーの現在庫を第一優先として維持（過去ログの古いcurrentStockスナップショットで現在庫を破壊・上書きしない）
+    let chosenStock = (sItem.currentStock !== undefined) ? Number(sItem.currentStock) : (Number(lItem.currentStock) || 0);
 
     return {
       ...sItem,
