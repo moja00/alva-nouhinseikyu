@@ -10443,7 +10443,7 @@ function getInventoryHistoryWithShipments(item) {
 
   // 3. シリアル台帳（inventory_serials）から後からセット品化した10台の履歴を本体入荷日に設定して補完
   const serials = (typeof getInventorySerialList === 'function') ? getInventorySerialList() : [];
-  let bodyArrivalDate = '2025-03-16';
+  let bodyArrivalDate = '2026-03-16';
   if (Array.isArray(lots)) {
     const bodyLot = lots.find(l => l && String(l.lotNumber || '').includes('20260316'));
     if (bodyLot && (bodyLot.arrivalDate || bodyLot.date)) {
@@ -10500,11 +10500,12 @@ function getInventoryHistoryWithShipments(item) {
           timestamp: timestamp
         });
       } else if (isBat) {
-        // バッテリー側：セット品への組込出庫（20個まとめて1行表示）
+        // バッテリー側：セット品への組込出庫（20個まとめて1行表示、バッテリー入荷日2026-03-24に合わせて出庫）
+        const batBundleDate = '2026-03-24';
         const totalBats = postAssembledList.reduce((sum, d) => sum + (d.bats.length || 2), 0);
         combined.push({
-          id: `bundle_summary_out_bat_${bundleDate}`,
-          date: bundleDate,
+          id: `bundle_summary_out_bat_${batBundleDate}`,
+          date: batBundleDate,
           type: 'out',
           qty: totalBats,
           delta: -totalBats,
@@ -10512,7 +10513,22 @@ function getInventoryHistoryWithShipments(item) {
           payee: 'セット化',
           isBundleSummary: true,
           details: postAssembledList,
-          timestamp: timestamp
+          timestamp: `${batBundleDate}T10:00:00.000Z`
+        });
+      } else if (isChg) {
+        // 急速充電器側：セット品への組込出庫（10個まとめて1行表示、充電器入荷日2026-03-24に合わせて出庫）
+        const chgBundleDate = '2026-03-24';
+        combined.push({
+          id: `bundle_summary_out_chg_${chgBundleDate}`,
+          date: chgBundleDate,
+          type: 'out',
+          qty: postAssembledList.length,
+          delta: -postAssembledList.length,
+          reason: `セット品化組込出庫: 専用急速充電器 (${postAssembledList.length}個)`,
+          payee: 'セット化',
+          isBundleSummary: true,
+          details: postAssembledList,
+          timestamp: `${chgBundleDate}T10:00:00.000Z`
         });
       }
     }
@@ -10581,6 +10597,7 @@ function getInventoryHistoryWithShipments(item) {
             timestamp: doc.createdAt || (docDate ? `${docDate}T12:00:00.000Z` : ''),
             isShipment: true
           });
+          if (docNo) existingDocNums.add(docNo);
         }
       });
     });
@@ -10612,7 +10629,7 @@ function getInventoryHistoryWithShipments(item) {
           timestamp: `${sDate}T15:00:00.000Z`,
           isShipment: true
         });
-      } else if (s.status === 'maintenance') {
+      } else if (s.status === 'maintenance' || (s.note && s.note.includes('部品足らない'))) {
         const mDate = '2026-10-01';
         combined.push({
           id: `serial_maint_${bSn}`,
