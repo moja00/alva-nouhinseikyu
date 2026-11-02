@@ -11227,7 +11227,7 @@ function updateAdjustSimulation() {
   }
 }
 
-function confirmAdjustHandler() {
+async function confirmAdjustHandler() {
   if (!currentAdjustItem) return;
   const id = DOM.adjustInventoryId.value;
   const qty = parseInt(DOM.adjustInputQty.value, 10) || 0;
@@ -11251,7 +11251,8 @@ function confirmAdjustHandler() {
     isDirectSet = true;
   }
 
-  const result = adjustStock(id, delta, reason, {}, isDirectSet);
+  console.log(`【在庫調整UI】実行: ${id}, delta=${delta}, type=${type}, reason=${reason}`);
+  const result = await adjustStock(id, delta, reason, {}, isDirectSet);
   if (result) {
     showToast(`在庫を更新しました（現在庫: ${result.item.currentStock} ${result.item.unit || '個'}）`, 'success');
     closeInventoryAdjustModal();
@@ -16527,8 +16528,9 @@ function renderAccInventoryIntegrationPanel(periodFilter = currentAccGlobalPerio
   const endEl = document.getElementById('accInvEndingValue');
   if (endEl) endEl.textContent = `¥${endInv.toLocaleString()}`;
 
+  const inStockCount = invList.filter(item => (Number(item.currentStock) || 0) > 0).length;
   const countBadge = document.getElementById('accInvItemCountBadge');
-  if (countBadge) countBadge.textContent = `${invList.length}品目`;
+  if (countBadge) countBadge.textContent = `${inStockCount}品目保有 (全${invList.length}品目)`;
 
   const deltaEl = document.getElementById('accInvDeltaValue');
   const deltaHelp = document.getElementById('accInvDeltaHelp');

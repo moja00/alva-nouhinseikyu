@@ -7394,6 +7394,76 @@ function importDataFromJSON(jsonString) {
 // ==========================================================================
 
 /**
+ * サーバーとローカルの在庫マスタおよび履歴を安全に相互マージ
+ * ローカルにのみ存在する出庫ログや棚卸調整がリロード時に消滅するのを防止
+ */
+function mergeInventoryServerAndLocal(serverList, localList) {
+  if (!Array.isArray(serverList)) return localList || [];
+  if (!Array.isArray(localList) || localList.length === 0) return deduplicateInventoryList(serverList);
+
+  const localMap = new Map();
+  localList.forEach(item => {
+    if (!item) return;
+    const key = getMasterKey(normalizeMasterName(item.name || ''));
+    if (key) localMap.set(key, item);
+    if (item.id) localMap.set(item.id, item);
+  });
+
+  const merged = serverList.map(sItem => {
+    if (!sItem) return sItem;
+    const key = getMasterKey(normalizeMasterName(sItem.name || ''));
+    const lItem = localMap.get(key) || (sItem.id ? localMap.get(sItem.id) : null);
+    if (!lItem) return { ...sItem };
+
+    // 履歴を双方向マージ（ローカル手動出庫ログを確実に合成）
+    const sHist = Array.isArray(sItem.history) ? sItem.history : [];
+    const lHist = Array.isArray(lItem.history) ? lItem.history : [];
+    const histMap = new Map();
+
+    const makeHistKey = (h) => {
+      if (!h) return '';
+      return h.id || `${h.date || ''}_${h.type || ''}_${h.qty || ''}_${h.delta || ''}_${(h.reason || '').trim()}`;
+    };
+
+    sHist.forEach(h => {
+      const hk = makeHistKey(h);
+      if (hk) histMap.set(hk, h);
+    });
+
+    let hasLocalOnlyHistory = false;
+    lHist.forEach(h => {
+      const hk = makeHistKey(h);
+      if (hk && !histMap.has(hk)) {
+        histMap.set(hk, h);
+        hasLocalOnlyHistory = true;
+      }
+    });
+
+    const combinedHistory = Array.from(histMap.values());
+    combinedHistory.sort((a, b) => {
+      const timeA = new Date(a.timestamp || a.date || 0).getTime();
+      const timeB = new Date(b.timestamp || b.date || 0).getTime();
+      return timeB - timeA;
+    });
+
+    let chosenStock = sItem.currentStock;
+    if (combinedHistory.length > 0 && combinedHistory[0].currentStock !== undefined) {
+      chosenStock = Number(combinedHistory[0].currentStock);
+    } else if (hasLocalOnlyHistory && lItem.currentStock !== undefined) {
+      chosenStock = Number(lItem.currentStock);
+    }
+
+    return {
+      ...sItem,
+      currentStock: chosenStock,
+      history: combinedHistory
+    };
+  });
+
+  return deduplicateInventoryList(merged);
+}
+
+/**
  * サーバーから在庫マスタを取得
  */
 async function fetchServerInventory() {
@@ -7402,8 +7472,24 @@ async function fetchServerInventory() {
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data)) {
-        localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(data));
-        return data;
+        // ローカルの既存データを取得
+        const rawLocal = localStorage.getItem(KEYS.INVENTORY);
+        let localList = [];
+        try {
+          localList = rawLocal ? JSON.parse(rawLocal) : [];
+        } catch (e) { localList = []; }
+
+        // ローカルにのみ存在する履歴（手動出庫ログなど）をサーバーデータへ安全に合成
+        const merged = mergeInventoryServerAndLocal(data, localList);
+        localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(merged));
+        
+        // ローカル側に未同期の履歴や差分があればサーバー側へも逆同期保存
+        const localHistCount = localList.reduce((acc, it) => acc + (Array.isArray(it.history) ? it.history.length : 0), 0);
+        const serverHistCount = data.reduce((acc, it) => acc + (Array.isArray(it.history) ? it.history.length : 0), 0);
+        if (localHistCount > serverHistCount) {
+          saveServerInventory(merged).catch(() => {});
+        }
+        return merged;
       }
     }
   } catch (e) {
@@ -7538,7 +7624,6 @@ function deduplicateInventoryList(rawList) {
       if (!existing.sku && inv.sku) existing.sku = inv.sku;
       if (!existing.unitCost && inv.unitCost) existing.unitCost = inv.unitCost;
       if (!existing.unitPrice && inv.unitPrice) existing.unitPrice = inv.unitPrice;
-      if (inv.currentStock > existing.currentStock) existing.currentStock = inv.currentStock;
       if (inv.safetyStock > existing.safetyStock) existing.safetyStock = inv.safetyStock;
       if (!existing.lastInDate && inv.lastInDate) existing.lastInDate = inv.lastInDate;
       if (inv.type) existing.type = inv.type;
@@ -7546,16 +7631,29 @@ function deduplicateInventoryList(rawList) {
         existing.hasSerial = (!existing.name.includes('DP-EG') && !existing.name.includes('3点引き')) ? inv.hasSerial : false;
       }
       if (Array.isArray(inv.bundleItems) && inv.bundleItems.length > 0) existing.bundleItems = inv.bundleItems;
-      // 履歴をマージ（重複IDを除外）
+      // 履歴をマージ（重複ID・キーを除外）
       if (Array.isArray(inv.history)) {
-        const histIds = new Set(existing.history.map(h => h.id || (h.date + h.type + h.qty)));
+        const makeKey = h => h.id || `${h.date}_${h.type}_${h.qty}_${h.delta || ''}_${(h.reason || '').trim()}`;
+        const histKeys = new Set(existing.history.map(makeKey));
         for (const h of inv.history) {
-          const hId = h.id || (h.date + h.type + h.qty);
-          if (!histIds.has(hId)) {
+          const hk = makeKey(h);
+          if (!histKeys.has(hk)) {
             existing.history.push(h);
-            histIds.add(hId);
+            histKeys.add(hk);
           }
         }
+        // 日付・timestampで降順ソート
+        existing.history.sort((a, b) => {
+          const timeA = new Date(a.timestamp || a.date || 0).getTime();
+          const timeB = new Date(b.timestamp || b.date || 0).getTime();
+          return timeB - timeA;
+        });
+      }
+      // 最新の履歴エントリに処理後在庫(currentStock)が記録されていればそれを優先（出庫による在庫減少を巻き戻さない）
+      if (existing.history && existing.history.length > 0 && existing.history[0].currentStock !== undefined) {
+        existing.currentStock = Number(existing.history[0].currentStock);
+      } else if (existing.currentStock === 0 && inv.currentStock !== 0) {
+        existing.currentStock = inv.currentStock;
       }
     }
   }
@@ -7884,8 +7982,10 @@ function adjustStock(id, deltaQty, reason = '', metadata = {}, isDirectSet = fal
       }
     }
 
-    localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(list));
-    saveServerInventory(list).catch(() => { });
+    const clean = deduplicateInventoryList(list);
+    localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(clean));
+    saveServerInventory(clean).catch(() => { });
+    console.log(`【在庫出入庫調整】完了: ${item.name} (${id}) 変動: ${actualDelta} => 現在庫: ${newStock}`);
     return { item, logEntry };
   } catch (e) {
     console.error('Failed to adjust stock:', e);
@@ -21277,7 +21377,7 @@ function updateAdjustSimulation() {
   }
 }
 
-function confirmAdjustHandler() {
+async function confirmAdjustHandler() {
   if (!currentAdjustItem) return;
   const id = DOM.adjustInventoryId.value;
   const qty = parseInt(DOM.adjustInputQty.value, 10) || 0;
@@ -21301,7 +21401,8 @@ function confirmAdjustHandler() {
     isDirectSet = true;
   }
 
-  const result = adjustStock(id, delta, reason, {}, isDirectSet);
+  console.log(`【在庫調整UI】実行: ${id}, delta=${delta}, type=${type}, reason=${reason}`);
+  const result = await adjustStock(id, delta, reason, {}, isDirectSet);
   if (result) {
     showToast(`在庫を更新しました（現在庫: ${result.item.currentStock} ${result.item.unit || '個'}）`, 'success');
     closeInventoryAdjustModal();
@@ -26577,8 +26678,9 @@ function renderAccInventoryIntegrationPanel(periodFilter = currentAccGlobalPerio
   const endEl = document.getElementById('accInvEndingValue');
   if (endEl) endEl.textContent = `¥${endInv.toLocaleString()}`;
 
+  const inStockCount = invList.filter(item => (Number(item.currentStock) || 0) > 0).length;
   const countBadge = document.getElementById('accInvItemCountBadge');
-  if (countBadge) countBadge.textContent = `${invList.length}品目`;
+  if (countBadge) countBadge.textContent = `${inStockCount}品目保有 (全${invList.length}品目)`;
 
   const deltaEl = document.getElementById('accInvDeltaValue');
   const deltaHelp = document.getElementById('accInvDeltaHelp');
