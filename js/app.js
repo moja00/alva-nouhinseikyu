@@ -61,6 +61,7 @@ import {
   saveInventoryItem,
   deleteInventoryItem,
   adjustStock,
+  getInventoryHistoryWithShipments,
   syncInventoryWithItemsMaster,
   getPurchaseMappings,
   savePurchaseMapping,
@@ -11263,23 +11264,28 @@ async function confirmAdjustHandler() {
 
 function openInventoryHistoryModal(item) {
   if (!DOM.inventoryHistoryModal) return;
-  DOM.historyModalItemName.textContent = `入出庫履歴: ${item.name}`;
+  DOM.historyModalItemName.textContent = `入出庫・出荷履歴: ${item.name}`;
   DOM.historyModalItemSku.textContent = item.sku ? `SKU: ${item.sku} | 保管場所: ${item.location || '未設定'}` : '';
 
-  const logs = Array.isArray(item.history) ? item.history : [];
+  // 確定伝票（請求書・納品書）からの出荷記録も含めた全履歴を統合取得
+  const getHistFn = (typeof getInventoryHistoryWithShipments === 'function') 
+    ? getInventoryHistoryWithShipments 
+    : ((window && typeof window.getInventoryHistoryWithShipments === 'function') ? window.getInventoryHistoryWithShipments : null);
+  
+  const logs = getHistFn ? getHistFn(item) : (Array.isArray(item.history) ? item.history : []);
   if (logs.length === 0) {
     DOM.inventoryHistoryTableContainer.innerHTML = `
-      <div style="text-align: center; padding: 30px; color: #64748b;">入出庫の記録はありません。</div>
+      <div style="text-align: center; padding: 30px; color: #64748b;">入出庫および出荷の記録はありません。</div>
     `;
   } else {
     let html = `
       <table class="inv-table" style="font-size: 0.8rem;">
         <thead>
           <tr>
-            <th>処理日</th>
-            <th>種別</th>
-            <th style="text-align: right;">変動数量</th>
-            <th style="text-align: right;">処理後在庫</th>
+            <th style="min-width: 90px;">処理日</th>
+            <th style="min-width: 90px; text-align: center;">種別</th>
+            <th style="text-align: right; min-width: 75px;">変動数量</th>
+            <th style="text-align: right; min-width: 75px;">処理後在庫</th>
             <th>理由 / 摘要</th>
             <th>取引先 / 相手先</th>
           </tr>
@@ -11290,21 +11296,29 @@ function openInventoryHistoryModal(item) {
     logs.forEach(log => {
       let typeBadge = '';
       if (log.type === 'in') {
-        typeBadge = '<span style="color: #059669; font-weight: 700; background: #ecfdf5; padding: 2px 6px; border-radius: 4px;">➕ 入庫</span>';
+        typeBadge = '<span style="color: #059669; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 2px 6px; border-radius: 4px;">➕ 入庫</span>';
+      } else if (log.type === 'ship' || (log.type === 'out' && log.isShipment)) {
+        typeBadge = '<span style="color: #2563eb; font-weight: 700; background: #eff6ff; border: 1px solid #bfdbfe; padding: 2px 6px; border-radius: 4px;">🚚 出荷</span>';
       } else if (log.type === 'out') {
-        typeBadge = '<span style="color: #ea580c; font-weight: 700; background: #fff7ed; padding: 2px 6px; border-radius: 4px;">➖ 出庫</span>';
+        typeBadge = '<span style="color: #ea580c; font-weight: 700; background: #fff7ed; border: 1px solid #fed7aa; padding: 2px 6px; border-radius: 4px;">➖ 出庫</span>';
       } else {
-        typeBadge = '<span style="color: #475569; font-weight: 700; background: #f1f5f9; padding: 2px 6px; border-radius: 4px;">📝 調整</span>';
+        typeBadge = '<span style="color: #7c3aed; font-weight: 700; background: #f5f3ff; border: 1px solid #ddd6fe; padding: 2px 6px; border-radius: 4px;">📝 調整</span>';
       }
 
-      const deltaDisp = log.delta !== undefined ? (log.delta >= 0 ? `+${log.delta}` : `${log.delta}`) : (log.type === 'out' ? `-${log.qty}` : `+${log.qty}`);
+      const deltaDisp = log.delta !== undefined 
+        ? (log.delta > 0 ? `<span style="color: #059669;">+${log.delta}</span>` : `<span style="color: #dc2626;">${log.delta}</span>`) 
+        : (log.type === 'in' ? `<span style="color: #059669;">+${log.qty}</span>` : `<span style="color: #dc2626;">-${log.qty}</span>`);
+
+      const dispStock = log.computedRunningStock !== undefined 
+        ? log.computedRunningStock 
+        : (log.currentStock !== undefined ? log.currentStock : '-');
 
       html += `
         <tr>
-          <td style="white-space: nowrap;">${escapeHtml(log.date || '-')}</td>
-          <td>${typeBadge}</td>
-          <td style="text-align: right; font-weight: 700;">${deltaDisp}</td>
-          <td style="text-align: right; font-weight: 700; color: #0f172a;">${Number(log.currentStock).toLocaleString()}</td>
+          <td style="white-space: nowrap; font-family: monospace;">${escapeHtml(log.date || '-')}</td>
+          <td style="text-align: center;">${typeBadge}</td>
+          <td style="text-align: right; font-weight: 700; font-family: monospace;">${deltaDisp}</td>
+          <td style="text-align: right; font-weight: 700; font-family: monospace; color: #0f172a;">${typeof dispStock === 'number' ? dispStock.toLocaleString() : escapeHtml(dispStock)}</td>
           <td>${escapeHtml(log.reason || '-')}</td>
           <td>${escapeHtml(log.payee || log.sourceRef || '-')}</td>
         </tr>

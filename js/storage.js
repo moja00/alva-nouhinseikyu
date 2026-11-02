@@ -6915,6 +6915,140 @@ export async function saveServerInventorySerials(serials) {
   }
 }
 
+/**
+ * 対象在庫品目の全履歴（手動入出庫・ロット入庫・確定伝票出荷）を統合・時系列推移で取得
+ * @param {object} item - 在庫品目オブジェクト
+ * @returns {Array} 時系列（最新降順）に並んだ完全入出庫履歴ログ一覧
+ */
+export function getInventoryHistoryWithShipments(item) {
+  if (!item) return [];
+
+  const norm = getMasterKey(normalizeMasterName(item.name || ''));
+  let groupKey = norm;
+  if (norm.includes('dp-5000') || norm.includes('ベーシックセット')) groupKey = 'grp_dp5000';
+  else if (norm.includes('dp-ms') || norm.includes('スプレッダー')) groupKey = 'grp_dpms';
+  else if (norm.includes('dp-eg') || norm.includes('3点引き')) groupKey = 'grp_dpeg';
+  else if (norm.includes('dp-ac') || norm.includes('アクセサリー')) groupKey = 'grp_dpac';
+  else if (norm.includes('hic-025') || norm.includes('クランプ')) groupKey = 'grp_hic';
+  else if (norm.includes('急速充電器')) groupKey = 'grp_charger';
+
+  // 1. 基本履歴（ロット入庫、手動出庫、初期登録等）
+  const baseLogs = Array.isArray(item.history) ? [...item.history] : [];
+  const combined = [];
+  const existingDocNums = new Set();
+
+  baseLogs.forEach(h => {
+    if (!h) return;
+    const delta = h.delta !== undefined ? Number(h.delta) : (h.type === 'out' ? -Number(h.qty || 0) : Number(h.qty || 0));
+    const hid = h.id || `${h.date}_${h.type}_${h.qty}_${h.reason || ''}`;
+    combined.push({
+      ...h,
+      id: hid,
+      delta: delta,
+      qty: Math.abs(delta)
+    });
+    if (h.sourceRef) existingDocNums.add(String(h.sourceRef).trim());
+    if (h.docNumber) existingDocNums.add(String(h.docNumber).trim());
+    if (h.reason && /INV-|EST-|ORD-/i.test(h.reason)) {
+      const match = h.reason.match(/INV-[A-Za-z0-9_\-]+/i);
+      if (match) existingDocNums.add(match[0]);
+    }
+  });
+
+  // 2. 確定伝票（納品書・請求書）からの出荷明細を抽出
+  const docs = (typeof getHistoryList === 'function') ? getHistoryList() : [];
+  if (Array.isArray(docs)) {
+    docs.forEach(doc => {
+      if (!doc || doc.isCancelled === true || doc.isCancelled === 'true' || doc.docType === 'estimate') return;
+      if (doc.status === 'superseded' || doc.isSuperseded === true || (doc.fullDoc && (doc.fullDoc.status === 'superseded' || doc.fullDoc.isSuperseded))) return;
+
+      const docNo = String(doc.docNumber || doc.id || '').trim();
+      if (existingDocNums.has(docNo)) return;
+
+      const docItems = (Array.isArray(doc.items) && doc.items.length > 0)
+        ? doc.items
+        : (doc.fullDoc && Array.isArray(doc.fullDoc.items) ? doc.fullDoc.items : []);
+      if (!docItems || docItems.length === 0) return;
+
+      const clientName = doc.client ? (doc.client.name || '') : (doc.clientName || '');
+      const docDate = doc.issueDate || doc.date || '';
+      const docTypeLabel = doc.docType === 'delivery' ? '納品書' : (doc.docType === 'receipt' ? '領収書' : '請求書');
+
+      docItems.forEach((it, idx) => {
+        if (!it || !it.name) return;
+        const itName = String(it.name || '').trim();
+        if (/値引|割引|相殺|調整|特別値引|出精値引/i.test(itName)) return;
+
+        const itNorm = getMasterKey(itName);
+        let itGroupKey = itNorm;
+        if (itNorm.includes('dp-5000') || itNorm.includes('ベーシックセット')) itGroupKey = 'grp_dp5000';
+        else if (itNorm.includes('dp-ms') || itNorm.includes('スプレッダー')) itGroupKey = 'grp_dpms';
+        else if (itNorm.includes('dp-eg') || itNorm.includes('3点引き')) itGroupKey = 'grp_dpeg';
+        else if (itNorm.includes('dp-ac') || itNorm.includes('アクセサリー')) itGroupKey = 'grp_dpac';
+        else if (itNorm.includes('hic-025') || itNorm.includes('クランプ')) itGroupKey = 'grp_hic';
+        else if (itNorm.includes('急速充電器')) itGroupKey = 'grp_charger';
+
+        let isMatch = false;
+        let itemQty = Number(it.quantity) || 0;
+        if (itemQty <= 0) return;
+
+        if (it.itemId && item.itemId && it.itemId === item.itemId) {
+          isMatch = true;
+        } else if (itGroupKey === groupKey) {
+          isMatch = true;
+        } else if (itNorm === norm) {
+          isMatch = true;
+        }
+
+        // BOM構成品（本体・バッテリー・充電器）の場合、ベーシックセット出荷時に引当出荷として表示
+        if (!isMatch && itGroupKey === 'grp_dp5000') {
+          if (item.id === 'inv_dp5000_body' || norm.includes('dp-5000 本体')) {
+            isMatch = true;
+          } else if (item.id === 'inv_dp5000_bat' || norm.includes('リチウムイオンバッテリー')) {
+            isMatch = true;
+            itemQty = itemQty * 2;
+          } else if (item.id === 'inv_dp5000_chg' || norm.includes('急速充電器')) {
+            isMatch = true;
+          }
+        }
+
+        if (isMatch) {
+          combined.push({
+            id: `ship_${doc.id || docNo}_${idx}`,
+            date: docDate,
+            type: 'ship',
+            qty: itemQty,
+            delta: -itemQty,
+            reason: `確定出荷: ${docNo} (${docTypeLabel})`,
+            payee: clientName || '-',
+            sourceRef: docNo,
+            timestamp: doc.createdAt || (docDate ? `${docDate}T12:00:00.000Z` : ''),
+            isShipment: true
+          });
+        }
+      });
+    });
+  }
+
+  // 3. 日付・タイムスタンプ昇順（過去→現在）でソートし、処理後在庫推移を計算
+  combined.sort((a, b) => {
+    const dateA = a.date || '1970-01-01';
+    const dateB = b.date || '1970-01-01';
+    if (dateA !== dateB) return dateA.localeCompare(dateB);
+    const timeA = new Date(a.timestamp || 0).getTime();
+    const timeB = new Date(b.timestamp || 0).getTime();
+    return timeA - timeB;
+  });
+
+  let runningStock = 0;
+  combined.forEach(log => {
+    runningStock += Number(log.delta) || 0;
+    log.computedRunningStock = runningStock;
+  });
+
+  return combined.reverse();
+}
+
 if (typeof window !== 'undefined') {
   window.pushAllLocalDataToServer = pushAllLocalDataToServer;
   window.pullAllServerDataToLocal = pullAllServerDataToLocal;
@@ -6949,6 +7083,7 @@ if (typeof window !== 'undefined') {
   window.getInventoryList = getInventoryList;
   window.saveInventoryList = saveInventoryList;
   window.saveInventoryItem = saveInventoryItem;
+  window.getInventoryHistoryWithShipments = getInventoryHistoryWithShipments;
   window.getHistoryList = getHistoryList;
   window.getExpenseList = getExpenseList;
   window.loadActiveDoc = loadActiveDoc;
