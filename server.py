@@ -1465,10 +1465,23 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps(settings, ensure_ascii=False).encode('utf-8'))
             return
 
+        # 商品カテゴリ・非在庫カテゴリ設定取得API
+        if self.path == '/api/item-categories':
+            cat_data = get_fs_document('settings', 'item_categories', {
+                'itemCategories': [],
+                'nonStockCategories': []
+            })
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.end_headers()
+            self.wfile.write(json.dumps(cat_data, ensure_ascii=False).encode('utf-8'))
+            return
+
         # 一括同期 (Pull)
         if self.path == '/api/sync/pull-all':
             del_expenses_snap = db.collection('settings').document('deleted_expenses').get() if db else None
             del_expense_ids = del_expenses_snap.to_dict().get('ids', []) if (del_expenses_snap and del_expenses_snap.exists) else []
+            cat_doc = get_fs_document('settings', 'item_categories', {})
 
             data = {
                 'masterItems': get_fs_collection('items', []),
@@ -1480,7 +1493,9 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
                 'attendance': get_fs_collection('attendance', []),
                 'accountMaster': get_fs_collection('account_master', []),
                 'manualJournals': get_fs_collection('manual_journals', []),
-                'fiscalSettings': get_fs_document('settings', 'fiscal_settings', {})
+                'fiscalSettings': get_fs_document('settings', 'fiscal_settings', {}),
+                'itemCategories': cat_doc.get('itemCategories', []),
+                'nonStockCategories': cat_doc.get('nonStockCategories', [])
             }
             self.send_response(200)
             self.send_header('Content-Type', 'application/json; charset=utf-8')
@@ -1548,6 +1563,11 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
                 if 'masterClients' in payload:
                     save_fs_collection('clients', payload['masterClients'])
                 if 'issuerProfile' in payload:
+                    # 既存の判子印影（stampDataUrl）を保護
+                    existing_issuer = get_fs_document('settings', 'issuer', {})
+                    if existing_issuer and existing_issuer.get('stampDataUrl'):
+                        if not payload['issuerProfile'].get('stampDataUrl'):
+                            payload['issuerProfile']['stampDataUrl'] = existing_issuer['stampDataUrl']
                     save_fs_document('settings', 'issuer', payload['issuerProfile'])
                 if 'expenses' in payload:
                     save_fs_collection('expenses', payload['expenses'])
@@ -1560,7 +1580,20 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
                 if 'manualJournals' in payload:
                     save_fs_collection('manual_journals', payload['manualJournals'])
                 if 'fiscalSettings' in payload:
+                    # 既存の期首残高（openingBalances）を保護
+                    existing_fiscal = get_fs_document('settings', 'fiscal_settings', {})
+                    if existing_fiscal and isinstance(existing_fiscal.get('openingBalances'), dict) and len(existing_fiscal['openingBalances']) > 0:
+                        if not payload['fiscalSettings'].get('openingBalances') or len(payload['fiscalSettings'].get('openingBalances', {})) == 0:
+                            payload['fiscalSettings']['openingBalances'] = existing_fiscal['openingBalances']
                     save_fs_document('settings', 'fiscal_settings', payload['fiscalSettings'])
+                if 'itemCategories' in payload or 'nonStockCategories' in payload:
+                    existing_cat = get_fs_document('settings', 'item_categories', {})
+                    if 'itemCategories' in payload:
+                        existing_cat['itemCategories'] = payload['itemCategories']
+                    if 'nonStockCategories' in payload:
+                        existing_cat['nonStockCategories'] = payload['nonStockCategories']
+                    existing_cat['updatedAt'] = datetime.now().isoformat()
+                    save_fs_document('settings', 'item_categories', existing_cat)
                     
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json; charset=utf-8')
@@ -1613,6 +1646,32 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
                 self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
             return
 
+        # 商品カテゴリ・非在庫カテゴリ設定保存API
+        if self.path == '/api/item-categories':
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length).decode('utf-8')
+            try:
+                cat_payload = json.loads(post_data)
+                if not isinstance(cat_payload, dict):
+                    raise ValueError("データ形式がオブジェクトではありません")
+                existing_cat = get_fs_document('settings', 'item_categories', {})
+                if 'itemCategories' in cat_payload:
+                    existing_cat['itemCategories'] = cat_payload['itemCategories']
+                if 'nonStockCategories' in cat_payload:
+                    existing_cat['nonStockCategories'] = cat_payload['nonStockCategories']
+                existing_cat['updatedAt'] = datetime.now().isoformat()
+                save_fs_document('settings', 'item_categories', existing_cat)
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": True}).encode('utf-8'))
+            except Exception as e:
+                self.send_response(500)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
+            return
+
         # 会計年度・期首残高設定保存API
         if self.path == '/api/fiscal_settings':
             content_length = int(self.headers.get('Content-Length', 0))
@@ -1621,6 +1680,11 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
                 settings = json.loads(post_data)
                 if not isinstance(settings, dict):
                     raise ValueError("データ形式がオブジェクトではありません")
+                # 既存の openingBalances を空上書きから保護
+                existing_fiscal = get_fs_document('settings', 'fiscal_settings', {})
+                if existing_fiscal and isinstance(existing_fiscal.get('openingBalances'), dict) and len(existing_fiscal['openingBalances']) > 0:
+                    if not settings.get('openingBalances') or len(settings.get('openingBalances', {})) == 0:
+                        settings['openingBalances'] = existing_fiscal['openingBalances']
                 save_fs_document('settings', 'fiscal_settings', settings)
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json; charset=utf-8')
@@ -1859,10 +1923,15 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
             post_data = self.rfile.read(content_length).decode('utf-8')
             try:
                 issuer_data = json.loads(post_data)
+                # 既存の判子印影（stampDataUrl）を保護（空文字で上書き破壊されるのを防止）
+                existing_issuer = get_fs_document("settings", "issuer", {})
+                if existing_issuer and existing_issuer.get('stampDataUrl'):
+                    if not issuer_data.get('stampDataUrl') or issuer_data.get('stampDataUrl') == '':
+                        issuer_data['stampDataUrl'] = existing_issuer['stampDataUrl']
                 success, err = save_fs_document("settings", "issuer", issuer_data)
                 if not success:
                     raise Exception(err)
-                print(f"[自社プロファイル 保存成功] 振込先あり: {bool(issuer_data.get('bankInfo'))} (Firestore)")
+                print(f"[自社プロファイル 保存成功] 振込先あり: {bool(issuer_data.get('bankInfo'))}, 判子あり: {bool(issuer_data.get('stampDataUrl'))} (Firestore)")
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json; charset=utf-8')
                 self.end_headers()

@@ -2502,6 +2502,13 @@ export function saveItemCategoryList(list) {
     if (!Array.isArray(list)) return false;
     const cleanList = Array.from(new Set(list.map(c => String(c || '').trim()).filter(Boolean)));
     localStorageSetItemAndSync(KEYS.ITEM_CATEGORIES, JSON.stringify(cleanList));
+    // サーバーへ即時保存（クラウド同期）
+    saveServerItemCategories({
+      itemCategories: cleanList,
+      nonStockCategories: getNonStockCategories()
+    }).catch(e => {
+      console.warn('Server item categories save failed:', e);
+    });
     return true;
   } catch (e) {
     console.error('Failed to save item category list:', e);
@@ -2581,6 +2588,13 @@ export function saveNonStockCategories(list) {
     if (!Array.isArray(list)) return false;
     const clean = Array.from(new Set(list.map(c => String(c || '').trim()).filter(Boolean)));
     localStorageSetItemAndSync(KEYS.NON_STOCK_CATEGORIES, JSON.stringify(clean));
+    // サーバーへ即時保存（クラウド同期）
+    saveServerItemCategories({
+      itemCategories: getItemCategoryList(),
+      nonStockCategories: clean
+    }).catch(e => {
+      console.warn('Server non-stock categories save failed:', e);
+    });
     return true;
   } catch (e) {
     return false;
@@ -3041,7 +3055,53 @@ export async function syncMastersWithServer() {
       await saveServerMasterClients(localClients);
     }
 
-    // 3. 自社プロファイル（振込先情報）の同期
+    // 2-2. 商品カテゴリ・非在庫カテゴリの同期（クラウド双方向同期）
+    try {
+      const serverCats = await fetchServerItemCategories();
+      const localItemCats = getItemCategoryList();
+      const localNonStockCats = getNonStockCategories();
+
+      let finalItemCats = localItemCats;
+      let finalNonStockCats = localNonStockCats;
+      let hasCatChanges = false;
+
+      if (serverCats && Array.isArray(serverCats.itemCategories) && serverCats.itemCategories.length > 0) {
+        // サーバーとローカルを統合（並び順と新規登録項目を漏れなく保護）
+        const mergedSet = new Set(serverCats.itemCategories);
+        localItemCats.forEach(c => mergedSet.add(c));
+        finalItemCats = Array.from(mergedSet);
+        localStorageSetItemAndSync(KEYS.ITEM_CATEGORIES, JSON.stringify(finalItemCats));
+        if (finalItemCats.length !== serverCats.itemCategories.length) {
+          hasCatChanges = true;
+        }
+      } else if (localItemCats.length > 0) {
+        hasCatChanges = true;
+      }
+
+      if (serverCats && Array.isArray(serverCats.nonStockCategories) && serverCats.nonStockCategories.length > 0) {
+        const mergedNonStock = new Set(serverCats.nonStockCategories);
+        localNonStockCats.forEach(c => mergedNonStock.add(c));
+        finalNonStockCats = Array.from(mergedNonStock);
+        localStorageSetItemAndSync(KEYS.NON_STOCK_CATEGORIES, JSON.stringify(finalNonStockCats));
+        if (finalNonStockCats.length !== serverCats.nonStockCategories.length) {
+          hasCatChanges = true;
+        }
+      } else if (localNonStockCats.length > 0) {
+        hasCatChanges = true;
+      }
+
+      if (hasCatChanges) {
+        await saveServerItemCategories({
+          itemCategories: finalItemCats,
+          nonStockCategories: finalNonStockCats
+        });
+      }
+      console.log(`[カテゴリ同期完了] 商品カテゴリ: 全 ${finalItemCats.length} 件をサーバー・ローカルで完全同期しました`);
+    } catch (catErr) {
+      console.warn('Sync categories error:', catErr);
+    }
+
+    // 3. 自社プロファイル（振込先・判子印影含む）の同期
     try {
       const serverIssuer = await fetchServerIssuerProfile();
       const localIssuer = loadIssuerProfile() || {};
@@ -3051,6 +3111,14 @@ export async function syncMastersWithServer() {
         finalBankInfo = serverIssuer.bankInfo;
       } else if (localIssuer && localIssuer.bankInfo && localIssuer.bankInfo.trim() !== '') {
         finalBankInfo = localIssuer.bankInfo;
+      }
+
+      // 判子画像の保護マージ（サーバー・ローカルどちらかにあれば最優先維持）
+      let finalStampDataUrl = '';
+      if (serverIssuer && serverIssuer.stampDataUrl && serverIssuer.stampDataUrl.trim() !== '') {
+        finalStampDataUrl = serverIssuer.stampDataUrl;
+      } else if (localIssuer && localIssuer.stampDataUrl && localIssuer.stampDataUrl.trim() !== '') {
+        finalStampDataUrl = localIssuer.stampDataUrl;
       }
 
       const defaultTemplateIssuer = {
@@ -3074,12 +3142,50 @@ export async function syncMastersWithServer() {
       if (finalBankInfo) {
         mergedIssuer.bankInfo = finalBankInfo;
       }
+      if (finalStampDataUrl) {
+        mergedIssuer.stampDataUrl = finalStampDataUrl;
+      }
+      if (serverIssuer && serverIssuer.showStamp !== undefined) {
+        mergedIssuer.showStamp = serverIssuer.showStamp;
+      } else if (localIssuer && localIssuer.showStamp !== undefined) {
+        mergedIssuer.showStamp = localIssuer.showStamp;
+      }
 
       localStorageSetItemAndSync(KEYS.ISSUER_PROFILE, JSON.stringify(mergedIssuer));
       await saveServerIssuerProfile(mergedIssuer);
-      console.log(`[マスタ同期完了] 自社プロファイル（振込先情報含む）をサーバー・ローカルで完全同期しました`);
+      console.log(`[マスタ同期完了] 自社プロファイル（振込先・判子印影含む）をサーバー・ローカルで完全同期しました`);
     } catch (issuerErr) {
       console.warn('Sync issuer profile error:', issuerErr);
+    }
+
+    // 3-2. 会計期首設定（fiscal_settings / openingBalances）の双方向同期
+    try {
+      const serverFiscal = await fetchServerFiscalSettings();
+      const localFiscal = getFiscalSettings() || {};
+
+      if (serverFiscal && typeof serverFiscal === 'object') {
+        const sOb = serverFiscal.openingBalances || {};
+        const lOb = localFiscal.openingBalances || {};
+        // 期首残高の統合（どちらかに設定された数値を保護）
+        const mergedOb = { ...sOb, ...lOb };
+
+        const mergedFiscal = {
+          ...localFiscal,
+          ...serverFiscal,
+          openingBalances: (Object.keys(mergedOb).length > 0) ? mergedOb : (Object.keys(sOb).length > 0 ? sOb : lOb),
+          updatedAt: new Date().toISOString()
+        };
+
+        localStorageSetItemAndSync(KEYS.FISCAL_SETTINGS, JSON.stringify(mergedFiscal));
+        if (Object.keys(sOb).length === 0 && Object.keys(lOb).length > 0) {
+          await saveServerFiscalSettings(mergedFiscal);
+        }
+        console.log(`[会計設定同期完了] 期首設定および期首残高をサーバー・ローカルで完全同期しました`);
+      } else if (localFiscal && Object.keys(localFiscal).length > 0) {
+        await saveServerFiscalSettings(localFiscal);
+      }
+    } catch (fiscErr) {
+      console.warn('Sync fiscal settings error:', fiscErr);
     }
 
     // 4. 勤怠打刻データ（data/attendance/attendance.json）の1対1整合性同期
@@ -4093,7 +4199,10 @@ export function exportDataAsJSON() {
     expenses: getExpenseList(),
     attendance: getAttendanceList(),
     inventory: getInventoryList(),
-    purchaseMappings: getPurchaseMappings()
+    purchaseMappings: getPurchaseMappings(),
+    itemCategories: getItemCategoryList(),
+    nonStockCategories: getNonStockCategories(),
+    fiscalSettings: getFiscalSettings()
   };
 
   const jsonStr = JSON.stringify(backupData, null, 2);
@@ -4153,6 +4262,15 @@ export function importDataFromJSON(jsonString) {
     if (data.purchaseMappings && typeof data.purchaseMappings === 'object') {
       localStorageSetItemAndSync(KEYS.PURCHASE_MAPPINGS, JSON.stringify(data.purchaseMappings));
       saveServerPurchaseMappings(data.purchaseMappings).catch(() => { });
+    }
+    if (data.itemCategories && Array.isArray(data.itemCategories)) {
+      saveItemCategoryList(data.itemCategories);
+    }
+    if (data.nonStockCategories && Array.isArray(data.nonStockCategories)) {
+      saveNonStockCategories(data.nonStockCategories);
+    }
+    if (data.fiscalSettings && typeof data.fiscalSettings === 'object') {
+      saveFiscalSettings(data.fiscalSettings);
     }
     return { success: true, activeDoc: data.activeDoc || null };
   } catch (e) {
@@ -5318,6 +5436,43 @@ export async function saveServerFiscalSettings(settings) {
   }
 }
 
+export async function fetchServerFiscalSettings() {
+  try {
+    const res = await apiFetch('fiscal_settings', { cache: 'no-store' });
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (e) {
+    // オフラインまたは静的起動時
+  }
+  return null;
+}
+
+export async function fetchServerItemCategories() {
+  try {
+    const res = await apiFetch('item-categories', { cache: 'no-store' });
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (e) {
+    // オフライン
+  }
+  return null;
+}
+
+export async function saveServerItemCategories(payload) {
+  try {
+    const res = await apiFetch('item-categories', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return res.ok;
+  } catch (e) {
+    return false;
+  }
+}
+
 /**
  * 勘定科目マスタ一覧を取得（未設定時は DEFAULT_ACCOUNT_MASTER を返す）
  * @returns {Array<any>}
@@ -5518,7 +5673,9 @@ export async function pushAllLocalDataToServer() {
     accountMaster: getAccountMasterList(),
     manualJournals: getManualJournals(),
     fiscalSettings: getFiscalSettings(),
-    lockedMonths: getLockedMonths()
+    lockedMonths: getLockedMonths(),
+    itemCategories: getItemCategoryList(),
+    nonStockCategories: getNonStockCategories()
   };
 
   try {
@@ -5599,6 +5756,12 @@ export async function pullAllServerDataToLocal() {
     }
     if (data.lockedMonths && Array.isArray(data.lockedMonths)) {
       saveLockedMonths(data.lockedMonths);
+    }
+    if (data.itemCategories && Array.isArray(data.itemCategories) && data.itemCategories.length > 0) {
+      saveItemCategoryList(data.itemCategories);
+    }
+    if (data.nonStockCategories && Array.isArray(data.nonStockCategories) && data.nonStockCategories.length > 0) {
+      saveNonStockCategories(data.nonStockCategories);
     }
     return { success: true, message: 'サーバーから最新データを同期しました！' };
   } catch (err) {
@@ -7585,6 +7748,8 @@ if (typeof window !== 'undefined') {
   window.isNonStockCategory = isNonStockCategory;
   window.isNonStockItem = isNonStockItem;
   window.setCategoryNonStock = setCategoryNonStock;
+  window.loadIssuerProfile = loadIssuerProfile;
+  window.saveIssuerProfile = saveIssuerProfile;
   window.restoreAttendanceFromBackup = function() {
     const backup = localStorage.getItem(KEYS.ATTENDANCE + '_backup');
     if (backup && backup !== '[]') {

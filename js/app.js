@@ -2647,21 +2647,57 @@ function setupEventListeners() {
   bindInput(DOM.inputClientAddress, val => currentDoc.client.address = val);
   bindInput(DOM.inputClientContact, val => currentDoc.client.contactPerson = val);
 
+  // 印鑑画像の安全圧縮処理（最大256x256px、容量超過エラーを完全防止）
+  function resizeStampImage(file) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        img.onload = () => {
+          const maxDim = 256;
+          let width = img.width;
+          let height = img.height;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressed = canvas.toDataURL('image/png');
+          resolve(compressed);
+        };
+        img.onerror = reject;
+        img.src = e.target.result;
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
   // 自社情報入力の永続化同期ヘルパー（変更した瞬間にdata/company/issuer_profile.jsonへ即時保存）
   const syncIssuerProfileFromCurrentDoc = () => {
     if (!currentDoc.issuer) currentDoc.issuer = {};
+    const existing = (typeof loadIssuerProfile === 'function') ? (loadIssuerProfile() || {}) : {};
     const updatedProfile = {
-      ...loadIssuerProfile(),
-      name: currentDoc.issuer.name || '',
-      invoiceNumber: currentDoc.issuer.invoiceNumber || '',
-      zip: currentDoc.issuer.zip || '',
-      tel: currentDoc.issuer.tel || '',
-      fax: currentDoc.issuer.fax || '',
-      address: currentDoc.issuer.address || '',
-      email: currentDoc.issuer.email || '',
-      bankInfo: currentDoc.issuer.bankInfo || '',
-      showStamp: currentDoc.issuer.showStamp !== undefined ? currentDoc.issuer.showStamp : true,
-      stampDataUrl: currentDoc.issuer.stampDataUrl || ''
+      ...existing,
+      name: currentDoc.issuer.name || existing.name || '',
+      invoiceNumber: currentDoc.issuer.invoiceNumber || existing.invoiceNumber || '',
+      zip: currentDoc.issuer.zip || existing.zip || '',
+      tel: currentDoc.issuer.tel || existing.tel || '',
+      fax: currentDoc.issuer.fax || existing.fax || '',
+      address: currentDoc.issuer.address || existing.address || '',
+      email: currentDoc.issuer.email || existing.email || '',
+      bankInfo: currentDoc.issuer.bankInfo || existing.bankInfo || '',
+      showStamp: currentDoc.issuer.showStamp !== undefined ? currentDoc.issuer.showStamp : (existing.showStamp !== undefined ? existing.showStamp : true),
+      stampDataUrl: currentDoc.issuer.stampDataUrl || existing.stampDataUrl || ''
     };
     saveIssuerProfile(updatedProfile);
   };
@@ -2743,21 +2779,22 @@ function setupEventListeners() {
 
   // 印鑑画像アップロード
   if (DOM.fileStampUpload) {
-    DOM.fileStampUpload.addEventListener('change', (e) => {
-      const file = e.target.files[0];
+    DOM.fileStampUpload.addEventListener('change', async (e) => {
+      const file = e.target.files && e.target.files[0];
       if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const dataUrl = event.target.result;
-        currentDoc.issuer.stampDataUrl = dataUrl;
+      try {
+        const compressedDataUrl = await resizeStampImage(file);
+        currentDoc.issuer.stampDataUrl = compressedDataUrl;
         currentDoc.issuer.showStamp = true;
         if (DOM.checkShowStamp) DOM.checkShowStamp.checked = true;
-        updateStampThumbnail(dataUrl);
+        updateStampThumbnail(compressedDataUrl);
         syncIssuerProfileFromCurrentDoc();
         renderAll();
         showToast('印鑑画像をアップロードしました', 'success');
-      };
-      reader.readAsDataURL(file);
+      } catch (err) {
+        console.error('Failed to compress stamp image:', err);
+        showToast('印鑑画像の読み込みに失敗しました', 'error');
+      }
     });
   }
 
@@ -3270,7 +3307,9 @@ function setupEventListeners() {
     const fiscalYearEnd = `${endYear}-${String(endMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 
     if (typeof saveFiscalSettings === 'function') {
+      const existingFiscal = (typeof getFiscalSettings === 'function') ? getFiscalSettings() : {};
       saveFiscalSettings({
+        ...existingFiscal,
         fiscalYear,
         fiscalStartMonth,
         fiscalYearStart,
@@ -3279,7 +3318,8 @@ function setupEventListeners() {
       });
     }
 
-    let stampDataUrl = tempSettingStampDataUrl;
+    const currentProfile = (typeof loadIssuerProfile === 'function') ? (loadIssuerProfile() || {}) : {};
+    let stampDataUrl = tempSettingStampDataUrl || currentProfile.stampDataUrl;
     if (!stampDataUrl && name) {
       stampDataUrl = generateCompanyStamp(name);
     }
@@ -3358,41 +3398,6 @@ function setupEventListeners() {
       const stampDataUrl = generateCompanyStamp(name);
       updateSettingStampThumbnail(stampDataUrl);
       showToast('社名から角印を生成しました！');
-    });
-  }
-
-  // 印鑑画像の安全圧縮処理（最大256x256px、容量超過エラーを完全防止）
-  function resizeStampImage(file) {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        img.onload = () => {
-          const maxDim = 256;
-          let width = img.width;
-          let height = img.height;
-          if (width > maxDim || height > maxDim) {
-            if (width > height) {
-              height = Math.round((height * maxDim) / width);
-              width = maxDim;
-            } else {
-              width = Math.round((width * maxDim) / height);
-              height = maxDim;
-            }
-          }
-          const canvas = document.createElement('canvas');
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, width, height);
-          const compressed = canvas.toDataURL('image/png');
-          resolve(compressed);
-        };
-        img.onerror = reject;
-        img.src = e.target.result;
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
     });
   }
 
