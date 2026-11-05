@@ -6633,6 +6633,19 @@ async function syncMastersWithServer() {
       console.warn('Sync expenses error:', expErr);
     }
 
+    // 11. 在庫マスタ・入荷ロット・シリアル台帳の完全同期
+    try {
+      await Promise.all([
+        syncInventoryLotsWithServer(),
+        syncInventorySerialsWithServer(),
+        fetchServerInventory()
+      ]);
+      if (typeof syncInventoryStockFromIssuedDocs === 'function') syncInventoryStockFromIssuedDocs();
+      if (typeof syncInventoryStockFromSerials === 'function') syncInventoryStockFromSerials();
+    } catch (invSyncErr) {
+      console.warn('Sync inventory masters error:', invSyncErr);
+    }
+
     return true;
   } catch (e) {
     console.warn('Sync masters with server failed (offline mode):', e);
@@ -7763,13 +7776,22 @@ async function saveServerPurchaseMappings(mappings) {
 }
 
 /**
- * 起動時にサーバーと在庫データを同期
+ * 起動時にサーバーと在庫データ（マスタ・仕入マッピング・入荷ロット・シリアル台帳）を完全同期
  */
 async function initInventoryFromServer() {
   await Promise.all([
     fetchServerInventory(),
-    fetchServerPurchaseMappings()
+    fetchServerPurchaseMappings(),
+    syncInventoryLotsWithServer(),
+    syncInventorySerialsWithServer()
   ]);
+  // シリアル台帳・発行済伝票から実在庫を自動引落・完全同期
+  if (typeof syncInventoryStockFromIssuedDocs === 'function') {
+    syncInventoryStockFromIssuedDocs();
+  }
+  if (typeof syncInventoryStockFromSerials === 'function') {
+    syncInventoryStockFromSerials();
+  }
 }
 
 /**
@@ -9067,6 +9089,13 @@ async function pullAllServerDataToLocal() {
     if (data.nonStockCategories && Array.isArray(data.nonStockCategories) && data.nonStockCategories.length > 0) {
       saveNonStockCategories(data.nonStockCategories);
     }
+    await Promise.all([
+      syncInventoryLotsWithServer(),
+      syncInventorySerialsWithServer(),
+      fetchServerInventory()
+    ]);
+    if (typeof syncInventoryStockFromIssuedDocs === 'function') syncInventoryStockFromIssuedDocs();
+    if (typeof syncInventoryStockFromSerials === 'function') syncInventoryStockFromSerials();
     return { success: true, message: 'サーバーから最新データを同期しました！' };
   } catch (err) {
     console.error('Failed to pull all data from server:', err);
@@ -9270,6 +9299,62 @@ function saveInventoryLot(lotData) {
     console.error('Failed to save inventory lot:', e);
     return false;
   }
+}
+async function fetchServerInventoryLots() {
+  try {
+    const res = await apiFetch('inventory-lots', { cache: 'no-store' });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        return data;
+      }
+    }
+  } catch (e) {
+    console.warn('サーバーからの入荷ロット取得失敗:', e);
+  }
+  return null;
+}
+async function syncInventoryLotsWithServer() {
+  try {
+    const serverLots = await fetchServerInventoryLots();
+    const localLots = getInventoryLotList();
+
+    if (serverLots && Array.isArray(serverLots)) {
+      const lotMap = new Map();
+      serverLots.forEach(l => {
+        if (!l) return;
+        const key = l.id || l.lotNumber;
+        if (key) lotMap.set(key, l);
+      });
+
+      let hasLocalOnly = false;
+      localLots.forEach(l => {
+        if (!l) return;
+        const key = l.id || l.lotNumber;
+        if (key && !lotMap.has(key)) {
+          lotMap.set(key, l);
+          hasLocalOnly = true;
+        }
+      });
+
+      const mergedLots = Array.from(lotMap.values());
+      mergedLots.sort((a, b) => {
+        const dateA = a.arrivalDate || a.date || (a.createdAt ? a.createdAt.split('T')[0] : '') || '';
+        const dateB = b.arrivalDate || b.date || (b.createdAt ? b.createdAt.split('T')[0] : '') || '';
+        return dateB.localeCompare(dateA);
+      });
+
+      localStorageSetItemAndSync(KEYS.INVENTORY_LOTS, JSON.stringify(mergedLots));
+      if (hasLocalOnly) {
+        saveServerInventoryLots(mergedLots).catch(() => {});
+      }
+      console.log(`[ロット同期完了] 全 ${mergedLots.length} 件の入荷ロットをサーバー・ローカルで完全同期しました`);
+      return mergedLots;
+    }
+  } catch (err) {
+    console.warn('syncInventoryLotsWithServer error:', err);
+  }
+  return getInventoryLotList();
 }
 async function saveServerInventoryLots(lots) {
   try {
@@ -10623,6 +10708,68 @@ function disassembleDP5000Bundle(bodySerialNumber) {
     return { success: false, message: e.message || 'セット品化解除中にエラーが発生しました。' };
   }
 }
+async function fetchServerInventorySerials() {
+  try {
+    const res = await apiFetch('inventory-serials', { cache: 'no-store' });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        return data;
+      }
+    }
+  } catch (e) {
+    console.warn('サーバーからのシリアル台帳取得失敗:', e);
+  }
+  return null;
+}
+async function syncInventorySerialsWithServer() {
+  try {
+    const serverSerials = await fetchServerInventorySerials();
+    const localSerials = getInventorySerialList();
+
+    if (serverSerials && Array.isArray(serverSerials)) {
+      const deletedSerials = getDeletedSerialNumbers();
+      const serialMap = new Map();
+
+      serverSerials.forEach(s => {
+        if (!s || !s.serialNumber) return;
+        const sn = String(s.serialNumber).trim().toUpperCase();
+        if (deletedSerials.has(sn)) return;
+        serialMap.set(sn, s);
+      });
+
+      let hasLocalOnly = false;
+      localSerials.forEach(s => {
+        if (!s || !s.serialNumber) return;
+        const sn = String(s.serialNumber).trim().toUpperCase();
+        if (deletedSerials.has(sn)) return;
+        if (!serialMap.has(sn)) {
+          serialMap.set(sn, s);
+          hasLocalOnly = true;
+        } else {
+          const sItem = serialMap.get(sn);
+          const lTime = new Date(s.updatedAt || s.createdAt || 0).getTime();
+          const sTime = new Date(sItem.updatedAt || sItem.createdAt || 0).getTime();
+          if (lTime > sTime) {
+            serialMap.set(sn, s);
+            hasLocalOnly = true;
+          }
+        }
+      });
+
+      const mergedSerials = Array.from(serialMap.values());
+      localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(mergedSerials));
+      if (hasLocalOnly) {
+        saveServerInventorySerials(mergedSerials).catch(() => {});
+      }
+      console.log(`[シリアル同期完了] 全 ${mergedSerials.length} 件のシリアル台帳をサーバー・ローカルで完全同期しました`);
+      return mergedSerials;
+    }
+  } catch (err) {
+    console.warn('syncInventorySerialsWithServer error:', err);
+  }
+  return getInventorySerialList();
+}
 async function saveServerInventorySerials(serials) {
   try {
     await apiFetch('inventory-serials', {
@@ -11040,6 +11187,11 @@ if (typeof window !== 'undefined') {
   window.isNonStockCategory = isNonStockCategory;
   window.isNonStockItem = isNonStockItem;
   window.setCategoryNonStock = setCategoryNonStock;
+  window.syncInventoryLotsWithServer = syncInventoryLotsWithServer;
+  window.syncInventorySerialsWithServer = syncInventorySerialsWithServer;
+  window.fetchServerInventoryLots = fetchServerInventoryLots;
+  window.fetchServerInventorySerials = fetchServerInventorySerials;
+  window.initInventoryFromServer = initInventoryFromServer;
   window.loadIssuerProfile = loadIssuerProfile;
   window.saveIssuerProfile = saveIssuerProfile;
   window.restoreAttendanceFromBackup = function() {
@@ -12155,8 +12307,23 @@ function switchAppView(viewName) {
         try {
           if (typeof resetInventoryForm === 'function') resetInventoryForm();
           if (typeof renderInventoryTable === 'function') renderInventoryTable();
-          if (typeof renderInventorySerialsTable === 'function') renderInventorySerialsTable();
-          if (typeof renderInventoryLotsTable === 'function') renderInventoryLotsTable();
+          if (typeof renderInventorySerialTable === 'function') renderInventorySerialTable();
+          if (typeof renderInventoryLotTable === 'function') renderInventoryLotTable();
+
+          // サーバー（クラウド）から最新の入荷ロット・シリアル台帳・在庫を即時同期して画面更新
+          if (typeof syncInventoryLotsWithServer === 'function' && typeof syncInventorySerialsWithServer === 'function') {
+            Promise.all([
+              syncInventoryLotsWithServer(),
+              syncInventorySerialsWithServer(),
+              (typeof fetchServerInventory === 'function') ? fetchServerInventory() : Promise.resolve()
+            ]).then(() => {
+              if (typeof syncInventoryStockFromIssuedDocs === 'function') syncInventoryStockFromIssuedDocs();
+              if (typeof syncInventoryStockFromSerials === 'function') syncInventoryStockFromSerials();
+              if (typeof renderInventoryTable === 'function') renderInventoryTable();
+              if (typeof renderInventorySerialTable === 'function') renderInventorySerialTable();
+              if (typeof renderInventoryLotTable === 'function') renderInventoryLotTable();
+            }).catch(syncErr => console.warn('Background inventory view sync warning:', syncErr));
+          }
         } catch (err) {
           console.error('Error initializing inventory view:', err);
         }
@@ -14868,7 +15035,16 @@ function setupEventListeners() {
     DOM.selectSerialStatusFilter.addEventListener('change', renderInventorySerialTable);
   }
   if (DOM.btnRefreshSerials) {
-    DOM.btnRefreshSerials.addEventListener('click', renderInventorySerialTable);
+    DOM.btnRefreshSerials.addEventListener('click', () => {
+      if (typeof syncInventorySerialsWithServer === 'function') {
+        syncInventorySerialsWithServer().then(() => {
+          renderInventorySerialTable();
+          showToast('シリアル台帳をサーバーから最新同期しました', 'success');
+        }).catch(() => renderInventorySerialTable());
+      } else {
+        renderInventorySerialTable();
+      }
+    });
   }
 
   // 納品・請求書用 シリアル引当モーダル イベント
@@ -17550,13 +17726,29 @@ function switchInventoryTab(tabName) {
   const contentEl = document.getElementById('inventoryViewScreenContent') || DOM.inventoryViewScreen;
   if (contentEl) contentEl.scrollTop = 0;
 
-  if (tabName === 'items') renderInventoryTable();
+  if (tabName === 'items') {
+    renderInventoryTable();
+    if (typeof fetchServerInventory === 'function') {
+      fetchServerInventory().then(() => renderInventoryTable()).catch(() => {});
+    }
+  }
   if (tabName === 'serials') {
     if (typeof renderSerialsManagementTable === 'function') {
       renderSerialsManagementTable();
     }
+    if (typeof syncInventorySerialsWithServer === 'function') {
+      syncInventorySerialsWithServer().then(() => {
+        if (typeof renderSerialsManagementTable === 'function') renderSerialsManagementTable();
+        if (typeof renderInventorySerialTable === 'function') renderInventorySerialTable();
+      }).catch(() => {});
+    }
   }
-  if (tabName === 'lots') renderInventoryLotTable();
+  if (tabName === 'lots') {
+    renderInventoryLotTable();
+    if (typeof syncInventoryLotsWithServer === 'function') {
+      syncInventoryLotsWithServer().then(() => renderInventoryLotTable()).catch(() => {});
+    }
+  }
 }
 
 window.switchInventoryTab = switchInventoryTab;

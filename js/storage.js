@@ -3317,6 +3317,19 @@ export async function syncMastersWithServer() {
       console.warn('Sync expenses error:', expErr);
     }
 
+    // 11. 在庫マスタ・入荷ロット・シリアル台帳の完全同期
+    try {
+      await Promise.all([
+        syncInventoryLotsWithServer(),
+        syncInventorySerialsWithServer(),
+        fetchServerInventory()
+      ]);
+      if (typeof syncInventoryStockFromIssuedDocs === 'function') syncInventoryStockFromIssuedDocs();
+      if (typeof syncInventoryStockFromSerials === 'function') syncInventoryStockFromSerials();
+    } catch (invSyncErr) {
+      console.warn('Sync inventory masters error:', invSyncErr);
+    }
+
     return true;
   } catch (e) {
     console.warn('Sync masters with server failed (offline mode):', e);
@@ -4447,13 +4460,22 @@ export async function saveServerPurchaseMappings(mappings) {
 }
 
 /**
- * 起動時にサーバーと在庫データを同期
+ * 起動時にサーバーと在庫データ（マスタ・仕入マッピング・入荷ロット・シリアル台帳）を完全同期
  */
 export async function initInventoryFromServer() {
   await Promise.all([
     fetchServerInventory(),
-    fetchServerPurchaseMappings()
+    fetchServerPurchaseMappings(),
+    syncInventoryLotsWithServer(),
+    syncInventorySerialsWithServer()
   ]);
+  // シリアル台帳・発行済伝票から実在庫を自動引落・完全同期
+  if (typeof syncInventoryStockFromIssuedDocs === 'function') {
+    syncInventoryStockFromIssuedDocs();
+  }
+  if (typeof syncInventoryStockFromSerials === 'function') {
+    syncInventoryStockFromSerials();
+  }
 }
 
 /**
@@ -5763,6 +5785,13 @@ export async function pullAllServerDataToLocal() {
     if (data.nonStockCategories && Array.isArray(data.nonStockCategories) && data.nonStockCategories.length > 0) {
       saveNonStockCategories(data.nonStockCategories);
     }
+    await Promise.all([
+      syncInventoryLotsWithServer(),
+      syncInventorySerialsWithServer(),
+      fetchServerInventory()
+    ]);
+    if (typeof syncInventoryStockFromIssuedDocs === 'function') syncInventoryStockFromIssuedDocs();
+    if (typeof syncInventoryStockFromSerials === 'function') syncInventoryStockFromSerials();
     return { success: true, message: 'サーバーから最新データを同期しました！' };
   } catch (err) {
     console.error('Failed to pull all data from server:', err);
@@ -5968,6 +5997,64 @@ export function saveInventoryLot(lotData) {
     console.error('Failed to save inventory lot:', e);
     return false;
   }
+}
+
+export async function fetchServerInventoryLots() {
+  try {
+    const res = await apiFetch('inventory-lots', { cache: 'no-store' });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        return data;
+      }
+    }
+  } catch (e) {
+    console.warn('サーバーからの入荷ロット取得失敗:', e);
+  }
+  return null;
+}
+
+export async function syncInventoryLotsWithServer() {
+  try {
+    const serverLots = await fetchServerInventoryLots();
+    const localLots = getInventoryLotList();
+
+    if (serverLots && Array.isArray(serverLots)) {
+      const lotMap = new Map();
+      serverLots.forEach(l => {
+        if (!l) return;
+        const key = l.id || l.lotNumber;
+        if (key) lotMap.set(key, l);
+      });
+
+      let hasLocalOnly = false;
+      localLots.forEach(l => {
+        if (!l) return;
+        const key = l.id || l.lotNumber;
+        if (key && !lotMap.has(key)) {
+          lotMap.set(key, l);
+          hasLocalOnly = true;
+        }
+      });
+
+      const mergedLots = Array.from(lotMap.values());
+      mergedLots.sort((a, b) => {
+        const dateA = a.arrivalDate || a.date || (a.createdAt ? a.createdAt.split('T')[0] : '') || '';
+        const dateB = b.arrivalDate || b.date || (b.createdAt ? b.createdAt.split('T')[0] : '') || '';
+        return dateB.localeCompare(dateA);
+      });
+
+      localStorageSetItemAndSync(KEYS.INVENTORY_LOTS, JSON.stringify(mergedLots));
+      if (hasLocalOnly) {
+        saveServerInventoryLots(mergedLots).catch(() => {});
+      }
+      console.log(`[ロット同期完了] 全 ${mergedLots.length} 件の入荷ロットをサーバー・ローカルで完全同期しました`);
+      return mergedLots;
+    }
+  } catch (err) {
+    console.warn('syncInventoryLotsWithServer error:', err);
+  }
+  return getInventoryLotList();
 }
 
 export async function saveServerInventoryLots(lots) {
@@ -7331,6 +7418,70 @@ export function disassembleDP5000Bundle(bodySerialNumber) {
   }
 }
 
+export async function fetchServerInventorySerials() {
+  try {
+    const res = await apiFetch('inventory-serials', { cache: 'no-store' });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        return data;
+      }
+    }
+  } catch (e) {
+    console.warn('サーバーからのシリアル台帳取得失敗:', e);
+  }
+  return null;
+}
+
+export async function syncInventorySerialsWithServer() {
+  try {
+    const serverSerials = await fetchServerInventorySerials();
+    const localSerials = getInventorySerialList();
+
+    if (serverSerials && Array.isArray(serverSerials)) {
+      const deletedSerials = getDeletedSerialNumbers();
+      const serialMap = new Map();
+
+      serverSerials.forEach(s => {
+        if (!s || !s.serialNumber) return;
+        const sn = String(s.serialNumber).trim().toUpperCase();
+        if (deletedSerials.has(sn)) return;
+        serialMap.set(sn, s);
+      });
+
+      let hasLocalOnly = false;
+      localSerials.forEach(s => {
+        if (!s || !s.serialNumber) return;
+        const sn = String(s.serialNumber).trim().toUpperCase();
+        if (deletedSerials.has(sn)) return;
+        if (!serialMap.has(sn)) {
+          serialMap.set(sn, s);
+          hasLocalOnly = true;
+        } else {
+          const sItem = serialMap.get(sn);
+          const lTime = new Date(s.updatedAt || s.createdAt || 0).getTime();
+          const sTime = new Date(sItem.updatedAt || sItem.createdAt || 0).getTime();
+          if (lTime > sTime) {
+            serialMap.set(sn, s);
+            hasLocalOnly = true;
+          }
+        }
+      });
+
+      const mergedSerials = Array.from(serialMap.values());
+      localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(mergedSerials));
+      if (hasLocalOnly) {
+        saveServerInventorySerials(mergedSerials).catch(() => {});
+      }
+      console.log(`[シリアル同期完了] 全 ${mergedSerials.length} 件のシリアル台帳をサーバー・ローカルで完全同期しました`);
+      return mergedSerials;
+    }
+  } catch (err) {
+    console.warn('syncInventorySerialsWithServer error:', err);
+  }
+  return getInventorySerialList();
+}
+
 export async function saveServerInventorySerials(serials) {
   try {
     await apiFetch('inventory-serials', {
@@ -7748,6 +7899,11 @@ if (typeof window !== 'undefined') {
   window.isNonStockCategory = isNonStockCategory;
   window.isNonStockItem = isNonStockItem;
   window.setCategoryNonStock = setCategoryNonStock;
+  window.syncInventoryLotsWithServer = syncInventoryLotsWithServer;
+  window.syncInventorySerialsWithServer = syncInventorySerialsWithServer;
+  window.fetchServerInventoryLots = fetchServerInventoryLots;
+  window.fetchServerInventorySerials = fetchServerInventorySerials;
+  window.initInventoryFromServer = initInventoryFromServer;
   window.loadIssuerProfile = loadIssuerProfile;
   window.saveIssuerProfile = saveIssuerProfile;
   window.restoreAttendanceFromBackup = function() {

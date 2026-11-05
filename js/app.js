@@ -1224,8 +1224,23 @@ function switchAppView(viewName) {
         try {
           if (typeof resetInventoryForm === 'function') resetInventoryForm();
           if (typeof renderInventoryTable === 'function') renderInventoryTable();
-          if (typeof renderInventorySerialsTable === 'function') renderInventorySerialsTable();
-          if (typeof renderInventoryLotsTable === 'function') renderInventoryLotsTable();
+          if (typeof renderInventorySerialTable === 'function') renderInventorySerialTable();
+          if (typeof renderInventoryLotTable === 'function') renderInventoryLotTable();
+
+          // サーバー（クラウド）から最新の入荷ロット・シリアル台帳・在庫を即時同期して画面更新
+          if (typeof syncInventoryLotsWithServer === 'function' && typeof syncInventorySerialsWithServer === 'function') {
+            Promise.all([
+              syncInventoryLotsWithServer(),
+              syncInventorySerialsWithServer(),
+              (typeof fetchServerInventory === 'function') ? fetchServerInventory() : Promise.resolve()
+            ]).then(() => {
+              if (typeof syncInventoryStockFromIssuedDocs === 'function') syncInventoryStockFromIssuedDocs();
+              if (typeof syncInventoryStockFromSerials === 'function') syncInventoryStockFromSerials();
+              if (typeof renderInventoryTable === 'function') renderInventoryTable();
+              if (typeof renderInventorySerialTable === 'function') renderInventorySerialTable();
+              if (typeof renderInventoryLotTable === 'function') renderInventoryLotTable();
+            }).catch(syncErr => console.warn('Background inventory view sync warning:', syncErr));
+          }
         } catch (err) {
           console.error('Error initializing inventory view:', err);
         }
@@ -3937,7 +3952,16 @@ function setupEventListeners() {
     DOM.selectSerialStatusFilter.addEventListener('change', renderInventorySerialTable);
   }
   if (DOM.btnRefreshSerials) {
-    DOM.btnRefreshSerials.addEventListener('click', renderInventorySerialTable);
+    DOM.btnRefreshSerials.addEventListener('click', () => {
+      if (typeof syncInventorySerialsWithServer === 'function') {
+        syncInventorySerialsWithServer().then(() => {
+          renderInventorySerialTable();
+          showToast('シリアル台帳をサーバーから最新同期しました', 'success');
+        }).catch(() => renderInventorySerialTable());
+      } else {
+        renderInventorySerialTable();
+      }
+    });
   }
 
   // 納品・請求書用 シリアル引当モーダル イベント
@@ -6619,13 +6643,29 @@ function switchInventoryTab(tabName) {
   const contentEl = document.getElementById('inventoryViewScreenContent') || DOM.inventoryViewScreen;
   if (contentEl) contentEl.scrollTop = 0;
 
-  if (tabName === 'items') renderInventoryTable();
+  if (tabName === 'items') {
+    renderInventoryTable();
+    if (typeof fetchServerInventory === 'function') {
+      fetchServerInventory().then(() => renderInventoryTable()).catch(() => {});
+    }
+  }
   if (tabName === 'serials') {
     if (typeof renderSerialsManagementTable === 'function') {
       renderSerialsManagementTable();
     }
+    if (typeof syncInventorySerialsWithServer === 'function') {
+      syncInventorySerialsWithServer().then(() => {
+        if (typeof renderSerialsManagementTable === 'function') renderSerialsManagementTable();
+        if (typeof renderInventorySerialTable === 'function') renderInventorySerialTable();
+      }).catch(() => {});
+    }
   }
-  if (tabName === 'lots') renderInventoryLotTable();
+  if (tabName === 'lots') {
+    renderInventoryLotTable();
+    if (typeof syncInventoryLotsWithServer === 'function') {
+      syncInventoryLotsWithServer().then(() => renderInventoryLotTable()).catch(() => {});
+    }
+  }
 }
 
 window.switchInventoryTab = switchInventoryTab;
