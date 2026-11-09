@@ -40,13 +40,16 @@
 }
 
 /* リセット＆基本設定 */
-*, *::before, *::after {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
-html, body {
+html,
+body {
   height: 100%;
   font-family: var(--font-sans);
   background-color: var(--bg-main);
@@ -241,7 +244,9 @@ label.form-label {
   margin-bottom: 5px;
 }
 
-.form-input, .form-select, .form-textarea {
+.form-input,
+.form-select,
+.form-textarea {
   width: 100%;
   padding: 8px 12px;
   font-size: 0.875rem;
@@ -254,7 +259,9 @@ label.form-label {
   outline: none;
 }
 
-.form-input:focus, .form-select:focus, .form-textarea:focus {
+.form-input:focus,
+.form-select:focus,
+.form-textarea:focus {
   border-color: var(--theme-primary);
   box-shadow: 0 0 0 3px var(--theme-primary-light);
 }
@@ -267,9 +274,25 @@ label.form-label {
 /* 書類タイプ切り替えバッジボタングループ */
 .doc-type-selector {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
   margin-bottom: 18px;
+}
+
+/* A4プレビュー時のページ区分インジケーター（印刷時は非表示） */
+.sheet-page-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #475569;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 5px 14px;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 .doc-type-btn {
@@ -405,7 +428,8 @@ label.form-label {
 /* プレビューコンテナ（右側） */
 .preview-container {
   flex: 1;
-  background: #525659; /* PDFビューアーライクな落ち着いたダークグレー背景 */
+  background: #525659;
+  /* PDFビューアーライクな落ち着いたダークグレー背景 */
   overflow-y: auto;
   padding: 30px 20px;
   display: flex;
@@ -510,7 +534,8 @@ label.form-label {
 }
 
 .sheet-enduser-row {
-  display: none; /* JSで値がある場合のみ block に変更 */
+  display: none;
+  /* JSで値がある場合のみ block に変更 */
   font-size: 0.95rem;
   font-weight: 600;
   color: #475569;
@@ -1064,6 +1089,7 @@ label.form-label {
     transform: translateY(20px);
     opacity: 0;
   }
+
   to {
     transform: translateY(0);
     opacity: 1;
@@ -1077,16 +1103,19 @@ label.form-label {
     height: auto;
     overflow: visible;
   }
+
   .editor-sidebar {
     width: 100%;
     min-width: 100%;
     max-width: 100%;
     height: auto;
   }
+
   .preview-container {
     width: 100%;
     padding: 20px 10px;
   }
+
   .invoice-sheet {
     padding: 30px 24px;
   }
@@ -1461,6 +1490,7 @@ label.form-label {
 .acc-pane {
   display: none;
 }
+
 .acc-pane.active {
   display: block;
 }
@@ -1469,6 +1499,7 @@ label.form-label {
 .kpi-card {
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
+
 .kpi-card:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
@@ -1479,10 +1510,12 @@ label.form-label {
   font-weight: 700;
   border-bottom: 1px solid #e2e8f0;
 }
+
 .acc-table td {
   padding: 8px 10px;
   border-bottom: 1px solid #f1f5f9;
 }
+
 .acc-table tr:hover td {
   background: #f8fafc;
 }
@@ -1518,6 +1551,7 @@ label.form-label {
 .btn-stamp-action:active {
   transform: scale(0.97);
 }
+
 .btn-stamp-action:disabled {
   opacity: 0.6;
   cursor: not-allowed;
@@ -1598,6 +1632,7 @@ label.form-label {
   display: flex;
   flex-direction: column;
 }
+
 .att-stamp-col:last-child {
   border-right: none;
 }
@@ -1640,6 +1675,7 @@ label.form-label {
   display: flex;
   align-items: center;
 }
+
 .att-emp-val:last-child {
   border-right: none;
 }
@@ -1654,6 +1690,7 @@ label.form-label {
   outline: none;
   font-family: inherit;
 }
+
 .att-sheet-editable-input:focus {
   background: #eff6ff;
   border-radius: 3px;
@@ -1688,11 +1725,13 @@ label.form-label {
 }
 
 .att-calendar-table tr.att-saturday-tr td:nth-child(2) {
-  color: #1d4ed8; /* 青文字 */
+  color: #1d4ed8;
+  /* 青文字 */
 }
 
 .att-calendar-table tr.att-sunday-tr td:nth-child(2) {
-  color: #b91c1c; /* 赤文字 */
+  color: #b91c1c;
+  /* 赤文字 */
 }
 
 /* 時刻セル表示 */
@@ -1704,6 +1743,7 @@ label.form-label {
   cursor: pointer;
   letter-spacing: 1px;
 }
+
 .att-time-cell:hover {
   background: #dbeafe;
 }
@@ -1714,6 +1754,7 @@ label.form-label {
   color: #1e293b;
   cursor: pointer;
 }
+
 .att-note-cell:hover {
   background: #dbeafe;
 }
@@ -1723,6 +1764,7 @@ label.form-label {
   background: #f8fafc;
   font-weight: 700;
 }
+
 .att-summary-tr td {
   height: 24px;
   border-top: 1.5px solid #000000;
@@ -1775,10 +1817,12 @@ label.form-label {
   background: linear-gradient(135deg, #3b5bdb, #4f46e5);
   color: #ffffff;
 }
+
 .app-switch-btn.btn-portal-home:hover {
   background: linear-gradient(135deg, #2b44af, #4338ca);
   color: #ffffff;
 }
+
 .app-switch-btn.btn-portal-home.active {
   background: linear-gradient(135deg, #1e1b4b, #3b5bdb);
   color: #ffffff;
@@ -1816,6 +1860,7 @@ label.form-label {
     opacity: 0;
     transform: scale(0.985);
   }
+
   to {
     opacity: 1;
     transform: scale(1);
@@ -1945,12 +1990,15 @@ label.form-label {
 .portal-card.card-invoice::before {
   background: linear-gradient(90deg, #3b82f6, #6366f1);
 }
+
 .portal-card.card-accounting::before {
   background: linear-gradient(90deg, #10b981, #06b6d4);
 }
+
 .portal-card.card-expenses::before {
   background: linear-gradient(90deg, #8b5cf6, #d946ef);
 }
+
 .portal-card.card-attendance::before {
   background: linear-gradient(90deg, #f59e0b, #ea580c);
 }
@@ -1986,14 +2034,17 @@ label.form-label {
   background: #eff6ff;
   color: #2563eb;
 }
+
 .icon-accounting {
   background: #ecfdf5;
   color: #059669;
 }
+
 .icon-expenses {
   background: #faf5ff;
   color: #7c3aed;
 }
+
 .icon-attendance {
   background: #fffbeb;
   color: #d97706;
@@ -2011,14 +2062,17 @@ label.form-label {
   background: #dbeafe;
   color: #1e40af;
 }
+
 .tag-accounting {
   background: #d1fae5;
   color: #065f46;
 }
+
 .tag-expenses {
   background: #f3e8ff;
   color: #6b21a8;
 }
+
 .tag-attendance {
   background: #fef3c7;
   color: #92400e;
@@ -2113,17 +2167,21 @@ label.form-label {
     gap: 16px;
     padding: 20px;
   }
+
   .portal-welcome-right {
     width: 100%;
   }
+
   .portal-live-clock {
     width: 100%;
     text-align: left;
   }
+
   .app-switcher-nav {
     overflow-x: auto;
     max-width: 100%;
   }
+
   .app-switch-btn span.app-switch-label {
     display: none;
   }
@@ -2286,6 +2344,7 @@ label.form-label {
     margin: 8px 12px 14px;
     gap: 6px;
   }
+
   .expense-m-tab-btn {
     flex: 1;
     padding: 10px 14px;
@@ -2302,6 +2361,7 @@ label.form-label {
     cursor: pointer;
     transition: all 0.2s ease;
   }
+
   .expense-m-tab-btn.active {
     background: #4f46e5 !important;
     color: #ffffff !important;
@@ -2319,18 +2379,22 @@ label.form-label {
   .expenses-view-grid.tab-form-active #expenseColForm {
     display: flex !important;
   }
+
   .expenses-view-grid.tab-form-active #expenseColList {
     display: none !important;
   }
+
   .expenses-view-grid.tab-list-active #expenseColForm {
     display: none !important;
   }
+
   .expenses-view-grid.tab-list-active #expenseColList {
     display: flex !important;
   }
 }
 
 @media (min-width: 1025px) {
+
   #expenseColForm,
   #expenseColList {
     display: flex !important;
@@ -2359,15 +2423,18 @@ label.form-label {
   user-select: none;
   border: 1px solid transparent;
 }
+
 .expense-type-label:hover {
   background: rgba(255, 255, 255, 0.6);
 }
+
 .expense-type-label.active#labelExpenseTypeExpense {
   background: #ffffff;
   color: #4f46e5 !important;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   border-color: #cbd5e1;
 }
+
 .expense-type-label.active#labelExpenseTypePurchase {
   background: #ffffff;
   color: #059669 !important;
@@ -2384,6 +2451,7 @@ label.form-label {
   font-size: 0.85rem;
   background: #ffffff;
 }
+
 .inv-table th {
   background: #f8fafc;
   color: #475569;
@@ -2393,15 +2461,18 @@ label.form-label {
   border-bottom: 2px solid #e2e8f0;
   white-space: nowrap;
 }
+
 .inv-table td {
   padding: 10px 12px;
   border-bottom: 1px solid #f1f5f9;
   color: #1e293b;
   vertical-align: middle;
 }
+
 .inv-table tr:hover {
   background: #f8fafc;
 }
+
 .stock-val-pill {
   display: inline-block;
   font-weight: 700;
@@ -2409,28 +2480,33 @@ label.form-label {
   padding: 2px 8px;
   border-radius: 6px;
 }
+
 .stock-safe {
   background: #ecfdf5;
   color: #065f46;
   border: 1px solid #a7f3d0;
 }
+
 .stock-warn {
   background: #fffbeb;
   color: #b45309;
   border: 1px solid #fde68a;
   animation: pulse-soft 2s infinite;
 }
+
 .stock-danger {
   background: #fef2f2;
   color: #b91c1c;
   border: 1px solid #fecaca;
   animation: pulse-soft 1.5s infinite;
 }
+
 .inv-action-btn-group {
   display: flex;
   gap: 4px;
   align-items: center;
 }
+
 .btn-inv-action {
   padding: 3px 7px;
   font-size: 0.725rem;
@@ -2443,24 +2519,29 @@ label.form-label {
   transition: all 0.15s ease;
   white-space: nowrap;
 }
+
 .btn-inv-action:hover {
   background: #f1f5f9;
   border-color: #94a3b8;
 }
+
 .btn-inv-in {
   color: #047857;
   border-color: #a7f3d0;
   background: #ecfdf5;
 }
+
 .btn-inv-in:hover {
   background: #d1fae5;
   border-color: #6ee7b7;
 }
+
 .btn-inv-out {
   color: #c2410c;
   border-color: #fed7aa;
   background: #fff7ed;
 }
+
 .btn-inv-out:hover {
   background: #ffedd5;
   border-color: #fdba74;
@@ -2474,6 +2555,7 @@ label.form-label {
     grid-template-columns: 1fr 1fr !important;
   }
 }
+
 @media (max-width: 520px) {
   .history-search-grid {
     grid-template-columns: 1fr !important;
@@ -2526,7 +2608,7 @@ label.form-label {
   margin-bottom: 10px;
   background: #ffffff;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 .history-card-row:hover {
@@ -2542,8 +2624,10 @@ label.form-label {
    3. ポップアップ（商品・取引先・在庫マスタ）の劇的視認性＆操作性改善
    ========================================================================== */
 @media screen and (max-width: 768px) {
+
   /* 1. スクロール不全の完全解消 */
-  html, body {
+  html,
+  body {
     height: auto !important;
     min-height: 100% !important;
     overflow-x: hidden !important;
@@ -2580,6 +2664,7 @@ label.form-label {
     height: auto !important;
     overflow: visible !important;
   }
+
   #appLayoutInvoice.app-view-screen.active {
     display: flex !important;
     flex-direction: column !important;
@@ -2595,18 +2680,21 @@ label.form-label {
     height: auto !important;
     box-sizing: border-box !important;
   }
+
   .view-screen-header-left {
     width: 100% !important;
     display: flex !important;
     align-items: center !important;
     gap: 10px !important;
   }
+
   .view-screen-title {
     white-space: normal !important;
     font-size: 1.05rem !important;
     line-height: 1.3 !important;
     font-weight: 800 !important;
   }
+
   .view-screen-subtitle {
     display: block !important;
     white-space: normal !important;
@@ -2615,6 +2703,7 @@ label.form-label {
     margin-top: 2px !important;
     color: #64748b !important;
   }
+
   .view-screen-header-actions {
     width: 100% !important;
     display: flex !important;
@@ -2637,10 +2726,11 @@ label.form-label {
     display: inline-flex !important;
     align-items: center !important;
     gap: 6px !important;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.05) !important;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
     touch-action: manipulation !important;
     -webkit-tap-highlight-color: transparent !important;
   }
+
   .btn-back-to-portal:active {
     background: #e2e8f0 !important;
     transform: scale(0.97) !important;
@@ -2664,6 +2754,7 @@ label.form-label {
     overflow-x: auto !important;
     -webkit-overflow-scrolling: touch !important;
   }
+
   #inventorySummaryStatus {
     margin-left: 0 !important;
     width: 100% !important;
@@ -2676,6 +2767,7 @@ label.form-label {
     font-size: 1rem !important;
     padding: 14px 6px !important;
   }
+
   .btn-stamp-action svg {
     width: 24px !important;
     height: 24px !important;
@@ -2688,7 +2780,8 @@ label.form-label {
     width: 100% !important;
     gap: 16px !important;
   }
-  .attendance-view-grid > div {
+
+  .attendance-view-grid>div {
     width: 100% !important;
     max-width: 100% !important;
     box-sizing: border-box !important;
@@ -2726,11 +2819,13 @@ label.form-label {
     padding: 10px 8px !important;
     border-radius: 8px !important;
   }
+
   .preview-toolbar::-webkit-scrollbar {
     height: 4px;
   }
+
   .preview-toolbar::-webkit-scrollbar-thumb {
-    background: rgba(255,255,255,0.3);
+    background: rgba(255, 255, 255, 0.3);
     border-radius: 4px;
   }
 
@@ -2738,9 +2833,12 @@ label.form-label {
     transform-origin: top left;
     /* max-widthを解除して本来のA4比率を維持し、はみ出た部分はスクロールさせるか縮小表示させる */
     max-width: none !important;
-    width: 794px !important; /* A4サイズの基準幅 */
-    transform: scale(0.46) !important; /* スマホ画面幅(約375px)に合わせて縮小 */
-    margin-bottom: -500px !important; /* 縮小によって生じる下部の余白を相殺 */
+    width: 794px !important;
+    /* A4サイズの基準幅 */
+    transform: scale(0.46) !important;
+    /* スマホ画面幅(約375px)に合わせて縮小 */
+    margin-bottom: -500px !important;
+    /* 縮小によって生じる下部の余白を相殺 */
     box-sizing: border-box !important;
   }
 
@@ -2758,22 +2856,39 @@ label.form-label {
     flex-shrink: 0 !important;
     gap: 6px !important;
   }
+
   .brand-logo {
     width: 28px !important;
     height: 28px !important;
     font-size: 14px !important;
   }
+
   .brand-title {
     font-size: 0.9rem !important;
     line-height: 1.1 !important;
   }
+
   .brand-subtitle {
     display: none !important;
   }
 
-  /* 右側マスタ管理ボタン群をヘッダーから隠してスペース確保（ポータルメニューに完備） */
+  /* 右側マスタ管理ボタン群は隠すが、クラウド「🔄 同期」ボタンはスマホでも常に表示 */
   .header-actions {
+    display: flex !important;
+    align-items: center !important;
+    gap: 4px !important;
+    flex-shrink: 0 !important;
+  }
+  .header-actions #btnLogout {
     display: none !important;
+  }
+  .header-actions #btnHeaderGlobalSync {
+    display: inline-flex !important;
+    padding: 4px 8px !important;
+    font-size: 0.72rem !important;
+    font-weight: 700 !important;
+    white-space: nowrap !important;
+    border-radius: 6px !important;
   }
 
   /* アプリスイッチャーをスムーズにフリックできる1行タブバーに */
@@ -2790,6 +2905,7 @@ label.form-label {
     flex: 1 !important;
     justify-content: flex-start !important;
   }
+
   .app-switcher-nav::-webkit-scrollbar {
     display: none !important;
   }
@@ -2801,9 +2917,11 @@ label.form-label {
     flex-shrink: 0 !important;
     border-radius: 6px !important;
   }
+
   .app-switch-btn .app-switch-icon {
     font-size: 13px !important;
   }
+
   .app-switch-btn span.app-switch-label {
     display: inline-block !important;
     font-size: 10.5px !important;
@@ -2814,15 +2932,18 @@ label.form-label {
   .portal-container {
     padding: 12px 10px 30px !important;
   }
+
   .portal-grid {
     grid-template-columns: 1fr !important;
     gap: 12px !important;
   }
+
   .portal-quick-bar {
     flex-direction: column !important;
     align-items: stretch !important;
     gap: 8px !important;
   }
+
   .portal-quick-bar .quick-link-btn {
     width: 100% !important;
     justify-content: center !important;
@@ -2833,7 +2954,8 @@ label.form-label {
   /* 3. ポップアップ（モーダル全般）の劇的視認性＆操作性改善 */
   .modal-overlay {
     padding: 6px !important;
-    align-items: flex-end !important; /* スマホでは下部ドック型または全画面 */
+    align-items: flex-end !important;
+    /* スマホでは下部ドック型または全画面 */
   }
 
   .modal-card {
@@ -2853,11 +2975,14 @@ label.form-label {
     flex-shrink: 0 !important;
     border-bottom: 1.5px solid #e2e8f0 !important;
   }
+
   .modal-title {
     font-size: 1.1rem !important;
     font-weight: 800 !important;
   }
-  .btn-icon-danger, .modal-close {
+
+  .btn-icon-danger,
+  .modal-close {
     width: 34px !important;
     height: 34px !important;
     display: flex !important;
@@ -2880,7 +3005,8 @@ label.form-label {
   .modal-body .form-input,
   .modal-body .form-select,
   .modal-body .form-textarea {
-    font-size: 16px !important; /* iOSでの自動ズームを防止 */
+    font-size: 16px !important;
+    /* iOSでの自動ズームを防止 */
     height: 44px !important;
     border-radius: 8px !important;
   }
@@ -2896,7 +3022,7 @@ label.form-label {
     margin-bottom: 12px !important;
     border: 1.5px solid #cbd5e1 !important;
     background: #ffffff !important;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.05) !important;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05) !important;
   }
 
   .master-item-info,
@@ -2929,6 +3055,7 @@ label.form-label {
     gap: 8px !important;
     margin-bottom: 8px !important;
   }
+
   .master-item-price {
     font-size: 1.25rem !important;
     font-weight: 900 !important;
@@ -2972,6 +3099,7 @@ label.form-label {
     padding: 10px 16px !important;
     flex-shrink: 0 !important;
   }
+
   .modal-footer .btn {
     height: 42px !important;
     font-size: 0.95rem !important;
@@ -3006,7 +3134,7 @@ label.form-label {
   }
 
   /* 上段：数量（約33%） */
-  .item-grid > div:nth-child(1),
+  .item-grid>div:nth-child(1),
   .item-col-qty {
     flex: 1 1 calc(33.333% - 6px) !important;
     min-width: 65px !important;
@@ -3016,7 +3144,7 @@ label.form-label {
   }
 
   /* 上段：単位（約33%） */
-  .item-grid > div:nth-child(2),
+  .item-grid>div:nth-child(2),
   .item-col-unit {
     flex: 1 1 calc(33.333% - 6px) !important;
     min-width: 55px !important;
@@ -3026,7 +3154,7 @@ label.form-label {
   }
 
   /* 上段：税率（約33%） */
-  .item-grid > div:nth-child(4),
+  .item-grid>div:nth-child(4),
   .item-col-tax {
     flex: 1 1 calc(33.333% - 6px) !important;
     min-width: 75px !important;
@@ -3036,7 +3164,7 @@ label.form-label {
   }
 
   /* 下段：単価(税抜)（50%折り返し） */
-  .item-grid > div:nth-child(3),
+  .item-grid>div:nth-child(3),
   .item-col-price {
     flex: 1 1 calc(50% - 4px) !important;
     width: calc(50% - 4px) !important;
@@ -3046,7 +3174,7 @@ label.form-label {
   }
 
   /* 下段：小計(金額)（50%折り返し） */
-  .item-grid > div:nth-child(5),
+  .item-grid>div:nth-child(5),
   .item-col-total {
     flex: 1 1 calc(50% - 4px) !important;
     width: calc(50% - 4px) !important;
@@ -3166,9 +3294,9 @@ label.form-label {
     margin-bottom: 10px !important;
   }
 
-  #itemMasterFormContainer .form-row > .form-group,
-  #quickNewItemModal .form-row > .form-group,
-  #discountModal .form-row > .form-group {
+  #itemMasterFormContainer .form-row>.form-group,
+  #quickNewItemModal .form-row>.form-group,
+  #discountModal .form-row>.form-group {
     flex: 1 1 calc(50% - 4px) !important;
     min-width: 120px !important;
     width: auto !important;
@@ -3223,7 +3351,7 @@ label.form-label {
   white-space: nowrap;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   user-select: none;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 
 .multi-receipt-tab:hover {
@@ -3277,12 +3405,14 @@ label.form-label {
     flex-direction: column !important;
     overflow-y: auto !important;
   }
+
   #multiReceiptImageCol {
     min-height: 240px !important;
     max-height: 300px !important;
     border-right: none !important;
     border-bottom: 1px solid #334155 !important;
   }
+
   #multiReceiptFormCol {
     padding: 14px !important;
   }
@@ -3376,5 +3506,58 @@ label.form-label {
   transform: translateY(0) !important;
 }
 
+/* ==========================================================================
+   スマホ用 Pull-to-Refresh（下に引っ張ってクラウド最新同期）インジケーター
+   ========================================================================== */
+.pull-to-refresh-container {
+  position: fixed;
+  top: -65px;
+  left: 0;
+  width: 100%;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999999;
+  pointer-events: none;
+  transition: transform 0.2s cubic-bezier(0.1, 0.9, 0.2, 1);
+}
 
+.ptr-content {
+  background: rgba(15, 23, 42, 0.92);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: #ffffff;
+  padding: 8px 18px;
+  border-radius: 24px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.3);
+  font-size: 0.825rem;
+  font-weight: 700;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
 
+.ptr-icon {
+  font-size: 1.1rem;
+  line-height: 1;
+  transition: transform 0.2s ease;
+  display: inline-block;
+}
+
+.ptr-spinner {
+  display: none;
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-top-color: #38bdf8;
+  border-radius: 50%;
+  animation: ptrSpinAnim 0.7s linear infinite;
+}
+
+@keyframes ptrSpinAnim {
+  to {
+    transform: rotate(360deg);
+  }
+}

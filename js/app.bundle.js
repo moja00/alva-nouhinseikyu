@@ -3399,6 +3399,9 @@ function getDeletedExpenseIds() {
  * @param {string} id
  */
 
+// 過去のテスト用・架空シリアル番号の完全排除ブラックリスト
+const PURGED_TEST_SERIALS = ['N8001', 'N8002', 'N8003', 'N8004', 'N8005'];
+
 /**
  * 削除済みシリアル番号セットを取得（台帳からの完全削除・ゾンビ復活防止用）
  * @returns {Set<string>}
@@ -3407,9 +3410,11 @@ function getDeletedSerialNumbers() {
   try {
     const raw = localStorage.getItem(KEYS.DELETED_SERIALS);
     const arr = raw ? JSON.parse(raw) : [];
-    return new Set(Array.isArray(arr) ? arr.map(s => String(s).trim().toUpperCase()) : []);
+    const set = new Set(Array.isArray(arr) ? arr.map(s => String(s).trim().toUpperCase()) : []);
+    PURGED_TEST_SERIALS.forEach(s => set.add(s));
+    return set;
   } catch (e) {
-    return new Set();
+    return new Set(PURGED_TEST_SERIALS);
   }
 }
 
@@ -3694,7 +3699,7 @@ async function restoreDocFromTrash(id) {
             });
           }
           if (it.serialNumber && typeof it.serialNumber === 'string') {
-            const rawSns = it.serialNumber.split(/[,、\s]+/).map(s => s.trim().toUpperCase()).filter(s => /^N\s*\d{4,5}$/i.test(s));
+            const rawSns = it.serialNumber.split(/[,、\s]+/).map(s => s.trim().toUpperCase()).filter(s => /^N\s*\d{4,12}$/i.test(s));
             rawSns.forEach(sn => {
               const normSn = sn.replace(/\s+/g, '');
               if (!itemSerials.includes(normSn)) itemSerials.push(normSn);
@@ -4182,7 +4187,7 @@ const DEFAULT_INVENTORY = [
     name: 'PSE認証 専用急速充電器',
     sku: 'CHG-DP5K',
     type: 'single',
-    hasSerial: false,
+    hasSerial: true, // シリアル番号管理対象
     currentStock: 0,
     safetyStock: 2,
     unit: '個',
@@ -4190,7 +4195,7 @@ const DEFAULT_INVENTORY = [
     unitPrice: 8000,
     location: 'パーツ保管棚 B-2',
     lastInDate: '2026-03-24',
-    note: '国内仕入PSE認証充電器',
+    note: '国内仕入PSE認証充電器（シリアル番号管理対象）',
     history: []
   },
   {
@@ -4263,9 +4268,9 @@ const DEFAULT_INVENTORY = [
   }
 ];
 const DEFAULT_INVENTORY_SERIALS = [
-  { id: "sn_N8460", serialNumber: "N8460", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "maintenance", clientName: "", endUserName: "デモ機", shipDate: "", docNumber: "", docId: "", note: "デモ機", inDate: "2025-07-01", unitCost: 152000, updatedAt: new Date().toISOString() },
+  { id: "sn_N8460", serialNumber: "N8460", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "demo", clientName: "", endUserName: "デモ機", shipDate: "", docNumber: "", docId: "", note: "デモ機", inDate: "2025-07-01", unitCost: 152000, updatedAt: new Date().toISOString() },
   { id: "sn_N8461", serialNumber: "N8461", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "shipped", clientName: "株式会社朝日エージェンシー", endUserName: "", shipDate: "2025-07-03", docNumber: "INV-20250703-01", docId: "doc_20250703_01", note: "数量限定特別価格 (KET.IC.2B エレクトロパワー)", inDate: "2025-07-01", unitCost: 152000, updatedAt: new Date().toISOString() },
-  { id: "sn_N8462", serialNumber: "N8462", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "maintenance", clientName: "", endUserName: "デモ機", shipDate: "", docNumber: "", docId: "", note: "デモ機", inDate: "2025-07-01", unitCost: 152000, updatedAt: new Date().toISOString() },
+  { id: "sn_N8462", serialNumber: "N8462", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "demo", clientName: "", endUserName: "デモ機", shipDate: "", docNumber: "", docId: "", note: "デモ機", inDate: "2025-07-01", unitCost: 152000, updatedAt: new Date().toISOString() },
   { id: "sn_N8463", serialNumber: "N8463", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "shipped", clientName: "Ｙ’ｓボディー", endUserName: "NCRAFT 様", shipDate: "2025-12-22", docNumber: "INV-20251222-01", docId: "doc_20251222_01", note: "NCRAFT様分 特別価格", inDate: "2025-07-01", unitCost: 152000, updatedAt: new Date().toISOString() },
   { id: "sn_N8464", serialNumber: "N8464", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "shipped", clientName: "バンザイ沖縄販売株式会社", endUserName: "", shipDate: "2025-08-12", docNumber: "INV-20250729-01", docId: "doc_20250729_01", note: "特別価格（スプレッダーN35600同時出荷）", inDate: "2025-07-01", unitCost: 152000, updatedAt: new Date().toISOString() },
   { id: "sn_N8472", serialNumber: "N8472", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "shipped", clientName: "株式会社朝日エージェンシー", endUserName: "消防署", shipDate: "2025-03-13", docNumber: "INV-20250313-01", docId: "doc_20250313_01", note: "消防署寄贈用 50%値引き", inDate: "2025-03-01", unitCost: 152000, updatedAt: new Date().toISOString() },
@@ -4299,12 +4304,7 @@ const DEFAULT_INVENTORY_SERIALS = [
   { id: "sn_N36707", serialNumber: "N36707", inventoryId: "inv_2", itemName: "DP-MS", itemType: "spreader", status: "shipped", clientName: "R・Cペイント販売株式会社", endUserName: "", shipDate: "2026-07-06", docNumber: "INV-20260706-01", docId: "doc_20260706_01", note: "DP-5000(N10419)同時出荷", inDate: "2026-02-01", unitCost: 40000, updatedAt: new Date().toISOString() },
   { id: "sn_N36709", serialNumber: "N36709", inventoryId: "inv_2", itemName: "DP-MS", itemType: "spreader", status: "shipped", clientName: "株式会社宮田自動車商会 苫小牧営業所", endUserName: "", shipDate: "2026-10-01", docNumber: "INV-20261001-02", docId: "doc_20261001_02", note: "DP-5000(N10938)同時出荷", inDate: "2026-02-01", unitCost: 40000, updatedAt: new Date().toISOString() },
   { id: "sn_N2001", serialNumber: "N2001", inventoryId: "inv_2", itemName: "DP-MS", itemType: "spreader", status: "in_stock", clientName: "", endUserName: "", shipDate: "", docNumber: "", docId: "", note: "在庫中", inDate: "2026-09-25", unitCost: 40000, updatedAt: new Date().toISOString() },
-  { id: "sn_N2002", serialNumber: "N2002", inventoryId: "inv_2", itemName: "DP-MS", itemType: "spreader", status: "in_stock", clientName: "", endUserName: "", shipDate: "", docNumber: "", docId: "", note: "在庫中", inDate: "2026-09-25", unitCost: 40000, updatedAt: new Date().toISOString() },
-  { id: "sn_N8001", serialNumber: "N8001", inventoryId: "inv_dp5000_bat", itemName: "PSE認証リチウムイオンバッテリー", itemType: "battery", status: "in_stock", clientName: "", endUserName: "", shipDate: "", docNumber: "", docId: "", note: "社内管理用セルチェック済", isCompanyOnly: true, inDate: "2026-10-21", unitCost: 8000, updatedAt: new Date().toISOString() },
-  { id: "sn_N8002", serialNumber: "N8002", inventoryId: "inv_dp5000_bat", itemName: "PSE認証リチウムイオンバッテリー", itemType: "battery", status: "in_stock", clientName: "", endUserName: "", shipDate: "", docNumber: "", docId: "", note: "社内管理用セルチェック済", isCompanyOnly: true, inDate: "2026-10-21", unitCost: 8000, updatedAt: new Date().toISOString() },
-  { id: "sn_N8003", serialNumber: "N8003", inventoryId: "inv_dp5000_bat", itemName: "PSE認証リチウムイオンバッテリー", itemType: "battery", status: "in_stock", clientName: "", endUserName: "", shipDate: "", docNumber: "", docId: "", note: "社内管理用", isCompanyOnly: true, inDate: "2026-10-21", unitCost: 8000, updatedAt: new Date().toISOString() },
-  { id: "sn_N8004", serialNumber: "N8004", inventoryId: "inv_dp5000_bat", itemName: "PSE認証リチウムイオンバッテリー", itemType: "battery", status: "in_stock", clientName: "", endUserName: "", shipDate: "", docNumber: "", docId: "", note: "社内管理用", isCompanyOnly: true, inDate: "2026-10-21", unitCost: 8000, updatedAt: new Date().toISOString() },
-  { id: "sn_N8005", serialNumber: "N8005", inventoryId: "inv_dp5000_bat", itemName: "PSE認証リチウムイオンバッテリー", itemType: "battery", status: "in_stock", clientName: "", endUserName: "", shipDate: "", docNumber: "", docId: "", note: "社内管理用", isCompanyOnly: true, inDate: "2026-10-21", unitCost: 8000, updatedAt: new Date().toISOString() },
+  { id: "sn_N2002", serialNumber: "N2002", inventoryId: "inv_2", itemName: "DP-MS", itemType: "spreader", status: "in_stock", clientName: "", endUserName: "", shipDate: "", docNumber: "", docId: "", note: "在庫中", inDate: "2026-09-25", unitCost: 40000, updatedAt: new Date().toISOString() }
 ];
 const DEFAULT_INVENTORY_LOTS = [];
 const DEFAULT_PURCHASE_MAPPINGS = {
@@ -4331,9 +4331,9 @@ function deduplicateItemMasterList(list) {
     // サンプル商品は自動パージ（完全排除）
     if (SAMPLE_ITEM_KEYS.has(key)) continue;
 
-    // テスト品目、KET.IC.2B（DP-5000旧名称）、および値引き・割引行の完全パージ
+    // アスタリスク付き品目（*DP-MS等の重複・ゴミ）、テスト品目、KET.IC.2B（DP-5000旧名称）、および値引き・割引行の完全パージ
     const lowerName = cleanName.toLowerCase();
-    if (lowerName === 'てすと' || lowerName === 'test' || lowerName.includes('ket.ic.2b') || lowerName.includes('エレクトロパワー') || /値引|割引|相殺|調整|特別値引|出精値引/i.test(lowerName)) {
+    if (cleanName.startsWith('*') || lowerName === 'てすと' || lowerName === 'test' || lowerName.includes('ket.ic.2b') || lowerName.includes('エレクトロパワー') || /値引|割引|相殺|調整|特別値引|出精値引/i.test(lowerName)) {
       continue;
     }
 
@@ -4477,9 +4477,39 @@ function loadActiveDoc() {
  */
 function saveIssuerProfile(issuer) {
   try {
-    localStorageSetItemAndSync(KEYS.ISSUER_PROFILE, JSON.stringify(issuer));
-    // サーバーファイル（data/issuer_profile.json）にも即時保存
-    saveServerIssuerProfile(issuer).catch(e => {
+    const raw = localStorage.getItem(KEYS.ISSUER_PROFILE);
+    const existing = raw ? JSON.parse(raw) : {};
+    const merged = {
+      ...existing,
+      ...(issuer || {})
+    };
+
+    // 【超重要】印影画像（stampDataUrl）の消失防止（渡されたデータに画像が無く既存にあれば絶対保護）
+    if (!issuer?.stampDataUrl || String(issuer.stampDataUrl).trim() === '') {
+      if (existing.stampDataUrl && String(existing.stampDataUrl).trim() !== '') {
+        merged.stampDataUrl = existing.stampDataUrl;
+      }
+    } else {
+      merged.stampDataUrl = issuer.stampDataUrl;
+    }
+
+    // 印影表示フラグの保護
+    if (issuer?.showStamp !== undefined) {
+      merged.showStamp = issuer.showStamp;
+    } else if (existing.showStamp !== undefined) {
+      merged.showStamp = existing.showStamp;
+    }
+
+    // 振込先情報の消失防止
+    if (!issuer?.bankInfo || String(issuer.bankInfo).trim() === '') {
+      if (existing.bankInfo && String(existing.bankInfo).trim() !== '') {
+        merged.bankInfo = existing.bankInfo;
+      }
+    }
+
+    localStorageSetItemAndSync(KEYS.ISSUER_PROFILE, JSON.stringify(merged));
+    // サーバーファイル（Firestore settings/issuer）にも即時保存
+    saveServerIssuerProfile(merged).catch(e => {
       console.warn('Server issuer profile save failed:', e);
     });
   } catch (e) {
@@ -4509,6 +4539,21 @@ function loadIssuerProfile() {
       profile.tel = '027-289-0367';
       profile.fax = '027-289-0368';
       modified = true;
+    }
+
+    // 印影画像がローカルにない場合、サーバーから非同期フェッチして復元
+    if (!profile.stampDataUrl || profile.stampDataUrl.trim() === '') {
+      fetchServerIssuerProfile().then(srv => {
+        if (srv && srv.stampDataUrl && srv.stampDataUrl.trim() !== '') {
+          profile.stampDataUrl = srv.stampDataUrl;
+          if (srv.showStamp !== undefined) profile.showStamp = srv.showStamp;
+          localStorageSetItemAndSync(KEYS.ISSUER_PROFILE, JSON.stringify(profile));
+          console.log('[自社印復元] サーバーから印鑑画像を自動復元・同期しました');
+          if (typeof window !== 'undefined' && typeof window.renderAll === 'function') {
+            window.renderAll();
+          }
+        }
+      }).catch(() => { });
     }
 
     if (modified) {
@@ -4578,6 +4623,102 @@ function unifyMechanicalSpreaderDocItems(doc) {
 }
 
 /**
+ * 全伝票・全商品明細におけるシリアル番号の整合性自動サニタイズ（全社・全取引先共通の包括的恒久防壁）
+ * 1. 画面上の手入力シリアルと内部引き当てデータ(assignedSerials)の乖離を全伝票で自動修復
+ * 2. 古いゾンビシリアル（裏側に残った過去の若番割当など）を全伝票から完全消去・整合
+ * 3. 本田塗料店伝票(DEL-20261105-235)におけるN8460->N10935の自動修復
+ */
+function sanitizeDocSerialsConsistency(doc) {
+  if (!doc) return false;
+  let updated = false;
+
+  const docNo = String(doc.docNumber || doc.id || '').trim();
+  const clientName = doc.client ? (doc.client.name || '') : (doc.clientName || '');
+  const isHonda = docNo.includes('DEL-20261105-235') || doc.id === 'doc_1793843756482_m0tc1' || clientName.includes('本田塗料');
+
+  const items = (Array.isArray(doc.items) && doc.items.length > 0)
+    ? doc.items
+    : (doc.fullDoc && Array.isArray(doc.fullDoc.items) ? doc.fullDoc.items : []);
+
+  items.forEach(it => {
+    if (!it) return;
+
+    // ① 本田塗料店伝票におけるN8460の確実なN10935置換
+    if (isHonda) {
+      if (it.serialNumber && it.serialNumber.includes('N8460')) {
+        it.serialNumber = it.serialNumber.replace(/N8460/g, 'N10935');
+        updated = true;
+      }
+      if (Array.isArray(it.assignedSerials)) {
+        it.assignedSerials.forEach(as => {
+          if (as && String(as.serialNumber).trim().toUpperCase() === 'N8460') {
+            as.serialNumber = 'N10935';
+            as.itemName = 'DP-5000 本体';
+            as.costPrice = 152000;
+            updated = true;
+          }
+        });
+        it.costPrice = 152000;
+        it.assignedCogs = 152000;
+      }
+      if (it.serialNumber === 'N10935' && (!it.assignedSerials || it.assignedSerials.length === 0 || it.assignedSerials[0]?.serialNumber !== 'N10935')) {
+        it.assignedSerials = [{
+          itemId: 'inv_dp5000_body',
+          itemName: 'DP-5000 本体',
+          serialNumber: 'N10935',
+          costPrice: 152000
+        }];
+        it.costPrice = 152000;
+        it.assignedCogs = 152000;
+        updated = true;
+      }
+    }
+
+    // ② 全伝票共通：手入力シリアルと内部 assignedSerials の完全連動同期
+    const manualSn = (it.serialNumber || '').trim();
+    if (manualSn && !isHonda) {
+      const manualParts = manualSn.split(/[,、\n\r\t;/|\s]+/)
+        .map(p => p.replace(/^[(\[{<"']+|[)\]}>"':]+$/g, '').trim().toUpperCase())
+        .filter(p => p.length >= 3);
+
+      if (manualParts.length > 0) {
+        if (Array.isArray(it.assignedSerials) && it.assignedSerials.length > 0) {
+          const assignedSns = it.assignedSerials.map(a => String(a.serialNumber || '').trim().toUpperCase());
+          // 手入力に存在しないシリアルが裏側に残っている場合（乖離発生）
+          const hasMismatch = assignedSns.some(asn => !manualParts.includes(asn)) || (assignedSns.length !== manualParts.length);
+          if (hasMismatch) {
+            it.assignedSerials = manualParts.map(asn => {
+              const matched = it.assignedSerials.find(a => String(a.serialNumber || '').trim().toUpperCase() === asn);
+              return matched || {
+                itemId: it.id || 'inv_dp5000_body',
+                itemName: it.name || 'DP-5000 本体',
+                serialNumber: asn,
+                costPrice: it.costPrice || 152000
+              };
+            });
+            updated = true;
+          }
+        }
+      }
+    }
+
+    // ③ 全伝票共通：社内デモ機(N8460)が通常伝票に誤混入していた場合の自動消去
+    if (!isHonda && it.assignedSerials && Array.isArray(it.assignedSerials)) {
+      const hadDemo = it.assignedSerials.some(a => String(a.serialNumber || '').trim().toUpperCase() === 'N8460');
+      if (hadDemo) {
+        it.assignedSerials = it.assignedSerials.filter(a => String(a.serialNumber || '').trim().toUpperCase() !== 'N8460');
+        updated = true;
+      }
+    }
+  });
+
+  return updated;
+}
+
+// 互換性エイリアス
+const sanitizeHondaPaintDocAndSerials = sanitizeDocSerialsConsistency;
+
+/**
  * 書類履歴一覧を取得
  */
 function getHistoryList(includeSuperseded = false) {
@@ -4587,13 +4728,15 @@ function getHistoryList(includeSuperseded = false) {
     let list = JSON.parse(raw);
     if (!Array.isArray(list)) return [];
 
-    // スプレッダーの品名統一（価格は完全維持）
+    // スプレッダーの品名統一 & 本田塗料店伝票(N8460->N10935)のキャッシュ自動サニタイズ
     let anyUpdated = false;
     list.forEach(docItem => {
       if (docItem.fullDoc) {
         if (unifyMechanicalSpreaderDocItems(docItem.fullDoc)) anyUpdated = true;
+        if (sanitizeHondaPaintDocAndSerials(docItem.fullDoc)) anyUpdated = true;
       }
       if (unifyMechanicalSpreaderDocItems(docItem)) anyUpdated = true;
+      if (sanitizeHondaPaintDocAndSerials(docItem)) anyUpdated = true;
     });
 
     if (anyUpdated) {
@@ -4735,40 +4878,80 @@ function deleteDocFromHistory(id) {
     // ※ ユーザー様の指定仕様：伝票を消した時にシリアル台帳から消えるのではなく、出荷前（在庫中）に戻す
     try {
       const fullDoc = (targetItem && targetItem.fullDoc) || targetItem;
-      if (fullDoc && Array.isArray(fullDoc.items)) {
-        const itemSerials = [];
-        fullDoc.items.forEach(it => {
-          if (!it) return;
-          if (Array.isArray(it.assignedSerials) && it.assignedSerials.length > 0) {
-            it.assignedSerials.forEach(as => {
-              if (as && as.serialNumber) itemSerials.push(as.serialNumber.trim().toUpperCase());
+      const docNo = String(fullDoc?.docNumber || targetItem?.docNumber || '').trim();
+      const serialList = getInventorySerialList();
+      let serialsRestored = 0;
+
+      if (Array.isArray(serialList) && serialList.length > 0) {
+        serialList.forEach(s => {
+          if (!s) return;
+          const sDocNo = String(s.docNumber || s.invoiceNumber || '').trim();
+          const sDocId = String(s.docId || s.invoiceId || '').trim();
+
+          let isMatch = false;
+          if (docNo && sDocNo === docNo) isMatch = true;
+          if (cleanId && sDocId === cleanId) isMatch = true;
+
+          // 明細のシリアル指定とも照合
+          if (!isMatch && fullDoc && Array.isArray(fullDoc.items)) {
+            fullDoc.items.forEach(it => {
+              if (!it) return;
+              if (Array.isArray(it.assignedSerials)) {
+                it.assignedSerials.forEach(as => {
+                  if (as && as.serialNumber && String(as.serialNumber).trim().toUpperCase() === String(s.serialNumber).trim().toUpperCase()) {
+                    isMatch = true;
+                  }
+                });
+              }
+              if (it.serialNumber && typeof it.serialNumber === 'string') {
+                if (it.serialNumber.toUpperCase().includes(String(s.serialNumber).trim().toUpperCase())) {
+                  isMatch = true;
+                }
+              }
             });
           }
-          if (it.serialNumber && typeof it.serialNumber === 'string') {
-            const rawSns = it.serialNumber.split(/[,、\s]+/).map(s => s.trim().toUpperCase()).filter(s => /^N\s*\d{4,5}$/i.test(s));
-            rawSns.forEach(sn => {
-              const normSn = sn.replace(/\s+/g, '');
-              if (!itemSerials.includes(normSn)) itemSerials.push(normSn);
-            });
+
+          if (isMatch) {
+            s.status = s.isBundled ? 'bundled' : 'in_stock';
+            s.clientName = '';
+            s.customerName = '';
+            s.endUserName = '';
+            s.shipDate = '';
+            s.shippedDate = '';
+            s.docNumber = '';
+            s.docId = '';
+            s.invoiceNumber = '';
+            s.invoiceId = '';
+            s.updatedAt = new Date().toISOString();
+            serialsRestored++;
+
+            // セット品化された本体の場合、組込バッテリーも連動して在庫中に復帰
+            if (s.isBundled && Array.isArray(s.batterySerials)) {
+              s.batterySerials.forEach(bSn => {
+                const bat = serialList.find(b => b && String(b.serialNumber).trim().toUpperCase() === String(bSn).trim().toUpperCase());
+                if (bat) {
+                  bat.status = 'bundled';
+                  bat.clientName = '';
+                  bat.customerName = '';
+                  bat.endUserName = '';
+                  bat.shipDate = '';
+                  bat.shippedDate = '';
+                  bat.docNumber = '';
+                  bat.docId = '';
+                  bat.invoiceNumber = '';
+                  bat.invoiceId = '';
+                  bat.updatedAt = new Date().toISOString();
+                }
+              });
+            }
           }
         });
 
-        itemSerials.forEach(sn => {
-          updateSerialStatus(sn, 'in_stock', {
-            clientName: '',
-            customerName: '',
-            endUserName: '',
-            docNumber: '',
-            docId: '',
-            invoiceNumber: '',
-            invoiceId: '',
-            shipDate: '',
-            shippedDate: '',
-            note: '伝票削除による在庫復帰'
-          });
-        });
-        if (itemSerials.length > 0) {
-          console.log(`【伝票削除連動】シリアル番号 ${itemSerials.join(', ')} を台帳上で「在庫中」に自動復帰しました`);
+        if (serialsRestored > 0) {
+          localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(serialList));
+          saveServerInventorySerials(serialList).catch(() => { });
+          if (typeof syncInventoryStockFromSerials === 'function') syncInventoryStockFromSerials();
+          console.log(`【伝票削除連動】シリアル番号 ${serialsRestored} 件を台帳上で「在庫中」に完全復帰し、サーバーへ同期保存しました`);
         }
       }
     } catch (snErr) {
@@ -4787,7 +4970,7 @@ function deleteDocFromHistory(id) {
     if (activeDoc && String(activeDoc.id).trim() === cleanId) {
       console.log("【書類削除】編集中アクティブ伝票も削除対象のためクリアします:", cleanId);
       localStorage.removeItem(KEYS.ACTIVE_DOC);
-      saveServerActiveDoc({}).catch(() => {});
+      saveServerActiveDoc({}).catch(() => { });
     }
 
     // 4. サーバーのFirestoreから個別削除
@@ -4910,25 +5093,54 @@ let _authRestorePromise = null;
  * @param {boolean} forceRefresh 強制的に最新トークンを再取得するかどうか
  */
 async function getFirebaseAuthToken(forceRefresh = false) {
-  // 1. Firebase SDK が利用可能かチェック
+  // 1. キャッシュトークンが利用可能な場合は即座に返却（初期ロード遅延・初回APIタイムアウトを完全解消）
+  if (!forceRefresh) {
+    if (_memoryCachedToken) return _memoryCachedToken;
+    try {
+      const localCached = localStorage.getItem(CACHED_TOKEN_KEY);
+      if (localCached) {
+        _memoryCachedToken = localCached;
+        return localCached;
+      }
+    } catch (e) { }
+
+    // Firebase SDK 内部のローカルストレージ（IndexedDB/localStorage）から直近トークンを抽出
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('firebase:authUser:')) {
+          const raw = localStorage.getItem(k);
+          if (raw) {
+            const authData = JSON.parse(raw);
+            if (authData && authData.stsTokenManager && authData.stsTokenManager.accessToken) {
+              const fbToken = authData.stsTokenManager.accessToken;
+              _memoryCachedToken = fbToken;
+              try { localStorage.setItem(CACHED_TOKEN_KEY, fbToken); } catch (e) { }
+              return fbToken;
+            }
+          }
+        }
+      }
+    } catch (e) { }
+  }
+
+  // 2. Firebase SDK が利用可能な場合、currentUser またはセッション復元から取得
   if (typeof firebase !== 'undefined' && firebase.auth) {
     const auth = firebase.auth();
 
-    // 1-1. すでに currentUser が存在する場合はトークンを取得
+    // 2-1. すでに currentUser が存在する場合はトークンを取得
     if (auth.currentUser) {
       try {
         const token = await auth.currentUser.getIdToken(forceRefresh);
         if (token) {
           _memoryCachedToken = token;
-          try { localStorage.setItem(CACHED_TOKEN_KEY, token); } catch (e) {}
+          try { localStorage.setItem(CACHED_TOKEN_KEY, token); } catch (e) { }
           return token;
         }
-      } catch (e) {
-        // トークン取得エラー時はフォールバックへ進む
-      }
+      } catch (e) { }
     }
 
-    // 1-2. currentUser が null の場合、セッション復元を待機（インフライトPromiseで複数呼び出しを1本化）
+    // 2-2. currentUser が null の場合、セッション復元を待機（最大4000ms）
     if (!forceRefresh) {
       if (!_authRestorePromise) {
         _authRestorePromise = new Promise((resolve) => {
@@ -4940,7 +5152,7 @@ async function getFirebaseAuthToken(forceRefresh = false) {
               _authRestorePromise = null;
               resolve(null);
             }
-          }, 1200);
+          }, 4000);
 
           const unsubscribe = auth.onAuthStateChanged(async (user) => {
             if (resolved) return;
@@ -4953,11 +5165,11 @@ async function getFirebaseAuthToken(forceRefresh = false) {
                 const token = await user.getIdToken();
                 if (token) {
                   _memoryCachedToken = token;
-                  try { localStorage.setItem(CACHED_TOKEN_KEY, token); } catch (e) {}
+                  try { localStorage.setItem(CACHED_TOKEN_KEY, token); } catch (e) { }
                   resolve(token);
                   return;
                 }
-              } catch (e) {}
+              } catch (e) { }
             }
             resolve(null);
           });
@@ -4968,34 +5180,6 @@ async function getFirebaseAuthToken(forceRefresh = false) {
       if (restoredToken) return restoredToken;
     }
   }
-
-  // 2. 直近のキャッシュトークンにフォールバック（画面遷移・初期ロード直後・一時オフライン）
-  if (_memoryCachedToken) return _memoryCachedToken;
-  try {
-    const localCached = localStorage.getItem(CACHED_TOKEN_KEY);
-    if (localCached) {
-      _memoryCachedToken = localCached;
-      return localCached;
-    }
-  } catch (e) {}
-
-  // 3. Firebase SDK 内部のローカルストレージからトークン抽出を試みるフォールバック
-  try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k && k.startsWith('firebase:authUser:')) {
-        const raw = localStorage.getItem(k);
-        if (raw) {
-          const authData = JSON.parse(raw);
-          if (authData && authData.stsTokenManager && authData.stsTokenManager.accessToken) {
-            const fbToken = authData.stsTokenManager.accessToken;
-            _memoryCachedToken = fbToken;
-            return fbToken;
-          }
-        }
-      }
-    }
-  } catch (e) {}
 
   return null;
 }
@@ -5111,7 +5295,7 @@ async function apiFetch(path, options = {}) {
 
     // リフレッシュ後も401の場合: キャッシュトークンをクリアし、再ログインを案内
     _memoryCachedToken = null;
-    try { localStorage.removeItem(CACHED_TOKEN_KEY); } catch (e) {}
+    try { localStorage.removeItem(CACHED_TOKEN_KEY); } catch (e) { }
 
     if (typeof document !== 'undefined') {
       const overlay = document.getElementById('loginOverlay');
@@ -5237,6 +5421,107 @@ async function saveServerAttendance(attendanceList) {
     console.error('【勤怠サーバー保存】通信エラー:', e);
     return false;
   }
+}
+
+/**
+ * 勤怠打刻データのサーバー・ローカル双方向同期エンジン
+ * ・PC / モバイル間での最新打刻（出勤・退勤）をフィールド単位で安全マージ
+ * ・ローカルで打刻した退勤時刻がサーバーの未退勤データで消去される事故を完全防止
+ * ・どちらか一方に入力済みの出勤・退勤・備考を空文字で破壊しない空上書き保護
+ */
+async function syncAttendanceWithServer() {
+  try {
+    const serverAttendance = await fetchServerAttendance();
+    const localAttendance = getAttendanceList();
+
+    if (serverAttendance && Array.isArray(serverAttendance)) {
+      const attMap = new Map();
+
+      // 1. サーバーデータを初期マップに登録
+      serverAttendance.forEach(item => {
+        if (!item) return;
+        const key = item.date || item.id;
+        if (key) {
+          attMap.set(key, { ...item });
+        }
+      });
+
+      let hasLocalChanges = false;
+
+      // 2. ローカルデータとフィールド単位で安全マージ
+      localAttendance.forEach(loc => {
+        if (!loc) return;
+        const key = loc.date || loc.id;
+        if (!key) return;
+
+        if (!attMap.has(key)) {
+          // サーバーに未登録のローカル打刻（オフライン打刻等）
+          attMap.set(key, { ...loc });
+          hasLocalChanges = true;
+        } else {
+          const srv = attMap.get(key);
+          const srvTime = new Date(srv.updatedAt || 0).getTime();
+          const locTime = new Date(loc.updatedAt || 0).getTime();
+
+          // 出勤打刻のマージ（空上書き防止：どちらかにあれば必ず維持）
+          let mergedClockIn = srv.clockIn || '';
+          if (!mergedClockIn && loc.clockIn) {
+            mergedClockIn = loc.clockIn;
+            hasLocalChanges = true;
+          } else if (loc.clockIn && srv.clockIn && locTime > srvTime) {
+            mergedClockIn = loc.clockIn;
+          }
+
+          // 退勤打刻のマージ（空上書き防止：どちらかにあれば必ず維持）
+          let mergedClockOut = srv.clockOut || '';
+          if (!mergedClockOut && loc.clockOut) {
+            mergedClockOut = loc.clockOut;
+            hasLocalChanges = true; // 携帯等で打刻した退勤時刻をサーバーへ反映
+          } else if (loc.clockOut && srv.clockOut && locTime > srvTime) {
+            mergedClockOut = loc.clockOut;
+          }
+
+          // 備考のマージ
+          let mergedNote = srv.note || '';
+          if (!mergedNote && loc.note) {
+            mergedNote = loc.note;
+            hasLocalChanges = true;
+          } else if (loc.note && locTime > srvTime) {
+            mergedNote = loc.note;
+          }
+
+          const mergedUpdatedAt = (locTime > srvTime ? loc.updatedAt : srv.updatedAt) || new Date().toISOString();
+
+          attMap.set(key, {
+            id: srv.id || loc.id || ('att_' + (srv.date || loc.date)),
+            date: srv.date || loc.date,
+            clockIn: mergedClockIn,
+            clockOut: mergedClockOut,
+            note: mergedNote,
+            updatedAt: mergedUpdatedAt
+          });
+        }
+      });
+
+      const mergedList = Array.from(attMap.values());
+      mergedList.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+      // ローカルストレージを最新マージデータで更新
+      localStorageSetItemAndSync(KEYS.ATTENDANCE, JSON.stringify(mergedList));
+
+      // サーバー側に未反映の最新打刻があれば即座にサーバー保存
+      if (hasLocalChanges) {
+        console.log("【勤怠双方向同期】ローカルの最新打刻（未反映分）をサーバーへ送信・同期します");
+        await saveServerAttendance(mergedList);
+      }
+
+      console.log(`[勤怠双方向同期完了] 全 ${mergedList.length} 件の勤怠データをクラウド・端末間で完全同期しました`);
+      return mergedList;
+    }
+  } catch (err) {
+    console.warn('syncAttendanceWithServer error:', err);
+  }
+  return getAttendanceList();
 }
 async function fetchServerAttendanceEmployee() {
   try {
@@ -5385,7 +5670,12 @@ async function syncInvoicesHistoryWithServer() {
       });
     }
 
-    // 4. 発行日降順にソート
+    // 4. 発行日降順にソート & 本田塗料店伝票(N8460->N10935)のスマートサニタイズ
+    invoiceMap.forEach(sinv => {
+      sanitizeHondaPaintDocAndSerials(sinv);
+      if (sinv.fullDoc) sanitizeHondaPaintDocAndSerials(sinv.fullDoc);
+    });
+
     const mergedList = Array.from(invoiceMap.values()).sort((a, b) => {
       const dateA = a.issueDate || a.updatedAt || '';
       const dateB = b.issueDate || b.updatedAt || '';
@@ -5402,7 +5692,7 @@ async function syncInvoicesHistoryWithServer() {
       if (deletedSet.has(cleanActiveId)) {
         console.log("【書類履歴同期】編集中プレビュー伝票が削除済みだったためクリア:", cleanActiveId);
         localStorage.removeItem(KEYS.ACTIVE_DOC);
-        saveServerActiveDoc({}).catch(() => {});
+        saveServerActiveDoc({}).catch(() => { });
         if (typeof window !== 'undefined' && window.currentDoc && String(window.currentDoc.id).trim() === cleanActiveId) {
           if (typeof window.resetActiveDocToNew === 'function') {
             window.resetActiveDocToNew();
@@ -5417,7 +5707,7 @@ async function syncInvoicesHistoryWithServer() {
             activeDoc.isCancelled = true;
             activeDoc.updatedAt = mergedActive.updatedAt || new Date().toISOString();
             localStorage.setItem(KEYS.ACTIVE_DOC, JSON.stringify(activeDoc));
-            saveServerActiveDoc(activeDoc).catch(() => {});
+            saveServerActiveDoc(activeDoc).catch(() => { });
             console.log("【書類履歴同期】編集中アクティブ伝票もサーバーに合わせて「下書き」に更新しました");
           }
         }
@@ -5934,6 +6224,8 @@ function isNonStockItem(item) {
   if (!item) return false;
   const itemName = typeof item === 'string' ? item : (item.name || '');
   if (/値引|割引|相殺|調整|特別値引|出精値引/i.test(itemName)) return true;
+  // アスタリスクで始まるゴミ品目（*DP-MS等）は在庫品目から完全除外
+  if (String(itemName).trim().startsWith('*')) return true;
 
   if (typeof item === 'string') {
     const product = findItemMasterByName(item);
@@ -6018,8 +6310,8 @@ function deleteItemFromMaster(id) {
     const newInvList = invList.filter(inv => inv.id !== id && inv.name !== targetName);
     if (newInvList.length !== invList.length) {
       localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(newInvList));
-      saveServerInventory(newInvList).catch(() => {});
-      deleteServerEntity('inventory', id).catch(() => {});
+      saveServerInventory(newInvList).catch(() => { });
+      deleteServerEntity('inventory', id).catch(() => { });
     }
 
     return true;
@@ -6133,7 +6425,7 @@ function rescueMastersFromHistory() {
   // ユーザーが明示的に削除したマスタが再読み込みで勝手に復活してしまう問題を回避するため、
   // 過去伝票からの自動復元機能を無効化します。
   return { items: 0, clients: 0 };
-  
+
   let rescuedItems = 0;
   let rescuedClients = 0;
 
@@ -6504,37 +6796,9 @@ async function syncMastersWithServer() {
       console.warn('Sync fiscal settings error:', fiscErr);
     }
 
-    // 4. 勤怠打刻データ（data/attendance/attendance.json）の1対1整合性同期
+    // 4. 勤怠打刻データのクラウド双方向同期（退勤時刻消失・空上書き防止保護）
     try {
-      const serverAttendance = await fetchServerAttendance();
-      if (serverAttendance && Array.isArray(serverAttendance) && serverAttendance.length > 0) {
-        // サーバーファイルを真実のマスター（Source of Truth）として1対1同期
-        // 【復元ガード】上書き前にローカルの既存データをバックアップ保存
-        const existingData = localStorage.getItem(KEYS.ATTENDANCE);
-        if (existingData && existingData !== '[]') {
-          localStorage.setItem(KEYS.ATTENDANCE + '_backup', existingData);
-        }
-
-        serverAttendance.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-        localStorageSetItemAndSync(KEYS.ATTENDANCE, JSON.stringify(serverAttendance));
-        console.log(`[勤怠同期完了] 勤怠データ: 全 ${serverAttendance.length} 件をサーバー・ローカル間で1対1完全同期しました`);
-      } else {
-        console.warn("サーバーデータが0件または取得エラーのため既存データを維持します。");
-        // もしローカルにデータがあればサーバーへ送信して復旧
-        const localAttendance = getAttendanceList();
-        if (localAttendance.length > 0) {
-          console.log("ローカルデータをサーバーにプッシュして復旧します。");
-          await saveServerAttendance(localAttendance);
-        } else {
-          // ローカルも空の場合、バックアップから復元を試みる
-          const backupData = localStorage.getItem(KEYS.ATTENDANCE + '_backup');
-          if (backupData && backupData !== '[]') {
-            console.log("バックアップから勤怠データを復元しました。");
-            localStorageSetItemAndSync(KEYS.ATTENDANCE, backupData);
-            await saveServerAttendance(JSON.parse(backupData));
-          }
-        }
-      }
+      await syncAttendanceWithServer();
     } catch (attErr) {
       console.warn('Sync attendance error:', attErr);
     }
@@ -6640,6 +6904,7 @@ async function syncMastersWithServer() {
         syncInventorySerialsWithServer(),
         fetchServerInventory()
       ]);
+      if (typeof syncInventorySerialsFromIssuedDocs === 'function') syncInventorySerialsFromIssuedDocs();
       if (typeof syncInventoryStockFromIssuedDocs === 'function') syncInventoryStockFromIssuedDocs();
       if (typeof syncInventoryStockFromSerials === 'function') syncInventoryStockFromSerials();
     } catch (invSyncErr) {
@@ -6829,6 +7094,53 @@ function findClientByCode(code, excludeId = '') {
     const cCode = c.code ? normalizeMasterName(c.code).toLowerCase() : '';
     return cCode && cCode === cleanCode;
   }) || null;
+}
+
+/**
+ * 重複しないユニークな販売店コード（5桁乱数）を自動生成
+ * @returns {string} 5桁のユニークな乱数コード（例: "64108"）
+ */
+function generateUniqueClientCode() {
+  const existingCodes = new Set();
+
+  // 1. 取引先マスタの全コード
+  const clientList = (typeof getClientMasterList === 'function') ? getClientMasterList(false) : [];
+  if (Array.isArray(clientList)) {
+    clientList.forEach(c => {
+      if (c && c.code) {
+        existingCodes.add(String(c.code).trim().toLowerCase());
+      }
+    });
+  }
+
+  // 2. 伝票履歴の取引先コード
+  const docList = (typeof getHistoryList === 'function') ? getHistoryList() : [];
+  if (Array.isArray(docList)) {
+    docList.forEach(d => {
+      const code = d?.client?.code || d?.clientCode;
+      if (code) existingCodes.add(String(code).trim().toLowerCase());
+    });
+  }
+
+  // 3. 重複しない5桁の乱数（10000〜99999）を生成
+  let newCode = '';
+  let attempts = 0;
+  while (attempts < 1000) {
+    attempts++;
+    const num = Math.floor(10000 + Math.random() * 90000); // 10000 〜 99999
+    const str = String(num);
+    if (!existingCodes.has(str.toLowerCase())) {
+      newCode = str;
+      break;
+    }
+  }
+
+  // 万が一1000回試行しても重複した場合（安全策）
+  if (!newCode) {
+    newCode = String(Date.now()).slice(-5);
+  }
+
+  return newCode;
 }
 
 
@@ -7089,7 +7401,7 @@ async function cancelDocIssue(docId) {
       activeDoc.isCancelled = true;
       activeDoc.updatedAt = nowIso;
       localStorage.setItem(KEYS.ACTIVE_DOC, JSON.stringify(activeDoc));
-      saveServerActiveDoc(activeDoc).catch(() => {});
+      saveServerActiveDoc(activeDoc).catch(() => { });
     }
 
     // 3. サーバーへ全件マージ保存を確実に即時実行
@@ -7347,9 +7659,9 @@ function getLocalDateStr(d = new Date()) {
 }
 
 /**
- * 勤怠データを保存
+ * 勤怠データを保存（ローカルおよびサーバーへ即座に確実に同期）
  */
-function saveAttendance(attendance) {
+async function saveAttendance(attendance) {
   try {
     const list = getAttendanceList();
     const id = attendance.id || ('att_' + attendance.date);
@@ -7359,10 +7671,10 @@ function saveAttendance(attendance) {
     const record = {
       id: (existing && existing.id) ? existing.id : id,
       date: attendance.date,
-      clockIn: (attendance.clockIn !== undefined && attendance.clockIn !== null)
+      clockIn: (attendance.clockIn !== undefined && attendance.clockIn !== null && attendance.clockIn !== '')
         ? attendance.clockIn
         : (existing ? (existing.clockIn || '') : ''),
-      clockOut: (attendance.clockOut !== undefined && attendance.clockOut !== null)
+      clockOut: (attendance.clockOut !== undefined && attendance.clockOut !== null && attendance.clockOut !== '')
         ? attendance.clockOut
         : (existing ? (existing.clockOut || '') : ''),
       note: (attendance.note !== undefined && attendance.note !== null)
@@ -7379,8 +7691,12 @@ function saveAttendance(attendance) {
 
     list.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     localStorageSetItemAndSync(KEYS.ATTENDANCE, JSON.stringify(list));
-    // サーバー（data/attendance.json）へ即座に非同期保存
-    saveServerAttendance(list).catch(() => { });
+    
+    // サーバー（Firestore / data/attendance/attendance.json）へ確実に非同期保存を待機
+    const serverSaved = await saveServerAttendance(list);
+    if (!serverSaved) {
+      console.warn("【勤怠サーバー保存警告】オフラインまたは一時エラーのためローカル保存のみ完了しました。次回通信復帰時に自動同期されます。");
+    }
     return record;
   } catch (e) {
     console.error('Failed to save attendance:', e);
@@ -7400,7 +7716,7 @@ function getTodayAttendance() {
 /**
  * 本日の出勤打刻
  */
-function clockInToday(timeStr = '', note = '') {
+async function clockInToday(timeStr = '', note = '') {
   const today = getLocalDateStr();
   const curTime = timeStr || new Date().toTimeString().substring(0, 5);
   const existing = getTodayAttendance();
@@ -7416,13 +7732,13 @@ function clockInToday(timeStr = '', note = '') {
   } else if (existing && existing.note) {
     data.note = existing.note;
   }
-  return saveAttendance(data);
+  return await saveAttendance(data);
 }
 
 /**
  * 本日の退勤打刻
  */
-function clockOutToday(timeStr = '', note = '') {
+async function clockOutToday(timeStr = '', note = '') {
   const today = getLocalDateStr();
   const curTime = timeStr || new Date().toTimeString().substring(0, 5);
   const existing = getTodayAttendance();
@@ -7438,7 +7754,7 @@ function clockOutToday(timeStr = '', note = '') {
   } else if (existing && existing.note) {
     data.note = existing.note;
   }
-  return saveAttendance(data);
+  return await saveAttendance(data);
 }
 
 /**
@@ -7678,12 +7994,16 @@ function mergeInventoryServerAndLocal(serverList, localList) {
       return timeB - timeA;
     });
 
-    // サーバーの現在庫を第一優先として維持（過去ログの古いcurrentStockスナップショットで現在庫を破壊・上書きしない）
+    // サーバーの現在庫・確定原価・入荷日を第一優先（Source of Truth）として維持
     let chosenStock = (sItem.currentStock !== undefined) ? Number(sItem.currentStock) : (Number(lItem.currentStock) || 0);
+    let chosenCost = (sItem.unitCost !== undefined && sItem.unitCost !== null && Number(sItem.unitCost) > 0) ? Number(sItem.unitCost) : (Number(lItem.unitCost) || 0);
+    let chosenLastIn = sItem.lastInDate || lItem.lastInDate || '';
 
     return {
       ...sItem,
       currentStock: chosenStock,
+      unitCost: chosenCost,
+      lastInDate: chosenLastIn,
       history: combinedHistory
     };
   });
@@ -7692,14 +8012,14 @@ function mergeInventoryServerAndLocal(serverList, localList) {
 }
 
 /**
- * サーバーから在庫マスタを取得
+ * サーバーから在庫マスタを取得（クラウドを唯一の真実として完全同期）
  */
 async function fetchServerInventory() {
   try {
-    const res = await apiFetch('inventory');
+    const res = await apiFetch('inventory', { cache: 'no-store' });
     if (res.ok) {
       const data = await res.json();
-      if (Array.isArray(data)) {
+      if (Array.isArray(data) && data.length > 0) {
         // ローカルの既存データを取得
         const rawLocal = localStorage.getItem(KEYS.INVENTORY);
         let localList = [];
@@ -7707,16 +8027,10 @@ async function fetchServerInventory() {
           localList = rawLocal ? JSON.parse(rawLocal) : [];
         } catch (e) { localList = []; }
 
-        // ローカルにのみ存在する履歴（手動出庫ログなど）をサーバーデータへ安全に合成
+        // サーバー（Firestore）の現在庫数・確定原価を100%維持しながら、未同期の手動出庫ログのみ安全にマージ
         const merged = mergeInventoryServerAndLocal(data, localList);
         localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(merged));
-        
-        // ローカル側に未同期の履歴や差分があればサーバー側へも逆同期保存
-        const localHistCount = localList.reduce((acc, it) => acc + (Array.isArray(it.history) ? it.history.length : 0), 0);
-        const serverHistCount = data.reduce((acc, it) => acc + (Array.isArray(it.history) ? it.history.length : 0), 0);
-        if (localHistCount > serverHistCount) {
-          saveServerInventory(merged).catch(() => {});
-        }
+        console.log(`[在庫マスタ同期完了] 全 ${merged.length} 品目をクラウド（Firestore）から完全同期しました`);
         return merged;
       }
     }
@@ -7785,7 +8099,10 @@ async function initInventoryFromServer() {
     syncInventoryLotsWithServer(),
     syncInventorySerialsWithServer()
   ]);
-  // シリアル台帳・発行済伝票から実在庫を自動引落・完全同期
+  // シリアル台帳・発行済伝票から実在庫およびシリアル出荷ステータスを自動引落・完全同期
+  if (typeof syncInventorySerialsFromIssuedDocs === 'function') {
+    syncInventorySerialsFromIssuedDocs();
+  }
   if (typeof syncInventoryStockFromIssuedDocs === 'function') {
     syncInventoryStockFromIssuedDocs();
   }
@@ -7809,9 +8126,10 @@ function deduplicateInventoryList(rawList) {
     // 2. 修理・工賃等の非在庫カテゴリ品目の完全排除（在庫マスタ非表示）
     if (isNonStockItem(inv)) continue;
 
-    // 3. テスト品目、KET.IC.2B（DP-5000旧名称）、および値引き・割引行の完全排除
-    const rawName = String(inv.name || '').trim().toLowerCase();
-    if (rawName === 'てすと' || rawName === 'test' || rawName.includes('ket.ic.2b') || rawName.includes('エレクトロパワー') || /値引|割引|相殺|調整|特別値引|出精値引/i.test(rawName)) {
+    // 3. アスタリスク付きゴミ品目（*DP-MS等）、テスト品目、KET.IC.2B（DP-5000旧名称）、および値引き・割引行の完全排除
+    const rawTrimmed = String(inv.name || '').trim();
+    const rawName = rawTrimmed.toLowerCase();
+    if (rawTrimmed.startsWith('*') || rawName === 'てすと' || rawName === 'test' || rawName.includes('ket.ic.2b') || rawName.includes('エレクトロパワー') || /値引|割引|相殺|調整|特別値引|出精値引/i.test(rawName)) {
       continue;
     }
 
@@ -7843,10 +8161,10 @@ function deduplicateInventoryList(rawList) {
         note: inv.note || '',
         type: inv.type || (inv.id === 'inv_1' ? 'bundle' : 'single'),
         hasSerial: (!normName.includes('DP-EG') && !normName.includes('3点引き') && !normName.includes('アタッチメント')) && (
-                     (inv.hasSerial !== undefined ? !!inv.hasSerial : false) || 
-                     (inv.id === 'inv_dp5000_body' || inv.id === 'inv_dp5000_bat' || inv.id === 'inv_2') || 
-                     (normName.includes('DP-5000') || normName.includes('バッテリー') || normName.includes('DP-MS') || normName.includes('メカニカルスプレッダー') || normName.includes('スプレッダー'))
-                   ),
+          (inv.hasSerial !== undefined ? !!inv.hasSerial : false) ||
+          (inv.id === 'inv_dp5000_body' || inv.id === 'inv_dp5000_bat' || inv.id === 'inv_2') ||
+          (normName.includes('DP-5000') || normName.includes('バッテリー') || normName.includes('DP-MS') || normName.includes('メカニカルスプレッダー') || normName.includes('スプレッダー'))
+        ),
         bundleItems: Array.isArray(inv.bundleItems) ? [...inv.bundleItems] : (inv.id === 'inv_1' ? [
           { inventoryId: 'inv_dp5000_body', name: 'DP-5000 本体', qty: 1, role: 'main' },
           { inventoryId: 'inv_dp5000_bat', name: 'PSE認証 リチウムイオンバッテリー', qty: 2, role: 'battery' },
@@ -7929,10 +8247,11 @@ function getInventoryList() {
     const cleanItems = getItemMasterList(false);
     let modified = (list.length !== beforeLen);
 
-    // 非在庫カテゴリ、テスト品目、KET.IC.2B（DP-5000旧名称）、値引き行を除去
+    // 非在庫カテゴリ、アスタリスク付き品目、テスト品目、KET.IC.2B（DP-5000旧名称）、値引き行を除去
     const beforeCleanLen = list.length;
     list = list.filter(inv => {
       if (!inv || !inv.name) return false;
+      if (String(inv.name).trim().startsWith('*')) return false;
       if (isNonStockItem(inv)) return false;
       const lower = inv.name.toLowerCase();
       if (lower.includes('てすと') || lower.includes('test')) return false;
@@ -7943,6 +8262,8 @@ function getInventoryList() {
     if (list.length !== beforeCleanLen) modified = true;
 
     cleanItems.forEach(prod => {
+      if (!prod || !prod.name) return;
+      if (String(prod.name).trim().startsWith('*')) return;
       if (isNonStockItem(prod)) return; // 修理項目・非在庫カテゴリは在庫マスタに追加しない
       const lowerProd = (prod.name || '').toLowerCase();
       if (lowerProd.includes('てすと') || lowerProd.includes('test') || lowerProd.includes('ket.ic.2b') || lowerProd.includes('エレクトロパワー') || /値引|割引|相殺|調整|特別値引|出精値引/i.test(lowerProd)) {
@@ -8001,7 +8322,6 @@ function getInventoryList() {
 
     if (modified) {
       localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(list));
-      saveServerInventory(list).catch(() => { });
     }
 
     // デフォルト構成品（本体・バッテリー・充電器）が未登録の場合は補完
@@ -8020,9 +8340,16 @@ function getInventoryList() {
     // セット品（BOM）の理論在庫可能数および標準原価を構成品在庫から動的算出
     list.forEach(inv => {
       if (inv.type === 'bundle' && Array.isArray(inv.bundleItems) && inv.bundleItems.length > 0) {
-        const calc = calculateBundleStockAndCost(inv, list);
-        inv.currentStock = calc.availableStock;
-        inv.unitCost = calc.unitCost;
+        // 完成品在庫（ロット入庫等の実在庫）が既に存在する場合はそれを優先維持し、未設定・0の場合のみ部品から算出
+        if (inv.currentStock === undefined || inv.currentStock === null || Number(inv.currentStock) <= 0) {
+          const calc = calculateBundleStockAndCost(inv, list);
+          if (calc.availableStock > 0) {
+            inv.currentStock = calc.availableStock;
+          }
+          if (calc.unitCost > 0 && (!inv.unitCost || Number(inv.unitCost) === 0)) {
+            inv.unitCost = calc.unitCost;
+          }
+        }
       }
     });
 
@@ -8261,7 +8588,7 @@ function deleteManualInventoryLog(itemId, logId) {
     }
 
     localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(list));
-    saveServerInventory(list).catch(() => {});
+    saveServerInventory(list).catch(() => { });
     console.log(`【手動ログ削除】完了: 品目「${item.name}」ログID: ${logId} 現在庫再計算: ${item.currentStock}`);
     return true;
   } catch (err) {
@@ -8303,7 +8630,7 @@ function updateManualInventoryLog(itemId, logId, updateData) {
     }
 
     localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(list));
-    saveServerInventory(list).catch(() => {});
+    saveServerInventory(list).catch(() => { });
     console.log(`【手動ログ編集】完了: 品目「${item.name}」ログID: ${logId} 現在庫再計算: ${item.currentStock}`, updateData);
     return true;
   } catch (err) {
@@ -8828,7 +9155,7 @@ function saveAccountMasterList(list) {
   try {
     const safeList = Array.isArray(list) ? list : [];
     localStorageSetItemAndSync(KEYS.ACCOUNT_MASTER, JSON.stringify(safeList));
-    saveServerAccountMaster(safeList).catch(() => {});
+    saveServerAccountMaster(safeList).catch(() => { });
     return true;
   } catch (e) {
     console.error('Failed to save account master:', e);
@@ -8877,7 +9204,7 @@ function saveManualJournal(journal) {
     }
 
     localStorageSetItemAndSync(KEYS.MANUAL_JOURNALS, JSON.stringify(list));
-    saveServerManualJournals(list).catch(() => {});
+    saveServerManualJournals(list).catch(() => { });
     return entryId;
   } catch (e) {
     console.error('Failed to save manual journal:', e);
@@ -8894,8 +9221,8 @@ function deleteManualJournal(id) {
     let list = getManualJournals();
     list = list.filter(j => j.id !== id);
     localStorageSetItemAndSync(KEYS.MANUAL_JOURNALS, JSON.stringify(list));
-    deleteServerEntity('manual_journals', id).catch(() => {});
-    saveServerManualJournals(list).catch(() => {});
+    deleteServerEntity('manual_journals', id).catch(() => { });
+    saveServerManualJournals(list).catch(() => { });
     return true;
   } catch (e) {
     console.error('Failed to delete manual journal:', e);
@@ -8971,7 +9298,7 @@ function saveFiscalSettings(settings) {
     const current = getFiscalSettings();
     const updated = { ...current, ...settings, updatedAt: new Date().toISOString() };
     localStorageSetItemAndSync(KEYS.FISCAL_SETTINGS, JSON.stringify(updated));
-    saveServerFiscalSettings(updated).catch(() => {});
+    saveServerFiscalSettings(updated).catch(() => { });
     return true;
   } catch (e) {
     console.error('Failed to save fiscal settings:', e);
@@ -9068,8 +9395,12 @@ async function pullAllServerDataToLocal() {
       const cleanInvoices = data.invoicesHistory.filter(inv => inv && inv.id && !deletedInvoicesSet.has(String(inv.id).trim()) && !inv.isDeleted && !inv._deleted);
       localStorageSetItemAndSync(KEYS.HISTORY, JSON.stringify(cleanInvoices));
     }
-    if (data.attendance && Array.isArray(data.attendance) && data.attendance.length > 0) {
-      localStorageSetItemAndSync(KEYS.ATTENDANCE, JSON.stringify(data.attendance));
+    if (data.attendance && Array.isArray(data.attendance)) {
+      try {
+        await syncAttendanceWithServer();
+      } catch (attSyncErr) {
+        console.warn('pullAllServerDataToLocal attendance sync warning:', attSyncErr);
+      }
     }
     if (data.accountMaster && Array.isArray(data.accountMaster) && data.accountMaster.length > 0) {
       localStorageSetItemAndSync(KEYS.ACCOUNT_MASTER, JSON.stringify(data.accountMaster));
@@ -9169,6 +9500,14 @@ function calculateBundleStockAndCost(bundleItem, allItems = []) {
     };
   }
 
+  // 完成品としてのロット入庫・手元在庫が存在する場合は最優先
+  if (bundleItem.currentStock !== undefined && Number(bundleItem.currentStock) > 0) {
+    return {
+      availableStock: Number(bundleItem.currentStock),
+      unitCost: Number(bundleItem.unitCost) || 0
+    };
+  }
+
   let minStock = Infinity;
   let totalCost = 0;
 
@@ -9254,8 +9593,8 @@ function getInventoryLotList() {
     if (modified && raw) {
       try {
         localStorageSetItemAndSync(KEYS.INVENTORY_LOTS, JSON.stringify(list));
-        saveServerInventoryLots(list).catch(() => {});
-      } catch (_) {}
+        saveServerInventoryLots(list).catch(() => { });
+      } catch (_) { }
     }
 
     return list;
@@ -9293,7 +9632,7 @@ function saveInventoryLot(lotData) {
     }
 
     localStorageSetItemAndSync(KEYS.INVENTORY_LOTS, JSON.stringify(list));
-    saveServerInventoryLots(list).catch(() => {});
+    saveServerInventoryLots(list).catch(() => { });
     return newLot.id;
   } catch (e) {
     console.error('Failed to save inventory lot:', e);
@@ -9346,7 +9685,7 @@ async function syncInventoryLotsWithServer() {
 
       localStorageSetItemAndSync(KEYS.INVENTORY_LOTS, JSON.stringify(mergedLots));
       if (hasLocalOnly) {
-        saveServerInventoryLots(mergedLots).catch(() => {});
+        saveServerInventoryLots(mergedLots).catch(() => { });
       }
       console.log(`[ロット同期完了] 全 ${mergedLots.length} 件の入荷ロットをサーバー・ローカルで完全同期しました`);
       return mergedLots;
@@ -9414,7 +9753,7 @@ function deleteInventoryLot(lotId) {
       });
       if (historyModified) {
         saveInventoryList(curInvList);
-        saveServerInventory(curInvList).catch(() => {});
+        saveServerInventory(curInvList).catch(() => { });
       }
     }
 
@@ -9445,13 +9784,13 @@ function deleteInventoryLot(lotId) {
       return true;
     });
     localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(filteredSerials));
-    saveServerInventorySerials(filteredSerials).catch(() => {});
+    saveServerInventorySerials(filteredSerials).catch(() => { });
 
     // ③ 財務会計の仕訳データを連動削除
     if (typeof getManualJournals === 'function' && typeof deleteManualJournal === 'function') {
       const journals = getManualJournals();
-      const targetJnl = journals.find(j => 
-        j.id === `jnl_lot_${lot.id}` || 
+      const targetJnl = journals.find(j =>
+        j.id === `jnl_lot_${lot.id}` ||
         (j.sourceType === 'inventory_lot' && j.sourceId === lot.id) ||
         (j.entryNumber === lot.lotNumber && j.sourceType === 'inventory_lot')
       );
@@ -9464,8 +9803,8 @@ function deleteInventoryLot(lotId) {
     // ④ ロット一覧から削除して保存
     lotList.splice(lotIndex, 1);
     localStorageSetItemAndSync(KEYS.INVENTORY_LOTS, JSON.stringify(lotList));
-    saveServerInventoryLots(lotList).catch(() => {});
-    deleteServerEntity('inventory_lots', lot.id).catch(() => {});
+    saveServerInventoryLots(lotList).catch(() => { });
+    deleteServerEntity('inventory_lots', lot.id).catch(() => { });
 
     // 在庫マスタ同期
     syncInventoryStockFromSerials();
@@ -9515,24 +9854,10 @@ function syncInventoryStockFromSerials() {
       }
     });
 
-    // バッテリー単品（現在庫20等）について手元の在庫シリアル数を同期
-    // ※ DP-5000本体・スプレッダー・ベーシックセットの現在庫は、ロット入庫とセット品化および全出荷に基づく帳簿実在庫（-10等のマイナス不足を含む）を絶対正として保持する
-    invList.forEach(item => {
-      const itemName = String(item.name || '').toUpperCase();
-      if (item.id === 'inv_dp5000_bat' || (itemName.includes('バッテリー') && !itemName.includes('セット'))) {
-        if (item.currentStock !== inStockCounts['inv_dp5000_bat']) {
-          item.currentStock = inStockCounts['inv_dp5000_bat'];
-          modified = true;
-        }
-      }
-    });
-
-    if (modified) {
-      localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(invList));
-      saveServerInventory(invList).catch(() => {});
-      console.log('【在庫マスタ連動】シリアル台帳から現在庫数を同期更新しました:', inStockCounts);
-    }
-
+    // 【最重要原則】在庫マスタの現在庫（currentStock）は、ロット入庫・セット品化・出荷履歴に基づく
+    // 帳簿実在庫（getInventoryHistoryWithShipments）を唯一の真実（Source of Truth）として100%統一管理する。
+    // シリアル件数による破壊的上書きは行わず、手元在庫シリアル数の現状把握ログのみを出力する。
+    console.log('【シリアル台帳現況】在庫中シリアル数集計:', inStockCounts);
     return inStockCounts;
   } catch (e) {
     console.error('Failed to sync inventory from serials:', e);
@@ -9577,11 +9902,11 @@ function syncInventoryStockFromIssuedDocs() {
           const cleanItems = items.filter(it => !it.name || (!it.name.includes('てすと') && !it.name.toLowerCase().includes('test') && !/値引|割引|相殺|調整/i.test(it.name)));
           if (cleanItems.length !== items.length) {
             localStorageSetItemAndSync(KEYS.ITEMS, JSON.stringify(cleanItems));
-            saveServerItemMaster(cleanItems).catch(() => {});
+            saveServerItemMaster(cleanItems).catch(() => { });
           }
         }
       }
-    } catch (e) {}
+    } catch (e) { }
 
     // 1. 各品目の「発行済出荷累計数量」を集計
     const shippedQtyMap = {};
@@ -9591,7 +9916,7 @@ function syncInventoryStockFromIssuedDocs() {
       // 見積書、取消済伝票、および訂正前の元伝票(superseded)は二重引当防止のため出荷集計から完全除外
       if (!doc || doc.isCancelled === true || doc.isCancelled === 'true' || doc.docType === 'estimate') return;
       if (doc.status === 'superseded' || doc.isSuperseded === true || (doc.fullDoc && (doc.fullDoc.status === 'superseded' || doc.fullDoc.isSuperseded))) return;
-      
+
       // 確定済伝票明細（doc.items または doc.fullDoc.items を網羅的に取得）
       const docItems = (Array.isArray(doc.items) && doc.items.length > 0)
         ? doc.items
@@ -9716,8 +10041,8 @@ function syncInventoryStockFromIssuedDocs() {
 
         // ロット削除による取消は除外（ロット履歴集計に含まれないため）
         if (reason.includes('ロット削除')) return;
-        // 確定出荷引当など、伝票発行による自動引当は伝票集計（docs）と重複するため除外
-        if (reason.includes('確定出荷引当') || reason.includes('伝票連携') || reason.includes('自動引当')) return;
+        // 確定出荷引当など、伝票発行による自動引当・確定取消復元は伝票集計（docs）と重複するため除外
+        if (reason.includes('確定出荷引当') || reason.includes('確定発行取消') || reason.includes('在庫復元') || reason.includes('伝票連携') || reason.includes('自動引当')) return;
         // キッティング（セット品化）による急速充電器消費等は除外
         if (hid.startsWith('log_bundle_') || hid.startsWith('log_unbundle_') || reason.includes('セット品化')) return;
         // 伝票番号が明示されている場合は伝票集計と重複するため除外
@@ -9882,6 +10207,13 @@ function syncInventoryStockFromIssuedDocs() {
         calculatedStock = totalIn - shippedQty - manualOut + adjustDelta;
       }
 
+      const prevStock = item.currentStock;
+
+      // 【安全ガード】サーバー上の正規現在庫が存在し、ロット台帳が空または未取得の場合はサーバー在庫数を最優先保護
+      if (prevStock !== undefined && prevStock > 0 && totalIn === 0 && (!lots || lots.length === 0)) {
+        calculatedStock = prevStock;
+      }
+
       if (item.currentStock !== calculatedStock) {
         item.currentStock = calculatedStock;
         modified = true;
@@ -9908,7 +10240,7 @@ function syncInventoryStockFromIssuedDocs() {
       }
 
       summary[item.name] = {
-        before: item.currentStock,
+        before: prevStock,
         after: calculatedStock,
         shipped: shippedQty,
         manualOut: manualOut,
@@ -9918,7 +10250,7 @@ function syncInventoryStockFromIssuedDocs() {
 
       detailsList.push({
         name: item.name,
-        before: item.currentStock,
+        before: prevStock,
         after: calculatedStock,
         shipped: shippedQty,
         manualOut: manualOut,
@@ -9929,7 +10261,7 @@ function syncInventoryStockFromIssuedDocs() {
 
     if (modified) {
       localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(invList));
-      saveServerInventory(invList).catch(() => {});
+      saveServerInventory(invList).catch(() => { });
       console.log('【伝票在庫連動】発行済伝票から実在庫を自動引落・同期しました:', summary);
     }
 
@@ -10030,7 +10362,7 @@ function saveInventorySerial(serialData) {
     if (!serialData || !serialData.serialNumber) return false;
     const list = getInventorySerialList();
     const sn = String(serialData.serialNumber).trim().toUpperCase();
-    
+
     // 再登録時は削除済みリストから解除
     removeDeletedSerial(sn);
 
@@ -10057,8 +10389,8 @@ function saveInventorySerial(serialData) {
     }
 
     localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(list));
-    saveServerInventorySerials(list).catch(() => {});
-    
+    saveServerInventorySerials(list).catch(() => { });
+
     // 在庫マスタ連動
     syncInventoryStockFromSerials();
     return entryId;
@@ -10073,7 +10405,7 @@ function deleteInventorySerial(serialIdOrNumber) {
     const list = getInventorySerialList();
     const target = list.find(s => s.id === serialIdOrNumber || s.serialNumber === serialIdOrNumber);
     const targetSn = target ? target.serialNumber : (String(serialIdOrNumber).startsWith('N') ? serialIdOrNumber : '');
-    
+
     // 削除済みリストへ永続記録（ゾンビ復活防止）
     if (targetSn) {
       recordDeletedSerial(targetSn);
@@ -10081,8 +10413,8 @@ function deleteInventorySerial(serialIdOrNumber) {
 
     const updated = list.filter(s => s.id !== serialIdOrNumber && s.serialNumber !== serialIdOrNumber);
     localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(updated));
-    saveServerInventorySerials(updated).catch(() => {});
-    
+    saveServerInventorySerials(updated).catch(() => { });
+
     // 在庫マスタ連動（現在庫数を即座に再計算）
     syncInventoryStockFromSerials();
     return true;
@@ -10095,13 +10427,31 @@ function updateSerialStatus(serialNumber, newStatus, details = {}) {
   try {
     if (!serialNumber) return false;
     const list = getInventorySerialList();
-    const target = list.find(s => s.serialNumber === serialNumber);
-    if (!target) return false;
+    const cleanSn = String(serialNumber).trim().toUpperCase();
+    let target = list.find(s => s && String(s.serialNumber || '').trim().toUpperCase() === cleanSn);
+
+    // もし台帳に未登録のシリアルであれば自動登録（取りこぼし防止）
+    if (!target) {
+      target = {
+        id: `sn_${cleanSn}`,
+        serialNumber: cleanSn,
+        status: newStatus,
+        itemName: details.itemName || (cleanSn.startsWith('N') ? 'DP-5000' : (cleanSn.includes('BAT') ? 'PSE認証 リチウムイオンバッテリー' : 'PSE認証 専用急速充電器')),
+        createdAt: new Date().toISOString()
+      };
+      list.push(target);
+    }
 
     target.status = newStatus;
     target.updatedAt = new Date().toISOString();
 
     if (newStatus === 'in_stock') {
+      // 対象品自体が他の本体に組込されている構成部品（bundledWithあり）の場合は 'bundled'、それ以外は 'in_stock'
+      if (target.bundledWith && String(target.bundledWith).trim()) {
+        target.status = 'bundled';
+      } else {
+        target.status = 'in_stock';
+      }
       target.clientName = '';
       target.endUserName = '';
       target.shipDate = '';
@@ -10109,6 +10459,63 @@ function updateSerialStatus(serialNumber, newStatus, details = {}) {
       target.docNumber = '';
       target.docId = '';
       target.bundleItemId = '';
+
+      // セット品化された本体が在庫中に戻った場合、組込バッテリーおよび急速充電器も連動して「セット組込（bundled）」へ復元
+      if (target.isBundled) {
+        const bodySnNorm = String(target.serialNumber || cleanSn).trim().toUpperCase();
+
+        // 1. 組込バッテリーの復元
+        const batSns = Array.isArray(target.batterySerials) && target.batterySerials.length > 0
+          ? target.batterySerials
+          : list.filter(s => s && String(s.bundledWith || '').trim().toUpperCase() === bodySnNorm && (s.itemId === 'inv_dp5000_bat' || (s.itemName && s.itemName.includes('バッテリー')))).map(b => b.serialNumber);
+
+        batSns.forEach(batSn => {
+          const bat = list.find(s => s && String(s.serialNumber || '').trim().toUpperCase() === String(batSn || '').trim().toUpperCase());
+          if (bat) {
+            bat.status = 'bundled';
+            bat.clientName = '';
+            bat.endUserName = '';
+            bat.shipDate = '';
+            bat.shippedDate = '';
+            bat.docNumber = '';
+            bat.docId = '';
+            bat.note = (bat.note || '').replace(/\s*\[DP-5000\([^)]+\)と共に出荷\]/g, '').trim();
+            bat.updatedAt = new Date().toISOString();
+          }
+        });
+
+        // 2. 組込急速充電器の復元
+        const chgSn = target.chargerSerial || (list.find(s => s && String(s.bundledWith || '').trim().toUpperCase() === bodySnNorm && (s.itemId === 'inv_dp5000_chg' || (s.itemName && s.itemName.includes('充電器')))) || {}).serialNumber;
+        if (chgSn) {
+          const chg = list.find(s => s && String(s.serialNumber || '').trim().toUpperCase() === String(chgSn || '').trim().toUpperCase());
+          if (chg) {
+            chg.status = 'bundled';
+            chg.clientName = '';
+            chg.endUserName = '';
+            chg.shipDate = '';
+            chg.shippedDate = '';
+            chg.docNumber = '';
+            chg.docId = '';
+            chg.note = (chg.note || '').replace(/\s*\[DP-5000\([^)]+\)と共に出荷\]/g, '').trim();
+            chg.updatedAt = new Date().toISOString();
+          }
+        }
+
+        // 3. bundledWith で紐付いている全構成品を漏れなくセット組込へ復元
+        list.forEach(c => {
+          if (c && c.bundledWith && String(c.bundledWith).trim().toUpperCase() === bodySnNorm) {
+            c.status = 'bundled';
+            c.clientName = '';
+            c.endUserName = '';
+            c.shipDate = '';
+            c.shippedDate = '';
+            c.docNumber = '';
+            c.docId = '';
+            c.note = (c.note || '').replace(/\s*\[DP-5000\([^)]+\)と共に出荷\]/g, '').trim();
+            c.updatedAt = new Date().toISOString();
+          }
+        });
+      }
     } else {
       if (details.clientName !== undefined) target.clientName = details.clientName;
       if (details.customerName !== undefined) target.clientName = details.customerName;
@@ -10132,30 +10539,55 @@ function updateSerialStatus(serialNumber, newStatus, details = {}) {
         }
       }
 
-      // セット品化された本体が出荷された場合、組込バッテリーも連動して出荷済みに更新
-      if (newStatus === 'shipped' && target.isBundled && Array.isArray(target.batterySerials)) {
-        target.batterySerials.forEach(batSn => {
+      // セット品化された本体が出荷またはデモ機になった場合、組込バッテリー ＆ 組込急速充電器も連動してステータス更新
+      if (newStatus === 'shipped' || newStatus === 'demo') {
+        const bodySn = target.serialNumber;
+        const statusLabel = newStatus === 'shipped' ? 'と共に出荷' : 'デモ機組込';
+
+        // 1. 組込バッテリーの連動
+        const batSns = Array.isArray(target.batterySerials) && target.batterySerials.length > 0
+          ? target.batterySerials
+          : list.filter(s => s && s.bundledWith === bodySn && (s.itemId === 'inv_dp5000_bat' || (s.itemName && s.itemName.includes('バッテリー')))).map(b => b.serialNumber);
+
+        batSns.forEach(batSn => {
           const bat = list.find(s => s && String(s.serialNumber).trim().toUpperCase() === String(batSn).trim().toUpperCase());
           if (bat) {
-            bat.status = 'shipped';
+            bat.status = newStatus;
             bat.clientName = target.clientName || '';
             bat.endUserName = target.endUserName || '';
             bat.shipDate = target.shipDate || '';
             bat.docNumber = target.docNumber || '';
             bat.docId = target.docId || '';
-            const baseNote = (bat.note || '').replace(/\s*\[DP-5000\([^)]+\)と共に出荷\]/g, '').trim();
-            const additionalNote = (target.note || '').replace(/\s*\[DP-5000\([^)]+\)と共に出荷\]/g, '').trim();
+            const baseNote = (bat.note || '').replace(/\s*\[DP-5000\([^)]+\)(と共に出荷|デモ機組込)\]/g, '').trim();
+            const additionalNote = (target.note || '').replace(/\s*\[DP-5000\([^)]+\)(と共に出荷|デモ機組込)\]/g, '').trim();
             const combinedNote = [baseNote, additionalNote].filter((v, idx, arr) => v && arr.indexOf(v) === idx).join(' / ');
-            bat.note = (combinedNote ? combinedNote + ' ' : '') + `[DP-5000(${target.serialNumber})と共に出荷]`;
+            bat.note = (combinedNote ? combinedNote + ' ' : '') + `[DP-5000(${target.serialNumber})${statusLabel}]`;
             bat.updatedAt = new Date().toISOString();
           }
         });
+
+        // 2. 組込急速充電器の連動
+        const chgSn = target.chargerSerial || (list.find(s => s && s.bundledWith === bodySn && (s.itemId === 'inv_dp5000_chg' || (s.itemName && s.itemName.includes('充電器')))) || {}).serialNumber;
+        if (chgSn) {
+          const chg = list.find(s => s && String(s.serialNumber).trim().toUpperCase() === String(chgSn).trim().toUpperCase());
+          if (chg) {
+            chg.status = newStatus;
+            chg.clientName = target.clientName || '';
+            chg.endUserName = target.endUserName || '';
+            chg.shipDate = target.shipDate || '';
+            chg.docNumber = target.docNumber || '';
+            chg.docId = target.docId || '';
+            const baseNote = (chg.note || '').replace(/\s*\[DP-5000\([^)]+\)(と共に出荷|デモ機組込)\]/g, '').trim();
+            chg.note = (baseNote ? baseNote + ' ' : '') + `[DP-5000(${target.serialNumber})${statusLabel}]`;
+            chg.updatedAt = new Date().toISOString();
+          }
+        }
       }
     }
 
     localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(list));
-    saveServerInventorySerials(list).catch(() => {});
-    
+    saveServerInventorySerials(list).catch(() => { });
+
     // 在庫マスタ連動
     syncInventoryStockFromSerials();
     return true;
@@ -10167,6 +10599,7 @@ function updateSerialStatus(serialNumber, newStatus, details = {}) {
 
 /**
  * セット組込バッテリーに対して、親本体（DP-5000等）の販売店・ユーザー・出荷日・伝票情報を自動同期
+ * （親本体の batterySerials / chargerSerial と 子の bundledWith の双方向整合性を完全維持）
  */
 function syncBundledBatteriesWithParents(list) {
   if (!Array.isArray(list) || list.length === 0) return false;
@@ -10178,37 +10611,118 @@ function syncBundledBatteriesWithParents(list) {
   });
 
   let changed = false;
+
+  // 1. 親本体の batterySerials / chargerSerial に登録されている子部品の bundledWith を自動補正
+  bodyMap.forEach((parent, parentSn) => {
+    if (Array.isArray(parent.batterySerials)) {
+      parent.batterySerials.forEach(bSn => {
+        const cleanBSn = String(bSn).trim().toUpperCase();
+        const bat = list.find(s => s && String(s.serialNumber).trim().toUpperCase() === cleanBSn);
+        if (bat && bat.bundledWith !== parentSn) {
+          bat.bundledWith = parentSn;
+          changed = true;
+        }
+      });
+    }
+    if (parent.chargerSerial) {
+      const cleanCSn = String(parent.chargerSerial).trim().toUpperCase();
+      const chg = list.find(s => s && String(s.serialNumber).trim().toUpperCase() === cleanCSn);
+      if (chg && chg.bundledWith !== parentSn) {
+        chg.bundledWith = parentSn;
+        changed = true;
+      }
+    }
+  });
+
+  // 1.5. 逆に子部品側に bundledWith が設定されているのに親本体側に未登録の場合、自動で親本体へ逆反映
+  list.forEach(s => {
+    if (s && s.serialNumber && s.bundledWith) {
+      const parent = bodyMap.get(String(s.bundledWith).trim().toUpperCase());
+      if (parent) {
+        const sSn = String(s.serialNumber).trim().toUpperCase();
+        const itemName = String(s.itemName || '').toUpperCase();
+        const isBat = s.inventoryId === 'inv_dp5000_bat' || s.itemId === 'inv_dp5000_bat' || s.itemType === 'battery' || itemName.includes('バッテリー');
+        const isChg = s.inventoryId === 'inv_dp5000_chg' || s.itemId === 'inv_dp5000_chg' || s.itemType === 'charger' || itemName.includes('充電器');
+
+        if (isBat) {
+          if (!Array.isArray(parent.batterySerials)) {
+            parent.batterySerials = [];
+          }
+          if (!parent.batterySerials.map(x => String(x).trim().toUpperCase()).includes(sSn)) {
+            parent.batterySerials.push(sSn);
+            parent.isBundled = true;
+            changed = true;
+          }
+        } else if (isChg) {
+          if (!parent.chargerSerial || String(parent.chargerSerial).trim().toUpperCase() !== sSn) {
+            parent.chargerSerial = sSn;
+            parent.isBundled = true;
+            changed = true;
+          }
+        }
+      }
+    }
+  });
+
+  // 2. 子部品の出荷状態・伝票情報を親本体の状態に合わせて厳格に同期
   list.forEach(s => {
     if (s && s.bundledWith) {
       const parent = bodyMap.get(String(s.bundledWith).trim().toUpperCase());
       if (parent) {
-        if (parent.clientName && s.clientName !== parent.clientName) {
-          s.clientName = parent.clientName;
-          changed = true;
-        }
-        if (parent.endUserName && s.endUserName !== parent.endUserName) {
-          s.endUserName = parent.endUserName;
-          changed = true;
-        }
-        const parentShipDate = parent.shipDate || parent.shippedDate || '';
-        if (parentShipDate && (s.shipDate !== parentShipDate || s.shippedDate !== parentShipDate)) {
-          s.shipDate = parentShipDate;
-          s.shippedDate = parentShipDate;
-          changed = true;
-        }
-        const parentDocNum = parent.docNumber || parent.invoiceNumber || '';
-        if (parentDocNum && s.docNumber !== parentDocNum) {
-          s.docNumber = parentDocNum;
-          s.invoiceNumber = parentDocNum;
-          changed = true;
-        }
-        if (parent.docId && s.docId !== parent.docId) {
-          s.docId = parent.docId;
-          changed = true;
-        }
-        if (parent.status === 'shipped' && s.status !== 'shipped') {
-          s.status = 'shipped';
-          changed = true;
+        if (parent.status === 'shipped') {
+          // 親本体が出荷済の場合: 子部品も出荷済みに連動
+          if (s.status !== 'shipped') {
+            s.status = 'shipped';
+            changed = true;
+          }
+          if (parent.clientName && s.clientName !== parent.clientName) {
+            s.clientName = parent.clientName;
+            changed = true;
+          }
+          if (parent.endUserName && s.endUserName !== parent.endUserName) {
+            s.endUserName = parent.endUserName;
+            changed = true;
+          }
+          const parentShipDate = parent.shipDate || parent.shippedDate || '';
+          if (parentShipDate && (s.shipDate !== parentShipDate || s.shippedDate !== parentShipDate)) {
+            s.shipDate = parentShipDate;
+            s.shippedDate = parentShipDate;
+            changed = true;
+          }
+          const parentDocNum = parent.docNumber || parent.invoiceNumber || '';
+          if (parentDocNum && s.docNumber !== parentDocNum) {
+            s.docNumber = parentDocNum;
+            s.invoiceNumber = parentDocNum;
+            changed = true;
+          }
+          if (parent.docId && s.docId !== parent.docId) {
+            s.docId = parent.docId;
+            changed = true;
+          }
+        } else if (parent.status === 'in_stock') {
+          // 親本体が在庫中の場合: 子部品はセット組込中（bundled）とし、誤った出荷情報・伝票番号をクリア
+          if (s.status !== 'bundled') {
+            s.status = 'bundled';
+            changed = true;
+          }
+          if (s.docNumber || s.invoiceNumber) {
+            s.docNumber = '';
+            s.invoiceNumber = '';
+            changed = true;
+          }
+          if (s.docId) {
+            s.docId = '';
+            changed = true;
+          }
+          if (s.clientName) {
+            s.clientName = '';
+            changed = true;
+          }
+          if (s.shipDate || s.shippedDate) {
+            s.shipDate = '';
+            s.shippedDate = '';
+            changed = true;
+          }
         }
       }
     }
@@ -10227,8 +10741,8 @@ function updateSerialDetails(serialNumber, updates = {}) {
     }
     Object.assign(target, updates, { updatedAt: new Date().toISOString() });
 
-    // もし本体（セット品化済・組込バッテリー持ち）を編集した場合、付属バッテリー側にも自動連動
-    if (target.isBundled || (Array.isArray(target.batterySerials) && target.batterySerials.length > 0)) {
+    // もし本体（セット品化済・組込バッテリー/充電器持ち）を編集した場合、付属バッテリー・充電器側にも自動連動
+    if (target.isBundled || (Array.isArray(target.batterySerials) && target.batterySerials.length > 0) || target.chargerSerial) {
       const batSns = Array.isArray(target.batterySerials) ? target.batterySerials : [];
       batSns.forEach(bSn => {
         const batObj = list.find(s => s && String(s.serialNumber).trim().toUpperCase() === String(bSn).trim().toUpperCase());
@@ -10242,17 +10756,374 @@ function updateSerialDetails(serialNumber, updates = {}) {
           batObj.updatedAt = new Date().toISOString();
         }
       });
+
+      // 付属専用急速充電器の連動
+      list.forEach(chgObj => {
+        if (chgObj && (chgObj.serialNumber === target.chargerSerial || (chgObj.bundledWith && chgObj.bundledWith === target.serialNumber))) {
+          if (updates.clientName !== undefined) chgObj.clientName = updates.clientName;
+          if (updates.endUserName !== undefined) chgObj.endUserName = updates.endUserName;
+          if (updates.shipDate !== undefined) chgObj.shipDate = updates.shipDate;
+          if (updates.shippedDate !== undefined) chgObj.shippedDate = updates.shippedDate;
+          if (updates.docNumber !== undefined) chgObj.docNumber = updates.docNumber;
+          if (updates.docId !== undefined) chgObj.docId = updates.docId;
+          chgObj.updatedAt = new Date().toISOString();
+        }
+      });
     }
 
     localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(list));
-    saveServerInventorySerials(list).catch(() => {});
-    
+    saveServerInventorySerials(list).catch(() => { });
+
     // 在庫マスタ連動
     syncInventoryStockFromSerials();
     return true;
   } catch (e) {
     console.error('Failed to update serial details:', e);
     return false;
+  }
+}
+
+/**
+ * 発行済伝票（納品書・請求書）を全件走査し、シリアル管理台帳（inventory_serials）から
+ * 伝票記載のシリアル番号を出荷済（shipped）へ自動引き落とし・伝票完全紐付け
+ * 先行出荷されたシリアルが後からロット入庫された場合でも確実に自動連動
+ */
+function syncInventorySerialsFromIssuedDocs() {
+  try {
+    const docs = getHistoryList();
+    const list = getInventorySerialList();
+    if (!Array.isArray(docs) || !Array.isArray(list)) {
+      return { updatedCount: 0, updatedSerials: [], validDocCount: 0 };
+    }
+
+    const serialMap = new Map();
+    list.forEach(s => {
+      if (s && s.serialNumber) {
+        serialMap.set(String(s.serialNumber).trim().toUpperCase(), s);
+      }
+    });
+
+    let modified = false;
+    const updatedSerials = [];
+    let validDocCount = 0;
+
+    docs.forEach(doc => {
+      if (!doc || doc.isCancelled === true || doc.isCancelled === 'true' || doc.docType === 'estimate') return;
+      if (doc.status === 'superseded' || doc.isSuperseded === true) return;
+      validDocCount++;
+
+      const docNo = String(doc.docNumber || doc.id || '').trim();
+      const clientName = doc.client ? (doc.client.name || '') : (doc.clientName || '');
+      const docDate = doc.issueDate || doc.date || '';
+      const docEndUser = (doc.endUserName || '').trim();
+      const docItems = (Array.isArray(doc.items) && doc.items.length > 0)
+        ? doc.items
+        : (doc.fullDoc && Array.isArray(doc.fullDoc.items) ? doc.fullDoc.items : []);
+
+      docItems.forEach(it => {
+        if (!it) return;
+        const itemSerials = [];
+
+        // ① assignedSerials から抽出
+        if (Array.isArray(it.assignedSerials) && it.assignedSerials.length > 0) {
+          it.assignedSerials.forEach(as => {
+            if (as && as.serialNumber) {
+              const sn = String(as.serialNumber).trim().toUpperCase();
+              if (sn && !itemSerials.includes(sn)) itemSerials.push(sn);
+            }
+          });
+        }
+
+        // ② serialNumber 文字列から抽出（N+数字だけでなく充電器やバッテリー等の全形式に対応）
+        if (it.serialNumber && typeof it.serialNumber === 'string') {
+          const rawParts = it.serialNumber.split(/[,、\n\r\t;/|]+/);
+          rawParts.forEach(part => {
+            const trimmed = part.trim().toUpperCase();
+            if (!trimmed) return;
+            // スペース区切りの場合も分解
+            const tokens = trimmed.split(/\s+/);
+            tokens.forEach(tok => {
+              const cleanTok = tok.replace(/^[(\[{<"']+|[)\]}>"':]+$/g, '').trim();
+              if (cleanTok && cleanTok.length >= 3) {
+                if (!itemSerials.includes(cleanTok)) itemSerials.push(cleanTok);
+              }
+            });
+          });
+        }
+
+        // ③ item.note から抽出（台帳登録シリアルおよびN+数字等の形式を柔軟に検出）
+        if (it.note && typeof it.note === 'string') {
+          // N+数字の検出
+          const nMatches = it.note.match(/N\s*\d+/gi);
+          if (nMatches) {
+            nMatches.forEach(m => {
+              const norm = m.replace(/\s+/g, '').toUpperCase();
+              if (norm && !itemSerials.includes(norm)) itemSerials.push(norm);
+            });
+          }
+          // 台帳マップに存在するシリアル番号が備考欄に含まれているか直接照合
+          serialMap.forEach((_, mapSn) => {
+            if (mapSn && it.note.toUpperCase().includes(mapSn)) {
+              if (!itemSerials.includes(mapSn)) itemSerials.push(mapSn);
+            }
+          });
+        }
+
+        const itemEndUser = (it.endUserName || docEndUser).trim();
+
+        itemSerials.forEach(sn => {
+          // 【包括的保護防壁（全社・全シリアル共通）】
+          // ① 社内デモ機 (N8460)
+          // ② デモ機ステータス (demo)
+          // ③ 保守・貸出中 (maintenance)
+          // ④ 初期不良・廃棄 (defective)
+          // ⑤ 備考に「デモ機」と記載のある社内管理機
+          // これらは、過去伝票の自動走査によって勝手に出荷済（shipped）に書き戻されることを完全遮断！
+          if (sn === 'N8460') return;
+          const target = serialMap.get(sn);
+          if (target) {
+            if (['demo', 'maintenance', 'defective'].includes(target.status) || (target.note && target.note.includes('デモ機'))) {
+              return;
+            }
+            let changed = false;
+            if (target.status !== 'shipped') {
+              target.status = 'shipped';
+              changed = true;
+            }
+            if (!target.docNumber || target.docNumber !== docNo) {
+              target.docNumber = docNo;
+              target.invoiceNumber = docNo;
+              target.docId = doc.id;
+              target.invoiceId = doc.id;
+              changed = true;
+            }
+            if (!target.clientName || (clientName && target.clientName !== clientName)) {
+              target.clientName = clientName;
+              target.customerName = clientName;
+              changed = true;
+            }
+            if (itemEndUser && (!target.endUserName || target.endUserName !== itemEndUser)) {
+              target.endUserName = itemEndUser;
+              changed = true;
+            }
+            if (docDate && (!target.shipDate || target.shipDate !== docDate)) {
+              target.shipDate = docDate;
+              target.shippedDate = docDate;
+              changed = true;
+            }
+
+            // セット品化された本体が出荷された場合、組込バッテリーおよび急速充電器も連動して出荷済みに更新
+            const targetSnNorm = String(target.serialNumber || sn).trim().toUpperCase();
+            if (target.isBundled) {
+              // 1. 組込バッテリーの連動出荷
+              if (Array.isArray(target.batterySerials)) {
+                target.batterySerials.forEach(batSn => {
+                  const bat = serialMap.get(String(batSn).trim().toUpperCase());
+                  if (bat) {
+                    if (bat.status !== 'shipped' || bat.docNumber !== docNo) {
+                      bat.status = 'shipped';
+                      bat.clientName = clientName;
+                      bat.customerName = clientName;
+                      bat.endUserName = itemEndUser;
+                      bat.docNumber = docNo;
+                      bat.docId = doc.id;
+                      bat.shipDate = docDate;
+                      bat.shippedDate = docDate;
+                      bat.updatedAt = new Date().toISOString();
+                      changed = true;
+                    }
+                  }
+                });
+              }
+
+              // 2. 付属急速充電器の連動出荷
+              if (target.chargerSerial) {
+                const chg = serialMap.get(String(target.chargerSerial).trim().toUpperCase());
+                if (chg) {
+                  if (chg.status !== 'shipped' || chg.docNumber !== docNo) {
+                    chg.status = 'shipped';
+                    chg.clientName = clientName;
+                    chg.customerName = clientName;
+                    chg.endUserName = itemEndUser;
+                    chg.docNumber = docNo;
+                    chg.docId = doc.id;
+                    chg.shipDate = docDate;
+                    chg.shippedDate = docDate;
+                    chg.updatedAt = new Date().toISOString();
+                    changed = true;
+                  }
+                }
+              }
+
+              // 3. bundledWith で逆引きされる全構成品（バッテリー・充電器）の連動出荷
+              list.forEach(c => {
+                if (c && c.bundledWith && String(c.bundledWith).trim().toUpperCase() === targetSnNorm) {
+                  if (c.status !== 'shipped' || c.docNumber !== docNo) {
+                    c.status = 'shipped';
+                    c.clientName = clientName;
+                    c.customerName = clientName;
+                    c.endUserName = itemEndUser;
+                    c.docNumber = docNo;
+                    c.docId = doc.id;
+                    c.shipDate = docDate;
+                    c.shippedDate = docDate;
+                    c.updatedAt = new Date().toISOString();
+                    changed = true;
+                  }
+                }
+              });
+            }
+
+            if (changed) {
+              target.updatedAt = new Date().toISOString();
+              modified = true;
+              updatedSerials.push({
+                serialNumber: sn,
+                docNumber: docNo,
+                clientName: clientName,
+                itemName: target.itemName || it.name || ''
+              });
+            }
+          }
+        });
+      });
+    });
+
+    // 2. 【逆方向の整合性保証】伝票削除・確定取消・見積書連動解除の自動検知
+    // シリアル台帳上で伝票番号（docNumber / invoiceNumber）が記録されているが、
+    // その伝票が「有効な確定伝票」に存在しない場合（伝票が削除された、見積書だった、確定取消された場合）、
+    // 自動的に台帳上で「在庫中（in_stock）」へ復元し、伝票紐付けをクリアする！
+    const validDocNumbers = new Set();
+    const validDocIds = new Set();
+    docs.forEach(doc => {
+      if (!doc || doc.isCancelled === true || doc.isCancelled === 'true' || doc.docType === 'estimate') return;
+      if (doc.status === 'superseded' || doc.isSuperseded === true) return;
+      if (doc.docNumber) validDocNumbers.add(String(doc.docNumber).trim());
+      if (doc.id) validDocIds.add(String(doc.id).trim());
+    });
+
+    list.forEach(s => {
+      if (!s) return;
+      const sDocNo = String(s.docNumber || s.invoiceNumber || '').trim();
+      const sDocId = String(s.docId || s.invoiceId || '').trim();
+
+      // 出荷済（shipped）で、伝票番号またはIDが記録されているもの
+      if (s.status === 'shipped' && (sDocNo || sDocId)) {
+        // 見積書（EST-）、または有効な確定伝票に存在しない伝票番号/IDの場合
+        const isEstimate = sDocNo.startsWith('EST-') || (s.note && s.note.includes('EST-'));
+        const isValid = (sDocNo && validDocNumbers.has(sDocNo)) || (sDocId && validDocIds.has(sDocId));
+
+        if (isEstimate || !isValid) {
+          console.log(`【シリアル整合復帰】存在しない/削除/取消伝票(${sDocNo})に紐付いていたシリアル ${s.serialNumber} を在庫中に自動復帰`);
+          s.status = s.isBundled ? 'bundled' : 'in_stock';
+          s.clientName = '';
+          s.customerName = '';
+          s.endUserName = '';
+          s.shipDate = '';
+          s.shippedDate = '';
+          s.docNumber = '';
+          s.docId = '';
+          s.invoiceNumber = '';
+          s.invoiceId = '';
+          s.updatedAt = new Date().toISOString();
+          modified = true;
+          updatedSerials.push({
+            serialNumber: s.serialNumber,
+            docNumber: '(削除/取消伝票解除)',
+            clientName: '',
+            itemName: s.itemName || ''
+          });
+
+          // セット品化された本体の場合、組込バッテリーおよび急速充電器も連動して在庫中に復帰
+          if (s.isBundled) {
+            const sSnNorm = String(s.serialNumber).trim().toUpperCase();
+            if (Array.isArray(s.batterySerials)) {
+              s.batterySerials.forEach(bSn => {
+                const bat = serialMap.get(String(bSn).trim().toUpperCase());
+                if (bat) {
+                  bat.status = 'bundled';
+                  bat.clientName = '';
+                  bat.customerName = '';
+                  bat.endUserName = '';
+                  bat.shipDate = '';
+                  bat.shippedDate = '';
+                  bat.docNumber = '';
+                  bat.docId = '';
+                  bat.invoiceNumber = '';
+                  bat.invoiceId = '';
+                  bat.updatedAt = new Date().toISOString();
+                }
+              });
+            }
+            if (s.chargerSerial) {
+              const chg = serialMap.get(String(s.chargerSerial).trim().toUpperCase());
+              if (chg) {
+                chg.status = 'bundled';
+                chg.clientName = '';
+                chg.customerName = '';
+                chg.endUserName = '';
+                chg.shipDate = '';
+                chg.shippedDate = '';
+                chg.docNumber = '';
+                chg.docId = '';
+                chg.invoiceNumber = '';
+                chg.invoiceId = '';
+                chg.updatedAt = new Date().toISOString();
+              }
+            }
+            list.forEach(c => {
+              if (c && c.bundledWith && String(c.bundledWith).trim().toUpperCase() === sSnNorm) {
+                c.status = 'bundled';
+                c.clientName = '';
+                c.customerName = '';
+                c.endUserName = '';
+                c.shipDate = '';
+                c.shippedDate = '';
+                c.docNumber = '';
+                c.docId = '';
+                c.invoiceNumber = '';
+                c.invoiceId = '';
+                c.updatedAt = new Date().toISOString();
+              }
+            });
+          }
+        }
+      }
+    });
+
+    // 3. 【社内デモ機(N8460)の絶対保護サニタイズ】
+    // 過去のキャッシュや古い同期データで N8460 が出荷済み・本田塗料店に誤認されていても確実に「デモ機」に隔離
+    const n8460 = serialMap.get('N8460');
+    if (n8460) {
+      if (n8460.status !== 'demo' || n8460.docNumber || n8460.clientName) {
+        n8460.status = 'demo';
+        n8460.clientName = '';
+        n8460.customerName = '';
+        n8460.endUserName = '';
+        n8460.shipDate = '';
+        n8460.shippedDate = '';
+        n8460.docNumber = '';
+        n8460.invoiceNumber = '';
+        n8460.docId = '';
+        n8460.invoiceId = '';
+        n8460.note = 'デモ機';
+        n8460.updatedAt = new Date().toISOString();
+        modified = true;
+      }
+    }
+
+    if (modified) {
+      localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(list));
+      saveServerInventorySerials(list).catch(() => { });
+      console.log(`【シリアル伝票出荷引落】全 ${updatedSerials.length} 件のシリアルを発行伝票から出荷済みに引き落としました:`, updatedSerials);
+      // 在庫マスタ連動
+      syncInventoryStockFromSerials();
+    }
+
+    return { updatedCount: updatedSerials.length, updatedSerials, validDocCount };
+  } catch (err) {
+    console.error('syncInventorySerialsFromIssuedDocs エラー:', err);
+    return { updatedCount: 0, updatedSerials: [], validDocCount: 0 };
   }
 }
 function saveBatchInventorySerials(serialsArray = []) {
@@ -10270,7 +11141,7 @@ function saveBatchInventorySerials(serialsArray = []) {
     serialsArray.forEach(item => {
       if (!item || !item.serialNumber) return;
       const sn = String(item.serialNumber).trim().toUpperCase();
-      
+
       // 再登録時は削除フラグ解除
       removeDeletedSerial(sn);
 
@@ -10308,8 +11179,8 @@ function saveBatchInventorySerials(serialsArray = []) {
 
     const updatedList = Array.from(snMap.values());
     localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(updatedList));
-    saveServerInventorySerials(updatedList).catch(() => {});
-    
+    saveServerInventorySerials(updatedList).catch(() => { });
+
     // 在庫マスタ連動
     syncInventoryStockFromSerials();
     return addedCount;
@@ -10318,11 +11189,16 @@ function saveBatchInventorySerials(serialsArray = []) {
     return 0;
   }
 }
-function getAvailableSerialsByItem(inventoryIdOrName) {
+function getAvailableSerialsByItem(inventoryIdOrName, options = {}) {
   const list = getInventorySerialList();
   const targetKey = String(inventoryIdOrName || '').trim();
-  const isTargetDp5000Body = targetKey === 'inv_dp5000_body' || 
-    (targetKey.includes('DP-5000') && !targetKey.includes('MS') && !targetKey.includes('ベーシックセット') && !targetKey.includes('バッテリー'));
+  const targetUpper = targetKey.toUpperCase();
+
+  const isTargetDp5000Body = targetKey === 'inv_dp5000_body' ||
+    (targetUpper.includes('DP-5000') && !targetUpper.includes('MS') && !targetUpper.includes('ベーシックセット') && !targetUpper.includes('バッテリー') && !targetUpper.includes('充電器'));
+  const isTargetChg = targetKey === 'inv_dp5000_chg' || targetUpper.includes('充電器') || targetUpper.includes('CHG');
+  const isTargetBat = !isTargetChg && (targetKey === 'inv_dp5000_bat' || targetUpper.includes('バッテリー') || targetUpper.includes('BAT'));
+  const isTargetMs = targetKey === 'inv_2' || targetUpper.includes('DP-MS') || targetUpper.includes('スプレッダー');
 
   return list.filter(s => {
     if (!s) return false;
@@ -10330,33 +11206,46 @@ function getAvailableSerialsByItem(inventoryIdOrName) {
 
     const sId = String(s.itemId || s.inventoryId || '').trim();
     const sName = String(s.itemName || '').trim();
+    const sNameUpper = sName.toUpperCase();
+    const snUpper = String(s.serialNumber || '').trim().toUpperCase();
 
-    // 1. 完全一致
-    if (sId === targetKey || sName === targetKey) {
-      if (isTargetDp5000Body && s.isBundled) return false;
+    const isThisChg = (sId === 'inv_dp5000_chg' || s.itemType === 'charger' || sNameUpper.includes('充電器') || (s.targetSku && s.targetSku.includes('CHG')));
+    const isThisBat = !isThisChg && (sId === 'inv_dp5000_bat' || s.itemType === 'battery' || sNameUpper.includes('バッテリー') || s.isCompanyOnly);
+    const isThisMs = !isThisChg && !isThisBat && (sId === 'inv_2' || sNameUpper.includes('DP-MS') || sNameUpper.includes('スプレッダー'));
+    const isThisDp5kBody = !isThisChg && !isThisBat && !isThisMs && (sId === 'inv_dp5000_body' || sNameUpper.includes('DP-5000') || /^N\s*\d{4,12}$/i.test(snUpper));
+
+    // 1. DP-5000 本体の引当
+    if (isTargetDp5000Body) {
+      if (!isThisDp5kBody) return false;
+      // 新規キッティング専用（onlyUnbundled: true）の時のみ未セット品に絞る。
+      // 納品書・請求書からの引当では、保守から戻した本体やセット品化済本体も含めすべて選択可能！
+      if (options.onlyUnbundled && s.isBundled) return false;
       return true;
     }
 
-    // 2. DP-5000 本体の場合の柔軟マッチング（未セット品のみ）
-    if (isTargetDp5000Body) {
-      if (s.isBundled) return false;
-      if (sId === 'inv_dp5000_body') return true;
-      if (sName.includes('本体')) return true;
-      if (sName.includes('DP-5000') && !sName.includes('MS') && !sName.includes('バッテリー')) return true;
-      return false;
-    }
-
-    // 3. バッテリーの場合（組込済みは除外）
-    if (targetKey === 'inv_dp5000_bat' || targetKey.includes('バッテリー')) {
+    // 2. 急速充電器の引当
+    if (isTargetChg) {
+      if (!isThisChg) return false;
+      // 他の本体に組込中のものは除外（在庫中未組込のもののみ）
       if (s.status === 'bundled' || s.bundledWith) return false;
-      if (sId === 'inv_dp5000_bat' || sName.includes('バッテリー')) return true;
-      return false;
+      return true;
     }
 
-    // 4. スプレッダーの場合
-    if (targetKey === 'inv_2' || targetKey.includes('スプレッダー') || targetKey.includes('DP-MS')) {
-      if (sId === 'inv_2' || sName.includes('DP-MS') || sName.includes('スプレッダー')) return true;
-      return false;
+    // 3. バッテリーの引当
+    if (isTargetBat) {
+      if (!isThisBat) return false;
+      if (s.status === 'bundled' || s.bundledWith) return false;
+      return true;
+    }
+
+    // 4. スプレッダーの引当
+    if (isTargetMs) {
+      return isThisMs;
+    }
+
+    // 5. 完全一致またはフォールバック
+    if (sId === targetKey || sName === targetKey) {
+      return true;
     }
 
     return false;
@@ -10377,7 +11266,7 @@ function getAvailableBundleComponents() {
     // 在庫中または出荷済みで未セット化のもの
     if (s.status !== 'in_stock' && s.status !== 'shipped') return false;
     const itemName = String(s.itemName || '').toUpperCase();
-    return s.inventoryId === 'inv_dp5000_body' || (itemName.includes('DP-5000') && !itemName.includes('MS'));
+    return s.inventoryId === 'inv_dp5000_body' || s.itemId === 'inv_dp5000_body' || (itemName.includes('DP-5000') && !itemName.includes('MS') && !itemName.includes('バッテリー') && !itemName.includes('充電器')) || /^N\s*\d{4,12}$/i.test(s.serialNumber || '');
   });
 
   // 2. 在庫中かつ未セット化のリチウムイオンバッテリー
@@ -10385,19 +11274,28 @@ function getAvailableBundleComponents() {
     if (!s || s.status !== 'in_stock') return false;
     if (s.status === 'bundled' || s.bundledWith) return false;
     const itemName = String(s.itemName || '').toUpperCase();
-    return s.inventoryId === 'inv_dp5000_bat' || s.itemType === 'battery' || itemName.includes('バッテリー');
+    return s.inventoryId === 'inv_dp5000_bat' || s.itemId === 'inv_dp5000_bat' || s.itemType === 'battery' || itemName.includes('バッテリー');
   });
 
-  // 3. 専用急速充電器の在庫数
+  // 3. 在庫中かつ未組込の専用急速充電器
+  const availableChargers = serials.filter(s => {
+    if (!s || s.status !== 'in_stock') return false;
+    if (s.status === 'bundled' || s.bundledWith) return false;
+    const itemName = String(s.itemName || '').toUpperCase();
+    return s.inventoryId === 'inv_dp5000_chg' || s.itemId === 'inv_dp5000_chg' || s.itemType === 'charger' || itemName.includes('充電器');
+  });
+
+  // 急速充電器の在庫マスタ
   const chgItem = invList.find(it => it.id === 'inv_dp5000_chg' || (it.name && it.name.includes('急速充電器')));
-  const chargerStock = chgItem ? Number(chgItem.currentStock || 0) : 0;
+  const chargerStock = Math.max(availableChargers.length, chgItem ? Number(chgItem.currentStock || 0) : 0);
 
   return {
     bodies: availableBodies,
     batteries: availableBatteries,
+    chargers: availableChargers,
     chargerStock,
     chargerItem: chgItem || null,
-    possibleSetCount: Math.min(availableBodies.length, Math.floor(availableBatteries.length / 2), chargerStock)
+    possibleSetCount: Math.min(availableBodies.length, Math.floor(availableBatteries.length / 2), Math.max(availableChargers.length, chargerStock))
   };
 }
 
@@ -10405,10 +11303,11 @@ function getAvailableBundleComponents() {
  * DP-5000本体とバッテリー2個・急速充電器1個をセット品化（キッティング）
  * @param {string} bodySerialNumber - DP-5000本体のシリアル番号（例: "N8460"）
  * @param {string[]} batterySerialNumbers - 選択されたリチウムイオンバッテリーのシリアル番号（2個）
+ * @param {string} chargerSerialNumber - 選択された専用急速充電器のシリアル番号（1個）
  * @param {Object} [options] - オプション
  * @returns {{ success: boolean, message?: string }}
  */
-function assembleDP5000Bundle(bodySerialNumber, batterySerialNumbers, options = {}) {
+function assembleDP5000Bundle(bodySerialNumber, batterySerialNumbers, chargerSerialNumber = '', options = {}) {
   try {
     if (!bodySerialNumber) {
       return { success: false, message: 'DP-5000本体のシリアル番号が指定されていません。' };
@@ -10422,6 +11321,7 @@ function assembleDP5000Bundle(bodySerialNumber, batterySerialNumbers, options = 
 
     const cleanBodySn = String(bodySerialNumber).trim().toUpperCase();
     const cleanBatSns = batterySerialNumbers.map(s => String(s).trim().toUpperCase());
+    const cleanChgSn = chargerSerialNumber ? String(chargerSerialNumber).trim().toUpperCase() : '';
 
     // 1. シリアルリストの取得と検証
     const serialList = getInventorySerialList();
@@ -10448,6 +11348,18 @@ function assembleDP5000Bundle(bodySerialNumber, batterySerialNumbers, options = 
       }
     }
 
+    // 急速充電器の検証（シリアル指定がある場合）
+    let chgSerial = null;
+    if (cleanChgSn) {
+      chgSerial = serialList.find(s => s && String(s.serialNumber).trim().toUpperCase() === cleanChgSn);
+      if (!chgSerial) {
+        return { success: false, message: `専用急速充電器(S/N: ${cleanChgSn})が見つかりません。` };
+      }
+      if (chgSerial.status !== 'in_stock') {
+        return { success: false, message: `専用急速充電器(S/N: ${cleanChgSn})は在庫中ではありません。(状態: ${chgSerial.status})` };
+      }
+    }
+
     // 2. 在庫マスタから急速充電器の在庫数を確認・減算
     const invList = getInventoryList();
     const chgItem = invList.find(it => it.id === 'inv_dp5000_chg' || (it.name && it.name.includes('急速充電器')));
@@ -10469,7 +11381,7 @@ function assembleDP5000Bundle(bodySerialNumber, batterySerialNumbers, options = 
       type: 'out',
       qty: 1,
       delta: -1,
-      reason: `DP-5000(S/N: ${cleanBodySn})セット品化に伴う自動出庫`,
+      reason: `DP-5000(S/N: ${cleanBodySn})セット品化に伴う出庫${cleanChgSn ? ` (充電器S/N: ${cleanChgSn})` : ''}`,
       currentStock: chgItem.currentStock,
       timestamp: nowIso
     });
@@ -10532,50 +11444,246 @@ function assembleDP5000Bundle(bodySerialNumber, batterySerialNumbers, options = 
       if (bat) {
         bat.status = isBodyShipped ? 'shipped' : 'bundled';
         bat.bundledWith = cleanBodySn;
-        bat.bundledAt = new Date().toISOString();
+        bat.bundledAt = nowIso;
         if (isBodyShipped) {
           bat.clientName = bodySerial.clientName || '';
+          bat.customerName = bodySerial.clientName || '';
           bat.endUserName = bodySerial.endUserName || '';
+          bat.shipDate = bodySerial.shipDate || bodySerial.shippedDate || '';
           bat.shippedDate = bodySerial.shippedDate || bodySerial.shipDate || '';
           bat.docNumber = bodySerial.docNumber || bodySerial.invoiceNumber || '';
+          bat.invoiceNumber = bodySerial.invoiceNumber || bodySerial.docNumber || '';
           bat.docId = bodySerial.docId || bodySerial.invoiceId || '';
         }
         const baseNote = (bat.note || '').replace(/\s*\[DP-5000\([^)]+\)セット組込\]/g, '').trim();
         bat.note = (baseNote ? baseNote + ' ' : '') + `[DP-5000(${cleanBodySn})セット組込]`;
-        bat.updatedAt = new Date().toISOString();
+        bat.updatedAt = nowIso;
       }
     });
 
-    // 4. DP-5000本体をセット品化済みに更新
+    // 4. 急速充電器のステータスを更新
+    if (chgSerial) {
+      chgSerial.status = isBodyShipped ? 'shipped' : 'bundled';
+      chgSerial.bundledWith = cleanBodySn;
+      chgSerial.bundledAt = nowIso;
+      if (isBodyShipped) {
+        chgSerial.clientName = bodySerial.clientName || '';
+        chgSerial.customerName = bodySerial.clientName || '';
+        chgSerial.endUserName = bodySerial.endUserName || '';
+        chgSerial.shipDate = bodySerial.shipDate || bodySerial.shippedDate || '';
+        chgSerial.shippedDate = bodySerial.shippedDate || bodySerial.shipDate || '';
+        chgSerial.docNumber = bodySerial.docNumber || bodySerial.invoiceNumber || '';
+        chgSerial.invoiceNumber = bodySerial.invoiceNumber || bodySerial.docNumber || '';
+        chgSerial.docId = bodySerial.docId || bodySerial.invoiceId || '';
+      }
+      const chgBaseNote = (chgSerial.note || '').replace(/\s*\[DP-5000\([^)]+\)セット組込\]/g, '').trim();
+      chgSerial.note = (chgBaseNote ? chgBaseNote + ' ' : '') + `[DP-5000(${cleanBodySn})セット組込]`;
+      chgSerial.updatedAt = nowIso;
+    }
+
+    // 5. DP-5000本体をセット品化済みに更新
     bodySerial.isBundled = true;
     bodySerial.bundleName = 'DP-5000 ベーシックセット バッテリー２個';
     bodySerial.batterySerials = cleanBatSns;
+    bodySerial.chargerSerial = cleanChgSn;
     bodySerial.chargerDeducted = true;
-    bodySerial.bundledAt = new Date().toISOString();
-    const bodyBaseNote = (bodySerial.note || '').replace(/\s*\[セット品化済:[^\]]+\]/g, '').trim();
-    bodySerial.note = (bodyBaseNote ? bodyBaseNote + ' ' : '') + `[セット品化済: バッテリー ${cleanBatSns.join(', ')} / 急速充電器1個付属]`;
-    bodySerial.updatedAt = new Date().toISOString();
+    bodySerial.bundledAt = nowIso;
+    const bodyBaseNote = (bodySerial.note || '').replace(/\s*\[セット品化済:[^\]]+\]/g, '').replace(/\s*\[セット構成:[^\]]+\]/g, '').trim();
+    bodySerial.note = (bodyBaseNote ? bodyBaseNote + ' ' : '') + `[セット構成: 🔋 ${cleanBatSns.join(', ')} / ⚡ 充電器 ${cleanChgSn || '付属'}]`;
+    bodySerial.updatedAt = nowIso;
 
-    // 5. 保存と全体同期
+    // 6. 保存と全体同期
     localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(invList));
-    saveServerInventory(invList).catch(() => {});
+    saveServerInventory(invList).catch(() => { });
 
     localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(serialList));
-    saveServerInventorySerials(serialList).catch(() => {});
+    saveServerInventorySerials(serialList).catch(() => { });
 
     // 在庫マスタとシリアルの数値を完全同期
     syncInventoryStockFromSerials();
 
-    console.log(`【セット品化完了】本体: ${cleanBodySn}, バッテリー: ${cleanBatSns.join(', ')}, 充電器 -1`);
+    console.log(`【セット品化完了】本体: ${cleanBodySn}, バッテリー: ${cleanBatSns.join(', ')}, 充電器: ${cleanChgSn || '-1個'}`);
     return {
       success: true,
       bodySerialNumber: cleanBodySn,
       batterySerialNumbers: cleanBatSns,
-      message: `DP-5000本体(S/N: ${cleanBodySn})をセット品化しました！バッテリー(${cleanBatSns.join(', ')}) 2個と急速充電器 1個を自動出庫しました。`
+      chargerSerialNumber: cleanChgSn,
+      message: `DP-5000本体(S/N: ${cleanBodySn})をセット品化しました！バッテリー(${cleanBatSns.join(', ')}) 2個と急速充電器(${cleanChgSn || '1個'})を出庫・紐付けました。`
     };
   } catch (e) {
     console.error('Failed to assemble DP-5000 bundle:', e);
     return { success: false, message: e.message || 'セット品化処理中にエラーが発生しました。' };
+  }
+}
+
+/**
+ * 既存（セット済含む）の DP-5000 本体に対して、急速充電器シリアルおよびバッテリーシリアルを割り当て・変更する
+ * @param {string} bodySerialNumber - DP-5000 本体のシリアル番号
+ * @param {string[]} batterySerialNumbers - バッテリーシリアル（空なら既存維持）
+ * @param {string} chargerSerialNumber - 割り当てる専用急速充電器のシリアル番号
+ * @returns {{ success: boolean, message?: string }}
+ */
+function assignBundleComponentsToBody(bodySerialNumber, batterySerialNumbers = [], chargerSerialNumber = '') {
+  try {
+    if (!bodySerialNumber) return { success: false, message: '本体シリアル番号が指定されていません。' };
+    const cleanBodySn = String(bodySerialNumber).trim().toUpperCase();
+    const cleanChgSn = chargerSerialNumber ? String(chargerSerialNumber).trim().toUpperCase() : '';
+    const cleanBatSns = Array.isArray(batterySerialNumbers) ? batterySerialNumbers.map(s => String(s).trim().toUpperCase()).filter(Boolean) : [];
+
+    const serialList = getInventorySerialList();
+    const bodySerial = serialList.find(s => s && String(s.serialNumber).trim().toUpperCase() === cleanBodySn);
+    if (!bodySerial) return { success: false, message: `DP-5000本体 (S/N: ${cleanBodySn}) が台帳に見つかりません。` };
+
+    const nowIso = new Date().toISOString();
+    const isBodyShipped = bodySerial.status === 'shipped';
+
+    // 1. 旧充電器の紐付け解除（もし別の充電器が割り当てられていた場合）
+    if (bodySerial.chargerSerial && bodySerial.chargerSerial !== cleanChgSn) {
+      const oldChg = serialList.find(s => s && String(s.serialNumber).trim().toUpperCase() === String(bodySerial.chargerSerial).trim().toUpperCase());
+      if (oldChg && oldChg.bundledWith === cleanBodySn) {
+        oldChg.bundledWith = '';
+        oldChg.status = 'in_stock';
+        oldChg.clientName = '';
+        oldChg.customerName = '';
+        oldChg.endUserName = '';
+        oldChg.shipDate = '';
+        oldChg.shippedDate = '';
+        oldChg.docNumber = '';
+        oldChg.invoiceNumber = '';
+        oldChg.docId = '';
+        oldChg.note = (oldChg.note || '').replace(/\s*\[DP-5000\([^)]+\)セット組込\]/g, '').replace(/\s*\[セット組込済\s*\(本体:[^)]+\)\]/g, '').trim();
+        oldChg.updatedAt = nowIso;
+      }
+    }
+
+    // 1.5. 旧バッテリーの紐付け解除（新たに指定されたバッテリー以外で、以前この本体に紐付いていたバッテリー）
+    if (cleanBatSns.length > 0) {
+      const oldBatSns = Array.isArray(bodySerial.batterySerials) ? bodySerial.batterySerials.map(s => String(s).trim().toUpperCase()) : [];
+      oldBatSns.forEach(oldSn => {
+        if (!cleanBatSns.includes(oldSn)) {
+          const oldBat = serialList.find(s => s && String(s.serialNumber).trim().toUpperCase() === oldSn);
+          if (oldBat && oldBat.bundledWith === cleanBodySn) {
+            oldBat.bundledWith = '';
+            oldBat.status = 'in_stock';
+            oldBat.clientName = '';
+            oldBat.customerName = '';
+            oldBat.endUserName = '';
+            oldBat.shipDate = '';
+            oldBat.shippedDate = '';
+            oldBat.docNumber = '';
+            oldBat.invoiceNumber = '';
+            oldBat.docId = '';
+            oldBat.note = (oldBat.note || '').replace(/\s*\[DP-5000\([^)]+\)セット組込\]/g, '').replace(/\s*\[セット組込済\s*\(本体:[^)]+\)\]/g, '').trim();
+            oldBat.updatedAt = nowIso;
+          }
+        }
+      });
+    }
+
+    // 2. 新充電器シリアルの紐付け
+    if (cleanChgSn) {
+      let chgObj = serialList.find(s => s && String(s.serialNumber).trim().toUpperCase() === cleanChgSn);
+      if (!chgObj) {
+        // もし台帳に未登録なら自動登録
+        chgObj = {
+          id: 'sn_' + cleanChgSn,
+          serialNumber: cleanChgSn,
+          itemId: 'inv_dp5000_chg',
+          itemName: 'PSE認証 専用急速充電器',
+          itemType: 'charger',
+          status: 'in_stock',
+          unitCost: 7700,
+          costPrice: 7700,
+          createdAt: nowIso
+        };
+        serialList.push(chgObj);
+      }
+
+      chgObj.bundledWith = cleanBodySn;
+      chgObj.status = isBodyShipped ? 'shipped' : 'bundled';
+      if (isBodyShipped) {
+        chgObj.clientName = bodySerial.clientName || '';
+        chgObj.customerName = bodySerial.clientName || '';
+        chgObj.endUserName = bodySerial.endUserName || '';
+        chgObj.shipDate = bodySerial.shipDate || bodySerial.shippedDate || '';
+        chgObj.shippedDate = bodySerial.shippedDate || bodySerial.shipDate || '';
+        chgObj.docNumber = bodySerial.docNumber || bodySerial.invoiceNumber || '';
+        chgObj.invoiceNumber = bodySerial.invoiceNumber || bodySerial.docNumber || '';
+        chgObj.docId = bodySerial.docId || bodySerial.invoiceId || '';
+      } else {
+        chgObj.clientName = '';
+        chgObj.customerName = '';
+        chgObj.endUserName = '';
+        chgObj.shipDate = '';
+        chgObj.shippedDate = '';
+        chgObj.docNumber = '';
+        chgObj.invoiceNumber = '';
+        chgObj.docId = '';
+      }
+      const baseNote = (chgObj.note || '').replace(/\s*\[DP-5000\([^)]+\)セット組込\]/g, '').trim();
+      chgObj.note = (baseNote ? baseNote + ' ' : '') + `[DP-5000(${cleanBodySn})セット組込]`;
+      chgObj.updatedAt = nowIso;
+
+      bodySerial.chargerSerial = cleanChgSn;
+    }
+
+    // 3. バッテリーシリアルの更新（指定があれば）
+    if (cleanBatSns.length > 0) {
+      bodySerial.batterySerials = cleanBatSns;
+      cleanBatSns.forEach(bSn => {
+        const bat = serialList.find(s => s && String(s.serialNumber).trim().toUpperCase() === bSn);
+        if (bat) {
+          bat.bundledWith = cleanBodySn;
+          bat.status = isBodyShipped ? 'shipped' : 'bundled';
+          if (isBodyShipped) {
+            bat.clientName = bodySerial.clientName || '';
+            bat.customerName = bodySerial.clientName || '';
+            bat.endUserName = bodySerial.endUserName || '';
+            bat.shipDate = bodySerial.shipDate || bodySerial.shippedDate || '';
+            bat.shippedDate = bodySerial.shippedDate || bodySerial.shipDate || '';
+            bat.docNumber = bodySerial.docNumber || bodySerial.invoiceNumber || '';
+            bat.invoiceNumber = bodySerial.invoiceNumber || bodySerial.docNumber || '';
+            bat.docId = bodySerial.docId || bodySerial.invoiceId || '';
+          } else {
+            bat.clientName = '';
+            bat.customerName = '';
+            bat.endUserName = '';
+            bat.shipDate = '';
+            bat.shippedDate = '';
+            bat.docNumber = '';
+            bat.invoiceNumber = '';
+            bat.docId = '';
+          }
+          const baseBatNote = (bat.note || '').replace(/\s*\[DP-5000\([^)]+\)セット組込\]/g, '').replace(/\s*\[セット組込済\s*\(本体:[^)]+\)\]/g, '').trim();
+          bat.note = (baseBatNote ? baseBatNote + ' ' : '') + `[セット組込済 (本体: ${cleanBodySn})]`;
+          bat.updatedAt = nowIso;
+        }
+      });
+    }
+
+    bodySerial.isBundled = true;
+    bodySerial.bundleName = 'DP-5000 ベーシックセット バッテリー２個';
+    bodySerial.updatedAt = nowIso;
+
+    // 備考欄の更新
+    const batText = (bodySerial.batterySerials || []).join(', ') || '未割当';
+    const chgText = bodySerial.chargerSerial || '未割当';
+    const baseBodyNote = (bodySerial.note || '').replace(/\s*\[セット品化済:[^\]]+\]/g, '').replace(/\s*\[セット構成:[^\]]+\]/g, '').trim();
+    bodySerial.note = (baseBodyNote ? baseBodyNote + ' ' : '') + `[セット構成: 🔋 ${batText} / ⚡ 充電器 ${chgText}]`;
+
+    // 保存と同期
+    localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(serialList));
+    saveServerInventorySerials(serialList).catch(() => { });
+    syncInventoryStockFromSerials();
+
+    console.log(`【セット構成更新】本体: ${cleanBodySn}, 充電器: ${cleanChgSn}, バッテリー: ${batText}`);
+    return {
+      success: true,
+      message: `DP-5000本体 (S/N: ${cleanBodySn}) に急速充電器シリアル「${cleanChgSn || '未指定'}」を割り当てました！`
+    };
+  } catch (err) {
+    console.error('Failed to assign bundle components:', err);
+    return { success: false, message: err.message || '構成割り当て中にエラーが発生しました。' };
   }
 }
 
@@ -10679,23 +11787,33 @@ function disassembleDP5000Bundle(bodySerialNumber) {
     }
 
     // 3. 本体のセット品化フラグを解除し、明示的に「DP-5000 本体」として再定義
+    if (bodySerial.chargerSerial) {
+      const chgObj = serialList.find(s => s && String(s.serialNumber).trim().toUpperCase() === String(bodySerial.chargerSerial).trim().toUpperCase());
+      if (chgObj && chgObj.bundledWith === cleanBodySn) {
+        chgObj.bundledWith = '';
+        chgObj.status = 'in_stock';
+        chgObj.note = (chgObj.note || '').replace(/\s*\[DP-5000\([^)]+\)セット組込\]/g, '').trim();
+        chgObj.updatedAt = nowIso;
+      }
+    }
     bodySerial.isBundled = false;
     bodySerial.bundleName = '';
     bodySerial.itemId = 'inv_dp5000_body';
     bodySerial.inventoryId = 'inv_dp5000_body';
     bodySerial.itemName = 'DP-5000 本体';
     bodySerial.batterySerials = [];
+    bodySerial.chargerSerial = '';
     bodySerial.chargerDeducted = false;
     bodySerial.bundledAt = null;
-    bodySerial.note = (bodySerial.note || '').replace(/\s*\[セット品化済:[^\]]+\]/g, '').trim();
+    bodySerial.note = (bodySerial.note || '').replace(/\s*\[セット品化済:[^\]]+\]/g, '').replace(/\s*\[セット構成:[^\]]+\]/g, '').trim();
     bodySerial.updatedAt = new Date().toISOString();
 
     // 4. 保存と同期
     localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(invList));
-    saveServerInventory(invList).catch(() => {});
+    saveServerInventory(invList).catch(() => { });
 
     localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(serialList));
-    saveServerInventorySerials(serialList).catch(() => {});
+    saveServerInventorySerials(serialList).catch(() => { });
 
     syncInventoryStockFromSerials();
 
@@ -10711,10 +11829,17 @@ function disassembleDP5000Bundle(bodySerialNumber) {
 async function fetchServerInventorySerials() {
   try {
     const res = await apiFetch('inventory-serials', { cache: 'no-store' });
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        return data;
+    if (res && res.ok) {
+      const text = await res.text();
+      if (!text || !text.trim()) return null;
+      try {
+        const data = JSON.parse(text);
+        if (Array.isArray(data)) {
+          return data;
+        }
+      } catch (parseErr) {
+        console.warn('サーバーからのシリアル台帳JSONパース失敗:', parseErr);
+        return null;
       }
     }
   } catch (e) {
@@ -10760,7 +11885,7 @@ async function syncInventorySerialsWithServer() {
       const mergedSerials = Array.from(serialMap.values());
       localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(mergedSerials));
       if (hasLocalOnly) {
-        saveServerInventorySerials(mergedSerials).catch(() => {});
+        saveServerInventorySerials(mergedSerials).catch(() => { });
       }
       console.log(`[シリアル同期完了] 全 ${mergedSerials.length} 件のシリアル台帳をサーバー・ローカルで完全同期しました`);
       return mergedSerials;
@@ -10826,12 +11951,12 @@ function getInventoryHistoryWithShipments(item) {
     // したがって、baseLogs（item.history）に含まれる過去の重複・汚染ロットログおよびロット削除ログはすべて完全除外する
     if (/混載ロット|ロット入庫|LOT-[0-9]+/i.test(r) || /LOT-[0-9]+/i.test(String(h.id || '')) || r.includes('ロット削除')) return;
 
-    // 確定出荷引当や伝票連携などの自動生成ログは伝票履歴（docs）から動的取得するため除外
-    if (r.includes('確定出荷引当') || r.includes('伝票連携') || r.includes('出荷納品') || (r.includes('セット仕入') && !isBundle)) return;
+    // 確定出荷引当や確定発行取消、在庫復元、伝票連携などの自動生成ログは伝票履歴（docs）から動的取得するため除外
+    if (r.includes('確定出荷引当') || r.includes('確定発行取消') || r.includes('在庫復元') || r.includes('伝票連携') || r.includes('出荷納品') || (r.includes('セット仕入') && !isBundle)) return;
 
     // 急速充電器・バッテリー・本体の過去の重複・汚染ログを除外
-    if (isChg && (r.includes('国内仕入入庫') || r.includes('急速充電器在庫戻し') || r.includes('セット品化に伴う自動出庫'))) return;
-    if (isBat && (r.includes('国内仕入') || r.includes('在庫戻し') || r.includes('自動出庫'))) return;
+    if (isChg && (r.includes('国内仕入入庫') || r.includes('急速充電器在庫戻し') || r.includes('セット品化に伴う自動出庫') || r.includes('確定発行取消') || r.includes('在庫復元'))) return;
+    if (isBat && (r.includes('国内仕入') || r.includes('在庫戻し') || r.includes('自動出庫') || r.includes('確定発行取消') || r.includes('在庫復元'))) return;
 
     // 個別のセット品化ログはサマリーとして集約表示するためbaseLogsからは除外
     if (r.includes('セット品化組立完了') || r.includes('セット品化組込出庫')) return;
@@ -11166,6 +12291,13 @@ if (typeof window !== 'undefined') {
   window.deleteInventorySerial = deleteInventorySerial;
   window.updateSerialDetails = updateSerialDetails;
   window.updateSerialStatus = updateSerialStatus;
+  window.getAvailableSerialsByItem = getAvailableSerialsByItem;
+  window.getAvailableBundleComponents = getAvailableBundleComponents;
+  window.assembleDP5000Bundle = assembleDP5000Bundle;
+  window.disassembleDP5000Bundle = disassembleDP5000Bundle;
+  window.assignBundleComponentsToBody = assignBundleComponentsToBody;
+  window.findClientByCode = findClientByCode;
+  window.generateUniqueClientCode = generateUniqueClientCode;
   window.calculateBundleStockAndCost = calculateBundleStockAndCost;
   window.deleteManualInventoryLog = deleteManualInventoryLog;
   window.updateManualInventoryLog = updateManualInventoryLog;
@@ -11191,10 +12323,13 @@ if (typeof window !== 'undefined') {
   window.syncInventorySerialsWithServer = syncInventorySerialsWithServer;
   window.fetchServerInventoryLots = fetchServerInventoryLots;
   window.fetchServerInventorySerials = fetchServerInventorySerials;
+  window.syncInventorySerialsFromIssuedDocs = syncInventorySerialsFromIssuedDocs;
   window.initInventoryFromServer = initInventoryFromServer;
   window.loadIssuerProfile = loadIssuerProfile;
   window.saveIssuerProfile = saveIssuerProfile;
-  window.restoreAttendanceFromBackup = function() {
+  window.sanitizeDocSerialsConsistency = sanitizeDocSerialsConsistency;
+  window.sanitizeHondaPaintDocAndSerials = sanitizeHondaPaintDocAndSerials;
+  window.restoreAttendanceFromBackup = function () {
     const backup = localStorage.getItem(KEYS.ATTENDANCE + '_backup');
     if (backup && backup !== '[]') {
       localStorageSetItemAndSync(KEYS.ATTENDANCE, backup);
@@ -11242,7 +12377,7 @@ let currentDoc = null;
 const DOM = {
   // 書類種別
   docTypeBtns: document.querySelectorAll('.doc-type-btn'),
-  
+
   // タブ
   tabBtns: document.querySelectorAll('.editor-tab-btn'),
   tabPanes: document.querySelectorAll('.tab-pane'),
@@ -11259,6 +12394,7 @@ const DOM = {
 
   // 取引先入力
   inputClientCode: document.getElementById('inputClientCode'),
+  btnAutoGenerateDocClientCode: document.getElementById('btnAutoGenerateDocClientCode'),
   inputClientName: document.getElementById('inputClientName'),
   inputEndUserName: document.getElementById('inputEndUserName'),
   inputClientHonorific: document.getElementById('inputClientHonorific'),
@@ -11290,6 +12426,8 @@ const DOM = {
   stampPreviewThumb: document.getElementById('stampPreviewThumb'),
 
   // プレビュー側要素
+  sheetPageIndicator1Text: document.getElementById('sheetPageIndicator1Text'),
+  subSheetsContainer: document.getElementById('subSheetsContainer'),
   sheetEndUserRow: document.getElementById('sheetEndUserRow'),
   sheetEndUserName: document.getElementById('sheetEndUserName'),
   sheetDocTitle: document.getElementById('sheetDocTitle'),
@@ -11308,7 +12446,7 @@ const DOM = {
   sheetClientAddress: document.getElementById('sheetClientAddress'),
   sheetClientContact: document.getElementById('sheetClientContact'),
   sheetLeadMessage: document.getElementById('sheetLeadMessage'),
-  
+
   sheetIssuerName: document.getElementById('sheetIssuerName'),
   sheetIssuerInvoiceNo: document.getElementById('sheetIssuerInvoiceNo'),
   sheetIssuerZip: document.getElementById('sheetIssuerZip'),
@@ -11440,6 +12578,7 @@ const DOM = {
   clientMasterFormTitle: document.getElementById('clientMasterFormTitle'),
   clientMasterEditId: document.getElementById('clientMasterEditId'),
   clientMasterInputCode: document.getElementById('clientMasterInputCode'),
+  btnAutoGenerateClientCode: document.getElementById('btnAutoGenerateClientCode'),
   clientMasterCodeWarn: document.getElementById('clientMasterCodeWarn'),
   docClientCodeWarn: document.getElementById('docClientCodeWarn'),
   clientMasterInputName: document.getElementById('clientMasterInputName'),
@@ -12097,6 +13236,95 @@ function initApp() {
   // 起動時はポータルMENUを表示（初回起動時）
   switchAppView('portal');
   updatePortalInfo();
+
+  // ユーザー操作イベント駆動型のクラウド最新同期ハンドラ（定期タイマーは廃止）
+  let _lastEventSyncTime = 0;
+  let _isSyncingEvent = false;
+
+  async function triggerEventDrivenSync(reason = 'user_action') {
+    const now = Date.now();
+    // 連続操作時の過剰リクエスト防止（直前同期から4秒以内の重複はスキップ）
+    if (_isSyncingEvent || (now - _lastEventSyncTime < 4000)) return;
+    // ユーザーがモーダルで入力編集中なら再描画による入力破断を防止するためスキップ
+    const isModalOpen = document.querySelector('.modal.active') || document.querySelector('[id$="Modal"][style*="display: block"]');
+    if (isModalOpen) return;
+
+    _isSyncingEvent = true;
+    try {
+      console.log(`【イベント駆動同期】実行開始（トリガー: ${reason}, 対象画面: ${currentAppView}）`);
+      
+      // 画面に応じた専門クラウド同期処理
+      if (currentAppView === 'attendance') {
+        if (typeof syncAttendanceWithServer === 'function') await syncAttendanceWithServer();
+      } else if (currentAppView === 'expenses') {
+        if (typeof syncExpensesWithServer === 'function') await syncExpensesWithServer();
+      } else if (currentAppView === 'inventory' || currentAppView === 'accounting') {
+        if (typeof syncInventoryLotsWithServer === 'function') await syncInventoryLotsWithServer();
+        if (typeof fetchServerInventory === 'function') await fetchServerInventory();
+        if (typeof syncInventorySerialsWithServer === 'function') await syncInventorySerialsWithServer();
+      } else if (currentAppView === 'items') {
+        if (typeof fetchServerMasterItems === 'function') await fetchServerMasterItems();
+      } else if (currentAppView === 'clients') {
+        if (typeof fetchServerMasterClients === 'function') await fetchServerMasterClients();
+      } else if (currentAppView === 'portal') {
+        if (typeof syncAttendanceWithServer === 'function') syncAttendanceWithServer().catch(() => {});
+      }
+
+      // 全画面共通のUI最新再描画
+      if (typeof refreshCurrentViewUI === 'function') {
+        refreshCurrentViewUI();
+      }
+
+      _lastEventSyncTime = Date.now();
+    } catch (err) {
+      console.warn('イベント駆動同期スキップ:', err);
+    } finally {
+      _isSyncingEvent = false;
+    }
+  }
+  window.triggerEventDrivenSync = triggerEventDrivenSync;
+
+  // 操作イベントの監視（ウィンドウ復帰・タブ切替・フォーカス時）
+  window.addEventListener('focus', () => triggerEventDrivenSync('window_focus'));
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') triggerEventDrivenSync('visibility_visible');
+  });
+
+  // iPhone ホーム画面（PWA / Webクリップ）復帰ガード
+  // アプリがバックグラウンドに5分以上置かれていた場合、キャッシュを避けて自動で最新状態へ再読み込み
+  let _lastAppVisibleTime = Date.now();
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      const now = Date.now();
+      const elapsedMinutes = (now - _lastAppVisibleTime) / (1000 * 60);
+      if (elapsedMinutes >= 5) {
+        console.log(`【iPhone復帰ガード】前回から ${Math.floor(elapsedMinutes)} 分経過したため最新状態に強制再読み込みします`);
+        const url = new URL(window.location.href);
+        url.searchParams.set('_t', Date.now());
+        window.location.replace(url.toString());
+        return;
+      }
+      _lastAppVisibleTime = now;
+    } else {
+      _lastAppVisibleTime = Date.now();
+    }
+  });
+
+  // URLパラメータ（?view=attendance 等）による自動画面ルーティング
+  try {
+    const searchParams = new URLSearchParams(window.location.search);
+    const requestedView = searchParams.get('view');
+    if (requestedView && requestedView !== 'portal') {
+      console.log(`【URLルーティング】パラメータ指定画面へ直接遷移: ${requestedView}`);
+      setTimeout(() => {
+        if (typeof switchAppView === 'function') {
+          switchAppView(requestedView);
+        }
+      }, 100);
+    }
+  } catch (routeErr) {
+    console.warn('URLルーティング警告:', routeErr);
+  }
 }
 
 // ==========================================================================
@@ -12195,8 +13423,20 @@ function switchAppView(viewName) {
           if (typeof syncExpensesWithServer === 'function') {
             syncExpensesWithServer().then(() => {
               if (typeof renderAccountingExpenses === 'function') renderAccountingExpenses();
-            }).catch(() => {});
+            }).catch(() => { });
           }
+          // クラウド（Firestore）から最新の在庫マスタ・入荷ロット・シリアル台帳を即時同期して評価額を最新化
+          Promise.all([
+            typeof fetchServerInventory === 'function' ? fetchServerInventory() : Promise.resolve(),
+            typeof syncInventoryLotsWithServer === 'function' ? syncInventoryLotsWithServer() : Promise.resolve(),
+            typeof syncInventorySerialsWithServer === 'function' ? syncInventorySerialsWithServer() : Promise.resolve()
+          ]).then(() => {
+            if (typeof renderAccInventoryIntegrationPanel === 'function') {
+              renderAccInventoryIntegrationPanel(currentAccGlobalPeriod);
+            }
+            if (typeof renderPL === 'function') renderPL();
+            if (typeof renderBS === 'function') renderBS();
+          }).catch(e => console.warn('Accounting inventory sync warning:', e));
         } catch (err) {
           console.error('Error initializing accounting view:', err);
         }
@@ -12218,7 +13458,7 @@ function switchAppView(viewName) {
             if (typeof syncExpensesWithServer === 'function') {
               syncExpensesWithServer().then(() => {
                 renderAccountingExpenses(period);
-              }).catch(() => {});
+              }).catch(() => { });
             }
           }
           if (typeof window.checkGeminiStatus === 'function') {
@@ -12317,10 +13557,12 @@ function switchAppView(viewName) {
               syncInventorySerialsWithServer(),
               (typeof fetchServerInventory === 'function') ? fetchServerInventory() : Promise.resolve()
             ]).then(() => {
+              if (typeof syncInventorySerialsFromIssuedDocs === 'function') syncInventorySerialsFromIssuedDocs();
               if (typeof syncInventoryStockFromIssuedDocs === 'function') syncInventoryStockFromIssuedDocs();
               if (typeof syncInventoryStockFromSerials === 'function') syncInventoryStockFromSerials();
               if (typeof renderInventoryTable === 'function') renderInventoryTable();
               if (typeof renderInventorySerialTable === 'function') renderInventorySerialTable();
+              if (typeof renderSerialsManagementTable === 'function') renderSerialsManagementTable();
               if (typeof renderInventoryLotTable === 'function') renderInventoryLotTable();
             }).catch(syncErr => console.warn('Background inventory view sync warning:', syncErr));
           }
@@ -12344,6 +13586,98 @@ function switchAppView(viewName) {
 }
 
 window.switchAppView = switchAppView;
+
+/**
+ * 現在アクティブな画面のUIを最新データで即座に再描画（全画面共通）
+ * サーバーデータ受信直後、復帰時、同期完了時に自動実行
+ */
+function refreshCurrentViewUI() {
+  console.log(`【UI自動更新】refreshCurrentViewUI 実行開始: 対象画面 = ${currentAppView}`);
+  try {
+    switch (currentAppView) {
+      case 'portal':
+        if (typeof updatePortalInfo === 'function') updatePortalInfo();
+        break;
+      case 'attendance':
+        if (typeof updateAttendanceUI === 'function') updateAttendanceUI();
+        break;
+      case 'accounting':
+        if (typeof applyAccGlobalPeriod === 'function' && typeof currentAccGlobalPeriod !== 'undefined') {
+          applyAccGlobalPeriod(currentAccGlobalPeriod.preset);
+        }
+        if (typeof renderAccountingExpenses === 'function') renderAccountingExpenses();
+        if (typeof renderPL === 'function') renderPL();
+        if (typeof renderBS === 'function') renderBS();
+        if (typeof renderAccInventoryIntegrationPanel === 'function') renderAccInventoryIntegrationPanel(currentAccGlobalPeriod);
+        break;
+      case 'expenses':
+        if (typeof renderAccountingExpenses === 'function') {
+          const period = (typeof currentAccGlobalPeriod !== 'undefined') ? currentAccGlobalPeriod : { preset: 'all' };
+          renderAccountingExpenses(period);
+        }
+        break;
+      case 'items':
+        if (typeof renderItemCategoryTabs === 'function') renderItemCategoryTabs();
+        if (typeof renderItemMasterList === 'function') renderItemMasterList();
+        break;
+      case 'clients':
+        if (typeof renderClientMasterList === 'function') renderClientMasterList(currentClientFilter, '');
+        break;
+      case 'inventory':
+        if (typeof renderInventoryTable === 'function') renderInventoryTable();
+        if (typeof renderInventorySerialTable === 'function') renderInventorySerialTable();
+        if (typeof renderInventoryLotTable === 'function') renderInventoryLotTable();
+        break;
+      case 'payroll':
+        if (typeof renderPayrollTable === 'function') renderPayrollTable();
+        break;
+      case 'invoice':
+        if (typeof renderInvoicePreview === 'function') renderInvoicePreview();
+        break;
+    }
+    // 伝票履歴モーダルが開いていれば更新
+    if (DOM.historyModal && DOM.historyModal.classList.contains('active') && typeof filterAndRenderHistoryList === 'function') {
+      filterAndRenderHistoryList();
+    }
+  } catch (err) {
+    console.warn('refreshCurrentViewUI warning:', err);
+  }
+}
+window.refreshCurrentViewUI = refreshCurrentViewUI;
+
+/**
+ * ヘッダー常設の全業務データ一括手動同期（全画面共通・ワンタップ）
+ */
+async function triggerGlobalManualSync() {
+  const btn = document.getElementById('btnHeaderGlobalSync');
+  const origHtml = btn ? btn.innerHTML : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '🔄 同期中...';
+  }
+  try {
+    showToast('☁️ クラウドから全データを同期しています...', 'info');
+    if (typeof pullAllServerDataToLocal === 'function') {
+      await pullAllServerDataToLocal();
+    }
+    if (typeof syncAttendanceWithServer === 'function') {
+      await syncAttendanceWithServer();
+    }
+    if (typeof refreshCurrentViewUI === 'function') {
+      refreshCurrentViewUI();
+    }
+    showToast('🎉 クラウド最新データの同期が完了しました！', 'success');
+  } catch (err) {
+    console.error('triggerGlobalManualSync error:', err);
+    showToast('クラウド同期に失敗しました', 'danger');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = origHtml;
+    }
+  }
+}
+window.triggerGlobalManualSync = triggerGlobalManualSync;
 
 function updatePortalInfo() {
   // 会社名の反映
@@ -12384,9 +13718,12 @@ setInterval(() => {
 function populateFormFromDoc() {
   // ⚠️ ユーザーが編集・削除した内容を勝手に上書き復元させないため、syncEndUsersToDocItems は呼ばない
 
-  // 書類種別ボタングループの選択状態
+  // 書類種別ボタングループの選択状態（納品請求書 vs 見積書）
   DOM.docTypeBtns.forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.type === currentDoc.docType);
+    const isMatched = (btn.dataset.type === 'estimate')
+      ? (currentDoc.docType === 'estimate')
+      : (currentDoc.docType !== 'estimate');
+    btn.classList.toggle('active', isMatched);
   });
 
   // 基本情報
@@ -12415,7 +13752,12 @@ function populateFormFromDoc() {
   if (DOM.inputBankInfo) DOM.inputBankInfo.value = currentDoc.issuer?.bankInfo || '';
   if (DOM.inputNotes) DOM.inputNotes.value = currentDoc.notes || '';
 
-  // 印鑑
+  // 印鑑（伝票に印影がない場合は自社プロファイルから自動補完）
+  const activeIssuerProfile = (typeof loadIssuerProfile === 'function') ? loadIssuerProfile() : {};
+  if (!currentDoc.issuer) currentDoc.issuer = {};
+  if (!currentDoc.issuer.stampDataUrl && activeIssuerProfile.stampDataUrl) {
+    currentDoc.issuer.stampDataUrl = activeIssuerProfile.stampDataUrl;
+  }
   if (DOM.checkShowStamp) DOM.checkShowStamp.checked = currentDoc.issuer?.showStamp !== false;
   if (typeof updateStampThumbnail === 'function') updateStampThumbnail(currentDoc.issuer?.stampDataUrl);
 
@@ -12437,8 +13779,352 @@ function updateItemCountBadge() {
   }
 }
 
+// ==========================================================================
+// 納品請求書モード用：御納品書（Page 2） ＆ 領収証（Page 3）動的生成レンダラー
+// ==========================================================================
+function renderDeliveryAndReceiptSubSheets(totals, displayUsers, endUserNamePart) {
+  const container = document.getElementById('subSheetsContainer');
+  if (!container) return;
+
+  const pageInd1 = document.getElementById('sheetPageIndicator1Text');
+
+  // 見積書の場合は納品書・領収書は生成せず、単票表示にする
+  if (currentDoc.docType === 'estimate') {
+    container.innerHTML = '';
+    if (pageInd1) pageInd1.textContent = 'ページ 1 / 1 【御見積書】';
+    return;
+  }
+
+  if (pageInd1) pageInd1.textContent = 'ページ 1 / 3 【御請求書】';
+
+  // 共通データ
+  const docNo = escapeHtml(currentDoc.docNumber || '');
+  const issueDateFormatted = formatJapaneseDate(currentDoc.issueDate);
+  const clientName = escapeHtml(currentDoc.client?.name || '　　　　　　　　');
+  const clientHonorific = escapeHtml(currentDoc.client?.honorific || '御中');
+  const clientZip = currentDoc.client?.zip ? `〒${escapeHtml(currentDoc.client.zip)}` : '';
+  const clientAddress = escapeHtml(currentDoc.client?.address || '');
+  const clientContact = escapeHtml(currentDoc.client?.contactPerson || '');
+  const clientCode = (currentDoc.client?.code || '').trim();
+
+  // 自社情報
+  const issuerName = escapeHtml(currentDoc.issuer?.name || '');
+  const issuerZip = currentDoc.issuer?.zip ? `〒${escapeHtml(currentDoc.issuer.zip)}` : '';
+  const issuerAddress = escapeHtml(currentDoc.issuer?.address || '');
+  const issuerTel = currentDoc.issuer?.tel ? `TEL: ${escapeHtml(currentDoc.issuer.tel)}` : '';
+  const issuerFax = currentDoc.issuer?.fax ? `FAX: ${escapeHtml(currentDoc.issuer.fax)}` : '';
+  const issuerEmail = currentDoc.issuer?.email ? `Email: ${escapeHtml(currentDoc.issuer.email)}` : '';
+  const issuerInvoiceNo = currentDoc.issuer?.invoiceNumber ? `登録番号: ${escapeHtml(currentDoc.issuer.invoiceNumber)}` : '';
+  
+  // 自社印の確実なフォールバック（伝票に印影がない場合はマスター自社プロファイルから自動補完）
+  const masterIssuer = (typeof loadIssuerProfile === 'function') ? loadIssuerProfile() : {};
+  let effectiveStampDataUrl = currentDoc.issuer?.stampDataUrl;
+  if (!effectiveStampDataUrl && masterIssuer.stampDataUrl) {
+    effectiveStampDataUrl = masterIssuer.stampDataUrl;
+    if (currentDoc.issuer) currentDoc.issuer.stampDataUrl = effectiveStampDataUrl;
+  }
+  const showStamp = currentDoc.issuer?.showStamp !== false;
+  const stampImgHtml = (showStamp && effectiveStampDataUrl)
+    ? `<div class="issuer-stamp-wrapper" style="display: block;"><img class="issuer-stamp-img" src="${effectiveStampDataUrl}" alt="社印"></div>`
+    : '';
+
+  // エンドユーザー表示
+  const endUserHtml = endUserNamePart
+    ? `<div class="sheet-enduser-row" style="display: block;"><span class="sheet-enduser-name">${escapeHtml(endUserNamePart)}</span><span class="sheet-enduser-suffix"> 様分</span></div>`
+    : '';
+
+  // 得意先コード表示
+  const clientCodeHtml = clientCode
+    ? `<div class="client-code-row" style="display: block; font-size: 0.775rem; color: #475569; font-weight: 600; margin-bottom: 3px; letter-spacing: 0.02em;">得意先コード: <span style="font-family: monospace, sans-serif; font-weight: 700; color: #0f172a;">${escapeHtml(clientCode)}</span></div>`
+    : '';
+
+  // 明細テーブルのHTML（請求書と同じtbody内容を完全複製）
+  const itemsTbodyHtml = DOM.sheetItemsTableBody ? DOM.sheetItemsTableBody.innerHTML : '';
+
+  // 備考
+  const notesHtml = currentDoc.notes
+    ? `<div class="notes-card"><div class="notes-card-title">【備考・特記事項】</div><div class="notes-content">${escapeHtml(currentDoc.notes)}</div></div>`
+    : '';
+
+  // 税率区分テーブル
+  const taxBreakdownHtml = `
+    <table class="tax-breakdown-table">
+      <thead>
+        <tr>
+          <th>税率区分</th>
+          <th class="text-right">税抜金額</th>
+          <th class="text-right">消費税額</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>10% 対象</td>
+          <td class="text-right">${formatCurrency(totals.subtotal10)}</td>
+          <td class="text-right">${formatCurrency(totals.tax10)}</td>
+        </tr>
+        <tr>
+          <td>8% 軽減対象</td>
+          <td class="text-right">${formatCurrency(totals.subtotal8)}</td>
+          <td class="text-right">${formatCurrency(totals.tax8)}</td>
+        </tr>
+        ${totals.subtotal0 > 0 ? `
+        <tr>
+          <td>非課税 対象</td>
+          <td class="text-right">${formatCurrency(totals.subtotal0)}</td>
+          <td class="text-right">-</td>
+        </tr>` : ''}
+      </tbody>
+    </table>
+  `;
+
+  // -------------------------------------------------------------
+  // ページ2: 御納品書
+  // -------------------------------------------------------------
+  const deliveryPageHtml = `
+    <div class="sheet-page-indicator no-print" style="margin-top: 32px; margin-bottom: 8px;">
+      <span>📄</span> ページ 2 / 3 【御納品書】
+    </div>
+    <article class="invoice-sheet invoice-sheet-page" id="deliverySheet">
+      <header class="sheet-header">
+        <div class="sheet-title-box">
+          <h2 class="sheet-title">御 納 品 書</h2>
+          ${endUserHtml}
+          <div style="font-size: 0.95rem; font-weight: 600; color: #475569; margin-top: 6px;">
+            ${escapeHtml(currentDoc.title || '')}
+          </div>
+        </div>
+        <table class="sheet-meta-table">
+          <tr>
+            <td class="meta-label">納品番号</td>
+            <td class="meta-val">${docNo}</td>
+          </tr>
+          <tr>
+            <td class="meta-label">納品日</td>
+            <td class="meta-val">${issueDateFormatted}</td>
+          </tr>
+        </table>
+      </header>
+
+      <div class="sheet-parties">
+        <div class="sheet-client-box">
+          ${clientCodeHtml}
+          <div class="client-name-row">
+            <span class="client-name">${clientName}</span>
+            <span class="client-honorific">${clientHonorific}</span>
+          </div>
+          <div class="client-address-text">
+            ${clientZip ? `<div>${clientZip}</div>` : ''}
+            ${clientAddress ? `<div>${clientAddress}</div>` : ''}
+            ${clientContact ? `<div style="margin-top: 4px; font-weight: 500;">${clientContact}</div>` : ''}
+          </div>
+          <div class="sheet-lead-message">下記の通り、納品申し上げます。</div>
+        </div>
+
+        <div class="sheet-issuer-box">
+          <div class="issuer-name-row">
+            <div class="issuer-name">${issuerName}</div>
+            ${stampImgHtml}
+          </div>
+          ${issuerZip ? `<div>${issuerZip}</div>` : ''}
+          ${issuerAddress ? `<div>${issuerAddress}</div>` : ''}
+          ${issuerTel ? `<div>${issuerTel}</div>` : ''}
+          ${issuerFax ? `<div>${issuerFax}</div>` : ''}
+          ${issuerEmail ? `<div>${issuerEmail}</div>` : ''}
+          ${issuerInvoiceNo ? `<div class="issuer-invoice-no">${issuerInvoiceNo}</div>` : ''}
+        </div>
+      </div>
+
+      <div class="sheet-grand-amount-banner">
+        <span class="banner-label">御納品金額（税込）</span>
+        <div>
+          <span class="banner-value">${formatCurrency(totals.grandTotal)}</span>
+          <span class="banner-tax-hint">(内消費税等 ${formatCurrency(totals.taxTotal)})</span>
+        </div>
+      </div>
+
+      <table class="sheet-items-table">
+        <thead>
+          <tr>
+            <th class="th-num" style="width: 32px;">No.</th>
+            <th>品名・摘要</th>
+            <th class="th-right" style="width: 58px;">数量</th>
+            <th style="width: 44px; text-align: center;">単位</th>
+            <th class="th-right" style="width: 95px;">単価</th>
+            <th class="th-right" style="width: 105px;">金額 (税抜)</th>
+            <th style="width: 65px; text-align: center;">税率</th>
+            <th style="width: 95px;">備考</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${itemsTbodyHtml}
+        </tbody>
+      </table>
+
+      <div class="sheet-bottom-section">
+        <div class="sheet-notes-box">
+          ${notesHtml}
+          <div class="delivery-receipt-stamp-box" style="margin-top: 8px; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px; background: #fafafa; display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+            <div style="font-size: 0.775rem; color: #475569; font-weight: 600; line-height: 1.5;">
+              上記商品を確かに受領いたしました。<br>
+              <span style="font-size: 0.72rem; color: #94a3b8;">受領年月日: 令和　　年　　月　　日</span>
+            </div>
+            <div style="width: 70px; height: 70px; border: 1px dashed #cbd5e1; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 0.725rem; color: #94a3b8; background: #fff; flex-shrink: 0;">
+              受領印
+            </div>
+          </div>
+        </div>
+
+        <div class="sheet-totals-box">
+          <table class="totals-table">
+            <tr>
+              <td class="label-col">税抜小計</td>
+              <td class="val-col">${formatCurrency(totals.subtotalWithoutTax)}</td>
+            </tr>
+            <tr>
+              <td class="label-col">消費税額合計</td>
+              <td class="val-col">${formatCurrency(totals.taxTotal)}</td>
+            </tr>
+            <tr class="grand-total-row">
+              <td class="label-col">御納品金額 (税込)</td>
+              <td class="val-col">${formatCurrency(totals.grandTotal)}</td>
+            </tr>
+          </table>
+          ${taxBreakdownHtml}
+        </div>
+      </div>
+    </article>
+  `;
+
+  // -------------------------------------------------------------
+  // ページ3: 領収証
+  // -------------------------------------------------------------
+  const subjectName = (currentDoc.title || '商品代').trim();
+  const receiptPageHtml = `
+    <div class="sheet-page-indicator no-print" style="margin-top: 32px; margin-bottom: 8px;">
+      <span>📄</span> ページ 3 / 3 【領収証】
+    </div>
+    <article class="invoice-sheet invoice-sheet-page" id="receiptSheet">
+      <header class="sheet-header">
+        <div class="sheet-title-box">
+          <h2 class="sheet-title">領 収 証</h2>
+          ${endUserHtml}
+          <div style="font-size: 0.95rem; font-weight: 600; color: #475569; margin-top: 6px;">
+            ${escapeHtml(subjectName)}
+          </div>
+        </div>
+        <table class="sheet-meta-table">
+          <tr>
+            <td class="meta-label">領収番号</td>
+            <td class="meta-val">${docNo}</td>
+          </tr>
+          <tr>
+            <td class="meta-label">領収日</td>
+            <td class="meta-val">${issueDateFormatted}</td>
+          </tr>
+        </table>
+      </header>
+
+      <div class="sheet-parties">
+        <div class="sheet-client-box">
+          ${clientCodeHtml}
+          <div class="client-name-row">
+            <span class="client-name">${clientName}</span>
+            <span class="client-honorific">${clientHonorific}</span>
+          </div>
+          <div class="client-address-text">
+            ${clientZip ? `<div>${clientZip}</div>` : ''}
+            ${clientAddress ? `<div>${clientAddress}</div>` : ''}
+            ${clientContact ? `<div style="margin-top: 4px; font-weight: 500;">${clientContact}</div>` : ''}
+          </div>
+          <div class="sheet-lead-message" style="color: #047857; font-weight: 700;">
+            上記の金額を正に領収いたしました。
+          </div>
+          <div style="font-size: 0.8rem; color: #475569; margin-top: 4px;">
+            （但し、${escapeHtml(subjectName)} 代として）
+          </div>
+        </div>
+
+        <div class="sheet-issuer-box">
+          <div class="issuer-name-row">
+            <div class="issuer-name">${issuerName}</div>
+            ${stampImgHtml}
+          </div>
+          ${issuerZip ? `<div>${issuerZip}</div>` : ''}
+          ${issuerAddress ? `<div>${issuerAddress}</div>` : ''}
+          ${issuerTel ? `<div>${issuerTel}</div>` : ''}
+          ${issuerFax ? `<div>${issuerFax}</div>` : ''}
+          ${issuerEmail ? `<div>${issuerEmail}</div>` : ''}
+          ${issuerInvoiceNo ? `<div class="issuer-invoice-no">${issuerInvoiceNo}</div>` : ''}
+        </div>
+      </div>
+
+      <div class="sheet-grand-amount-banner">
+        <span class="banner-label">領収金額（税込）</span>
+        <div>
+          <span class="banner-value">${formatCurrency(totals.grandTotal)}</span>
+          <span class="banner-tax-hint">(内消費税等 ${formatCurrency(totals.taxTotal)})</span>
+        </div>
+      </div>
+
+      <table class="sheet-items-table">
+        <thead>
+          <tr>
+            <th class="th-num" style="width: 32px;">No.</th>
+            <th>品名・摘要</th>
+            <th class="th-right" style="width: 58px;">数量</th>
+            <th style="width: 44px; text-align: center;">単位</th>
+            <th class="th-right" style="width: 95px;">単価</th>
+            <th class="th-right" style="width: 105px;">金額 (税抜)</th>
+            <th style="width: 65px; text-align: center;">税率</th>
+            <th style="width: 95px;">備考</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${itemsTbodyHtml}
+        </tbody>
+      </table>
+
+      <div class="sheet-bottom-section">
+        <div class="sheet-notes-box">
+          ${notesHtml}
+          <div style="margin-top: 8px; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px; background: #fafafa; display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+            <div style="font-size: 0.775rem; color: #475569; font-weight: 600; line-height: 1.4;">
+              【電子領収書】<br>
+              <span style="font-size: 0.72rem; color: #64748b;">本領収証は電子的に作成・発行されたものです。<br>（印紙税法上、電子交付により印紙貼付は不要です）</span>
+            </div>
+            <div style="width: 70px; height: 70px; border: 1px dashed #cbd5e1; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; color: #94a3b8; text-align: center; background: #fff; flex-shrink: 0; line-height: 1.2;">
+              領収印
+            </div>
+          </div>
+        </div>
+
+        <div class="sheet-totals-box">
+          <table class="totals-table">
+            <tr>
+              <td class="label-col">税抜小計</td>
+              <td class="val-col">${formatCurrency(totals.subtotalWithoutTax)}</td>
+            </tr>
+            <tr>
+              <td class="label-col">消費税額合計</td>
+              <td class="val-col">${formatCurrency(totals.taxTotal)}</td>
+            </tr>
+            <tr class="grand-total-row">
+              <td class="label-col">領収金額 (税込)</td>
+              <td class="val-col">${formatCurrency(totals.grandTotal)}</td>
+            </tr>
+          </table>
+          ${taxBreakdownHtml}
+        </div>
+      </div>
+    </article>
+  `;
+
+  container.innerHTML = deliveryPageHtml + receiptPageHtml;
+}
+
 function renderAll() {
-  const meta = DOC_TYPES[currentDoc.docType] || DOC_TYPES.invoice;
+  const isEstimate = (currentDoc.docType === 'estimate');
+  const meta = isEstimate ? DOC_TYPES.estimate : DOC_TYPES.invoice;
 
   // 明細件数バッジの更新
   updateItemCountBadge();
@@ -12448,11 +14134,12 @@ function renderAll() {
   DOM.labelDueDate.textContent = meta.dueLabel;
 
   // シートタイトル（文字間隔を空けて格式高く）
-  let spacedTitle = meta.badge;
-  if (spacedTitle.length === 3) {
-    spacedTitle = spacedTitle[0] + ' ' + spacedTitle[1] + ' ' + spacedTitle[2];
-  } else if (spacedTitle.length === 4) {
-    spacedTitle = spacedTitle[0] + ' ' + spacedTitle[1] + ' ' + spacedTitle[2] + ' ' + spacedTitle[3];
+  const spacedTitle = isEstimate ? '御 見 積 書' : '御 請 求 書';
+
+  // 1ページ目インジケーターの更新
+  const pageInd1 = DOM.sheetPageIndicator1Text || document.getElementById('sheetPageIndicator1Text');
+  if (pageInd1) {
+    pageInd1.textContent = isEstimate ? 'ページ 1 / 1 【御見積書】' : 'ページ 1 / 3 【御請求書】';
   }
 
   // エンドユーザー名（販売店経由での購入者・納品先: タイトルの下の行に表示）
@@ -12509,15 +14196,11 @@ function renderAll() {
   DOM.sheetDocNumber.textContent = currentDoc.docNumber || '';
   DOM.sheetLabelIssueDate.textContent = meta.dateLabel;
   DOM.sheetIssueDate.textContent = formatJapaneseDate(currentDoc.issueDate);
-  
-  // 期日（領収書の場合は不要または但し書きとして扱う）
-  if (currentDoc.docType === 'receipt') {
-    DOM.sheetRowDueDate.style.display = 'none';
-  } else {
-    DOM.sheetRowDueDate.style.display = 'table-row';
-    DOM.sheetLabelDueDate.textContent = meta.dueLabel;
-    DOM.sheetDueDate.textContent = formatJapaneseDate(currentDoc.dueDate);
-  }
+
+  // 期日
+  DOM.sheetRowDueDate.style.display = 'table-row';
+  DOM.sheetLabelDueDate.textContent = meta.dueLabel;
+  DOM.sheetDueDate.textContent = formatJapaneseDate(currentDoc.dueDate);
 
   // 得意先コード
   const clientCode = (currentDoc.client?.code || '').trim();
@@ -12539,14 +14222,10 @@ function renderAll() {
   DOM.sheetClientContact.textContent = currentDoc.client?.contactPerson || '';
 
   // リードメッセージ
-  if (currentDoc.docType === 'invoice') {
-    DOM.sheetLeadMessage.textContent = '下記の通り、御請求申し上げます。';
-  } else if (currentDoc.docType === 'delivery') {
-    DOM.sheetLeadMessage.textContent = '下記の通り、納品申し上げます。';
-  } else if (currentDoc.docType === 'estimate') {
+  if (isEstimate) {
     DOM.sheetLeadMessage.textContent = '下記の通り、御見積申し上げます。';
-  } else if (currentDoc.docType === 'receipt') {
-    DOM.sheetLeadMessage.textContent = '上記の金額を正に領収いたしました。';
+  } else {
+    DOM.sheetLeadMessage.textContent = '下記の通り、御請求申し上げます。';
   }
 
   // 音声入力ボタンの制御（既存書類の上書き防止）
@@ -12554,7 +14233,7 @@ function renderAll() {
   if (btnVoice) {
     const historyList = typeof getHistoryList === 'function' ? getHistoryList() : [];
     const isExisting = historyList.some(doc => doc.id === currentDoc.id);
-    
+
     if (isExisting) {
       btnVoice.disabled = true;
       btnVoice.style.opacity = '0.5';
@@ -12638,7 +14317,7 @@ function renderAll() {
   }
 
   // 振込先・備考カード
-  if (currentDoc.issuer?.bankInfo && currentDoc.docType !== 'delivery' && currentDoc.docType !== 'receipt') {
+  if (currentDoc.issuer?.bankInfo && !isEstimate) {
     DOM.sheetBankCard.style.display = 'block';
     DOM.sheetBankInfo.textContent = currentDoc.issuer.bankInfo;
   } else {
@@ -12692,6 +14371,9 @@ function renderAll() {
     }
   }
 
+  // 納品請求書モード時は、納品書（Page 2）および領収証（Page 3）を動的レンダリング
+  renderDeliveryAndReceiptSubSheets(totals, displayUsers, endUserNamePart);
+
   // LocalStorageに常時保存
   saveActiveDoc(currentDoc);
 }
@@ -12707,6 +14389,19 @@ function triggerSafePrint(printClass) {
     document.body.classList.add(printClass);
   }
 
+  // PDF保存時のデフォルトファイル名を「販売店名_日付_納品請求書or見積書」に動的連動
+  const originalTitle = document.title;
+  if (printClass === 'printing-invoice' && currentDoc) {
+    try {
+      const clientName = (currentDoc.client?.name || '取引先').trim().replace(/[/\\?%*:|"<>]/g, '_');
+      const issueDate = (currentDoc.issueDate || (typeof getTodayDateString === 'function' ? getTodayDateString() : new Date().toISOString().split('T')[0])).trim();
+      const docTypeName = (currentDoc.docType === 'estimate') ? '見積書' : '納品請求書';
+      document.title = `${clientName}_${issueDate}_${docTypeName}`;
+    } catch (e) {
+      console.warn('PDFファイル名設定エラー:', e);
+    }
+  }
+
   let cleaned = false;
   const cleanup = () => {
     if (cleaned) return;
@@ -12714,6 +14409,7 @@ function triggerSafePrint(printClass) {
     if (printClass) {
       document.body.classList.remove(printClass);
     }
+    document.title = originalTitle;
     window.removeEventListener('afterprint', cleanup);
   };
 
@@ -12777,7 +14473,8 @@ function issueAndSyncAccountingDocument(options = {}) {
   }
 
   // 3.5. シリアル引当品の出荷済更新 & BOM非シリアル構成部品の在庫引き落とし & 実原価集計
-  if (currentDoc && Array.isArray(currentDoc.items)) {
+  // ※ 見積書（estimate）の場合は、まだ正式な出荷・受注ではないため、在庫数やシリアルの出荷引き落としは一切行いません！
+  if (currentDoc && currentDoc.docType !== 'estimate' && Array.isArray(currentDoc.items)) {
     let docAssignedCogs = 0;
     const clientName = currentDoc.client ? (currentDoc.client.name || '') : '';
     const docNo = currentDoc.docNumber || currentDoc.id;
@@ -12795,12 +14492,19 @@ function issueAndSyncAccountingDocument(options = {}) {
         });
       }
       if (it.serialNumber && typeof it.serialNumber === 'string') {
-        const rawSns = it.serialNumber.split(/[,、\s]+/).map(s => s.trim().toUpperCase()).filter(s => /^N\s*\d{4,5}$/i.test(s));
-        rawSns.forEach(sn => {
-          const normSn = sn.replace(/\s+/g, '');
-          if (!itemSerials.some(x => x.serialNumber === normSn)) {
-            itemSerials.push({ serialNumber: normSn, costPrice: 0 });
-          }
+        const rawParts = it.serialNumber.split(/[,、\n\r\t;/|]+/);
+        rawParts.forEach(part => {
+          const trimmed = part.trim().toUpperCase();
+          if (!trimmed) return;
+          const tokens = trimmed.split(/\s+/);
+          tokens.forEach(tok => {
+            const cleanTok = tok.replace(/^[(\[{<"']+|[)\]}>"':]+$/g, '').trim();
+            if (cleanTok && cleanTok.length >= 3) {
+              if (!itemSerials.some(x => x.serialNumber === cleanTok)) {
+                itemSerials.push({ serialNumber: cleanTok, costPrice: 0 });
+              }
+            }
+          });
         });
       }
 
@@ -12823,7 +14527,7 @@ function issueAndSyncAccountingDocument(options = {}) {
         itemAssignedCogs += Number(as.costPrice) || 0;
       });
 
-      // ② BOMセット品の場合（非シリアル構成品の在庫引き落とし）
+      // ② BOMセット品の場合（原価集計のみ。急速充電器等の構成品個別在庫はセット品自体の出荷として扱うため個別在庫引落は行わない）
       try {
         const invList = getInventoryList();
         const bundleItem = invList.find(x => x.type === 'bundle' && (x.id === it.bundleItemId || x.name === it.name));
@@ -12833,13 +14537,13 @@ function issueAndSyncAccountingDocument(options = {}) {
             const comp = invList.find(c => c.id === b.componentId || (b.name && c.name === b.name));
             if (comp && !comp.hasSerial) {
               const usedQty = (Number(b.quantity) || 1) * (Number(it.quantity) || 1);
-              adjustStock(comp.id, -usedQty, `確定出荷引当: ${docNo} (${bundleItem.name})`);
+              // 注意: 急速充電器などの構成品個別在庫は変動させない（完成品セット自体の在庫のみが連動）
               itemAssignedCogs += (Number(comp.unitCost) || 0) * usedQty;
             }
           });
         }
       } catch (err) {
-        console.warn('BOM構成品在庫引落エラー:', err);
+        console.warn('BOM構成品原価集計エラー:', err);
       }
 
       if (it.assignedCogs) {
@@ -12872,9 +14576,13 @@ function issueAndSyncAccountingDocument(options = {}) {
 
   const typeLabel = (DOC_TYPES[currentDoc.docType] || DOC_TYPES.invoice).label;
   if (isExplicitIssue) {
-    showToast(`「${typeLabel}」を確定発行し、財務会計（売上・売掛金消込・仕訳帳）へ即時反映しました！`, 'success');
+    if (currentDoc.docType === 'estimate') {
+      showToast(`「御見積書」を作成履歴へ保存しました！（※見積段階のため、在庫引き落としや売上計上は行われません）`, 'info');
+    } else {
+      showToast(`「${typeLabel}」を確定発行し、在庫出庫および財務会計（売上・売掛金消込・仕訳帳）へ即時反映しました！`, 'success');
+    }
   } else {
-    showToast(`作成履歴に保存し、財務会計（売上高・仕訳帳）へ反映しました！`, 'success');
+    showToast(`作成履歴に保存しました`, 'success');
   }
 
   // 7. 印刷が指定されている場合は印刷ダイアログを起動
@@ -12895,7 +14603,7 @@ async function cancelCurrentDocIssue() {
   const docNo = currentDoc.docNumber || 'この書類';
 
   const confirmMsg = `「${typeLabel} (${docNo})」の確定発行を取り消しますか？\n\n【取り消しの効果】\n・財務会計（売上高・売掛金消込・仕訳帳）から即座に除外されます。\n・引当されていたシリアル番号や在庫が復旧します。\n・書類データは削除されず、修正可能な「下書き」状態に戻ります。`;
-  
+
   if (!confirm(confirmMsg)) {
     return false;
   }
@@ -12910,31 +14618,24 @@ async function cancelCurrentDocIssue() {
         });
       }
       if (it.serialNumber && typeof it.serialNumber === 'string') {
-        const rawSns = it.serialNumber.split(/[,、\s]+/).map(s => s.trim().toUpperCase()).filter(s => /^N\s*\d{4,5}$/i.test(s));
-        rawSns.forEach(sn => {
-          const normSn = sn.replace(/\s+/g, '');
-          if (!itemSerials.includes(normSn)) itemSerials.push(normSn);
+        const rawParts = it.serialNumber.split(/[,、\n\r\t;/|]+/);
+        rawParts.forEach(part => {
+          const trimmed = part.trim().toUpperCase();
+          if (!trimmed) return;
+          const tokens = trimmed.split(/\s+/);
+          tokens.forEach(tok => {
+            const cleanTok = tok.replace(/^[(\[{<"']+|[)\]}>"':]+$/g, '').trim();
+            if (cleanTok && cleanTok.length >= 3) {
+              if (!itemSerials.includes(cleanTok)) itemSerials.push(cleanTok);
+            }
+          });
         });
       }
       itemSerials.forEach(sn => {
         updateSerialStatus(sn, 'in_stock');
       });
-      try {
-        const invList = getInventoryList();
-        const bundleItem = invList.find(x => x.type === 'bundle' && (x.id === it.bundleItemId || x.name === it.name));
-        const bundleParts = (typeof getBundlePartsList === 'function') ? getBundlePartsList(bundleItem) : [];
-        if (bundleItem && bundleParts.length > 0) {
-          bundleParts.forEach(b => {
-            const comp = invList.find(x => x.id === b.componentId || (b.name && x.name === b.name));
-            if (comp && !comp.hasSerial) {
-              const usedQty = (Number(b.quantity) || 1) * (Number(it.quantity) || 1);
-              adjustStock(comp.id, usedQty, `確定発行取消による在庫復元: ${docNo} (${bundleItem.name})`);
-            }
-          });
-        }
-      } catch (err) {
-        console.warn('BOM在庫復帰エラー:', err);
-      }
+      // 注意: 完成品セット出荷の確定取消時はセット品自体の出荷除外およびシリアル台帳（本体・バッテリー）のみが復元され、
+      // 急速充電器等の非シリアル構成品の個別在庫を誤って増やすことは行いません。
     });
   }
 
@@ -12999,14 +14700,14 @@ function getYoungestAvailableSerials(itemName = '', count = 1, excludeSerials = 
     if (excludeSerials.includes(s.serialNumber)) return false;
 
     if (isDp5000) {
-      return (s.inventoryId === 'inv_dp5000_body' || 
-              (s.itemName && s.itemName.includes('DP-5000')) ||
-              (s.serialNumber && s.serialNumber.startsWith('DP5K')));
+      return (s.inventoryId === 'inv_dp5000_body' ||
+        (s.itemName && s.itemName.includes('DP-5000')) ||
+        (s.serialNumber && s.serialNumber.startsWith('DP5K')));
     }
     if (isDpMs) {
-      return (s.inventoryId === 'inv_2' || 
-              (s.itemName && s.itemName.includes('DP-MS')) ||
-              (s.serialNumber && s.serialNumber.startsWith('DPMS')));
+      return (s.inventoryId === 'inv_2' ||
+        (s.itemName && s.itemName.includes('DP-MS')) ||
+        (s.serialNumber && s.serialNumber.startsWith('DPMS')));
     }
     return false;
   });
@@ -13032,6 +14733,33 @@ function autoAssignYoungestSerialIfNeeded(item, docItems = []) {
   if (item.assignedSerials && item.assignedSerials.length > 0) {
     item.serialNumber = item.assignedSerials.map(s => s.serialNumber).join(', ');
     return;
+  }
+
+  // ★ 他端末で発行・保存された伝票の場合、台帳に紐付いているシリアルを自動復元
+  if (currentDoc) {
+    const curDocNum = currentDoc.docNumber || currentDoc.invoiceNumber || '';
+    const curDocId = currentDoc.id || currentDoc.docId || '';
+    if (curDocNum || curDocId) {
+      const allSerials = typeof getInventorySerialList === 'function' ? getInventorySerialList() : [];
+      const linked = allSerials.filter(s => {
+        if (!s || !s.serialNumber) return false;
+        if (curDocNum && (s.docNumber === curDocNum || s.invoiceNumber === curDocNum)) return true;
+        if (curDocId && (s.docId === curDocId || s.invoiceId === curDocId)) return true;
+        return false;
+      });
+      const itemSns = linked.filter(s => {
+        const sName = (s.itemName || '').toUpperCase();
+        const itName = (item.name || '').toUpperCase();
+        if (itName.includes('DP-5000') && (sName.includes('本体') || sName.includes('DP-5000'))) return true;
+        if (itName.includes('DP-MS') && sName.includes('DP-MS')) return true;
+        return false;
+      }).map(s => s.serialNumber);
+
+      if (itemSns.length > 0) {
+        item.serialNumber = itemSns.join(', ');
+        return;
+      }
+    }
   }
 
   // 他の明細ですでに引当済のシリアルを収集
@@ -13104,7 +14832,7 @@ function renderSheetItemsTable(items = []) {
 
     let userPriceBadge = '';
     if (userPriceInc > 0 && price >= 0) {
-      userPriceBadge = `<span class="sheet-user-ref-price">（ユーザー参考: ${formatCurrency(userPriceInc)}）</span>`;
+      userPriceBadge = `<span class="sheet-user-ref-price">（ユーザー参考税込み価格: ${formatCurrency(userPriceInc)}）</span>`;
     }
 
     // 品目欄に一緒に表示する摘要（割引き理由や補足・内訳等）
@@ -13214,7 +14942,7 @@ function renderItemInputCards() {
 
     // その商品の過去の入力履歴（頻度の多い順）を取得
     const userPriceHistories = getUserPriceHistoryForItem(item.name || '');
-    const historyOptionsHtml = userPriceHistories.map(h => 
+    const historyOptionsHtml = userPriceHistories.map(h =>
       `<option value="${h.price}">${formatCurrency(h.price)} (${h.count}回)</option>`
     ).join('');
 
@@ -13356,7 +15084,7 @@ function renderItemInputCards() {
       <!-- ユーザー参考価格プレビューバー -->
       <div class="item-user-price-preview-bar">
         <div>
-          <span style="color: #64748b;">👤 ユーザー価格（税込参考）:</span>
+          <span style="color: #64748b;">👤 ユーザー参考税込み価格:</span>
           <strong class="item-user-price-badge">${formatCurrency(initialRefs.refUserInc)}</strong>
         </div>
         <div>
@@ -13440,7 +15168,7 @@ function renderItemInputCards() {
       const currentName = (inputName ? inputName.value : item.name) || '';
       const list = getUserPriceHistoryForItem(currentName);
       if (selectPriceHistory) {
-        selectPriceHistory.innerHTML = '<option value="">履歴▼</option>' + list.map(h => 
+        selectPriceHistory.innerHTML = '<option value="">履歴▼</option>' + list.map(h =>
           `<option value="${h.price}">${formatCurrency(h.price)} (${h.count}回)</option>`
         ).join('');
       }
@@ -13564,11 +15292,38 @@ function renderItemInputCards() {
       });
     }
 
-    // シリアル手入力リスナー
+    // シリアル手入力リスナー（手入力変更時に内部引当データ assignedSerials も完全連動同期）
     const inputSerial = card.querySelector('.item-input-serial');
     if (inputSerial) {
       inputSerial.addEventListener('input', () => {
-        item.serialNumber = inputSerial.value;
+        const val = inputSerial.value;
+        item.serialNumber = val;
+
+        const valTrimmed = val.trim();
+        if (!valTrimmed) {
+          item.assignedSerials = [];
+        } else {
+          const inputSns = valTrimmed.split(/[,、\s]+/).map(s => s.trim().toUpperCase()).filter(Boolean);
+          const currentAssignedSns = Array.isArray(item.assignedSerials)
+            ? item.assignedSerials.map(s => String(s.serialNumber || '').trim().toUpperCase()).filter(Boolean)
+            : [];
+
+          const isIdentical = inputSns.length === currentAssignedSns.length && inputSns.every(sn => currentAssignedSns.includes(sn));
+          if (!isIdentical) {
+            const allSerials = typeof getInventorySerialList === 'function' ? getInventorySerialList() : [];
+            item.assignedSerials = inputSns.map(sn => {
+              const found = allSerials.find(s => s && String(s.serialNumber).trim().toUpperCase() === sn);
+              return {
+                serialNumber: sn,
+                itemId: found ? (found.itemId || found.inventoryId || '') : '',
+                itemName: found ? (found.itemName || '') : (sn.startsWith('N') ? 'DP-5000 本体' : ''),
+                costPrice: found ? (found.costPrice || found.unitCost || 0) : 0
+              };
+            });
+            item.assignedCogs = item.assignedSerials.reduce((acc, s) => acc + (Number(s.costPrice) || 0), 0);
+            if (item.assignedCogs > 0) item.costPrice = item.assignedCogs;
+          }
+        }
         renderAll();
       });
     }
@@ -13660,17 +15415,20 @@ function renderItemInputCards() {
 // イベントリスナー初期化
 // ==========================================================================
 function setupEventListeners() {
-  // 書類種別の切り替え
+  // 書類種別の切り替え（納品請求書 vs 見積書）
   DOM.docTypeBtns.forEach(btn => {
     btn.addEventListener('click', () => {
       const type = btn.dataset.type;
       currentDoc.docType = type;
-      DOM.docTypeBtns.forEach(b => b.classList.toggle('active', b === btn));
+      DOM.docTypeBtns.forEach(b => {
+        const isMatched = (b.dataset.type === 'estimate') ? (type === 'estimate') : (type !== 'estimate');
+        b.classList.toggle('active', isMatched);
+      });
       // 書類番号をその種別のプレフィックスで再採番
       currentDoc.docNumber = generateDocNumber(type);
       DOM.inputDocNumber.value = currentDoc.docNumber;
       renderAll();
-      showToast(`「${DOC_TYPES[type].label}」に切り替えました`);
+      showToast(`「${type === 'estimate' ? '御見積書（単票）' : '納品請求書（請求書・納品書・領収書 3枚セット）'}」に切り替えました`);
     });
   });
 
@@ -13993,21 +15751,21 @@ function setupEventListeners() {
 
   window.processVoiceInput = async (textToProcess) => {
     if (!textToProcess || !textToProcess.trim() || textToProcess.includes('のように話してください')) {
-       window.closeVoiceModal();
-       return;
+      window.closeVoiceModal();
+      return;
     }
     window.isVoiceAnalyzing = true;
     const btnComplete = document.getElementById('btnCompleteVoice');
     const btnCancel = document.getElementById('btnCancelVoice');
-    
+
     if (btnComplete) {
       btnComplete.innerHTML = '🔄 AI解析中...';
       btnComplete.disabled = true;
     }
     if (btnCancel) btnCancel.disabled = true;
-    
+
     showToast('音声を解析しています...', 'info');
-    
+
     try {
       const defaultType = 'invoice';
       const profile = typeof loadIssuerProfile === 'function' ? loadIssuerProfile() : (currentDoc ? currentDoc.issuer : null);
@@ -14022,13 +15780,13 @@ function setupEventListeners() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: textToProcess })
       });
-      
+
       if (!response.ok) throw new Error('サーバーエラー');
       const data = await response.json();
       if (data.error) throw new Error(data.error);
-      
+
       console.log('解析結果:', data);
-      
+
       if (data.documentType === '納品書') {
         currentDoc.docType = 'delivery';
         const docTypeBtn = document.querySelector(`.doc-type-btn[data-type="delivery"]`);
@@ -14044,7 +15802,7 @@ function setupEventListeners() {
           docTypeBtn.classList.add('active');
         }
       }
-      
+
       if (data.clientCode !== undefined) {
         currentDoc.client.code = data.clientCode || '';
         if (DOM.inputClientCode) DOM.inputClientCode.value = data.clientCode || '';
@@ -14057,13 +15815,13 @@ function setupEventListeners() {
       if (data.issueDate) currentDoc.issueDate = data.issueDate;
       if (data.dueDate) currentDoc.dueDate = data.dueDate;
       if (data.notes) currentDoc.notes = data.notes;
-      
+
       if (data.items && data.items.length > 0) {
         currentDoc.items = data.items.map(item => {
           let uPrice = Number(item.userPrice) || 0;
           let uUnitPrice = Number(item.unitPrice) || 0;
           let uTax = Number(item.taxRate) || 10;
-          
+
           if (uPrice > 0) {
             // 販売店利益20%ルールに基づいて税抜仕切り単価を自動逆算
             const res = typeof calculateWholesalePrice === 'function' ? calculateWholesalePrice(uPrice, uTax) : { wholesaleUnitPriceEx: uUnitPrice };
@@ -14071,7 +15829,7 @@ function setupEventListeners() {
               uUnitPrice = res.wholesaleUnitPriceEx;
             }
           }
-          
+
           return {
             id: 'item_' + Math.random().toString(36).substr(2, 9),
             name: item.name || '',
@@ -14082,12 +15840,12 @@ function setupEventListeners() {
           };
         });
       }
-      
+
       saveActiveDoc(currentDoc);
       populateFormFromDoc();
       renderAll();
       showToast('音声からフォームを入力しました', 'success');
-      
+
     } catch (err) {
       console.error(err);
       alert('音声の解析に失敗しました: ' + err.message);
@@ -14099,14 +15857,14 @@ function setupEventListeners() {
 
   if (btnVoiceInput) {
     btnVoiceInput.addEventListener('click', () => {
-      if (window.isVoiceAnalyzing) return; 
+      if (window.isVoiceAnalyzing) return;
 
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRecognition) {
         alert('お使いのブラウザは音声認識に対応していません。（Chrome, Safari等をご利用ください）');
         return;
       }
-      
+
       const modal = document.getElementById('voiceInputModal');
       const preview = document.getElementById('voiceInterimText');
       const btnCancel = document.getElementById('btnCancelVoice');
@@ -14148,23 +15906,23 @@ function setupEventListeners() {
       recognition.onerror = (event) => {
         console.error('音声認識エラー:', event.error);
         if (event.error === 'not-allowed') {
-            preview.innerHTML = '<span style="color: #dc2626; font-weight: bold;">マイクへのアクセスが許可されていません。</span><br>ブラウザのアドレスバー横の鍵アイコン（または端末の設定）からマイクの使用を「許可」にして再度お試しください。';
-            btnComplete.disabled = true;
+          preview.innerHTML = '<span style="color: #dc2626; font-weight: bold;">マイクへのアクセスが許可されていません。</span><br>ブラウザのアドレスバー横の鍵アイコン（または端末の設定）からマイクの使用を「許可」にして再度お試しください。';
+          btnComplete.disabled = true;
         } else if (event.error !== 'aborted') {
-            showToast('音声認識に失敗しました: ' + event.error, 'error');
-            window.closeVoiceModal();
+          showToast('音声認識に失敗しました: ' + event.error, 'error');
+          window.closeVoiceModal();
         }
       };
-      
+
       recognition.onspeechstart = () => {
-         if (window.voiceSilenceTimer) clearTimeout(window.voiceSilenceTimer);
+        if (window.voiceSilenceTimer) clearTimeout(window.voiceSilenceTimer);
       };
       recognition.onspeechend = () => {
-         window.voiceSilenceTimer = setTimeout(() => {
-             if (window.voiceRecognition && !window.isVoiceAnalyzing && window.hasStartedSpeaking) {
-                 window.completeVoiceInput();
-             }
-         }, 3000);
+        window.voiceSilenceTimer = setTimeout(() => {
+          if (window.voiceRecognition && !window.isVoiceAnalyzing && window.hasStartedSpeaking) {
+            window.completeVoiceInput();
+          }
+        }, 3000);
       };
 
       recognition.start();
@@ -14373,6 +16131,19 @@ function setupEventListeners() {
     if (chk) chk.checked = profile.showStamp !== false;
 
     updateSettingStampThumbnail(profile.stampDataUrl);
+    
+    // 印影画像がローカルにない場合、サーバー（Firestore settings/issuer）から即座に自動復元
+    if (!profile.stampDataUrl && typeof fetchServerIssuerProfile === 'function') {
+      fetchServerIssuerProfile().then(srv => {
+        if (srv && srv.stampDataUrl) {
+          profile.stampDataUrl = srv.stampDataUrl;
+          updateSettingStampThumbnail(srv.stampDataUrl);
+          if (typeof saveIssuerProfile === 'function') saveIssuerProfile(profile);
+          console.log('[自社印モーダル復元] サーバーから印鑑画像を読み込みました');
+        }
+      }).catch(() => {});
+    }
+
     modal.classList.add('active');
   };
 
@@ -14418,6 +16189,10 @@ function setupEventListeners() {
 
     const currentProfile = (typeof loadIssuerProfile === 'function') ? (loadIssuerProfile() || {}) : {};
     let stampDataUrl = tempSettingStampDataUrl || currentProfile.stampDataUrl;
+    // 既存の印鑑画像を角印で誤って上書き消去しないよう保護
+    if (!stampDataUrl && currentProfile.stampDataUrl) {
+      stampDataUrl = currentProfile.stampDataUrl;
+    }
     if (!stampDataUrl && name) {
       stampDataUrl = generateCompanyStamp(name);
     }
@@ -14679,9 +16454,32 @@ function setupEventListeners() {
     DOM.clientMasterInputCode.addEventListener('input', checkClientMasterCodeDuplicate);
     DOM.clientMasterInputCode.addEventListener('blur', checkClientMasterCodeDuplicate);
   }
+  if (DOM.btnAutoGenerateClientCode) {
+    DOM.btnAutoGenerateClientCode.addEventListener('click', () => {
+      const code = (typeof generateUniqueClientCode === 'function') ? generateUniqueClientCode() : '';
+      if (DOM.clientMasterInputCode) {
+        DOM.clientMasterInputCode.value = code;
+        checkClientMasterCodeDuplicate();
+        showToast(`販売店コード「${code}」を自動生成しました`, 'info');
+      }
+    });
+  }
   if (DOM.inputClientCode) {
     DOM.inputClientCode.addEventListener('input', checkDocClientCodeDuplicate);
     DOM.inputClientCode.addEventListener('blur', checkDocClientCodeDuplicate);
+  }
+  if (DOM.btnAutoGenerateDocClientCode) {
+    DOM.btnAutoGenerateDocClientCode.addEventListener('click', () => {
+      const code = (typeof generateUniqueClientCode === 'function') ? generateUniqueClientCode() : '';
+      if (DOM.inputClientCode) {
+        DOM.inputClientCode.value = code;
+        if (currentDoc && currentDoc.client) {
+          currentDoc.client.code = code;
+        }
+        checkDocClientCodeDuplicate();
+        showToast(`販売店コード「${code}」を自動生成しました`, 'info');
+      }
+    });
   }
   if (DOM.inputClientName) {
     DOM.inputClientName.addEventListener('change', handleClientNameAutocomplete);
@@ -14757,26 +16555,55 @@ function setupEventListeners() {
     });
   }
 
-  // 発行済伝票から実在庫を自動引落・同期
-  if (DOM.btnSyncStockFromDocs) {
-    DOM.btnSyncStockFromDocs.addEventListener('click', () => {
-      const res = syncInventoryStockFromIssuedDocs();
-      syncInventoryStockFromSerials();
-      renderInventoryTable();
-      renderInventorySerialTable();
-      const docCount = res.validDocCount || 0;
-      const details = (res.detailsList && res.detailsList.length > 0)
-        ? res.detailsList.map(d => `・${d.name}: 伝票出荷 ${d.shipped}台 (現在庫: ${d.after}台 / 入庫総数: ${d.totalIn}台)`).join('\n')
-        : '（出荷集計対象なし）';
+  // 発行済伝票から実在庫 ＆ シリアル台帳を自動引落・完全同期
+  function executeFullDocStockSync() {
+    console.log('【伝票出荷引落】発行済伝票から実在庫 ＆ シリアル台帳の同期開始');
 
-      if (res.updated) {
-        alert(`【発行伝票から在庫集計 完了】\n確定発行済伝票（計${docCount}件）から出荷数量を集計し、実在庫を更新しました！\n\n【伝票出荷数 内訳】\n${details}\n\n※デモ機等の伝票未発行分は含まれていません。`);
-        showToast(`発行伝票（${docCount}件）から出荷数量を実在庫へ引き落としました！`, 'success');
-      } else {
-        alert(`【伝票出荷集計 内訳】\n確定発行済伝票（計${docCount}件）から集計された出荷数量です：\n\n${details}\n\n※デモ機等の伝票未発行分は含まれていません。現在の在庫数は同期済みです。`);
-        showToast(`発行済伝票（${docCount}件）の出荷数量と現在の在庫はすべて同期済みです`, 'info');
-      }
-    });
+    // 1. 発行済伝票からシリアル台帳を出荷引き落とし・自動同期！
+    const serialRes = (typeof syncInventorySerialsFromIssuedDocs === 'function')
+      ? syncInventorySerialsFromIssuedDocs()
+      : { updatedCount: 0, updatedSerials: [], validDocCount: 0 };
+
+    // 2. 発行済伝票から実在庫を自動引落・同期
+    const res = (typeof syncInventoryStockFromIssuedDocs === 'function')
+      ? syncInventoryStockFromIssuedDocs()
+      : { updated: false, validDocCount: 0, detailsList: [] };
+
+    // 3. シリアル台帳から手元実在庫を連動
+    if (typeof syncInventoryStockFromSerials === 'function') {
+      syncInventoryStockFromSerials();
+    }
+
+    // 4. UI再描画
+    if (typeof renderInventoryTable === 'function') renderInventoryTable();
+    if (typeof renderInventorySerialTable === 'function') renderInventorySerialTable();
+    if (typeof renderSerialsManagementTable === 'function') renderSerialsManagementTable();
+
+    const docCount = res.validDocCount || serialRes.validDocCount || 0;
+    const details = (res.detailsList && res.detailsList.length > 0)
+      ? res.detailsList.map(d => `・${d.name}: 伝票出荷 ${d.shipped}台 (現在庫: ${d.after}台 / 入庫総数: ${d.totalIn}台)`).join('\n')
+      : '（出荷集計対象なし）';
+
+    let msg = `【確定伝票出荷引落 完了】\n発行済伝票（計${docCount}件）から出荷数量およびシリアル番号を完全照合しました！\n\n`;
+
+    if (serialRes.updatedCount > 0) {
+      msg += `【🔢 シリアル台帳 出荷引落】 (${serialRes.updatedCount}件)\n` +
+        serialRes.updatedSerials.map(s => `・S/N ${s.serialNumber} (${s.itemName || '製品'}) ➔ 伝票 ${s.docNumber} [${s.clientName || '取引先'}] へ出荷済更新`).join('\n') +
+        `\n\n`;
+    } else {
+      msg += `【🔢 シリアル台帳】\n伝票に記載されたシリアル番号はすべて出荷済みに同期済みです。\n\n`;
+    }
+
+    msg += `【📦 在庫マスタ 伝票出荷数内訳】\n${details}\n\n※デモ機等の伝票未発行分は含まれていません。`;
+
+    alert(msg);
+    showToast(`発行伝票（${docCount}件）から実在庫 ＆ シリアル台帳（${serialRes.updatedCount}件更新）を出荷引き落とし・同期しました！`, 'success');
+  }
+
+  window.executeSyncSerialsFromDocs = executeFullDocStockSync;
+
+  if (DOM.btnSyncStockFromDocs) {
+    DOM.btnSyncStockFromDocs.addEventListener('click', executeFullDocStockSync);
   }
 
   // 在庫マスタ タブ切替イベント
@@ -15194,7 +17021,7 @@ function setupEventListeners() {
     DOM.modalAccDateStart.addEventListener('change', updateAccDateRangeModalPreview);
     DOM.modalAccDateStart.addEventListener('click', () => {
       if (typeof DOM.modalAccDateStart.showPicker === 'function') {
-        try { DOM.modalAccDateStart.showPicker(); } catch (err) {}
+        try { DOM.modalAccDateStart.showPicker(); } catch (err) { }
       }
     });
   }
@@ -15203,7 +17030,7 @@ function setupEventListeners() {
     DOM.modalAccDateEnd.addEventListener('change', updateAccDateRangeModalPreview);
     DOM.modalAccDateEnd.addEventListener('click', () => {
       if (typeof DOM.modalAccDateEnd.showPicker === 'function') {
-        try { DOM.modalAccDateEnd.showPicker(); } catch (err) {}
+        try { DOM.modalAccDateEnd.showPicker(); } catch (err) { }
       }
     });
   }
@@ -15411,13 +17238,43 @@ function setupEventListeners() {
     DOM.btnCloseAttendanceModal2.addEventListener('click', closeAttendanceModal);
   }
 
-  // 出勤・退勤打刻ボタン
-  if (DOM.btnClockIn) {
-    DOM.btnClockIn.addEventListener('click', handleClockIn);
-  }
-  if (DOM.btnClockOut) {
-    DOM.btnClockOut.addEventListener('click', handleClockOut);
-  }
+  // 出勤・退勤打刻ボタン（イベント委譲：スマホでのタッチ・動的再描画に完全対応）
+  document.addEventListener('click', (e) => {
+    const clockOutBtn = e.target.closest('#btnClockOut');
+    if (clockOutBtn) {
+      e.preventDefault();
+      handleClockOut();
+      return;
+    }
+    const clockInBtn = e.target.closest('#btnClockIn');
+    if (clockInBtn) {
+      e.preventDefault();
+      handleClockIn();
+      return;
+    }
+    const syncBtn = e.target.closest('#btnSyncAttendanceNow');
+    if (syncBtn) {
+      e.preventDefault();
+      triggerAttendanceSync();
+      return;
+    }
+    const globalSyncBtn = e.target.closest('#btnHeaderGlobalSync');
+    if (globalSyncBtn) {
+      e.preventDefault();
+      triggerGlobalManualSync();
+      return;
+    }
+  });
+
+  // モバイル端末等の画面復帰時（スリープ解除や他アプリから復帰時）の勤怠自動同期
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && currentAppView === 'attendance') {
+      console.log('【勤怠管理】画面復帰を検知、最新の打刻データをクラウド同期します');
+      syncAttendanceWithServer().then(() => {
+        updateAttendanceUI();
+      }).catch(() => {});
+    }
+  });
 
   // 勤怠表示期間フィルター変更イベント
   if (DOM.attendanceMonthFilter) {
@@ -15530,6 +17387,105 @@ function setupEventListeners() {
   if (typeof initSerialsManagementEvents === 'function') {
     initSerialsManagementEvents();
   }
+
+  // スマホ用 Pull-to-Refresh（下に引っ張って最新同期）の初期化
+  setupPullToRefresh();
+}
+
+// ==========================================================================
+// スマホ用 Pull-to-Refresh（下に引っ張ってクラウド最新同期）
+// ==========================================================================
+function setupPullToRefresh() {
+  const ptr = document.getElementById('pullToRefreshIndicator');
+  const ptrText = document.getElementById('ptrText');
+  const ptrIcon = document.getElementById('ptrIcon');
+  const ptrSpinner = document.getElementById('ptrSpinner');
+  if (!ptr) return;
+
+  let startY = 0;
+  let currentY = 0;
+  let isPulling = false;
+  let isRefreshing = false;
+  const PULL_THRESHOLD = 65; // しきい値 (px)
+
+  window.addEventListener('touchstart', (e) => {
+    if (isRefreshing || !e.touches || !e.touches[0]) return;
+    // 画面最上部にいる時のみプル開始を許可
+    const scrollY = window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
+    if (scrollY <= 2) {
+      startY = e.touches[0].pageY;
+      currentY = startY;
+      isPulling = true;
+    } else {
+      isPulling = false;
+    }
+  }, { passive: true });
+
+  window.addEventListener('touchmove', (e) => {
+    if (!isPulling || isRefreshing || !e.touches || !e.touches[0]) return;
+    currentY = e.touches[0].pageY;
+    const diff = currentY - startY;
+
+    if (diff > 5) {
+      // 抵抗感（dampening）を付与して自然な引っ張り感
+      const pullDistance = Math.min(diff * 0.42, 85);
+      ptr.style.transform = `translateY(${pullDistance}px)`;
+
+      if (pullDistance >= PULL_THRESHOLD * 0.42) {
+        if (ptrIcon) ptrIcon.style.transform = 'rotate(180deg)';
+        if (ptrText) ptrText.textContent = '指を離して最新同期';
+      } else {
+        if (ptrIcon) ptrIcon.style.transform = 'rotate(0deg)';
+        if (ptrText) ptrText.textContent = '下に引っ張って最新同期';
+      }
+    } else {
+      ptr.style.transform = 'translateY(0)';
+    }
+  }, { passive: true });
+
+  window.addEventListener('touchend', async () => {
+    if (!isPulling || isRefreshing) return;
+    isPulling = false;
+    const diff = currentY - startY;
+    const pullDistance = diff * 0.42;
+
+    if (pullDistance >= PULL_THRESHOLD * 0.42) {
+      // しきい値を超えたため同期実行！
+      isRefreshing = true;
+      ptr.style.transform = 'translateY(65px)';
+      if (ptrIcon) ptrIcon.style.display = 'none';
+      if (ptrSpinner) ptrSpinner.style.display = 'inline-block';
+      if (ptrText) ptrText.textContent = 'クラウド同期中...';
+
+      try {
+        console.log('【Pull-to-Refresh】ユーザーが画面を下に引っ張って同期を起動しました');
+        if (typeof triggerGlobalManualSync === 'function') {
+          await triggerGlobalManualSync();
+        } else if (typeof syncAttendanceWithServer === 'function') {
+          await syncAttendanceWithServer();
+          if (typeof refreshCurrentViewUI === 'function') refreshCurrentViewUI();
+        }
+      } catch (err) {
+        console.warn('Pull-to-refresh sync failed:', err);
+      } finally {
+        setTimeout(() => {
+          ptr.style.transform = 'translateY(0)';
+          setTimeout(() => {
+            if (ptrIcon) {
+              ptrIcon.style.display = 'inline-block';
+              ptrIcon.style.transform = 'rotate(0deg)';
+            }
+            if (ptrSpinner) ptrSpinner.style.display = 'none';
+            if (ptrText) ptrText.textContent = '下に引っ張って最新同期';
+            isRefreshing = false;
+          }, 200);
+        }, 500);
+      }
+    } else {
+      // キャンセル
+      ptr.style.transform = 'translateY(0)';
+    }
+  }, { passive: true });
 }
 
 // ==========================================================================
@@ -15570,7 +17526,7 @@ function openHistoryModal() {
   if (!modal) return;
 
   const list = getHistoryList();
-  
+
   if (DOM.historyTotalCountBadge) {
     DOM.historyTotalCountBadge.textContent = `全 ${list.length} 件`;
   }
@@ -15585,7 +17541,7 @@ function openHistoryModal() {
       }
     });
     const sortedMonths = Array.from(monthsSet).sort().reverse();
-    
+
     let monthOptsHtml = '<option value="">すべての年月</option>';
     sortedMonths.forEach(ym => {
       const [y, m] = ym.split('-');
@@ -15780,19 +17736,22 @@ function renderTrashList() {
     if (item.deletedAt) {
       try {
         const d = new Date(item.deletedAt);
-        deletedTimeStr = `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+        deletedTimeStr = `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
       } catch (e) {
         deletedTimeStr = item.deletedAt;
       }
     }
 
+    const isEstimate = (docTypeKey === 'estimate');
+    const categoryBadge = isEstimate
+      ? '<span style="font-size: 0.725rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; background: #fffbeb; color: #b45309; border: 1px solid #fde68a;">📋 見積書</span>'
+      : '<span style="font-size: 0.725rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe;">📑 納品請求書</span>';
+
     html += `
       <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; gap: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); transition: all 0.2s;">
         <div style="flex: 1; min-width: 0;">
           <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px; flex-wrap: wrap;">
-            <span style="font-size: 0.725rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; background: #fee2e2; color: #b91c1c;">
-              ${escapeHtml(docTypeInfo.label)}
-            </span>
+            ${categoryBadge}
             <span style="font-weight: 800; font-size: 0.95rem; color: #0f172a;">
               ${escapeHtml(docNum)}
             </span>
@@ -15834,7 +17793,7 @@ async function handleRestoreDoc(id) {
   const target = list.find(item => String(item.id).trim() === String(id).trim());
   const docNum = target ? (target.docNumber || target.id) : id;
   const client = target ? (target.clientName || '') : '';
-  
+
   const ok = confirm(`【書類の復活】\n\n書類番号: ${docNum}\n取引先: ${client}\n\nこの書類を元通り復活させて、書類履歴に戻しますか？`);
   if (!ok) return;
 
@@ -15900,7 +17859,7 @@ function filterAndRenderHistoryList() {
   if (!container) return;
 
   const list = getHistoryList();
-  
+
   // 検索条件の取得
   const productQuery = (DOM.historySearchProduct?.value || '').trim();
   const clientQuery = (DOM.historySearchClient?.value || '').trim().toLowerCase();
@@ -15938,10 +17897,17 @@ function filterAndRenderHistoryList() {
       }
     }
 
-    // 2. 書類種別
+    // 2. 書類種別（納品請求書 vs 見積書）
     if (docTypeQuery) {
-      if (item.docType !== docTypeQuery) {
-        return false;
+      if (docTypeQuery === 'estimate') {
+        if (item.docType !== 'estimate') {
+          return false;
+        }
+      } else {
+        // 納品請求書（invoice）を選択した場合、見積書以外（invoice, delivery, receipt）すべてを対象
+        if (item.docType === 'estimate') {
+          return false;
+        }
       }
     }
 
@@ -16052,15 +18018,18 @@ function filterAndRenderHistoryList() {
       ? `<span style="background: #e0f2fe; color: #0369a1; font-weight: 700; font-size: 0.725rem; padding: 2px 7px; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px;" title="販売店経由エンドユーザー"><span style="font-size: 7px; color: #0284c7;">●</span> ユーザー: <strong>${escapeHtml(endUser)}</strong> 様分</span>`
       : '';
 
+    const isEstimate = (item.docType === 'estimate');
+    const categoryBadgeHtml = isEstimate
+      ? `<span style="background: #fffbeb; color: #b45309; border: 1px solid #fde68a; font-weight: 800; font-size: 0.775rem; padding: 2px 8px; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 1px 2px rgba(245, 158, 11, 0.1);">📋 見積書</span>`
+      : `<span style="background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; font-weight: 800; font-size: 0.775rem; padding: 2px 8px; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 1px 2px rgba(37, 99, 235, 0.1);">📑 納品請求書</span>`;
+
     card.innerHTML = `
       <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap;">
         
         <!-- 左側：書類基本情報 ＆ 明細商品チップ -->
         <div style="flex: 1; min-width: 280px;">
           <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap;">
-            <span style="background: var(--theme-primary-light); color: var(--theme-primary-dark); font-weight: 700; font-size: 0.75rem; padding: 2px 7px; border-radius: 4px;">
-              ${typeMeta.label}
-            </span>
+            ${categoryBadgeHtml}
             ${statusBadge}
             ${endUserBadge}
             <span style="font-weight: 800; font-size: 0.95rem; color: #0f172a;">${escapeHtml(item.clientName || item.client?.name || '名称未設定')}</span>
@@ -16175,6 +18144,14 @@ function filterAndRenderHistoryList() {
         if (typeof renderAccountingJournals === 'function') renderAccountingJournals();
 
         filterAndRenderHistoryList(); // 再描画
+
+        // シリアル台帳・在庫マスタの連動更新
+        if (typeof syncInventorySerialsFromIssuedDocs === 'function') syncInventorySerialsFromIssuedDocs();
+        if (typeof syncInventoryStockFromIssuedDocs === 'function') syncInventoryStockFromIssuedDocs();
+        if (typeof renderInventoryTable === 'function') renderInventoryTable();
+        if (typeof renderInventorySerialTable === 'function') renderInventorySerialTable();
+        if (typeof renderSerialsManagementTable === 'function') renderSerialsManagementTable();
+
         showToast('履歴から削除しました（プレビューもクリアされました）', 'info');
       }
     });
@@ -16193,7 +18170,7 @@ function duplicateDocFromHistory(id) {
   const newDoc = JSON.parse(JSON.stringify(orig));
   newDoc.id = `doc_${Date.now()}`;
   newDoc.docNumber = generateDocNumber(newDoc.docType || 'invoice');
-  
+
   // 発行日を当日にセット
   const today = new Date();
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
@@ -16621,8 +18598,8 @@ function handleSaveItemMaster(e) {
 
   // 1. 品名入力欄の特定と値の抽出
   const nameInput = document.getElementById('itemMasterInputName') ||
-                    (formContainer ? formContainer.querySelector('#itemMasterInputName, input[type="text"]') : null) ||
-                    (DOM && DOM.itemMasterInputName);
+    (formContainer ? formContainer.querySelector('#itemMasterInputName, input[type="text"]') : null) ||
+    (DOM && DOM.itemMasterInputName);
 
   let name = nameInput ? String(nameInput.value || '').trim() : '';
 
@@ -16658,8 +18635,8 @@ function handleSaveItemMaster(e) {
 
   // 2. 単価の特定と値の抽出
   const priceInput = document.getElementById('itemMasterInputPrice') ||
-                     (formContainer ? formContainer.querySelector('#itemMasterInputPrice, input[type="number"]') : null) ||
-                     (DOM && DOM.itemMasterInputPrice);
+    (formContainer ? formContainer.querySelector('#itemMasterInputPrice, input[type="number"]') : null) ||
+    (DOM && DOM.itemMasterInputPrice);
   let priceVal = priceInput ? priceInput.value : '';
 
   // フォールバック: 単価未入力時にユーザー価格からの自動算出単価で補完
@@ -16750,7 +18727,7 @@ function renderItemMasterList(searchQuery = '') {
 
   // 検索クエリによる絞り込み
   if (q) {
-    filtered = filtered.filter(item => 
+    filtered = filtered.filter(item =>
       (item.name && item.name.toLowerCase().includes(q)) ||
       (item.note && item.note.toLowerCase().includes(q)) ||
       (item.category && item.category.toLowerCase().includes(q))
@@ -16945,8 +18922,8 @@ function checkClientMasterCodeDuplicate() {
     return null;
   }
 
-  const existing = (typeof findClientByCode === 'function') 
-    ? findClientByCode(code, editId) 
+  const existing = (typeof findClientByCode === 'function')
+    ? findClientByCode(code, editId)
     : null;
 
   if (existing) {
@@ -17024,7 +19001,7 @@ function resetClientMasterForm() {
   if (DOM.clientMasterEditId) DOM.clientMasterEditId.value = '';
   if (DOM.clientMasterFormTitle) DOM.clientMasterFormTitle.textContent = '新規取引先の登録';
   if (DOM.clientMasterInputCode) {
-    DOM.clientMasterInputCode.value = '';
+    DOM.clientMasterInputCode.value = (typeof generateUniqueClientCode === 'function') ? generateUniqueClientCode() : '';
     DOM.clientMasterInputCode.style.borderColor = '';
     DOM.clientMasterInputCode.style.backgroundColor = '';
   }
@@ -17112,7 +19089,7 @@ function renderClientMasterList(filter = 'all', searchQuery = '') {
   }
 
   if (q) {
-    filtered = filtered.filter(c => 
+    filtered = filtered.filter(c =>
       (c.name && c.name.toLowerCase().includes(q)) ||
       (c.code && c.code.toLowerCase().includes(q)) ||
       (c.address && c.address.toLowerCase().includes(q)) ||
@@ -17153,7 +19130,7 @@ function renderClientMasterList(filter = 'all', searchQuery = '') {
     `;
 
     const totalUsage = (Number(client.usageCount) || 0) + (usageMap[(client.name || '').trim()] || 0);
-    
+
     // 区分バッジ
     let catBadge = '';
     if (client.category === 'vendor') {
@@ -17532,7 +19509,7 @@ function renderInventoryTable() {
 
   let filtered = list.filter(item => !isNonStockItem(item));
   if (q) {
-    filtered = filtered.filter(item => 
+    filtered = filtered.filter(item =>
       (item.name && item.name.toLowerCase().includes(q)) ||
       (item.sku && item.sku.toLowerCase().includes(q)) ||
       (item.location && item.location.toLowerCase().includes(q)) ||
@@ -17589,6 +19566,16 @@ function renderInventoryTable() {
   `;
 
   filtered.forEach(item => {
+    // 【最重要】「👁️ 履歴」モーダル（getInventoryHistoryWithShipments）の最新残高と100%完全一致を保証
+    try {
+      if (typeof getInventoryHistoryWithShipments === 'function') {
+        const histLogs = getInventoryHistoryWithShipments(item);
+        if (Array.isArray(histLogs) && histLogs.length > 0 && histLogs[0].computedRunningStock !== undefined) {
+          item.currentStock = Number(histLogs[0].computedRunningStock);
+        }
+      }
+    } catch (e) {}
+
     const isZero = item.currentStock <= 0;
     const isLow = !isZero && item.currentStock <= item.safetyStock;
 
@@ -17628,13 +19615,13 @@ function renderInventoryTable() {
           <span style="font-size: 1.05rem; font-weight: 700; color: ${item.currentStock < 0 ? '#b91c1c' : (isZero ? '#dc2626' : (isLow ? '#d97706' : '#059669'))};">
             ${Number(item.currentStock).toLocaleString()}
           </span>
-          ${item.currentStock < 0 
-            ? `<span style="font-size: 0.65rem; color: #b91c1c; font-weight: 700; display: block; background: #fee2e2; border-radius: 3px; padding: 1px 4px; margin-top: 2px;">🚨 未入庫不足: ${Math.abs(item.currentStock)}台</span>` 
-            : (isBundle 
-              ? '<span style="font-size: 0.65rem; color: #2563eb; display: block;">(理論構成可能数)</span>' 
-              : `<span style="font-size: 0.725rem; color: #64748b; display: block;">適正: ${Number(item.safetyStock).toLocaleString()}</span>`
-            )
-          }
+          ${item.currentStock < 0
+        ? `<span style="font-size: 0.65rem; color: #b91c1c; font-weight: 700; display: block; background: #fee2e2; border-radius: 3px; padding: 1px 4px; margin-top: 2px;">🚨 未入庫不足: ${Math.abs(item.currentStock)}台</span>`
+        : (isBundle
+          ? '<span style="font-size: 0.65rem; color: #2563eb; display: block;">(理論構成可能数)</span>'
+          : `<span style="font-size: 0.725rem; color: #64748b; display: block;">適正: ${Number(item.safetyStock).toLocaleString()}</span>`
+        )
+      }
         </td>
         <td style="text-align: center;">${statusBadge}</td>
         <td>${escapeHtml(item.unit || '個')}</td>
@@ -17729,7 +19716,7 @@ function switchInventoryTab(tabName) {
   if (tabName === 'items') {
     renderInventoryTable();
     if (typeof fetchServerInventory === 'function') {
-      fetchServerInventory().then(() => renderInventoryTable()).catch(() => {});
+      fetchServerInventory().then(() => renderInventoryTable()).catch(() => { });
     }
   }
   if (tabName === 'serials') {
@@ -17738,21 +19725,22 @@ function switchInventoryTab(tabName) {
     }
     if (typeof syncInventorySerialsWithServer === 'function') {
       syncInventorySerialsWithServer().then(() => {
+        if (typeof syncInventorySerialsFromIssuedDocs === 'function') syncInventorySerialsFromIssuedDocs();
         if (typeof renderSerialsManagementTable === 'function') renderSerialsManagementTable();
         if (typeof renderInventorySerialTable === 'function') renderInventorySerialTable();
-      }).catch(() => {});
+      }).catch(() => { });
     }
   }
   if (tabName === 'lots') {
     renderInventoryLotTable();
     if (typeof syncInventoryLotsWithServer === 'function') {
-      syncInventoryLotsWithServer().then(() => renderInventoryLotTable()).catch(() => {});
+      syncInventoryLotsWithServer().then(() => renderInventoryLotTable()).catch(() => { });
     }
   }
 }
 
 window.switchInventoryTab = switchInventoryTab;
-window.invFilterSerialByItem = function(itemId) {
+window.invFilterSerialByItem = function (itemId) {
   switchInventoryTab('serials');
   if (DOM.selectSerialItemFilter) {
     DOM.selectSerialItemFilter.value = itemId;
@@ -17778,7 +19766,7 @@ function renderInventorySerialTable() {
     filtered = filtered.filter(s => s.status === statusFilter);
   }
   if (q) {
-    filtered = filtered.filter(s => 
+    filtered = filtered.filter(s =>
       (s.serialNumber && s.serialNumber.toLowerCase().includes(q)) ||
       (s.itemName && s.itemName.toLowerCase().includes(q)) ||
       (s.lotNumber && s.lotNumber.toLowerCase().includes(q)) ||
@@ -17863,7 +19851,7 @@ function renderInventorySerialTable() {
 }
 
 window.renderInventorySerialTable = renderInventorySerialTable;
-window.changeSerialStatus = function(sn, newStatus) {
+window.changeSerialStatus = function (sn, newStatus) {
   if (confirm(`シリアル番号「${sn}」のステータスを「${newStatus === 'in_stock' ? '在庫中' : '初期不良'}」に変更しますか？`)) {
     updateSerialStatus(sn, newStatus);
     renderInventorySerialTable();
@@ -17922,15 +19910,19 @@ function renderSerialsManagementTable() {
   const totalCount = serialList.length;
   const inStockCount = serialList.filter(s => s.status === 'in_stock').length;
   const shippedCount = serialList.filter(s => s.status === 'shipped').length;
-  
+  const demoCount = serialList.filter(s => s.status === 'demo').length;
+
   const countDp5000 = serialList.filter(s => (s.itemName || '').includes('DP-5000') || s.inventoryId === 'inv_dp5000_body').length;
   const inStockDp5000 = serialList.filter(s => ((s.itemName || '').includes('DP-5000') || s.inventoryId === 'inv_dp5000_body') && s.status === 'in_stock').length;
-  
+
   const countDpMs = serialList.filter(s => (s.itemName || '').includes('DP-MS') || s.inventoryId === 'inv_2').length;
   const inStockDpMs = serialList.filter(s => ((s.itemName || '').includes('DP-MS') || s.inventoryId === 'inv_2') && s.status === 'in_stock').length;
-  
+
   const countBat = serialList.filter(s => (s.itemName || '').includes('バッテリー') || s.inventoryId === 'inv_dp5000_bat').length;
   const inStockBat = serialList.filter(s => ((s.itemName || '').includes('バッテリー') || s.inventoryId === 'inv_dp5000_bat') && s.status === 'in_stock').length;
+
+  const countChg = serialList.filter(s => (s.itemName || '').includes('充電器') || s.inventoryId === 'inv_dp5000_chg' || s.itemId === 'inv_dp5000_chg' || s.itemType === 'charger').length;
+  const inStockChg = serialList.filter(s => ((s.itemName || '').includes('充電器') || s.inventoryId === 'inv_dp5000_chg' || s.itemId === 'inv_dp5000_chg' || s.itemType === 'charger') && s.status === 'in_stock').length;
 
   const elStatTotal = document.getElementById('statSerialTotal');
   if (elStatTotal) elStatTotal.innerHTML = `${totalCount} <span style="font-size: 0.85rem; font-weight: 500;">台</span>`;
@@ -17938,6 +19930,8 @@ function renderSerialsManagementTable() {
   if (elStatInStock) elStatInStock.innerHTML = `${inStockCount} <span style="font-size: 0.85rem; font-weight: 500;">台</span>`;
   const elStatShipped = document.getElementById('statSerialShipped');
   if (elStatShipped) elStatShipped.innerHTML = `${shippedCount} <span style="font-size: 0.85rem; font-weight: 500;">台</span>`;
+  const elStatDemo = document.getElementById('statSerialDemo');
+  if (elStatDemo) elStatDemo.innerHTML = `${demoCount} <span style="font-size: 0.85rem; font-weight: 500;">台</span>`;
   const elStatBreakdown = document.getElementById('statSerialBreakdown');
   if (elStatBreakdown) {
     elStatBreakdown.innerHTML = `
@@ -17945,6 +19939,7 @@ function renderSerialsManagementTable() {
         <div>🔵 DP-5000: 在庫 <strong>${inStockDp5000}</strong> / 全${countDp5000}台</div>
         <div>🟡 DP-MS: 在庫 <strong>${inStockDpMs}</strong> / 全${countDpMs}台</div>
         <div>⚪ バッテリー: 在庫 <strong>${inStockBat}</strong> / 全${countBat}台</div>
+        <div>🔌 充電器: 在庫 <strong>${inStockChg}</strong> / 全${countChg}台</div>
       </div>
     `;
   }
@@ -17964,6 +19959,9 @@ function renderSerialsManagementTable() {
       }
       if (itemFilter === 'PSE認証リチウムイオンバッテリー') {
         return name.includes('バッテリー') || invId === 'inv_dp5000_bat' || s.isCompanyOnly;
+      }
+      if (itemFilter === 'PSE認証 専用急速充電器' || itemFilter === '急速充電器') {
+        return name.includes('充電器') || invId === 'inv_dp5000_chg' || s.itemId === 'inv_dp5000_chg' || s.itemType === 'charger';
       }
       return true;
     });
@@ -18021,11 +20019,25 @@ function renderSerialsManagementTable() {
   `;
 
   filtered.forEach(s => {
-    const isBat = (s.itemName || '').includes('バッテリー') || s.inventoryId === 'inv_dp5000_bat' || s.isCompanyOnly;
-    const isMs = (s.itemName || '').includes('DP-MS') || s.inventoryId === 'inv_2';
-    const isDp5k = !isBat && !isMs;
+    const isChg = (s.itemName || '').includes('充電器') || s.inventoryId === 'inv_dp5000_chg' || s.itemId === 'inv_dp5000_chg' || s.itemType === 'charger';
+    const isBat = !isChg && ((s.itemName || '').includes('バッテリー') || s.inventoryId === 'inv_dp5000_bat' || s.isCompanyOnly);
+    const isMs = !isChg && ((s.itemName || '').includes('DP-MS') || s.inventoryId === 'inv_2');
+    const isDp5k = !isChg && !isBat && !isMs;
 
     let itemBadge = '';
+    // バッテリーまたは充電器の場合、組込先本体（bundledWith）の判定（逆引きフォールバック付き）
+    let effectiveBundledWith = s.bundledWith || '';
+    if (!effectiveBundledWith) {
+      const sSn = String(s.serialNumber || '').trim().toUpperCase();
+      if (isChg) {
+        const parent = serialList.find(b => b && String(b.chargerSerial || '').trim().toUpperCase() === sSn);
+        if (parent) effectiveBundledWith = parent.serialNumber;
+      } else if (isBat) {
+        const parent = serialList.find(b => b && Array.isArray(b.batterySerials) && b.batterySerials.map(x => String(x).trim().toUpperCase()).includes(sSn));
+        if (parent) effectiveBundledWith = parent.serialNumber;
+      }
+    }
+
     if (isDp5k) {
       const isSet = Boolean(s.isBundled);
       itemBadge = `
@@ -18042,19 +20054,26 @@ function renderSerialsManagementTable() {
           <span class="badge" style="background: #fefce8; color: #a16207; font-weight: 700; padding: 2px 5px; border-radius: 4px; border: 1px solid #fef08a; font-size: 0.72rem; white-space: nowrap;">DP-MS</span>
         </div>
       `;
+    } else if (isChg) {
+      itemBadge = `
+        <div style="display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;">
+          <span class="badge" style="background: #fdf4ff; color: #86198f; font-weight: 700; padding: 2px 5px; border-radius: 4px; border: 1px solid #f0abfc; font-size: 0.72rem; white-space: nowrap;">🔌 急速充電器</span>
+          ${(s.status === 'bundled' || effectiveBundledWith) ? `<span class="badge" style="background:#fef3c7; color:#92400e; font-size:0.65rem; font-weight:700; padding:1px 4px; border-radius:3px; border: 1px solid #fde68a; white-space: nowrap;">📦 組込 [${escapeHtml(effectiveBundledWith)}]</span>` : ''}
+        </div>
+      `;
     } else {
       itemBadge = `
         <div style="display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;">
           <span class="badge" style="background: #f1f5f9; color: #475569; font-weight: 700; padding: 2px 5px; border-radius: 4px; border: 1px solid #e2e8f0; font-size: 0.72rem; white-space: nowrap;">バッテリー</span>
-          ${(s.status === 'bundled' || s.bundledWith) ? `<span class="badge" style="background:#fef3c7; color:#92400e; font-size:0.65rem; font-weight:700; padding:1px 4px; border-radius:3px; border: 1px solid #fde68a; white-space: nowrap;">📦 組込 [${escapeHtml(s.bundledWith || '')}]</span>` : ''}
+          ${(s.status === 'bundled' || effectiveBundledWith) ? `<span class="badge" style="background:#fef3c7; color:#92400e; font-size:0.65rem; font-weight:700; padding:1px 4px; border-radius:3px; border: 1px solid #fde68a; white-space: nowrap;">📦 組込 [${escapeHtml(effectiveBundledWith)}]</span>` : ''}
         </div>
       `;
     }
 
-    // バッテリーかつ組込先本体（bundledWith）がある場合、親本体の情報を自動連動
+    // バッテリーまたは充電器かつ組込先本体（bundledWith）がある場合、親本体の情報を自動連動
     let parentBody = null;
-    if (isBat && (s.status === 'bundled' || s.bundledWith)) {
-      parentBody = serialList.find(b => b && String(b.serialNumber).trim().toUpperCase() === String(s.bundledWith).trim().toUpperCase());
+    if ((isBat || isChg) && (s.status === 'bundled' || effectiveBundledWith)) {
+      parentBody = serialList.find(b => b && String(b.serialNumber).trim().toUpperCase() === String(effectiveBundledWith).trim().toUpperCase());
     }
 
     const effectiveClient = s.clientName || (parentBody && parentBody.clientName) || '';
@@ -18073,8 +20092,9 @@ function renderSerialsManagementTable() {
       </div>
     ` : `<span style="color: #94a3b8; font-size: 0.72rem; white-space: nowrap;">未紐付</span>`;
 
-    // ステータスの表示判定（本体が出荷済みなら組込バッテリーも自動で出荷済み連動表示）
-    const effectiveStatus = (parentBody && parentBody.status === 'shipped' && s.status === 'bundled') ? 'shipped' : s.status;
+    // ステータスの表示判定（本体が出荷済みなら組込バッテリーも自動で出荷済み連動表示、デモ機ならデモ機連動表示）
+    const effectiveStatus = (parentBody && parentBody.status === 'shipped' && s.status === 'bundled') ? 'shipped' :
+      (parentBody && parentBody.status === 'demo' && s.status === 'bundled') ? 'demo' : s.status;
 
     html += `
       <tr style="border-bottom: 1px solid #e2e8f0; ${isParentLinked ? 'background: #fbfdff;' : ''}">
@@ -18096,15 +20116,16 @@ function renderSerialsManagementTable() {
         <!-- ステータス（変更可能セレクター） -->
         <td style="padding: 6px 4px; text-align: center; white-space: nowrap;">
           <select class="serial-status-select form-select form-select-xs" data-sn="${escapeHtml(s.serialNumber)}"
-            style="font-size: 0.725rem; font-weight: 700; padding: 2px 4px; width: 88px; border-radius: 4px; ${
-              effectiveStatus === 'in_stock' ? 'background: #f0fdf4; color: #166534; border-color: #86efac;' :
-              effectiveStatus === 'shipped' ? 'background: #eff6ff; color: #1e40af; border-color: #93c5fd;' :
-              effectiveStatus === 'bundled' ? 'background: #fefce8; color: #a16207; border-color: #fde047;' :
+            style="font-size: 0.725rem; font-weight: 700; padding: 2px 4px; width: 94px; border-radius: 4px; ${effectiveStatus === 'in_stock' ? 'background: #f0fdf4; color: #166534; border-color: #86efac;' :
+        effectiveStatus === 'shipped' ? 'background: #eff6ff; color: #1e40af; border-color: #93c5fd;' :
+          effectiveStatus === 'demo' ? 'background: #fff7ed; color: #c2410c; border-color: #fdba74;' :
+            effectiveStatus === 'bundled' ? 'background: #fefce8; color: #a16207; border-color: #fde047;' :
               effectiveStatus === 'maintenance' ? 'background: #fefce8; color: #854d0e; border-color: #fde047;' :
-              'background: #fef2f2; color: #991b1b; border-color: #fca5a5;'
-            }">
+                'background: #fef2f2; color: #991b1b; border-color: #fca5a5;'
+      }">
             <option value="in_stock" ${effectiveStatus === 'in_stock' ? 'selected' : ''}>🟢 在庫中</option>
             <option value="shipped" ${effectiveStatus === 'shipped' ? 'selected' : ''}>🔵 出荷済</option>
+            <option value="demo" ${effectiveStatus === 'demo' ? 'selected' : ''}>🟠 デモ機</option>
             <option value="bundled" ${effectiveStatus === 'bundled' ? 'selected' : ''}>📦 セット組込</option>
             <option value="maintenance" ${effectiveStatus === 'maintenance' ? 'selected' : ''}>🟡 保守/貸出</option>
             <option value="defective" ${effectiveStatus === 'defective' ? 'selected' : ''}>🔴 不良/廃棄</option>
@@ -18246,6 +20267,8 @@ function exportSerialsToCsv() {
   const rows = serialList.map(s => {
     let statusLabel = '在庫中';
     if (s.status === 'shipped') statusLabel = '出荷済';
+    if (s.status === 'demo') statusLabel = 'デモ機';
+    if (s.status === 'bundled') statusLabel = 'セット組込';
     if (s.status === 'maintenance') statusLabel = '保守・貸出';
     if (s.status === 'defective') statusLabel = '初期不良・廃棄';
 
@@ -18298,6 +20321,51 @@ function openSerialSingleModal(snToEdit = '') {
   const docNoInput = document.getElementById('inputModalSerialDocNo');
   const noteInput = document.getElementById('inputModalSerialNote');
 
+  // セット構成編集要素
+  const bundleSec = document.getElementById('modalSerialBundleConfigSection');
+  const bundleBadge = document.getElementById('modalSerialBundleStatusBadge');
+  const bat1Inp = document.getElementById('inputModalBundleBat1');
+  const bat2Inp = document.getElementById('inputModalBundleBat2');
+  const bat1Sel = document.getElementById('selectModalBundleBat1');
+  const bat2Sel = document.getElementById('selectModalBundleBat2');
+  const chgSel = document.getElementById('selectModalBundleCharger');
+  const chgManualInp = document.getElementById('inputModalBundleChargerManual');
+
+  // 在庫中の急速充電器 ＆ バッテリー選択肢を生成
+  const compData = typeof getAvailableBundleComponents === 'function' ? getAvailableBundleComponents() : { chargers: [], batteries: [] };
+  const batList = Array.isArray(compData.batteries) ? compData.batteries : [];
+  const chgList = Array.isArray(compData.chargers) ? compData.chargers : [];
+
+  if (bat1Sel) {
+    bat1Sel.innerHTML = '<option value="">-- 在庫中の未組込バッテリーから選択 --</option>' +
+      batList.map(b => `<option value="${escapeHtml(b.serialNumber)}">🔋 S/N: ${escapeHtml(b.serialNumber)} [ロット: ${escapeHtml(b.lotNumber || '-')}]</option>`).join('');
+  }
+  if (bat2Sel) {
+    bat2Sel.innerHTML = '<option value="">-- 在庫中の未組込バッテリーから選択 --</option>' +
+      batList.map(b => `<option value="${escapeHtml(b.serialNumber)}">🔋 S/N: ${escapeHtml(b.serialNumber)} [ロット: ${escapeHtml(b.lotNumber || '-')}]</option>`).join('');
+  }
+  if (chgSel) {
+    chgSel.innerHTML = '<option value="">-- 在庫中の充電器シリアルから選択 --</option>' +
+      chgList.map(c => `<option value="${escapeHtml(c.serialNumber)}">⚡ S/N: ${escapeHtml(c.serialNumber)} [ロット: ${escapeHtml(c.lotNumber || '-')}]</option>`).join('');
+  }
+
+  // プルダウン選択時の手入力欄への自動連動
+  if (bat1Sel && bat1Inp) {
+    bat1Sel.onchange = () => {
+      if (bat1Sel.value) bat1Inp.value = bat1Sel.value;
+    };
+  }
+  if (bat2Sel && bat2Inp) {
+    bat2Sel.onchange = () => {
+      if (bat2Sel.value) bat2Inp.value = bat2Sel.value;
+    };
+  }
+  if (chgSel && chgManualInp) {
+    chgSel.onchange = () => {
+      if (chgSel.value) chgManualInp.value = chgSel.value;
+    };
+  }
+
   if (snToEdit) {
     const list = typeof getInventorySerialList === 'function' ? getInventorySerialList() : [];
     const item = list.find(s => s.serialNumber === snToEdit || s.id === snToEdit);
@@ -18308,9 +20376,15 @@ function openSerialSingleModal(snToEdit = '') {
         snInput.value = item.serialNumber || '';
         snInput.readOnly = true;
       }
+      const isChg = (item.itemName || '').includes('充電器') || item.inventoryId === 'inv_dp5000_chg' || item.itemId === 'inv_dp5000_chg' || item.itemType === 'charger';
+      const isMs = (item.itemName || '').includes('DP-MS') || item.inventoryId === 'inv_2';
+      const isBat = (item.itemName || '').includes('バッテリー') || item.isCompanyOnly;
+      const isDp5k = !isChg && !isMs && !isBat;
+
       if (itemSelect) {
-        if ((item.itemName || '').includes('DP-MS')) itemSelect.value = 'DP-MS';
-        else if ((item.itemName || '').includes('バッテリー') || item.isCompanyOnly) itemSelect.value = 'PSE認証リチウムイオンバッテリー';
+        if (isChg) itemSelect.value = 'PSE認証 専用急速充電器';
+        else if (isMs) itemSelect.value = 'DP-MS';
+        else if (isBat) itemSelect.value = 'PSE認証リチウムイオンバッテリー';
         else itemSelect.value = 'DP-5000';
       }
       if (statusSelect) statusSelect.value = item.status || 'in_stock';
@@ -18319,6 +20393,117 @@ function openSerialSingleModal(snToEdit = '') {
       if (endUserInput) endUserInput.value = item.endUserName || '';
       if (docNoInput) docNoInput.value = item.docNumber || item.invoiceNumber || '';
       if (noteInput) noteInput.value = item.note || '';
+
+      // DP-5000（本体）の場合はセット構成（バッテリー2個・急速充電器）編集欄を表示
+      if (bundleSec) {
+        if (isDp5k || item.isBundled || (Array.isArray(item.batterySerials) && item.batterySerials.length > 0) || item.chargerSerial) {
+          bundleSec.style.display = 'block';
+          if (bundleBadge) {
+            bundleBadge.textContent = item.isBundled ? '📦 セット化済' : '単体本体 (未セット化)';
+            bundleBadge.style.background = item.isBundled ? '#e0e7ff' : '#f1f5f9';
+            bundleBadge.style.color = item.isBundled ? '#3730a3' : '#475569';
+          }
+
+          // 1. バッテリーの取得（親の batterySerials -> 台帳から bundledWith 逆引き -> 備考欄 -> 同一伝票紐付けフォールバック）
+          const itemSnNorm = String(item.serialNumber || '').trim().toUpperCase();
+          const itemDocNoNorm = String(item.docNumber || item.invoiceNumber || '').trim().toUpperCase();
+
+          let batSns = Array.isArray(item.batterySerials) ? item.batterySerials.map(x => String(x).trim()).filter(Boolean) : [];
+          if (batSns.length === 0) {
+            const linkedBats = list.filter(s => {
+              if (!s) return false;
+              const bWith = String(s.bundledWith || '').trim().toUpperCase();
+              const isB = (s.itemName && s.itemName.includes('バッテリー')) || s.inventoryId === 'inv_dp5000_bat' || s.itemId === 'inv_dp5000_bat' || s.isCompanyOnly || String(s.serialNumber || '').startsWith('BAT-') || String(s.serialNumber || '').startsWith('0031');
+              return isB && bWith === itemSnNorm;
+            });
+            if (linkedBats.length > 0) {
+              batSns = linkedBats.map(b => b.serialNumber);
+            }
+          }
+          if (batSns.length < 2 && item.note) {
+            const m = item.note.match(/🔋\s*([N\dA-Z\-]+)[,\s　]+([N\dA-Z\-]+)/i);
+            if (m) {
+              if (!batSns[0]) batSns[0] = m[1].trim();
+              if (!batSns[1]) batSns[1] = m[2].trim();
+            }
+          }
+          // 同一伝票番号フォールバック（伝票出荷でセット出荷されたバッテリーを検出）
+          if (batSns.length === 0 && itemDocNoNorm) {
+            const docBats = list.filter(s => {
+              if (!s) return false;
+              const sDoc = String(s.docNumber || s.invoiceNumber || '').trim().toUpperCase();
+              const isB = (s.itemName && s.itemName.includes('バッテリー')) || s.inventoryId === 'inv_dp5000_bat' || s.itemId === 'inv_dp5000_bat' || s.isCompanyOnly || String(s.serialNumber || '').startsWith('BAT-') || String(s.serialNumber || '').startsWith('0031');
+              return isB && sDoc === itemDocNoNorm;
+            });
+            if (docBats.length > 0) {
+              batSns = docBats.slice(0, 2).map(b => b.serialNumber);
+            }
+          }
+
+          // バッテリー1 の反映
+          const b1Val = batSns[0] || '';
+          if (bat1Inp) bat1Inp.value = b1Val;
+          if (bat1Sel && b1Val) {
+            if (!Array.from(bat1Sel.options).some(o => o.value === b1Val)) {
+              const opt = document.createElement('option');
+              opt.value = b1Val;
+              opt.textContent = `🔋 S/N: ${b1Val} [現在紐付中]`;
+              bat1Sel.appendChild(opt);
+            }
+            bat1Sel.value = b1Val;
+          }
+
+          // バッテリー2 の反映
+          const b2Val = batSns[1] || '';
+          if (bat2Inp) bat2Inp.value = b2Val;
+          if (bat2Sel && b2Val) {
+            if (!Array.from(bat2Sel.options).some(o => o.value === b2Val)) {
+              const opt = document.createElement('option');
+              opt.value = b2Val;
+              opt.textContent = `🔋 S/N: ${b2Val} [現在紐付中]`;
+              bat2Sel.appendChild(opt);
+            }
+            bat2Sel.value = b2Val;
+          }
+
+          // 2. 急速充電器の取得（親の chargerSerial -> 台帳から bundledWith 逆引き -> 同一伝票フォールバック）
+          let chgVal = item.chargerSerial || '';
+          if (!chgVal) {
+            const linkedChg = list.find(s => {
+              if (!s) return false;
+              const bWith = String(s.bundledWith || '').trim().toUpperCase();
+              const isC = (s.itemName && s.itemName.includes('充電器')) || s.inventoryId === 'inv_dp5000_chg' || s.itemId === 'inv_dp5000_chg' || s.itemType === 'charger' || String(s.serialNumber || '').startsWith('P44') || String(s.serialNumber || '').startsWith('20260324');
+              return isC && bWith === itemSnNorm;
+            });
+            if (linkedChg) {
+              chgVal = linkedChg.serialNumber;
+            }
+          }
+          if (!chgVal && itemDocNoNorm) {
+            const docChg = list.find(s => {
+              if (!s) return false;
+              const sDoc = String(s.docNumber || s.invoiceNumber || '').trim().toUpperCase();
+              const isC = (s.itemName && s.itemName.includes('充電器')) || s.inventoryId === 'inv_dp5000_chg' || s.itemId === 'inv_dp5000_chg' || s.itemType === 'charger' || String(s.serialNumber || '').startsWith('P44') || String(s.serialNumber || '').startsWith('20260324');
+              return isC && sDoc === itemDocNoNorm;
+            });
+            if (docChg) {
+              chgVal = docChg.serialNumber;
+            }
+          }
+          if (chgManualInp) chgManualInp.value = chgVal;
+          if (chgSel && chgVal) {
+            if (!Array.from(chgSel.options).some(o => o.value === chgVal)) {
+              const opt = document.createElement('option');
+              opt.value = chgVal;
+              opt.textContent = `⚡ S/N: ${chgVal} [現在紐付中]`;
+              chgSel.appendChild(opt);
+            }
+            chgSel.value = chgVal;
+          }
+        } else {
+          bundleSec.style.display = 'none';
+        }
+      }
     }
   } else {
     if (titleEl) titleEl.textContent = '新規シリアル番号の登録';
@@ -18334,6 +20519,13 @@ function openSerialSingleModal(snToEdit = '') {
     if (endUserInput) endUserInput.value = '';
     if (docNoInput) docNoInput.value = '';
     if (noteInput) noteInput.value = '';
+    if (bat1Inp) bat1Inp.value = '';
+    if (bat2Inp) bat2Inp.value = '';
+    if (bat1Sel) bat1Sel.value = '';
+    if (bat2Sel) bat2Sel.value = '';
+    if (chgManualInp) chgManualInp.value = '';
+    if (chgSel) chgSel.value = '';
+    if (bundleSec) bundleSec.style.display = 'none';
   }
 
   modal.classList.add('active');
@@ -18364,10 +20556,10 @@ function saveSerialSingleModal() {
   const docNumber = (document.getElementById('inputModalSerialDocNo')?.value || '').trim();
   const note = (document.getElementById('inputModalSerialNote')?.value || '').trim();
 
-  // バリデーション: Nから始まる4桁〜5桁の数字
+  // バリデーション: シリアル番号の入力チェック（N番号、CHG/BAT番号、ロット番号、数値等に対応）
   const normSn = rawSn.replace(/\s+/g, '').toUpperCase();
-  if (!/^N\d{4,5}$/.test(normSn)) {
-    alert('シリアル番号は「Nから始まる4桁または5桁の数字」（例: N10933, N2001）で入力してください。');
+  if (!normSn || normSn.length < 3) {
+    alert('シリアル番号を入力してください。');
     return;
   }
 
@@ -18382,6 +20574,9 @@ function saveSerialSingleModal() {
     inventoryId = 'inv_dp5000_bat';
     itemName = 'PSE認証リチウムイオンバッテリー';
     isCompanyOnly = true;
+  } else if (itemType === 'PSE認証 専用急速充電器' || itemType === '急速充電器') {
+    inventoryId = 'inv_dp5000_chg';
+    itemName = 'PSE認証 専用急速充電器';
   }
 
   const serialData = {
@@ -18400,11 +20595,35 @@ function saveSerialSingleModal() {
   };
 
   saveInventorySerial(serialData);
+
+  // セット品構成（バッテリー・充電器シリアル割り当て）の保存
+  const bundleSec = document.getElementById('modalSerialBundleConfigSection');
+  if (bundleSec && bundleSec.style.display !== 'none') {
+    const bat1InpVal = (document.getElementById('inputModalBundleBat1')?.value || '').trim().toUpperCase();
+    const bat1SelVal = (document.getElementById('selectModalBundleBat1')?.value || '').trim().toUpperCase();
+    const bat1 = bat1InpVal || bat1SelVal;
+
+    const bat2InpVal = (document.getElementById('inputModalBundleBat2')?.value || '').trim().toUpperCase();
+    const bat2SelVal = (document.getElementById('selectModalBundleBat2')?.value || '').trim().toUpperCase();
+    const bat2 = bat2InpVal || bat2SelVal;
+
+    const chgSelVal = (document.getElementById('selectModalBundleCharger')?.value || '').trim().toUpperCase();
+    const chgManualVal = (document.getElementById('inputModalBundleChargerManual')?.value || '').trim().toUpperCase();
+    const chosenChg = chgManualVal || chgSelVal;
+    const chosenBats = [bat1, bat2].filter(Boolean);
+
+    if (chosenChg || chosenBats.length > 0) {
+      if (typeof assignBundleComponentsToBody === 'function') {
+        assignBundleComponentsToBody(normSn, chosenBats, chosenChg);
+      }
+    }
+  }
+
   closeSerialSingleModal();
   renderSerialsManagementTable();
   if (typeof renderInventoryTable === 'function') renderInventoryTable();
   if (typeof renderInventorySerialTable === 'function') renderInventorySerialTable();
-  showToast(`シリアル番号「${normSn}」を保存し、在庫マスタと連動しました！`, 'success');
+  showToast(`シリアル番号「${normSn}」を保存し、在庫マスタおよびセット構成と連動しました！`, 'success');
 }
 window.saveSerialSingleModal = saveSerialSingleModal;
 
@@ -18440,7 +20659,7 @@ window.closeBundleAssemblyModal = closeBundleAssemblyModal;
 
 function renderBundleAssemblyModal() {
   const comp = typeof getAvailableBundleComponents === 'function' ? getAvailableBundleComponents() : { bodies: [], batteries: [], chargerStock: 0 };
-  
+
   const selectBody = document.getElementById('bundleSelectBodySerial');
   const bodyCountText = document.getElementById('bundleBodyStockCountText');
   const batContainer = document.getElementById('bundleBatteryListContainer');
@@ -18510,14 +20729,26 @@ function renderBundleAssemblyModal() {
     }
   }
 
-  // 3. 急速充電器の在庫数表示
-  if (chgStockDisp) {
-    chgStockDisp.innerHTML = `${comp.chargerStock} 個 <span style="font-size:0.75rem; color:#dc2626;">${comp.chargerStock < 1 ? '(⚠️在庫なし)' : ''}</span>`;
-  }
-
-  // 4. 合計原価
-  if (totalCostDisp) {
-    totalCostDisp.textContent = '¥172,000';
+  // 3. 急速充電器のシリアル選択肢生成
+  const selectChg = document.getElementById('bundleSelectChargerSerial');
+  if (selectChg) {
+    const chargers = Array.isArray(comp.chargers) ? comp.chargers : [];
+    if (chgStockDisp) {
+      chgStockDisp.innerHTML = `${chargers.length} 個 <span style="font-size:0.75rem; color:#dc2626;">${chargers.length < 1 ? '(⚠️在庫なし)' : ''}</span>`;
+    }
+    if (chargers.length === 0) {
+      selectChg.innerHTML = '<option value="">⚠️ 在庫中（未組込）の急速充電器シリアルがありません</option>';
+      selectChg.disabled = true;
+    } else {
+      selectChg.disabled = false;
+      selectChg.innerHTML = chargers.map((c, idx) => {
+        const cost = Number(c.unitCost || c.costPrice || 7700);
+        return `<option value="${escapeHtml(c.serialNumber)}" data-cost="${cost}" ${idx === 0 ? 'selected' : ''}>S/N: ${escapeHtml(c.serialNumber)} [ロット: ${escapeHtml(c.lotNumber || '-')}] (仕入原価: ¥${cost.toLocaleString()})</option>`;
+      }).join('');
+      selectChg.onchange = () => {
+        updateBundleAssemblyState();
+      };
+    }
   }
 
   updateBundleAssemblyState();
@@ -18527,7 +20758,8 @@ function updateBundleAssemblyState() {
   const batCountBadge = document.getElementById('bundleSelectedBatCount');
   const btnExec = document.getElementById('btnExecuteBundleAssembly');
   const selectBody = document.getElementById('bundleSelectBodySerial');
-  const comp = typeof getAvailableBundleComponents === 'function' ? getAvailableBundleComponents() : { bodies: [], batteries: [], chargerStock: 0 };
+  const selectChg = document.getElementById('bundleSelectChargerSerial');
+  const comp = typeof getAvailableBundleComponents === 'function' ? getAvailableBundleComponents() : { bodies: [], batteries: [], chargers: [], chargerStock: 0 };
 
   const selectedCount = currentBundleSelectedBatteries.size;
   if (batCountBadge) {
@@ -18551,7 +20783,26 @@ function updateBundleAssemblyState() {
 
   const hasBody = selectBody && selectBody.value && !selectBody.disabled;
   const hasBat2 = selectedCount === 2;
-  const hasChg = comp.chargerStock >= 1;
+  const hasChg = selectChg && selectChg.value && !selectChg.disabled;
+
+  // 合計仕入原価の動的合算
+  const totalCostDisp = document.getElementById('bundleTotalCostDisp');
+  if (totalCostDisp) {
+    let sumCost = 0;
+    if (selectBody && selectBody.selectedOptions && selectBody.selectedOptions[0]) {
+      const match = selectBody.selectedOptions[0].text.match(/¥([0-9,]+)/);
+      if (match) sumCost += Number(match[1].replace(/,/g, ''));
+    }
+    currentBundleSelectedBatteries.forEach(sn => {
+      const bObj = comp.batteries.find(b => b.serialNumber === sn);
+      sumCost += Number(bObj ? (bObj.unitCost || bObj.costPrice || 7700) : 7700);
+    });
+    if (selectChg && selectChg.selectedOptions && selectChg.selectedOptions[0]) {
+      const chgCost = Number(selectChg.selectedOptions[0].dataset.cost) || 7700;
+      sumCost += chgCost;
+    }
+    totalCostDisp.textContent = `¥${sumCost.toLocaleString()}`;
+  }
 
   if (btnExec) {
     const canExecute = hasBody && hasBat2 && hasChg;
@@ -18565,6 +20816,8 @@ function handleBundleAssemblyExecute() {
   const selectBody = document.getElementById('bundleSelectBodySerial');
   const bodySn = selectBody ? selectBody.value : '';
   const batSns = Array.from(currentBundleSelectedBatteries);
+  const selectChg = document.getElementById('bundleSelectChargerSerial');
+  const chgSn = selectChg ? selectChg.value : '';
 
   if (!bodySn) {
     showToast('DP-5000本体のシリアルを選択してください。', 'warning');
@@ -18574,9 +20827,13 @@ function handleBundleAssemblyExecute() {
     showToast('リチウムイオンバッテリーを2個選択してください。', 'warning');
     return;
   }
+  if (!chgSn) {
+    showToast('専用急速充電器のシリアルを選択してください。', 'warning');
+    return;
+  }
 
-  const result = typeof assembleDP5000Bundle === 'function' 
-    ? assembleDP5000Bundle(bodySn, batSns) 
+  const result = typeof assembleDP5000Bundle === 'function'
+    ? assembleDP5000Bundle(bodySn, batSns, chgSn)
     : { success: false, message: '関数が見つかりません' };
 
   if (result.success) {
@@ -18700,6 +20957,10 @@ function executeSerialBatchModal() {
     itemName = 'PSE認証リチウムイオンバッテリー';
     isCompanyOnly = true;
     unitCost = 8000;
+  } else if (itemType === 'PSE認証 専用急速充電器' || itemType === '急速充電器') {
+    inventoryId = 'inv_dp5000_chg';
+    itemName = 'PSE認証 専用急速充電器';
+    unitCost = 7700;
   }
 
   const batchArray = [];
@@ -19682,7 +21943,7 @@ function openEditInventoryLotModal(lotId) {
 
 window.openEditInventoryLotModal = openEditInventoryLotModal;
 
-window.deleteInventoryLotFromUI = function(lotId, lotNumber) {
+window.deleteInventoryLotFromUI = function (lotId, lotNumber) {
   if (!confirm(`入荷ロット「${lotNumber}」を削除しますか？\n\n【連動して取り消される内容】\n・入庫された数量が在庫マスタから差し引かれます。\n・ロットで登録された未出荷シリアルは台帳から削除されます。\n・財務会計に計上された仕訳データも自動で取り消されます。`)) {
     return;
   }
@@ -19861,7 +22122,7 @@ window.saveLotDraftState = saveLotDraftState;
 function clearLotDraftState() {
   try {
     localStorage.removeItem(LOT_DRAFT_KEY);
-  } catch (e) {}
+  } catch (e) { }
   const noticeBar = document.getElementById('lotDraftNoticeBar');
   if (noticeBar) noticeBar.style.display = 'none';
 }
@@ -20273,18 +22534,19 @@ function isItemSerialTracked(item) {
   const name = String(item.name || item.itemName || '').toUpperCase();
   const id = String(item.id || item.itemId || '');
 
-  // 急速充電器、DP-EG、DP-AC、クランプ等はシリアル追跡対象外
-  if (name.includes('充電器') || name.includes('CHG') || id === 'inv_dp5000_chg' ||
-      name.includes('DP-EG') || name.includes('3点引き') || name.includes('アタッチメント') || 
-      name.includes('DP-AC') || name.includes('アクセサリー') || name.includes('クランプ')) {
+  // DP-EG、DP-AC、クランプ等はシリアル追跡対象外
+  if (name.includes('DP-EG') || name.includes('3点引き') || name.includes('アタッチメント') ||
+    name.includes('DP-AC') || name.includes('アクセサリー') || name.includes('クランプ')) {
     return false;
   }
   return Boolean(
     (item.hasSerial === true) ||
     item.type === 'bundle' ||
-    id === 'inv_1' || id === 'inv_2' || id === 'inv_dp5000_body' || id === 'inv_dp5000_bat' ||
+    id === 'inv_1' || id === 'inv_2' || id === 'inv_dp5000_body' || id === 'inv_dp5000_bat' || id === 'inv_dp5000_chg' ||
     name.includes('DP-5000') ||
     name.includes('バッテリー') ||
+    name.includes('充電器') ||
+    name.includes('CHG') ||
     name.includes('電池') ||
     name.includes('DP-MS') ||
     name.includes('メカニカルスプレッダー') ||
@@ -20295,9 +22557,9 @@ window.isItemSerialTracked = isItemSerialTracked;
 
 function isBundleLotRow(r) {
   if (!r) return false;
-  return r.itemId === 'inv_1' || 
-         r.isBundle === true || 
-         (r.itemName && r.itemName.includes('ベーシックセット'));
+  return r.itemId === 'inv_1' ||
+    r.isBundle === true ||
+    (r.itemName && r.itemName.includes('ベーシックセット'));
 }
 window.isBundleLotRow = isBundleLotRow;
 
@@ -20305,9 +22567,8 @@ function isLotRowRequireSerial(r) {
   if (!r) return false;
   const name = String(r.itemName || r.name || '').toUpperCase();
   const id = String(r.itemId || r.id || '');
-  if (name.includes('充電器') || name.includes('CHG') || id === 'inv_dp5000_chg' ||
-      name.includes('DP-EG') || name.includes('3点引き') || name.includes('アタッチメント') || 
-      name.includes('DP-AC') || name.includes('アクセサリー') || name.includes('クランプ')) {
+  if (name.includes('DP-EG') || name.includes('3点引き') || name.includes('アタッチメント') ||
+    name.includes('DP-AC') || name.includes('アクセサリー') || name.includes('クランプ')) {
     return false;
   }
   return Boolean(r.hasSerial || isBundleLotRow(r) || isItemSerialTracked(r));
@@ -20859,6 +23120,18 @@ function getLotSerialConfigs() {
         isBundlePart: true,
         parentRow: r
       });
+      configs.push({
+        groupKey: `${r.rowId}_chg`,
+        rowId: r.rowId,
+        itemId: 'inv_dp5000_chg',
+        itemName: 'PSE認証 専用急速充電器',
+        label: `🔌 【付属専用急速充電器】 (${r.qty} 台分 / 1台につき1台)`,
+        qty: r.qty,
+        prefix: 'CHG',
+        role: 'charger',
+        isBundlePart: true,
+        parentRow: r
+      });
     } else if (isLotRowRequireSerial(r)) {
       let prefix = 'SN';
       let label = `🔢 ${r.itemName} (${r.qty} 台分)`;
@@ -20870,6 +23143,9 @@ function getLotSerialConfigs() {
       } else if (name.includes('バッテリー') || name.includes('電池')) {
         prefix = 'BAT';
         label = `🔋 【バッテリー】 (${r.qty} 個分)`;
+      } else if (name.includes('充電器') || name.includes('CHG') || r.itemId === 'inv_dp5000_chg') {
+        prefix = 'CHG';
+        label = `🔌 【専用急速充電器】 (${r.qty} 台分)`;
       } else if (name.includes('DP-MS') || name.includes('メカニカルスプレッダー') || name.includes('スプレッダー') || r.itemId === 'inv_2') {
         prefix = 'MS';
         label = `🔢 【DP-MS メカニカルスプレッダー】 (${r.qty} 台分)`;
@@ -21622,7 +23898,7 @@ function submitInventoryLotStockIn() {
     if (isBundleLotRow(r)) {
       // 完成品セット（ベーシックセット）の在庫を加算
       const bundleTargetId = r.itemId || 'inv_1';
-      adjustStock(bundleTargetId, r.qty, `混載ロット入庫: ${lotNumber} (確定実仕入原価: ¥${r.landedUnitCost.toLocaleString()}/セット)`, { 
+      adjustStock(bundleTargetId, r.qty, `混載ロット入庫: ${lotNumber} (確定実仕入原価: ¥${r.landedUnitCost.toLocaleString()}/セット)`, {
         unitCost: r.landedUnitCost,
         date: arrivalDate
       });
@@ -21635,7 +23911,7 @@ function submitInventoryLotStockIn() {
         }
       }
     } else {
-      adjustStock(r.itemId, r.qty, `混載ロット入庫: ${lotNumber} (確定実仕入原価: ¥${r.landedUnitCost.toLocaleString()}/台)`, { 
+      adjustStock(r.itemId, r.qty, `混載ロット入庫: ${lotNumber} (確定実仕入原価: ¥${r.landedUnitCost.toLocaleString()}/台)`, {
         unitCost: r.landedUnitCost,
         date: arrivalDate
       });
@@ -21657,6 +23933,28 @@ function submitInventoryLotStockIn() {
     if (isBundleLotRow(r)) {
       const bodySns = serialsByGroupKey[`${r.rowId}_body`] || [];
       const batSns = serialsByGroupKey[`${r.rowId}_bat`] || [];
+      const chgSns = serialsByGroupKey[`${r.rowId}_chg`] || [];
+
+      // 急速充電器シリアルを登録
+      chgSns.forEach((cSn, idx) => {
+        const pairedBodySn = bodySns[idx] || '';
+        allSerialObjects.push({
+          serialNumber: cSn,
+          itemId: 'inv_dp5000_chg',
+          itemName: 'PSE認証 専用急速充電器',
+          itemType: 'charger',
+          lotId,
+          lotNumber,
+          costPrice: Math.round(r.landedUnitCost * 0.08),
+          status: pairedBodySn ? 'bundled' : 'in_stock',
+          bundledWith: pairedBodySn,
+          note: pairedBodySn ? `[セット組込済 (本体: ${pairedBodySn})]` : '',
+          arrivalDate,
+          customerName: '',
+          invoiceNumber: '',
+          shippedDate: ''
+        });
+      });
 
       // バッテリーシリアルを登録
       batSns.forEach((bSn, idx) => {
@@ -21678,9 +23976,10 @@ function submitInventoryLotStockIn() {
         });
       });
 
-      // 本体シリアルを登録（バッテリー2個と自動キッティング紐付け）
+      // 本体シリアルを登録（バッテリー2個・急速充電器1台と自動キッティング紐付け）
       bodySns.forEach((bSn, idx) => {
         const pairedBats = [batSns[idx * 2], batSns[idx * 2 + 1]].filter(Boolean);
+        const pairedChg = chgSns[idx] || '';
         allSerialObjects.push({
           serialNumber: bSn,
           itemId: 'inv_dp5000_body',
@@ -21691,7 +23990,8 @@ function submitInventoryLotStockIn() {
           status: 'in_stock',
           isBundled: pairedBats.length === 2,
           batterySerials: pairedBats,
-          note: pairedBats.length === 2 ? `[セット仕入品: 🔋 ${pairedBats.join(', ')} / 急速充電器付属]` : '',
+          chargerSerial: pairedChg,
+          note: pairedBats.length === 2 ? `[セット仕入品: 🔋 ${pairedBats.join(', ')} / 🔌 ${pairedChg || '急速充電器'}]` : '',
           arrivalDate,
           customerName: '',
           invoiceNumber: '',
@@ -21756,7 +24056,7 @@ function submitInventoryLotStockIn() {
         }
         if (bundledCount > 0) {
           localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(serialMasterList));
-          saveServerInventorySerials(serialMasterList).catch(() => {});
+          saveServerInventorySerials(serialMasterList).catch(() => { });
           console.log(`【ロット入庫自動セット品化】${bundledCount}セットのDP-5000本体にバッテリー2個を自動紐付けしました`);
         }
       }
@@ -21950,8 +24250,18 @@ function submitInventoryLotStockIn() {
   currentEditingLotId = null; // 編集IDを確実に初期化
   clearLotDraftState();
   closeInventoryLotModal();
+
+  // 先行出荷された伝票がある場合、新規登録されたシリアルと伝票を即座に自動照合・出荷引き落とし！
+  if (typeof syncInventorySerialsFromIssuedDocs === 'function') {
+    const sRes = syncInventorySerialsFromIssuedDocs();
+    if (sRes && sRes.updatedCount > 0) {
+      console.log(`【ロット入庫連動】先行出荷伝票と照合し ${sRes.updatedCount} 件のシリアルを出荷済みに引き落としました`);
+    }
+  }
+
   renderInventoryTable();
   renderInventorySerialTable();
+  if (typeof renderSerialsManagementTable === 'function') renderSerialsManagementTable();
   renderInventoryLotTable();
   console.log('【混載ロット入庫】確定保存処理 完了', lotData);
   showToast(`混載ロット「${lotNumber}」（${lotItemRows.length}品目・計${totalQty}台）の入庫および確定原価按分計算を完了しました！`, 'success');
@@ -21994,7 +24304,48 @@ function openSerialAssignModal(itemIndex) {
   const container = DOM.serialAssignComponentsContainer;
   container.innerHTML = '';
 
-  const currentlyAssigned = Array.isArray(item.assignedSerials) ? item.assignedSerials : [];
+  const allSerials = typeof getInventorySerialList === 'function' ? getInventorySerialList() : [];
+  let currentlyAssigned = Array.isArray(item.assignedSerials) ? [...item.assignedSerials] : [];
+
+  // ★ 他端末で紐付けられたシリアルの自動復元フォールバック！
+  const curDocNum = currentDoc.docNumber || currentDoc.invoiceNumber || '';
+  const curDocId = currentDoc.id || currentDoc.docId || '';
+
+  if (currentlyAssigned.length === 0 && (curDocNum || curDocId || item.serialNumber)) {
+    // 1. 台帳上でこの伝票番号またはIDに紐付いているシリアルを探索
+    const docLinkedSerials = allSerials.filter(s => {
+      if (!s || !s.serialNumber) return false;
+      if (curDocNum && (s.docNumber === curDocNum || s.invoiceNumber === curDocNum)) return true;
+      if (curDocId && (s.docId === curDocId || s.invoiceId === curDocId)) return true;
+      return false;
+    });
+
+    if (docLinkedSerials.length > 0) {
+      docLinkedSerials.forEach(s => {
+        currentlyAssigned.push({
+          serialNumber: s.serialNumber,
+          itemId: s.itemId || s.inventoryId || '',
+          itemName: s.itemName || '',
+          costPrice: s.costPrice || s.unitCost || 0
+        });
+      });
+    } else if (item.serialNumber) {
+      // 2. 明細の serialNumber 文字列（カンマ区切りなど）から復元
+      const sns = String(item.serialNumber).split(/[,、\s/]+/).map(x => x.trim().toUpperCase()).filter(Boolean);
+      sns.forEach(sn => {
+        const found = allSerials.find(s => s && String(s.serialNumber).trim().toUpperCase() === sn);
+        if (found) {
+          currentlyAssigned.push({
+            serialNumber: found.serialNumber,
+            itemId: found.itemId || found.inventoryId || '',
+            itemName: found.itemName || '',
+            costPrice: found.costPrice || found.unitCost || 0
+          });
+        }
+      });
+    }
+  }
+
   const parts = getBundlePartsList(bundleItem);
 
   if (bundleItem && parts.length > 0) {
@@ -22008,18 +24359,50 @@ function openSerialAssignModal(itemIndex) {
       card.style.cssText = 'background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px 12px;';
 
       if (comp && comp.hasSerial) {
-        // シリアル管理部品（本体、バッテリーなど）
-        const availableSerials = getAvailableSerialsByItem(comp.id);
-        const assignedForThisComp = currentlyAssigned.filter(a => a.itemId === comp.id);
+        // シリアル管理部品（本体、バッテリー、充電器など）
+        let availableSerials = getAvailableSerialsByItem(comp.id);
+
+        // この部品に対応する既存割り当てシリアルを取得
+        const assignedForThisComp = currentlyAssigned.filter(a => {
+          if (!a) return false;
+          if (a.itemId && a.itemId === comp.id) return true;
+          const aName = (a.itemName || '').toUpperCase();
+          const cName = (comp.name || '').toUpperCase();
+          if (cName.includes('本体') && (aName.includes('本体') || aName.includes('DP-5000'))) return true;
+          if (cName.includes('バッテリー') && aName.includes('バッテリー')) return true;
+          if (cName.includes('充電器') && aName.includes('充電器')) return true;
+          return false;
+        });
+
+        // ★ 既にこの伝票に紐付いているシリアルが availableSerials に無ければ、必ず選択肢の先頭に追加！
+        assignedForThisComp.forEach(assigned => {
+          if (assigned && assigned.serialNumber) {
+            const aSn = String(assigned.serialNumber).trim().toUpperCase();
+            const exists = availableSerials.some(s => s && String(s.serialNumber).trim().toUpperCase() === aSn);
+            if (!exists) {
+              const origSerial = allSerials.find(s => s && String(s.serialNumber).trim().toUpperCase() === aSn);
+              availableSerials.unshift(origSerial ? { ...origSerial, isCurrentDocAssigned: true } : {
+                serialNumber: aSn,
+                itemId: comp.id,
+                itemName: comp.name,
+                costPrice: assigned.costPrice || 0,
+                isCurrentDocAssigned: true
+              });
+            }
+          }
+        });
 
         let selectorsHtml = '';
         for (let i = 0; i < needQty; i++) {
           const currentVal = assignedForThisComp[i] ? assignedForThisComp[i].serialNumber : '';
           const optionsHtml = availableSerials.map(s => {
-            const isSelected = s.serialNumber === currentVal;
+            const sSn = String(s.serialNumber || '').trim().toUpperCase();
+            const isSelected = currentVal && sSn === String(currentVal).trim().toUpperCase();
             const costStr = s.costPrice ? `(確定原価: ¥${Number(s.costPrice).toLocaleString()})` : '';
+            const setTag = s.isBundled ? ` [セット化済: 🔋${(s.batterySerials || []).join(',') || '有'} ⚡${s.chargerSerial || '有'}]` : '';
+            const assignedTag = (isSelected || s.isCurrentDocAssigned) ? ' [✅ 伝票引当済]' : '';
             return `<option value="${escapeHtml(s.serialNumber)}" data-cost="${s.costPrice || 0}" ${isSelected ? 'selected' : ''}>
-              ${escapeHtml(s.serialNumber)} ${costStr} [ロット: ${escapeHtml(s.lotNumber || '-')}]
+              ${escapeHtml(s.serialNumber)}${assignedTag}${setTag} ${costStr} [ロット: ${escapeHtml(s.lotNumber || '-')}]
             </option>`;
           }).join('');
 
@@ -22044,7 +24427,7 @@ function openSerialAssignModal(itemIndex) {
           ${selectorsHtml}
         `;
       } else {
-        // シリアル管理不要部品（充電器など）
+        // シリアル管理不要部品
         const unitCost = Number(comp ? comp.unitCost : 0) || 0;
         card.innerHTML = `
           <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -22065,16 +24448,37 @@ function openSerialAssignModal(itemIndex) {
     // 単品でシリアル管理品の場合 (DP-MS 等含む)
     const comp = invList.find(c => c.name === item.name || c.id === item.itemId || ((item.name || '').includes('DP-MS') && (c.id === 'inv_2' || c.name.includes('DP-MS'))));
     const needQty = qty;
-    const availableSerials = comp ? getAvailableSerialsByItem(comp.id) : [];
+    let availableSerials = comp ? getAvailableSerialsByItem(comp.id) : [];
+
+    // ★ 既にこの伝票に紐付いているシリアルを必ず選択肢の先頭に追加！
+    currentlyAssigned.forEach(assigned => {
+      if (assigned && assigned.serialNumber) {
+        const aSn = String(assigned.serialNumber).trim().toUpperCase();
+        const exists = availableSerials.some(s => s && String(s.serialNumber).trim().toUpperCase() === aSn);
+        if (!exists) {
+          const origSerial = allSerials.find(s => s && String(s.serialNumber).trim().toUpperCase() === aSn);
+          availableSerials.unshift(origSerial ? { ...origSerial, isCurrentDocAssigned: true } : {
+            serialNumber: aSn,
+            itemId: comp ? comp.id : '',
+            itemName: item.name,
+            costPrice: assigned.costPrice || 0,
+            isCurrentDocAssigned: true
+          });
+        }
+      }
+    });
 
     let selectorsHtml = '';
     for (let i = 0; i < needQty; i++) {
       const currentVal = currentlyAssigned[i] ? currentlyAssigned[i].serialNumber : '';
       const optionsHtml = availableSerials.map(s => {
-        const isSelected = s.serialNumber === currentVal;
+        const sSn = String(s.serialNumber || '').trim().toUpperCase();
+        const isSelected = currentVal && sSn === String(currentVal).trim().toUpperCase();
         const costStr = s.costPrice ? `(確定原価: ¥${Number(s.costPrice).toLocaleString()})` : '';
+        const setTag = s.isBundled ? ` [セット化済]` : '';
+        const assignedTag = (isSelected || s.isCurrentDocAssigned) ? ' [✅ 伝票引当済]' : '';
         return `<option value="${escapeHtml(s.serialNumber)}" data-cost="${s.costPrice || 0}" ${isSelected ? 'selected' : ''}>
-          ${escapeHtml(s.serialNumber)} ${costStr}
+          ${escapeHtml(s.serialNumber)}${assignedTag}${setTag} ${costStr}
         </option>`;
       }).join('');
 
@@ -22105,6 +24509,97 @@ function openSerialAssignModal(itemIndex) {
     sel.addEventListener('change', updateSerialAssignPreview);
   });
 
+  // 本体の選択時に、セット品化済みのバッテリー・急速充電器を自動連動選択するスマート補完機能！
+  container.querySelectorAll('select.serial-select-input[data-comp-id="inv_dp5000_body"]').forEach((bodySel, bodyIdx) => {
+    bodySel.addEventListener('change', (e) => {
+      const selectedBodySn = e.target.value;
+      if (!selectedBodySn) return;
+      const bodyObj = allSerials.find(s => s && String(s.serialNumber).trim().toUpperCase() === selectedBodySn.trim().toUpperCase());
+      if (bodyObj) {
+        // バッテリー2個の自動選択
+        const batSns = Array.isArray(bodyObj.batterySerials) && bodyObj.batterySerials.length > 0
+          ? bodyObj.batterySerials
+          : allSerials.filter(s => s && s.bundledWith === selectedBodySn && (s.itemId === 'inv_dp5000_bat' || (s.itemName && s.itemName.includes('バッテリー')))).map(b => b.serialNumber);
+
+        if (batSns.length > 0) {
+          const batSelects = container.querySelectorAll('select.serial-select-input[data-comp-id="inv_dp5000_bat"]');
+          batSns.forEach((bSn, bIdx) => {
+            const batSel = batSelects[bodyIdx * 2 + bIdx];
+            if (batSel) {
+              if (!Array.from(batSel.options).some(o => o.value === bSn)) {
+                const opt = document.createElement('option');
+                opt.value = bSn;
+                opt.textContent = `${bSn} [本体${selectedBodySn}組込]`;
+                batSel.appendChild(opt);
+              }
+              batSel.value = bSn;
+            }
+          });
+        }
+
+        // 急速充電器の自動選択
+        const chgSn = bodyObj.chargerSerial || (allSerials.find(s => s && s.bundledWith === selectedBodySn && (s.itemId === 'inv_dp5000_chg' || (s.itemName && s.itemName.includes('充電器')))) || {}).serialNumber;
+        if (chgSn) {
+          const chgSelects = container.querySelectorAll('select.serial-select-input[data-comp-id="inv_dp5000_chg"]');
+          const chgSel = chgSelects[bodyIdx];
+          if (chgSel) {
+            if (!Array.from(chgSel.options).some(o => o.value === chgSn)) {
+              const opt = document.createElement('option');
+              opt.value = chgSn;
+              opt.textContent = `${chgSn} [本体${selectedBodySn}付属]`;
+              chgSel.appendChild(opt);
+            }
+            chgSel.value = chgSn;
+          }
+        }
+        updateSerialAssignPreview();
+      }
+    });
+  });
+
+  // モーダルオープン時：すでに本体が選択されている場合、空のバッテリー・充電器をセット構成から初期補完
+  container.querySelectorAll('select.serial-select-input[data-comp-id="inv_dp5000_body"]').forEach((bodySel, bodyIdx) => {
+    const selectedBodySn = bodySel.value;
+    if (!selectedBodySn) return;
+    const bodyObj = allSerials.find(s => s && String(s.serialNumber).trim().toUpperCase() === selectedBodySn.trim().toUpperCase());
+    if (bodyObj) {
+      const batSns = Array.isArray(bodyObj.batterySerials) && bodyObj.batterySerials.length > 0
+        ? bodyObj.batterySerials
+        : allSerials.filter(s => s && s.bundledWith === selectedBodySn && (s.itemId === 'inv_dp5000_bat' || (s.itemName && s.itemName.includes('バッテリー')))).map(b => b.serialNumber);
+
+      if (batSns.length > 0) {
+        const batSelects = container.querySelectorAll('select.serial-select-input[data-comp-id="inv_dp5000_bat"]');
+        batSns.forEach((bSn, bIdx) => {
+          const batSel = batSelects[bodyIdx * 2 + bIdx];
+          if (batSel && !batSel.value) {
+            if (!Array.from(batSel.options).some(o => o.value === bSn)) {
+              const opt = document.createElement('option');
+              opt.value = bSn;
+              opt.textContent = `${bSn} [本体${selectedBodySn}組込]`;
+              batSel.appendChild(opt);
+            }
+            batSel.value = bSn;
+          }
+        });
+      }
+
+      const chgSn = bodyObj.chargerSerial || (allSerials.find(s => s && s.bundledWith === selectedBodySn && (s.itemId === 'inv_dp5000_chg' || (s.itemName && s.itemName.includes('充電器')))) || {}).serialNumber;
+      if (chgSn) {
+        const chgSelects = container.querySelectorAll('select.serial-select-input[data-comp-id="inv_dp5000_chg"]');
+        const chgSel = chgSelects[bodyIdx];
+        if (chgSel && !chgSel.value) {
+          if (!Array.from(chgSel.options).some(o => o.value === chgSn)) {
+            const opt = document.createElement('option');
+            opt.value = chgSn;
+            opt.textContent = `${chgSn} [本体${selectedBodySn}付属]`;
+            chgSel.appendChild(opt);
+          }
+          chgSel.value = chgSn;
+        }
+      }
+    }
+  });
+
   updateSerialAssignPreview();
   DOM.serialAssignModal.classList.add('active');
   DOM.serialAssignModal.style.display = 'flex';
@@ -22128,6 +24623,7 @@ function updateSerialAssignPreview() {
   let totalCost = 0;
   const bodySerials = [];
   const batSerials = [];
+  const chgSerials = [];
   const otherSerials = [];
 
   selects.forEach(sel => {
@@ -22140,6 +24636,8 @@ function updateSerialAssignPreview() {
     const compName = sel.dataset.compName || '';
     if (compName.includes('本体') || compName.includes('DP-5000')) {
       bodySerials.push(sn);
+    } else if (compName.includes('充電器')) {
+      chgSerials.push(sn);
     } else if (compName.includes('バッテリー') || compName.includes('電池')) {
       batSerials.push(sn);
     } else {
@@ -22147,7 +24645,7 @@ function updateSerialAssignPreview() {
     }
   });
 
-  // セット品非シリアル構成品（充電器等）の原価も加算
+  // セット品非シリアル構成品の原価も加算
   const idx = Number(DOM.serialAssignItemIndex.value);
   const item = currentDoc.items[idx];
   if (item) {
@@ -22176,6 +24674,7 @@ function updateSerialAssignPreview() {
   const parts = [];
   if (bodySerials.length > 0) parts.push(`本体S/N: ${bodySerials.join(', ')}`);
   if (batSerials.length > 0) parts.push(`バッテリーS/N: ${batSerials.join(', ')}`);
+  if (chgSerials.length > 0) parts.push(`充電器S/N: ${chgSerials.join(', ')}`);
   if (otherSerials.length > 0) parts.push(`S/N: ${otherSerials.join(', ')}`);
 
   const previewStr = parts.length > 0 ? `（${parts.join(' / ')}）` : '（シリアル番号未選択）';
@@ -22195,6 +24694,7 @@ function confirmSerialAssign() {
   let totalCost = 0;
   const bodySerials = [];
   const batSerials = [];
+  const chgSerials = [];
   const otherSerials = [];
 
   selects.forEach(sel => {
@@ -22216,6 +24716,8 @@ function confirmSerialAssign() {
 
     if (compName.includes('本体') || compName.includes('DP-5000')) {
       bodySerials.push(sn);
+    } else if (compName.includes('充電器')) {
+      chgSerials.push(sn);
     } else if (compName.includes('バッテリー') || compName.includes('電池')) {
       batSerials.push(sn);
     } else {
@@ -22243,6 +24745,10 @@ function confirmSerialAssign() {
     }
   }
 
+  const oldAssigned = Array.isArray(item.assignedSerials) ? item.assignedSerials : [];
+  const oldSnList = oldAssigned.map(a => String(a.serialNumber || '').trim().toUpperCase()).filter(Boolean);
+  const newSnList = assigned.map(a => String(a.serialNumber || '').trim().toUpperCase()).filter(Boolean);
+
   item.assignedSerials = assigned;
   item.assignedCogs = totalCost;
   item.costPrice = totalCost; // 売上原価に反映
@@ -22258,7 +24764,46 @@ function confirmSerialAssign() {
 
   // 摘要欄への余計な二重S/N印字をクリーンアップ（備考欄へ統一印字されるため）
   if (item.description) {
-    item.description = item.description.replace(/（(本体S\/N|バッテリーS\/N|S\/N)[^）]*）/g, '').trim();
+    item.description = item.description.replace(/（(本体S\/N|バッテリーS\/N|充電器S\/N|S\/N)[^）]*）/g, '').trim();
+  }
+
+  // 見積書（estimate）以外の場合、シリアル台帳（inventory_serials）へ即座に出荷済反映！
+  if (currentDoc.docType !== 'estimate' && typeof updateSerialStatus === 'function') {
+    const docNo = String(currentDoc.docNumber || currentDoc.id || '').trim();
+    const clientName = currentDoc.client ? (currentDoc.client.name || '') : (currentDoc.clientName || '');
+    const issueDateStr = currentDoc.issueDate || currentDoc.date || new Date().toISOString().split('T')[0];
+    const itemEndUser = (item.endUserName || currentDoc.endUserName || '').trim();
+    const serialNote = (item.note || currentDoc.notes || '').trim();
+
+    // 1. 今回除外された旧シリアルを「在庫中（in_stock）」へ復元
+    oldSnList.forEach(oldSn => {
+      if (!newSnList.includes(oldSn)) {
+        console.log(`【シリアル引当解除】${oldSn} を在庫中に復元`);
+        updateSerialStatus(oldSn, 'in_stock');
+      }
+    });
+
+    // 2. 今回引き当てられた全シリアル（本体・バッテリー・急速充電器）を出荷済（shipped）へ即座に更新
+    assigned.forEach(as => {
+      console.log(`【シリアル引当確定即時反映】${as.serialNumber} を出荷済（${docNo}）に更新`);
+      updateSerialStatus(as.serialNumber, 'shipped', {
+        clientName: clientName,
+        customerName: clientName,
+        endUserName: itemEndUser,
+        docNumber: docNo,
+        invoiceNumber: docNo,
+        docId: currentDoc.id,
+        invoiceId: currentDoc.id,
+        shipDate: issueDateStr,
+        shippedDate: issueDateStr,
+        note: serialNote
+      });
+    });
+
+    // 伝票データを履歴・サーバーへ自動保存
+    if (typeof saveDocToHistory === 'function') {
+      saveDocToHistory(currentDoc);
+    }
   }
 
   closeSerialAssignModal();
@@ -22268,24 +24813,24 @@ function confirmSerialAssign() {
 }
 
 window.confirmSerialAssign = confirmSerialAssign;
-window.getCurrentDoc = function() { return currentDoc; };
-window.setCurrentDoc = function(doc) { currentDoc = doc; };
+window.getCurrentDoc = function () { return currentDoc; };
+window.setCurrentDoc = function (doc) { currentDoc = doc; };
 
-window.invOpenAdjust = function(id, defaultType = 'in') {
+window.invOpenAdjust = function (id, defaultType = 'in') {
   const list = getInventoryList();
   const item = list.find(i => i.id === id || i.itemId === id);
   if (!item) return;
   openInventoryAdjustModal(item, defaultType);
 };
 
-window.invOpenHistory = function(id) {
+window.invOpenHistory = function (id) {
   const list = getInventoryList();
   const item = list.find(i => i.id === id || i.itemId === id);
   if (!item) return;
   openInventoryHistoryModal(item);
 };
 
-window.invEditItem = function(id) {
+window.invEditItem = function (id) {
   const list = getInventoryList();
   const item = list.find(i => i.id === id || i.itemId === id);
   if (!item) return;
@@ -22295,7 +24840,7 @@ window.invEditItem = function(id) {
   }
 };
 
-window.invDeleteItem = function(id, name) {
+window.invDeleteItem = function (id, name) {
   if (confirm(`在庫品目「${name}」を削除しますか？\n（過去の伝票や経費データには影響しません）`)) {
     deleteInventoryItem(id);
     renderInventoryTable();
@@ -22403,10 +24948,10 @@ function openInventoryHistoryModal(item) {
   DOM.historyModalItemSku.textContent = item.sku ? `SKU: ${item.sku} | 保管場所: ${item.location || '未設定'}` : '';
 
   // 確定伝票（請求書・納品書）からの出荷記録も含めた全履歴を統合取得
-  const getHistFn = (typeof getInventoryHistoryWithShipments === 'function') 
-    ? getInventoryHistoryWithShipments 
+  const getHistFn = (typeof getInventoryHistoryWithShipments === 'function')
+    ? getInventoryHistoryWithShipments
     : ((window && typeof window.getInventoryHistoryWithShipments === 'function') ? window.getInventoryHistoryWithShipments : null);
-  
+
   const logs = getHistFn ? getHistFn(item) : (Array.isArray(item.history) ? item.history : []);
   if (logs.length === 0) {
     DOM.inventoryHistoryTableContainer.innerHTML = `
@@ -22441,12 +24986,12 @@ function openInventoryHistoryModal(item) {
         typeBadge = '<span style="color: #7c3aed; font-weight: 700; background: #f5f3ff; border: 1px solid #ddd6fe; padding: 2px 6px; border-radius: 4px;">📝 調整</span>';
       }
 
-      const deltaDisp = log.delta !== undefined 
-        ? (log.delta > 0 ? `<span style="color: #059669;">+${log.delta}</span>` : `<span style="color: #dc2626;">${log.delta}</span>`) 
+      const deltaDisp = log.delta !== undefined
+        ? (log.delta > 0 ? `<span style="color: #059669;">+${log.delta}</span>` : `<span style="color: #dc2626;">${log.delta}</span>`)
         : (log.type === 'in' ? `<span style="color: #059669;">+${log.qty}</span>` : `<span style="color: #dc2626;">-${log.qty}</span>`);
 
-      const dispStock = log.computedRunningStock !== undefined 
-        ? log.computedRunningStock 
+      const dispStock = log.computedRunningStock !== undefined
+        ? log.computedRunningStock
         : (log.currentStock !== undefined ? log.currentStock : '-');
 
       const isSummary = log.isBundleSummary === true && Array.isArray(log.details) && log.details.length > 0;
@@ -22524,7 +25069,7 @@ function closeInventoryHistoryModal() {
   DOM.inventoryHistoryModal.style.display = 'none';
 }
 
-window.toggleBundleHistoryDetail = function(rowId) {
+window.toggleBundleHistoryDetail = function (rowId) {
   const row = document.getElementById(rowId);
   if (!row) return;
   const isHidden = (row.style.display === 'none' || !row.style.display);
@@ -22572,7 +25117,7 @@ function handleSaveManualLogEdit() {
   const delta = (type === 'out') ? -qty : qty;
   console.log("【手動ログ編集】保存実行開始", { itemId, logId, date, delta, reason, payee });
 
-  const ok = (typeof updateManualInventoryLog === 'function') 
+  const ok = (typeof updateManualInventoryLog === 'function')
     ? updateManualInventoryLog(itemId, logId, { date, delta, reason, payee })
     : (window.updateManualInventoryLog ? window.updateManualInventoryLog(itemId, logId, { date, delta, reason, payee }) : false);
 
@@ -22685,7 +25230,7 @@ function openQuickNewItemModal(suggestName = '', suggestCost = 0) {
   if (DOM.quickInputItemUnitPrice) DOM.quickInputItemUnitPrice.value = suggestCost ? String(Math.round(suggestCost * 1.3)) : '';
   if (DOM.quickInputItemSafetyStock) DOM.quickInputItemSafetyStock.value = '5';
   if (DOM.quickInputItemNote) DOM.quickInputItemNote.value = '';
-  
+
   DOM.quickNewItemModal.classList.add('active');
   DOM.quickNewItemModal.style.display = 'flex';
   if (DOM.quickInputItemName) {
@@ -22897,8 +25442,8 @@ function checkAndSuggestInventoryMatch() {
     }
     if (DOM.expensePurchaseMatchBadge) {
       DOM.expensePurchaseMatchBadge.style.display = 'inline-block';
-      DOM.expensePurchaseMatchBadge.textContent = matched.matchType === 'exact' 
-        ? `💡 学習辞書から推測: ${matched.item.name}` 
+      DOM.expensePurchaseMatchBadge.textContent = matched.matchType === 'exact'
+        ? `💡 学習辞書から推測: ${matched.item.name}`
         : `💡 キーワードから推測: ${matched.item.name}`;
     }
     updateExpenseStockPreview();
@@ -22944,7 +25489,7 @@ function updateExpenseStockPreview() {
 function openDiscountModal() {
   DOM.discountModal.classList.add('active');
   renderDiscountReasonTags();
-  
+
   // 初期値設定
   const topReasons = getDiscountReasons();
   DOM.discountInputReason.value = topReasons.length > 0 ? topReasons[0].name : '出精値引き';
@@ -22953,7 +25498,7 @@ function openDiscountModal() {
   DOM.discountInputValue.value = '10';
   DOM.discountInputValue.placeholder = '例: 10 (%)';
   DOM.discountSelectTaxRate.value = '10';
-  
+
   updateDiscountCalculator();
 }
 
@@ -22964,7 +25509,7 @@ function closeDiscountModal() {
 function renderDiscountReasonTags() {
   const reasons = getDiscountReasons();
   DOM.discountReasonTagsContainer.innerHTML = '';
-  
+
   reasons.forEach(r => {
     const btn = document.createElement('button');
     btn.type = 'button';
@@ -23008,7 +25553,7 @@ function updateDiscountCalculator() {
       // 値引き後ユーザー価格での税抜仕切り
       const discountedUserInc = Math.max(0, baseUserInc - userDiscountAmount);
       const w2 = calculateWholesalePrice(discountedUserInc, taxRate, { type: 'none', value: 0 }).wholesaleUnitPrice;
-      
+
       wholesaleDiscountUnitPrice = Math.max(0, w1 - w2);
     } else {
       DOM.displayUserDiscountAmount.textContent = '¥0';
@@ -23412,17 +25957,17 @@ window.updateAccDateRangeModalPreview = updateAccDateRangeModalPreview;
 window.confirmAccDateRangeFromModal = confirmAccDateRangeFromModal;
 window.applyAccGlobalPeriod = applyAccGlobalPeriod;
 
-window.applyExpenseGlobalPeriod = function(preset = 'all') {
+window.applyExpenseGlobalPeriod = function (preset = 'all') {
   currentExpenseGlobalPeriod.preset = preset;
   const range = getPresetPeriodRange(preset);
   currentExpenseGlobalPeriod.start = range.start;
   currentExpenseGlobalPeriod.end = range.end;
-  
+
   const presetSelect = document.getElementById('expenseGlobalPeriodPreset');
   if (presetSelect && presetSelect.value !== preset) {
     presetSelect.value = preset;
   }
-  
+
   if (typeof renderAccountingExpenses === 'function') {
     renderAccountingExpenses();
   }
@@ -24079,7 +26624,7 @@ function filterSalesTable(filter) {
 function renderAccountingSales(filter = 'all', periodFilter = currentAccGlobalPeriod) {
   if (!DOM.accSalesTableBody) return;
   const history = getHistoryList();
-  
+
   // 見積書以外の確定発行伝票（請求書、納品書、領収書）を正規化し、期間フィルターを適用
   let invoices = history
     .map(raw => normalizeInvoiceDoc(raw))
@@ -24148,7 +26693,7 @@ function renderAccountingSales(filter = 'all', periodFilter = currentAccGlobalPe
   DOM.accSalesTableBody.innerHTML = html;
 }
 
-window.__toggleInvoicePayment = function(id, newStatus) {
+window.__toggleInvoicePayment = function (id, newStatus) {
   const full = (typeof getDocFromHistory === 'function') ? getDocFromHistory(id) : null;
   const list = getHistoryList();
   const summary = list.find(d => d.id === id);
@@ -24167,7 +26712,7 @@ window.__toggleInvoicePayment = function(id, newStatus) {
   }
 };
 
-window.__cancelInvoiceIssue = async function(id, docNumber = '') {
+window.__cancelInvoiceIssue = async function (id, docNumber = '') {
   const full = (typeof getDocFromHistory === 'function') ? getDocFromHistory(id) : null;
   const list = getHistoryList();
   const summary = list.find(d => d.id === id);
@@ -24197,6 +26742,14 @@ window.__cancelInvoiceIssue = async function(id, docNumber = '') {
     renderAccountingSales(currentSalesFilter);
     renderAccountingDashboard(DOM.accSelectMonth ? DOM.accSelectMonth.value : '');
     renderAccountingJournals();
+
+    // シリアル台帳・在庫マスタの連動更新
+    if (typeof syncInventorySerialsFromIssuedDocs === 'function') syncInventorySerialsFromIssuedDocs();
+    if (typeof syncInventoryStockFromIssuedDocs === 'function') syncInventoryStockFromIssuedDocs();
+    if (typeof renderInventoryTable === 'function') renderInventoryTable();
+    if (typeof renderInventorySerialTable === 'function') renderInventorySerialTable();
+    if (typeof renderSerialsManagementTable === 'function') renderSerialsManagementTable();
+
     showToast(`${label}の確定発行を取り消しました（財務会計から除外され、下書きに戻りました）`, 'warning');
   } else {
     showToast('確定発行の取り消しに失敗しました', 'danger');
@@ -24435,7 +26988,7 @@ function saveInvoiceQuickEditHandler() {
 // ==========================================================================
 // 経費・レシート画像OCR コントローラー
 // ==========================================================================
-let activeExpenseClaimant = (function() {
+let activeExpenseClaimant = (function () {
   try {
     return localStorage.getItem('alva_active_expense_claimant') || '小林俊介';
   } catch (e) {
@@ -24448,7 +27001,7 @@ function setActiveExpenseClaimant(claimant) {
   activeExpenseClaimant = claimant;
   try {
     localStorage.setItem('alva_active_expense_claimant', claimant);
-  } catch (e) {}
+  } catch (e) { }
 
   const list = [
     { id: 'btnClaimantKobayashi', val: '小林俊介' },
@@ -25142,7 +27695,7 @@ async function saveCurrentMultiReceiptItem(advanceNext = true) {
         savedExp.receiptDataUrl = resData.url;
         if (typeof saveExpense === 'function') saveExpense(savedExp);
       }
-    }).catch(() => {});
+    }).catch(() => { });
   }
 
   item.isSaved = true;
@@ -25251,7 +27804,7 @@ async function saveAllRemainingMultiReceiptItems() {
             savedExp.receiptDataUrl = resData.url;
             if (typeof saveExpense === 'function') saveExpense(savedExp);
           }
-        }).catch(() => {});
+        }).catch(() => { });
       }
     }
   }
@@ -25261,7 +27814,7 @@ async function saveAllRemainingMultiReceiptItems() {
     applyAccGlobalPeriod(currentAccGlobalPeriod.preset);
   }
   if (typeof syncExpensesWithServer === 'function') {
-    await syncExpensesWithServer().catch(() => {});
+    await syncExpensesWithServer().catch(() => { });
   }
 
   updateMultiReceiptProgress();
@@ -25358,7 +27911,7 @@ function closeMultiReceiptModal() {
   updateMultiReceiptProgress();
 
   if (typeof syncExpensesWithServer === 'function') {
-    syncExpensesWithServer().catch(() => {});
+    syncExpensesWithServer().catch(() => { });
   }
 }
 
@@ -25774,7 +28327,7 @@ function handleSaveExpense() {
     }
 
     if (typeof resetExpenseForm === 'function') resetExpenseForm();
-    
+
     if (typeof applyAccGlobalPeriod === 'function' && typeof currentAccGlobalPeriod !== 'undefined') {
       applyAccGlobalPeriod(currentAccGlobalPeriod.preset);
     }
@@ -25782,7 +28335,7 @@ function handleSaveExpense() {
     if (window.innerWidth <= 1024 && typeof switchExpenseMobileTab === 'function') {
       switchExpenseMobileTab('list');
     }
-    
+
     if (typeof showToast === 'function') {
       showToast(id ? '経費データを更新しました！' : '経費と領収書写真を保存しました（電帳法対応）！', 'success');
     }
@@ -25843,7 +28396,7 @@ function renderAccountingExpenses(periodFilter = currentAccGlobalPeriod) {
   const allExpenses = getExpenseList();
 
   // 1. 集計対象期間によるフィルタリング（経費専用画面用は独立した期間を使用）
-  let filtered = allExpenses.filter(exp => isDateInPeriod(exp.date, typeof currentExpenseGlobalPeriod !== 'undefined' ? currentExpenseGlobalPeriod : {preset: 'all'}));
+  let filtered = allExpenses.filter(exp => isDateInPeriod(exp.date, typeof currentExpenseGlobalPeriod !== 'undefined' ? currentExpenseGlobalPeriod : { preset: 'all' }));
 
   // 2. 社員（立替者）による絞り込み
   const claimantFilter = DOM.expenseFilterClaimant ? DOM.expenseFilterClaimant.value : 'all';
@@ -25945,7 +28498,7 @@ function renderAccountingExpenses(periodFilter = currentAccGlobalPeriod) {
         const receiptBadge = hasReceipt
           ? `<button type="button" class="btn btn-outline btn-xs" style="background: #eef2ff; color: #4338ca; border-color: #c7d2fe; font-weight: 700; padding: 2px 8px; border-radius: 4px; cursor: pointer;" onclick="window.__previewExpenseReceipt('${exp.id}')">🔍 写真</button>`
           : `<span style="color: var(--slate-400); font-size: 11px;">なし</span>`;
-        
+
         const claimant = exp.claimant || '小林俊介';
         let clBadge = `<span class="badge" style="background: #e0f2fe; color: #0369a1; font-size: 10px;">${escapeHtml(claimant)}</span>`;
         if (claimant === '宮崎真輔') {
@@ -25986,7 +28539,7 @@ function renderAccountingExpenses(periodFilter = currentAccGlobalPeriod) {
   }
 }
 
-window.__toggleExpenseSettled = function(id, newStatus) {
+window.__toggleExpenseSettled = function (id, newStatus) {
   const expenses = getExpenseList();
   const target = expenses.find(e => e.id === id);
   if (!target) return;
@@ -25997,7 +28550,7 @@ window.__toggleExpenseSettled = function(id, newStatus) {
   showToast(newStatus ? '経費を【精算済み】に更新しました' : '未精算に戻しました', 'info');
 };
 
-window.__editExpense = function(id) {
+window.__editExpense = function (id) {
   const expenses = getExpenseList();
   const target = expenses.find(e => e.id === id);
   if (!target) return;
@@ -26030,7 +28583,7 @@ window.__editExpense = function(id) {
   DOM.formExpenseInput.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 };
 
-window.__deleteExpense = async function(id) {
+window.__deleteExpense = async function (id) {
   const expenses = getExpenseList();
   const target = expenses.find(e => e.id === id);
   if (target && typeof isMonthLocked === 'function' && isMonthLocked(target.date)) {
@@ -26069,7 +28622,7 @@ window.__deleteExpense = async function(id) {
   }
 };
 
-window.__previewExpenseReceipt = function(id) {
+window.__previewExpenseReceipt = function (id) {
   const expenses = getExpenseList();
   const target = expenses.find(e => e.id === id);
   if (!target) {
@@ -26187,8 +28740,8 @@ function handleExportJournalCSV() {
   const periodLabel = currentAccGlobalPeriod.preset === 'all'
     ? '全期間'
     : (currentAccGlobalPeriod.start && currentAccGlobalPeriod.end
-        ? `${currentAccGlobalPeriod.start}_${currentAccGlobalPeriod.end}`
-        : currentAccGlobalPeriod.preset);
+      ? `${currentAccGlobalPeriod.start}_${currentAccGlobalPeriod.end}`
+      : currentAccGlobalPeriod.preset);
 
   const csvContent = exportJournalsToCSV(unifiedJournals);
   const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -27535,7 +30088,7 @@ function handleMarkExpensesSettled() {
 
 function renderExpenseSettlementSummaryBar() {
   const allExpenses = typeof getExpenseList === 'function' ? getExpenseList() : [];
-  
+
   // 社員ごとに未精算データを集計（会社直接払いは除外）
   const claimantStats = {};
   let totalUnsettledCount = 0;
@@ -27544,7 +30097,7 @@ function renderExpenseSettlementSummaryBar() {
   allExpenses.forEach(exp => {
     const claimant = (exp.claimant || '小林俊介').trim();
     if (['会社', '会社立替/その他', '会社直接', 'none', ''].includes(claimant)) return;
-    
+
     if (!claimantStats[claimant]) {
       claimantStats[claimant] = { count: 0, amount: 0, totalCount: 0 };
     }
@@ -27610,7 +30163,7 @@ function openEmployeeExpenseBatchSettlementModal(targetClaimant = '') {
   if (!modal) return;
 
   const allExpenses = typeof getExpenseList === 'function' ? getExpenseList() : [];
-  
+
   // 社員一覧の集計
   const claimantsSet = new Set(['小林俊介', '宮崎真輔']);
   allExpenses.forEach(exp => {
@@ -27623,7 +30176,7 @@ function openEmployeeExpenseBatchSettlementModal(targetClaimant = '') {
   const select = document.getElementById('batchSettleEmployeeSelect');
   if (select) {
     select.innerHTML = '';
-    
+
     // 未精算件数付きでオプション生成
     Array.from(claimantsSet).forEach(c => {
       const unsettled = allExpenses.filter(e => !e.isSettled && (e.claimant || '小林俊介') === c);
@@ -27930,8 +30483,23 @@ function renderAccInventoryIntegrationPanel(periodFilter = currentAccGlobalPerio
 window.renderAccInventoryIntegrationPanel = renderAccInventoryIntegrationPanel;
 
 function refreshInventoryTheoryValue() {
-  renderAccInventoryIntegrationPanel(currentAccGlobalPeriod);
-  showToast('🔄 在庫マスタから最新の理論在庫評価額を再計算しました', 'info');
+  const btn = document.querySelector('button[onclick*="refreshInventoryTheoryValue"]');
+  if (btn) btn.disabled = true;
+  Promise.all([
+    typeof fetchServerInventory === 'function' ? fetchServerInventory() : Promise.resolve(),
+    typeof syncInventoryLotsWithServer === 'function' ? syncInventoryLotsWithServer() : Promise.resolve(),
+    typeof syncInventorySerialsWithServer === 'function' ? syncInventorySerialsWithServer() : Promise.resolve()
+  ]).then(() => {
+    renderAccInventoryIntegrationPanel(currentAccGlobalPeriod);
+    if (typeof renderPL === 'function') renderPL();
+    if (typeof renderBS === 'function') renderBS();
+    showToast('🔄 クラウド（Firestore）から最新の在庫・入荷ロットを同期し、理論評価額を更新しました', 'success');
+  }).catch(e => {
+    console.warn('refreshInventoryTheoryValue error:', e);
+    renderAccInventoryIntegrationPanel(currentAccGlobalPeriod);
+  }).finally(() => {
+    if (btn) btn.disabled = false;
+  });
 }
 
 window.refreshInventoryTheoryValue = refreshInventoryTheoryValue;
@@ -27962,8 +30530,8 @@ function syncInventoryToAccounting() {
   const existingIndex = manualJournals.findIndex(j => j.sourceType === 'inventory_closing');
   const existingId = existingIndex >= 0 ? manualJournals[existingIndex].id : null;
 
-  const closingDate = (currentAccGlobalPeriod && currentAccGlobalPeriod.end) 
-    ? currentAccGlobalPeriod.end 
+  const closingDate = (currentAccGlobalPeriod && currentAccGlobalPeriod.end)
+    ? currentAccGlobalPeriod.end
     : new Date().toISOString().split('T')[0];
 
   const entryId = existingId || `mj_inv_closing_${Date.now()}`;
@@ -28054,8 +30622,42 @@ function openAttendanceModal() {
   updateAttendanceLiveClock();
   if (attendanceClockInterval) clearInterval(attendanceClockInterval);
   attendanceClockInterval = setInterval(updateAttendanceLiveClock, 1000);
+  
+  // 即時ローカル状態で描画
   updateAttendanceUI();
+
+  // クラウドから最新の打刻データを非同期で取得してUIを再同期（PC打刻の即時反映）
+  syncAttendanceWithServer().then(() => {
+    updateAttendanceUI();
+  }).catch(err => {
+    console.warn('[openAttendanceModal] sync error:', err);
+  });
 }
+
+async function triggerAttendanceSync() {
+  const btn = document.getElementById('btnSyncAttendanceNow');
+  const origHtml = btn ? btn.innerHTML : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '🔄 同期中...';
+  }
+  try {
+    showToast('☁️ クラウドから最新の打刻データを取得しています...', 'info');
+    await syncAttendanceWithServer();
+    updateAttendanceUI();
+    const list = typeof getAttendanceList === 'function' ? getAttendanceList() : [];
+    showToast(`✅ クラウド最新同期完了（全 ${list.length} 件）`, 'success');
+  } catch (err) {
+    console.error('triggerAttendanceSync error:', err);
+    showToast('クラウド同期に失敗しました', 'danger');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = origHtml;
+    }
+  }
+}
+window.triggerAttendanceSync = triggerAttendanceSync;
 
 function closeAttendanceModal() {
   if (attendanceClockInterval) {
@@ -28284,22 +30886,85 @@ function updateAttendanceUI() {
   updateAttendanceFilterView();
 }
 
-function handleClockIn() {
-  const rec = clockInToday();
-  showToast(`出勤打刻しました（${rec.clockIn}）`, 'success');
-  updateAttendanceUI();
-}
+let isClockActionPending = false;
 
-function handleClockOut() {
-  const todayRec = getTodayAttendance();
-  if (!todayRec || !todayRec.clockIn) {
-    if (!confirm('本日の出勤打刻がまだされていません。退勤時刻のみ打刻しますか？\n（出勤時刻は後から「打刻修正」で追加・変更できます）')) {
+async function handleClockIn() {
+  if (isClockActionPending) return;
+  isClockActionPending = true;
+  console.log("【勤怠打刻:出勤】実行開始");
+
+  const btn = DOM.btnClockIn || document.getElementById('btnClockIn');
+  if (btn) {
+    btn.disabled = true;
+    btn.style.opacity = '0.7';
+  }
+
+  try {
+    // 打刻前に最新のクラウド勤怠を同期
+    await syncAttendanceWithServer().catch(() => {});
+
+    const existing = getTodayAttendance();
+    if (existing && existing.clockIn) {
+      showToast(`本日はすでに出勤打刻されています（${existing.clockIn}）`, 'info');
+      updateAttendanceUI();
       return;
     }
+
+    const rec = await clockInToday();
+    console.log("【勤怠打刻:出勤】サーバー永続化成功", rec);
+    showToast(`出勤打刻しました（${rec ? rec.clockIn : ''}）`, 'success');
+    updateAttendanceUI();
+  } catch (err) {
+    console.error("【勤怠打刻:出勤】失敗:", err);
+    showToast('出勤打刻中にエラーが発生しました。再度お試しください。', 'error');
+  } finally {
+    isClockActionPending = false;
+    updateAttendanceUI();
   }
-  const rec = clockOutToday();
-  showToast(`退勤打刻しました（${rec.clockOut}）。お疲れ様でした！`, 'success');
-  updateAttendanceUI();
+}
+
+async function handleClockOut() {
+  if (isClockActionPending) return;
+  isClockActionPending = true;
+  console.log("【勤怠打刻:退勤】実行開始");
+
+  const btn = DOM.btnClockOut || document.getElementById('btnClockOut');
+  if (btn) {
+    btn.disabled = true;
+    btn.style.opacity = '0.7';
+  }
+
+  try {
+    // 1. 打刻前にクラウドから最新状態を同期（PC等他端末での出勤打刻を即座に取り込み）
+    await syncAttendanceWithServer().catch(() => {});
+
+    const todayRec = getTodayAttendance();
+    if (todayRec && todayRec.clockOut) {
+      showToast(`本日はすでに退勤打刻されています（${todayRec.clockOut}）`, 'info');
+      updateAttendanceUI();
+      return;
+    }
+
+    if (!todayRec || !todayRec.clockIn) {
+      const ok = confirm('本日の出勤打刻がまだされていません。退勤時刻のみ打刻しますか？\n（出勤時刻は後から「打刻修正」で追加・変更できます）');
+      if (!ok) {
+        console.log("【勤怠打刻:退勤】出勤未打刻確認でユーザーがキャンセル");
+        return;
+      }
+    }
+
+    // 2. 退勤打刻実行（ローカルおよびFirestoreサーバーへ確実に永続化）
+    const rec = await clockOutToday();
+    console.log("【勤怠打刻:退勤】サーバー永続化成功", rec);
+    showToast(`退勤打刻しました（${rec ? rec.clockOut : ''}）。お疲れ様でした！`, 'success');
+    updateAttendanceUI();
+  } catch (err) {
+    console.error("【勤怠打刻:退勤】失敗:", err);
+    showToast('退勤打刻中にエラーが発生しました。再度お試しください。', 'error');
+  } finally {
+    isClockActionPending = false;
+    updateAttendanceUI();
+  }
 }
 
 function renderAttendanceHistoryTable() {
@@ -28353,20 +31018,20 @@ function renderAttendanceHistoryTable() {
     if (r.breakHours || (clockInVal !== '-' && clockOutVal !== '-')) {
       breakVal = '1時間（自動）';
     }
-    
+
     const duration = calculateWorkDuration(clockInVal === '-' ? '' : clockInVal, clockOutVal === '-' ? '' : clockOutVal);
-    
+
     let workHoursVal = r.workHours || (r.rawRecord ? r.rawRecord.workHoursStandard : '') || '';
     if (!workHoursVal && clockInVal !== '-' && clockOutVal !== '-') {
       workHoursVal = formatMinutesToDecimalHours(duration.workMinutes, true);
     }
-    
+
     let formattedWorkHours = '-';
     const parsedWork = parseFloat(String(workHoursVal).replace(/[^0-9.]/g, ''));
     if (!isNaN(parsedWork) && parsedWork > 0) {
       formattedWorkHours = parsedWork.toFixed(2) + '時間';
     }
-    
+
     let overtimeHoursVal = r.overtimeHours !== undefined ? r.overtimeHours : (r.rawRecord && r.rawRecord.overtimeHours !== undefined ? r.rawRecord.overtimeHours : '');
     if (overtimeHoursVal === '' && clockInVal !== '-' && clockOutVal !== '-') {
       overtimeHoursVal = duration.overtimeMinutes > 0 ? formatMinutesToDecimalHours(duration.overtimeMinutes, true) : '0';
@@ -28397,7 +31062,7 @@ function renderAttendanceHistoryTable() {
   tableBody.innerHTML = html;
 }
 
-window.__deleteAttendanceRecord = async function(date, id = '') {
+window.__deleteAttendanceRecord = async function (date, id = '') {
   if (confirm(`${date} の打刻データを削除しますか？`)) {
     if (id) deleteAttendance(id);
     deleteAttendance(date);
@@ -28450,7 +31115,7 @@ function toggleManualAttendanceForm(show = null, dateToEdit = '') {
   }
 }
 
-window.__editAttendanceRecord = function(date) {
+window.__editAttendanceRecord = function (date) {
   toggleManualAttendanceForm(true, date);
 };
 
@@ -28511,7 +31176,7 @@ function openAttendanceSheetModal(targetYM = '') {
     if (selector) {
       selector.value = currentSheetYM;
     }
-    
+
     // 社員番号・氏名の初期反映
     if (typeof getAttendanceEmployee === 'function') {
       const emp = getAttendanceEmployee();
@@ -28607,7 +31272,7 @@ function renderAttendanceCalendarSheet(ymStr) {
   }
 }
 
-window.__quickEditAttendanceDate = function(date) {
+window.__quickEditAttendanceDate = function (date) {
   // 出勤簿の行クリックで打刻漏れ修正フォームを呼出
   toggleManualAttendanceForm(true, date);
   // 勤怠モーダルが見えるように前面へスクロール
@@ -29105,7 +31770,7 @@ function handleImportAttendanceToPayroll() {
   // 当給与明細（発行月）に対応する「前月勤務分」の勤怠を集計（末日締め翌月10日払い）
   const workMonth = getPreviousMonthStr(currentPayrollMonth);
   console.log("対象勤務月:", workMonth, "勤怠データ全件:", attList.length);
-  
+
   const summary = extractAttendanceForPayroll(attList, workMonth);
   console.log("集計結果:", summary);
 
@@ -29568,7 +32233,7 @@ function renderPayrollHistoryTable() {
   DOM.payrollHistoryTableBody.innerHTML = html;
 }
 
-window.__loadPayrollRecord = function(targetMonth) {
+window.__loadPayrollRecord = function (targetMonth) {
   if (DOM.payrollMonthSelector) {
     DOM.payrollMonthSelector.value = targetMonth;
   }
@@ -29576,14 +32241,14 @@ window.__loadPayrollRecord = function(targetMonth) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 };
 
-window.__printPayrollRecord = function(targetMonth) {
+window.__printPayrollRecord = function (targetMonth) {
   loadPayrollRecordForMonth(targetMonth);
   setTimeout(() => {
     openPayrollSheetModal();
   }, 100);
 };
 
-window.__deletePayrollRecord = function(targetMonth) {
+window.__deletePayrollRecord = function (targetMonth) {
   if (confirm(`${targetMonth} の給与明細データを削除しますか？`)) {
     deletePayrollRecord(targetMonth);
     showToast(`${targetMonth} の給与データを削除しました`, 'success');
@@ -29626,11 +32291,11 @@ window.showToast = showToast;
 // ==========================================================================
 // 全社共通モーダル・画面切替操作のグローバルエクスポート
 // ==========================================================================
-window.openCompanyProfileModal = typeof openCompanyProfileModal !== 'undefined' ? openCompanyProfileModal : function() {
+window.openCompanyProfileModal = typeof openCompanyProfileModal !== 'undefined' ? openCompanyProfileModal : function () {
   const m = document.getElementById('companyProfileModal');
   if (m) m.classList.add('active');
 };
-window.closeCompanyProfileModal = typeof closeCompanyProfileModal !== 'undefined' ? closeCompanyProfileModal : function() {
+window.closeCompanyProfileModal = typeof closeCompanyProfileModal !== 'undefined' ? closeCompanyProfileModal : function () {
   const m = document.getElementById('companyProfileModal');
   if (m) m.classList.remove('active');
 };
@@ -29895,14 +32560,14 @@ function setupFirebaseAuth() {
     console.error('Firebase SDK is not loaded.');
     return;
   }
-  
+
   if (!firebase.apps.length) {
     firebase.initializeApp(firebaseConfig);
   }
   const auth = firebase.auth();
 
   window.signOutApp = () => {
-    try { localStorage.removeItem('billcraft_cached_id_token'); } catch (e) {}
+    try { localStorage.removeItem('billcraft_cached_id_token'); } catch (e) { }
     auth.signOut().then(() => {
       window.location.reload();
     });
@@ -29946,11 +32611,18 @@ function setupFirebaseAuth() {
       try {
         const token = await user.getIdToken();
         if (token) localStorage.setItem('billcraft_cached_id_token', token);
-      } catch (e) {}
-      // ログイン完了時にサーバーから最新データを自動同期
+      } catch (e) { }
+      // ログイン完了時にサーバーから最新データを自動同期し、現在表示中の画面を即時再描画（全画面対応）
       if (typeof pullAllServerDataToLocal === 'function') {
         try {
           await pullAllServerDataToLocal();
+          console.log('[Auth Sync] 全データ同期完了、アクティブ画面を即時再描画します:', currentAppView);
+          if (currentAppView === 'attendance' && typeof syncAttendanceWithServer === 'function') {
+            await syncAttendanceWithServer();
+          }
+          if (typeof refreshCurrentViewUI === 'function') {
+            refreshCurrentViewUI();
+          }
         } catch (syncErr) {
           console.warn('[Auth Sync] Data pull error:', syncErr);
         }
@@ -29958,7 +32630,7 @@ function setupFirebaseAuth() {
     } else {
       if (loginOverlay) loginOverlay.style.display = 'flex';
       if (btnLogout) btnLogout.style.display = 'none';
-      try { localStorage.removeItem('billcraft_cached_id_token'); } catch (e) {}
+      try { localStorage.removeItem('billcraft_cached_id_token'); } catch (e) { }
     }
   });
 
@@ -29969,7 +32641,7 @@ function setupFirebaseAuth() {
     btnLoginWithPassword.addEventListener('click', async () => {
       const email = loginEmailInput.value.trim();
       const password = loginPasswordInput.value.trim();
-      
+
       if (!email || !password) {
         if (loginMessageArea) {
           loginMessageArea.style.color = '#dc2626';
@@ -29977,10 +32649,10 @@ function setupFirebaseAuth() {
         }
         return;
       }
-      
+
       btnLoginWithPassword.disabled = true;
       btnLoginWithPassword.innerText = 'ログイン処理中...';
-      
+
       try {
         await auth.signInWithEmailAndPassword(email, password);
         if (loginMessageArea) {
@@ -29993,9 +32665,9 @@ function setupFirebaseAuth() {
           loginMessageArea.style.color = '#dc2626';
           // User friendly message for common errors
           if (error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
-             loginMessageArea.innerText = 'メールアドレスまたはパスワードが間違っています。';
+            loginMessageArea.innerText = 'メールアドレスまたはパスワードが間違っています。';
           } else {
-             loginMessageArea.innerText = 'ログインエラー: ' + error.message;
+            loginMessageArea.innerText = 'ログインエラー: ' + error.message;
           }
         }
       } finally {
@@ -30010,7 +32682,7 @@ function setupFirebaseAuth() {
 async function bootstrapApp() {
   setupFirebaseAuth();
   if (typeof pullAllServerDataToLocal === 'function') {
-    try { await pullAllServerDataToLocal(); } catch(e) {}
+    try { await pullAllServerDataToLocal(); } catch (e) { }
   }
   initApp();
 }
@@ -30069,7 +32741,7 @@ async function viewSupersededDoc(targetDocNumber) {
           if (m) foundDoc = m.fullDoc || m;
         }
       }
-    } catch (e) {}
+    } catch (e) { }
   }
 
   // 3. マヒミアカラー東村の元伝票（INV-20260920-01）の確実なフォールバック
@@ -30213,7 +32885,7 @@ function startDocCorrection(origDocNumber) {
   origDoc.isSuperseded = true;
   origDoc.supersededAt = new Date().toISOString();
   origDoc.supersededReason = `訂正伝票作成に伴う改訂（元伝票: ${cleanNum}）`;
-  
+
   if (typeof saveDocToHistory === 'function') {
     saveDocToHistory(origDoc);
   }
@@ -30221,7 +32893,7 @@ function startDocCorrection(origDocNumber) {
   // 2. 新しい訂正伝票のドラフトを生成
   const newDoc = JSON.parse(JSON.stringify(origDoc));
   newDoc.id = 'doc_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
-  
+
   // 伝票番号のスマートリビジョン採番（-R1, -R2, -R3...）
   // 元伝票が INV-20261030-275 なら INV-20261030-275-R1
   // 元伝票がすでに INV-20261030-275-R1 なら INV-20261030-275-R2
@@ -30232,7 +32904,7 @@ function startDocCorrection(origDocNumber) {
     baseNum = matchRev[1];
     revNum = parseInt(matchRev[2], 10) + 1;
   }
-  
+
   // すでに同じ番号が存在しないかチェックし、空いているリビジョン番号を自動決定
   let candidateNum = `${baseNum}-R${revNum}`;
   while (allHistory.some(h => {
@@ -30269,12 +32941,12 @@ function startDocCorrection(origDocNumber) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(origDoc)
     }).catch(e => console.warn('Server origDoc sync failed:', e));
-  } catch (e) {}
+  } catch (e) { }
 
   // 4. エディタにロードして開く
   currentDoc = newDoc;
   if (typeof renderAll === 'function') renderAll();
-  
+
   // 書類一覧モーダルを閉じてエディタ画面に遷移
   const histModal = document.getElementById('historyModal');
   if (histModal) {

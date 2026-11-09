@@ -55,6 +55,9 @@ export function getDeletedExpenseIds() {
  * @param {string} id
  */
 
+// 過去のテスト用・架空シリアル番号の完全排除ブラックリスト
+const PURGED_TEST_SERIALS = ['N8001', 'N8002', 'N8003', 'N8004', 'N8005'];
+
 /**
  * 削除済みシリアル番号セットを取得（台帳からの完全削除・ゾンビ復活防止用）
  * @returns {Set<string>}
@@ -63,9 +66,11 @@ export function getDeletedSerialNumbers() {
   try {
     const raw = localStorage.getItem(KEYS.DELETED_SERIALS);
     const arr = raw ? JSON.parse(raw) : [];
-    return new Set(Array.isArray(arr) ? arr.map(s => String(s).trim().toUpperCase()) : []);
+    const set = new Set(Array.isArray(arr) ? arr.map(s => String(s).trim().toUpperCase()) : []);
+    PURGED_TEST_SERIALS.forEach(s => set.add(s));
+    return set;
   } catch (e) {
-    return new Set();
+    return new Set(PURGED_TEST_SERIALS);
   }
 }
 
@@ -351,7 +356,7 @@ export async function restoreDocFromTrash(id) {
             });
           }
           if (it.serialNumber && typeof it.serialNumber === 'string') {
-            const rawSns = it.serialNumber.split(/[,、\s]+/).map(s => s.trim().toUpperCase()).filter(s => /^N\s*\d{4,5}$/i.test(s));
+            const rawSns = it.serialNumber.split(/[,、\s]+/).map(s => s.trim().toUpperCase()).filter(s => /^N\s*\d{4,12}$/i.test(s));
             rawSns.forEach(sn => {
               const normSn = sn.replace(/\s+/g, '');
               if (!itemSerials.includes(normSn)) itemSerials.push(normSn);
@@ -843,7 +848,7 @@ export const DEFAULT_INVENTORY = [
     name: 'PSE認証 専用急速充電器',
     sku: 'CHG-DP5K',
     type: 'single',
-    hasSerial: false,
+    hasSerial: true, // シリアル番号管理対象
     currentStock: 0,
     safetyStock: 2,
     unit: '個',
@@ -851,7 +856,7 @@ export const DEFAULT_INVENTORY = [
     unitPrice: 8000,
     location: 'パーツ保管棚 B-2',
     lastInDate: '2026-03-24',
-    note: '国内仕入PSE認証充電器',
+    note: '国内仕入PSE認証充電器（シリアル番号管理対象）',
     history: []
   },
   {
@@ -925,9 +930,9 @@ export const DEFAULT_INVENTORY = [
 ];
 
 export const DEFAULT_INVENTORY_SERIALS = [
-  { id: "sn_N8460", serialNumber: "N8460", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "maintenance", clientName: "", endUserName: "デモ機", shipDate: "", docNumber: "", docId: "", note: "デモ機", inDate: "2025-07-01", unitCost: 152000, updatedAt: new Date().toISOString() },
+  { id: "sn_N8460", serialNumber: "N8460", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "demo", clientName: "", endUserName: "デモ機", shipDate: "", docNumber: "", docId: "", note: "デモ機", inDate: "2025-07-01", unitCost: 152000, updatedAt: new Date().toISOString() },
   { id: "sn_N8461", serialNumber: "N8461", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "shipped", clientName: "株式会社朝日エージェンシー", endUserName: "", shipDate: "2025-07-03", docNumber: "INV-20250703-01", docId: "doc_20250703_01", note: "数量限定特別価格 (KET.IC.2B エレクトロパワー)", inDate: "2025-07-01", unitCost: 152000, updatedAt: new Date().toISOString() },
-  { id: "sn_N8462", serialNumber: "N8462", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "maintenance", clientName: "", endUserName: "デモ機", shipDate: "", docNumber: "", docId: "", note: "デモ機", inDate: "2025-07-01", unitCost: 152000, updatedAt: new Date().toISOString() },
+  { id: "sn_N8462", serialNumber: "N8462", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "demo", clientName: "", endUserName: "デモ機", shipDate: "", docNumber: "", docId: "", note: "デモ機", inDate: "2025-07-01", unitCost: 152000, updatedAt: new Date().toISOString() },
   { id: "sn_N8463", serialNumber: "N8463", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "shipped", clientName: "Ｙ’ｓボディー", endUserName: "NCRAFT 様", shipDate: "2025-12-22", docNumber: "INV-20251222-01", docId: "doc_20251222_01", note: "NCRAFT様分 特別価格", inDate: "2025-07-01", unitCost: 152000, updatedAt: new Date().toISOString() },
   { id: "sn_N8464", serialNumber: "N8464", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "shipped", clientName: "バンザイ沖縄販売株式会社", endUserName: "", shipDate: "2025-08-12", docNumber: "INV-20250729-01", docId: "doc_20250729_01", note: "特別価格（スプレッダーN35600同時出荷）", inDate: "2025-07-01", unitCost: 152000, updatedAt: new Date().toISOString() },
   { id: "sn_N8472", serialNumber: "N8472", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "shipped", clientName: "株式会社朝日エージェンシー", endUserName: "消防署", shipDate: "2025-03-13", docNumber: "INV-20250313-01", docId: "doc_20250313_01", note: "消防署寄贈用 50%値引き", inDate: "2025-03-01", unitCost: 152000, updatedAt: new Date().toISOString() },
@@ -961,12 +966,7 @@ export const DEFAULT_INVENTORY_SERIALS = [
   { id: "sn_N36707", serialNumber: "N36707", inventoryId: "inv_2", itemName: "DP-MS", itemType: "spreader", status: "shipped", clientName: "R・Cペイント販売株式会社", endUserName: "", shipDate: "2026-07-06", docNumber: "INV-20260706-01", docId: "doc_20260706_01", note: "DP-5000(N10419)同時出荷", inDate: "2026-02-01", unitCost: 40000, updatedAt: new Date().toISOString() },
   { id: "sn_N36709", serialNumber: "N36709", inventoryId: "inv_2", itemName: "DP-MS", itemType: "spreader", status: "shipped", clientName: "株式会社宮田自動車商会 苫小牧営業所", endUserName: "", shipDate: "2026-10-01", docNumber: "INV-20261001-02", docId: "doc_20261001_02", note: "DP-5000(N10938)同時出荷", inDate: "2026-02-01", unitCost: 40000, updatedAt: new Date().toISOString() },
   { id: "sn_N2001", serialNumber: "N2001", inventoryId: "inv_2", itemName: "DP-MS", itemType: "spreader", status: "in_stock", clientName: "", endUserName: "", shipDate: "", docNumber: "", docId: "", note: "在庫中", inDate: "2026-09-25", unitCost: 40000, updatedAt: new Date().toISOString() },
-  { id: "sn_N2002", serialNumber: "N2002", inventoryId: "inv_2", itemName: "DP-MS", itemType: "spreader", status: "in_stock", clientName: "", endUserName: "", shipDate: "", docNumber: "", docId: "", note: "在庫中", inDate: "2026-09-25", unitCost: 40000, updatedAt: new Date().toISOString() },
-  { id: "sn_N8001", serialNumber: "N8001", inventoryId: "inv_dp5000_bat", itemName: "PSE認証リチウムイオンバッテリー", itemType: "battery", status: "in_stock", clientName: "", endUserName: "", shipDate: "", docNumber: "", docId: "", note: "社内管理用セルチェック済", isCompanyOnly: true, inDate: "2026-10-21", unitCost: 8000, updatedAt: new Date().toISOString() },
-  { id: "sn_N8002", serialNumber: "N8002", inventoryId: "inv_dp5000_bat", itemName: "PSE認証リチウムイオンバッテリー", itemType: "battery", status: "in_stock", clientName: "", endUserName: "", shipDate: "", docNumber: "", docId: "", note: "社内管理用セルチェック済", isCompanyOnly: true, inDate: "2026-10-21", unitCost: 8000, updatedAt: new Date().toISOString() },
-  { id: "sn_N8003", serialNumber: "N8003", inventoryId: "inv_dp5000_bat", itemName: "PSE認証リチウムイオンバッテリー", itemType: "battery", status: "in_stock", clientName: "", endUserName: "", shipDate: "", docNumber: "", docId: "", note: "社内管理用", isCompanyOnly: true, inDate: "2026-10-21", unitCost: 8000, updatedAt: new Date().toISOString() },
-  { id: "sn_N8004", serialNumber: "N8004", inventoryId: "inv_dp5000_bat", itemName: "PSE認証リチウムイオンバッテリー", itemType: "battery", status: "in_stock", clientName: "", endUserName: "", shipDate: "", docNumber: "", docId: "", note: "社内管理用", isCompanyOnly: true, inDate: "2026-10-21", unitCost: 8000, updatedAt: new Date().toISOString() },
-  { id: "sn_N8005", serialNumber: "N8005", inventoryId: "inv_dp5000_bat", itemName: "PSE認証リチウムイオンバッテリー", itemType: "battery", status: "in_stock", clientName: "", endUserName: "", shipDate: "", docNumber: "", docId: "", note: "社内管理用", isCompanyOnly: true, inDate: "2026-10-21", unitCost: 8000, updatedAt: new Date().toISOString() },
+  { id: "sn_N2002", serialNumber: "N2002", inventoryId: "inv_2", itemName: "DP-MS", itemType: "spreader", status: "in_stock", clientName: "", endUserName: "", shipDate: "", docNumber: "", docId: "", note: "在庫中", inDate: "2026-09-25", unitCost: 40000, updatedAt: new Date().toISOString() }
 ];
 
 export const DEFAULT_INVENTORY_LOTS = [];
@@ -995,9 +995,9 @@ export function deduplicateItemMasterList(list) {
     // サンプル商品は自動パージ（完全排除）
     if (SAMPLE_ITEM_KEYS.has(key)) continue;
 
-    // テスト品目、KET.IC.2B（DP-5000旧名称）、および値引き・割引行の完全パージ
+    // アスタリスク付き品目（*DP-MS等の重複・ゴミ）、テスト品目、KET.IC.2B（DP-5000旧名称）、および値引き・割引行の完全パージ
     const lowerName = cleanName.toLowerCase();
-    if (lowerName === 'てすと' || lowerName === 'test' || lowerName.includes('ket.ic.2b') || lowerName.includes('エレクトロパワー') || /値引|割引|相殺|調整|特別値引|出精値引/i.test(lowerName)) {
+    if (cleanName.startsWith('*') || lowerName === 'てすと' || lowerName === 'test' || lowerName.includes('ket.ic.2b') || lowerName.includes('エレクトロパワー') || /値引|割引|相殺|調整|特別値引|出精値引/i.test(lowerName)) {
       continue;
     }
 
@@ -1141,9 +1141,39 @@ export function loadActiveDoc() {
  */
 export function saveIssuerProfile(issuer) {
   try {
-    localStorageSetItemAndSync(KEYS.ISSUER_PROFILE, JSON.stringify(issuer));
-    // サーバーファイル（data/issuer_profile.json）にも即時保存
-    saveServerIssuerProfile(issuer).catch(e => {
+    const raw = localStorage.getItem(KEYS.ISSUER_PROFILE);
+    const existing = raw ? JSON.parse(raw) : {};
+    const merged = {
+      ...existing,
+      ...(issuer || {})
+    };
+
+    // 【超重要】印影画像（stampDataUrl）の消失防止（渡されたデータに画像が無く既存にあれば絶対保護）
+    if (!issuer?.stampDataUrl || String(issuer.stampDataUrl).trim() === '') {
+      if (existing.stampDataUrl && String(existing.stampDataUrl).trim() !== '') {
+        merged.stampDataUrl = existing.stampDataUrl;
+      }
+    } else {
+      merged.stampDataUrl = issuer.stampDataUrl;
+    }
+
+    // 印影表示フラグの保護
+    if (issuer?.showStamp !== undefined) {
+      merged.showStamp = issuer.showStamp;
+    } else if (existing.showStamp !== undefined) {
+      merged.showStamp = existing.showStamp;
+    }
+
+    // 振込先情報の消失防止
+    if (!issuer?.bankInfo || String(issuer.bankInfo).trim() === '') {
+      if (existing.bankInfo && String(existing.bankInfo).trim() !== '') {
+        merged.bankInfo = existing.bankInfo;
+      }
+    }
+
+    localStorageSetItemAndSync(KEYS.ISSUER_PROFILE, JSON.stringify(merged));
+    // サーバーファイル（Firestore settings/issuer）にも即時保存
+    saveServerIssuerProfile(merged).catch(e => {
       console.warn('Server issuer profile save failed:', e);
     });
   } catch (e) {
@@ -1173,6 +1203,21 @@ export function loadIssuerProfile() {
       profile.tel = '027-289-0367';
       profile.fax = '027-289-0368';
       modified = true;
+    }
+
+    // 印影画像がローカルにない場合、サーバーから非同期フェッチして復元
+    if (!profile.stampDataUrl || profile.stampDataUrl.trim() === '') {
+      fetchServerIssuerProfile().then(srv => {
+        if (srv && srv.stampDataUrl && srv.stampDataUrl.trim() !== '') {
+          profile.stampDataUrl = srv.stampDataUrl;
+          if (srv.showStamp !== undefined) profile.showStamp = srv.showStamp;
+          localStorageSetItemAndSync(KEYS.ISSUER_PROFILE, JSON.stringify(profile));
+          console.log('[自社印復元] サーバーから印鑑画像を自動復元・同期しました');
+          if (typeof window !== 'undefined' && typeof window.renderAll === 'function') {
+            window.renderAll();
+          }
+        }
+      }).catch(() => { });
     }
 
     if (modified) {
@@ -1242,6 +1287,102 @@ export function unifyMechanicalSpreaderDocItems(doc) {
 }
 
 /**
+ * 全伝票・全商品明細におけるシリアル番号の整合性自動サニタイズ（全社・全取引先共通の包括的恒久防壁）
+ * 1. 画面上の手入力シリアルと内部引き当てデータ(assignedSerials)の乖離を全伝票で自動修復
+ * 2. 古いゾンビシリアル（裏側に残った過去の若番割当など）を全伝票から完全消去・整合
+ * 3. 本田塗料店伝票(DEL-20261105-235)におけるN8460->N10935の自動修復
+ */
+export function sanitizeDocSerialsConsistency(doc) {
+  if (!doc) return false;
+  let updated = false;
+
+  const docNo = String(doc.docNumber || doc.id || '').trim();
+  const clientName = doc.client ? (doc.client.name || '') : (doc.clientName || '');
+  const isHonda = docNo.includes('DEL-20261105-235') || doc.id === 'doc_1793843756482_m0tc1' || clientName.includes('本田塗料');
+
+  const items = (Array.isArray(doc.items) && doc.items.length > 0)
+    ? doc.items
+    : (doc.fullDoc && Array.isArray(doc.fullDoc.items) ? doc.fullDoc.items : []);
+
+  items.forEach(it => {
+    if (!it) return;
+
+    // ① 本田塗料店伝票におけるN8460の確実なN10935置換
+    if (isHonda) {
+      if (it.serialNumber && it.serialNumber.includes('N8460')) {
+        it.serialNumber = it.serialNumber.replace(/N8460/g, 'N10935');
+        updated = true;
+      }
+      if (Array.isArray(it.assignedSerials)) {
+        it.assignedSerials.forEach(as => {
+          if (as && String(as.serialNumber).trim().toUpperCase() === 'N8460') {
+            as.serialNumber = 'N10935';
+            as.itemName = 'DP-5000 本体';
+            as.costPrice = 152000;
+            updated = true;
+          }
+        });
+        it.costPrice = 152000;
+        it.assignedCogs = 152000;
+      }
+      if (it.serialNumber === 'N10935' && (!it.assignedSerials || it.assignedSerials.length === 0 || it.assignedSerials[0]?.serialNumber !== 'N10935')) {
+        it.assignedSerials = [{
+          itemId: 'inv_dp5000_body',
+          itemName: 'DP-5000 本体',
+          serialNumber: 'N10935',
+          costPrice: 152000
+        }];
+        it.costPrice = 152000;
+        it.assignedCogs = 152000;
+        updated = true;
+      }
+    }
+
+    // ② 全伝票共通：手入力シリアルと内部 assignedSerials の完全連動同期
+    const manualSn = (it.serialNumber || '').trim();
+    if (manualSn && !isHonda) {
+      const manualParts = manualSn.split(/[,、\n\r\t;/|\s]+/)
+        .map(p => p.replace(/^[(\[{<"']+|[)\]}>"':]+$/g, '').trim().toUpperCase())
+        .filter(p => p.length >= 3);
+
+      if (manualParts.length > 0) {
+        if (Array.isArray(it.assignedSerials) && it.assignedSerials.length > 0) {
+          const assignedSns = it.assignedSerials.map(a => String(a.serialNumber || '').trim().toUpperCase());
+          // 手入力に存在しないシリアルが裏側に残っている場合（乖離発生）
+          const hasMismatch = assignedSns.some(asn => !manualParts.includes(asn)) || (assignedSns.length !== manualParts.length);
+          if (hasMismatch) {
+            it.assignedSerials = manualParts.map(asn => {
+              const matched = it.assignedSerials.find(a => String(a.serialNumber || '').trim().toUpperCase() === asn);
+              return matched || {
+                itemId: it.id || 'inv_dp5000_body',
+                itemName: it.name || 'DP-5000 本体',
+                serialNumber: asn,
+                costPrice: it.costPrice || 152000
+              };
+            });
+            updated = true;
+          }
+        }
+      }
+    }
+
+    // ③ 全伝票共通：社内デモ機(N8460)が通常伝票に誤混入していた場合の自動消去
+    if (!isHonda && it.assignedSerials && Array.isArray(it.assignedSerials)) {
+      const hadDemo = it.assignedSerials.some(a => String(a.serialNumber || '').trim().toUpperCase() === 'N8460');
+      if (hadDemo) {
+        it.assignedSerials = it.assignedSerials.filter(a => String(a.serialNumber || '').trim().toUpperCase() !== 'N8460');
+        updated = true;
+      }
+    }
+  });
+
+  return updated;
+}
+
+// 互換性エイリアス
+export const sanitizeHondaPaintDocAndSerials = sanitizeDocSerialsConsistency;
+
+/**
  * 書類履歴一覧を取得
  */
 export function getHistoryList(includeSuperseded = false) {
@@ -1251,13 +1392,15 @@ export function getHistoryList(includeSuperseded = false) {
     let list = JSON.parse(raw);
     if (!Array.isArray(list)) return [];
 
-    // スプレッダーの品名統一（価格は完全維持）
+    // スプレッダーの品名統一 & 本田塗料店伝票(N8460->N10935)のキャッシュ自動サニタイズ
     let anyUpdated = false;
     list.forEach(docItem => {
       if (docItem.fullDoc) {
         if (unifyMechanicalSpreaderDocItems(docItem.fullDoc)) anyUpdated = true;
+        if (sanitizeHondaPaintDocAndSerials(docItem.fullDoc)) anyUpdated = true;
       }
       if (unifyMechanicalSpreaderDocItems(docItem)) anyUpdated = true;
+      if (sanitizeHondaPaintDocAndSerials(docItem)) anyUpdated = true;
     });
 
     if (anyUpdated) {
@@ -1399,40 +1542,80 @@ export function deleteDocFromHistory(id) {
     // ※ ユーザー様の指定仕様：伝票を消した時にシリアル台帳から消えるのではなく、出荷前（在庫中）に戻す
     try {
       const fullDoc = (targetItem && targetItem.fullDoc) || targetItem;
-      if (fullDoc && Array.isArray(fullDoc.items)) {
-        const itemSerials = [];
-        fullDoc.items.forEach(it => {
-          if (!it) return;
-          if (Array.isArray(it.assignedSerials) && it.assignedSerials.length > 0) {
-            it.assignedSerials.forEach(as => {
-              if (as && as.serialNumber) itemSerials.push(as.serialNumber.trim().toUpperCase());
+      const docNo = String(fullDoc?.docNumber || targetItem?.docNumber || '').trim();
+      const serialList = getInventorySerialList();
+      let serialsRestored = 0;
+
+      if (Array.isArray(serialList) && serialList.length > 0) {
+        serialList.forEach(s => {
+          if (!s) return;
+          const sDocNo = String(s.docNumber || s.invoiceNumber || '').trim();
+          const sDocId = String(s.docId || s.invoiceId || '').trim();
+
+          let isMatch = false;
+          if (docNo && sDocNo === docNo) isMatch = true;
+          if (cleanId && sDocId === cleanId) isMatch = true;
+
+          // 明細のシリアル指定とも照合
+          if (!isMatch && fullDoc && Array.isArray(fullDoc.items)) {
+            fullDoc.items.forEach(it => {
+              if (!it) return;
+              if (Array.isArray(it.assignedSerials)) {
+                it.assignedSerials.forEach(as => {
+                  if (as && as.serialNumber && String(as.serialNumber).trim().toUpperCase() === String(s.serialNumber).trim().toUpperCase()) {
+                    isMatch = true;
+                  }
+                });
+              }
+              if (it.serialNumber && typeof it.serialNumber === 'string') {
+                if (it.serialNumber.toUpperCase().includes(String(s.serialNumber).trim().toUpperCase())) {
+                  isMatch = true;
+                }
+              }
             });
           }
-          if (it.serialNumber && typeof it.serialNumber === 'string') {
-            const rawSns = it.serialNumber.split(/[,、\s]+/).map(s => s.trim().toUpperCase()).filter(s => /^N\s*\d{4,5}$/i.test(s));
-            rawSns.forEach(sn => {
-              const normSn = sn.replace(/\s+/g, '');
-              if (!itemSerials.includes(normSn)) itemSerials.push(normSn);
-            });
+
+          if (isMatch) {
+            s.status = s.isBundled ? 'bundled' : 'in_stock';
+            s.clientName = '';
+            s.customerName = '';
+            s.endUserName = '';
+            s.shipDate = '';
+            s.shippedDate = '';
+            s.docNumber = '';
+            s.docId = '';
+            s.invoiceNumber = '';
+            s.invoiceId = '';
+            s.updatedAt = new Date().toISOString();
+            serialsRestored++;
+
+            // セット品化された本体の場合、組込バッテリーも連動して在庫中に復帰
+            if (s.isBundled && Array.isArray(s.batterySerials)) {
+              s.batterySerials.forEach(bSn => {
+                const bat = serialList.find(b => b && String(b.serialNumber).trim().toUpperCase() === String(bSn).trim().toUpperCase());
+                if (bat) {
+                  bat.status = 'bundled';
+                  bat.clientName = '';
+                  bat.customerName = '';
+                  bat.endUserName = '';
+                  bat.shipDate = '';
+                  bat.shippedDate = '';
+                  bat.docNumber = '';
+                  bat.docId = '';
+                  bat.invoiceNumber = '';
+                  bat.invoiceId = '';
+                  bat.updatedAt = new Date().toISOString();
+                }
+              });
+            }
           }
         });
 
-        itemSerials.forEach(sn => {
-          updateSerialStatus(sn, 'in_stock', {
-            clientName: '',
-            customerName: '',
-            endUserName: '',
-            docNumber: '',
-            docId: '',
-            invoiceNumber: '',
-            invoiceId: '',
-            shipDate: '',
-            shippedDate: '',
-            note: '伝票削除による在庫復帰'
-          });
-        });
-        if (itemSerials.length > 0) {
-          console.log(`【伝票削除連動】シリアル番号 ${itemSerials.join(', ')} を台帳上で「在庫中」に自動復帰しました`);
+        if (serialsRestored > 0) {
+          localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(serialList));
+          saveServerInventorySerials(serialList).catch(() => { });
+          if (typeof syncInventoryStockFromSerials === 'function') syncInventoryStockFromSerials();
+          console.log(`【伝票削除連動】シリアル番号 ${serialsRestored} 件を台帳上で「在庫中」に完全復帰し、サーバーへ同期保存しました`);
         }
       }
     } catch (snErr) {
@@ -1451,7 +1634,7 @@ export function deleteDocFromHistory(id) {
     if (activeDoc && String(activeDoc.id).trim() === cleanId) {
       console.log("【書類削除】編集中アクティブ伝票も削除対象のためクリアします:", cleanId);
       localStorage.removeItem(KEYS.ACTIVE_DOC);
-      saveServerActiveDoc({}).catch(() => {});
+      saveServerActiveDoc({}).catch(() => { });
     }
 
     // 4. サーバーのFirestoreから個別削除
@@ -1575,25 +1758,54 @@ let _authRestorePromise = null;
  * @param {boolean} forceRefresh 強制的に最新トークンを再取得するかどうか
  */
 export async function getFirebaseAuthToken(forceRefresh = false) {
-  // 1. Firebase SDK が利用可能かチェック
+  // 1. キャッシュトークンが利用可能な場合は即座に返却（初期ロード遅延・初回APIタイムアウトを完全解消）
+  if (!forceRefresh) {
+    if (_memoryCachedToken) return _memoryCachedToken;
+    try {
+      const localCached = localStorage.getItem(CACHED_TOKEN_KEY);
+      if (localCached) {
+        _memoryCachedToken = localCached;
+        return localCached;
+      }
+    } catch (e) { }
+
+    // Firebase SDK 内部のローカルストレージ（IndexedDB/localStorage）から直近トークンを抽出
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('firebase:authUser:')) {
+          const raw = localStorage.getItem(k);
+          if (raw) {
+            const authData = JSON.parse(raw);
+            if (authData && authData.stsTokenManager && authData.stsTokenManager.accessToken) {
+              const fbToken = authData.stsTokenManager.accessToken;
+              _memoryCachedToken = fbToken;
+              try { localStorage.setItem(CACHED_TOKEN_KEY, fbToken); } catch (e) { }
+              return fbToken;
+            }
+          }
+        }
+      }
+    } catch (e) { }
+  }
+
+  // 2. Firebase SDK が利用可能な場合、currentUser またはセッション復元から取得
   if (typeof firebase !== 'undefined' && firebase.auth) {
     const auth = firebase.auth();
 
-    // 1-1. すでに currentUser が存在する場合はトークンを取得
+    // 2-1. すでに currentUser が存在する場合はトークンを取得
     if (auth.currentUser) {
       try {
         const token = await auth.currentUser.getIdToken(forceRefresh);
         if (token) {
           _memoryCachedToken = token;
-          try { localStorage.setItem(CACHED_TOKEN_KEY, token); } catch (e) {}
+          try { localStorage.setItem(CACHED_TOKEN_KEY, token); } catch (e) { }
           return token;
         }
-      } catch (e) {
-        // トークン取得エラー時はフォールバックへ進む
-      }
+      } catch (e) { }
     }
 
-    // 1-2. currentUser が null の場合、セッション復元を待機（インフライトPromiseで複数呼び出しを1本化）
+    // 2-2. currentUser が null の場合、セッション復元を待機（最大4000ms）
     if (!forceRefresh) {
       if (!_authRestorePromise) {
         _authRestorePromise = new Promise((resolve) => {
@@ -1605,7 +1817,7 @@ export async function getFirebaseAuthToken(forceRefresh = false) {
               _authRestorePromise = null;
               resolve(null);
             }
-          }, 1200);
+          }, 4000);
 
           const unsubscribe = auth.onAuthStateChanged(async (user) => {
             if (resolved) return;
@@ -1618,11 +1830,11 @@ export async function getFirebaseAuthToken(forceRefresh = false) {
                 const token = await user.getIdToken();
                 if (token) {
                   _memoryCachedToken = token;
-                  try { localStorage.setItem(CACHED_TOKEN_KEY, token); } catch (e) {}
+                  try { localStorage.setItem(CACHED_TOKEN_KEY, token); } catch (e) { }
                   resolve(token);
                   return;
                 }
-              } catch (e) {}
+              } catch (e) { }
             }
             resolve(null);
           });
@@ -1633,34 +1845,6 @@ export async function getFirebaseAuthToken(forceRefresh = false) {
       if (restoredToken) return restoredToken;
     }
   }
-
-  // 2. 直近のキャッシュトークンにフォールバック（画面遷移・初期ロード直後・一時オフライン）
-  if (_memoryCachedToken) return _memoryCachedToken;
-  try {
-    const localCached = localStorage.getItem(CACHED_TOKEN_KEY);
-    if (localCached) {
-      _memoryCachedToken = localCached;
-      return localCached;
-    }
-  } catch (e) {}
-
-  // 3. Firebase SDK 内部のローカルストレージからトークン抽出を試みるフォールバック
-  try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k && k.startsWith('firebase:authUser:')) {
-        const raw = localStorage.getItem(k);
-        if (raw) {
-          const authData = JSON.parse(raw);
-          if (authData && authData.stsTokenManager && authData.stsTokenManager.accessToken) {
-            const fbToken = authData.stsTokenManager.accessToken;
-            _memoryCachedToken = fbToken;
-            return fbToken;
-          }
-        }
-      }
-    }
-  } catch (e) {}
 
   return null;
 }
@@ -1777,7 +1961,7 @@ export async function apiFetch(path, options = {}) {
 
     // リフレッシュ後も401の場合: キャッシュトークンをクリアし、再ログインを案内
     _memoryCachedToken = null;
-    try { localStorage.removeItem(CACHED_TOKEN_KEY); } catch (e) {}
+    try { localStorage.removeItem(CACHED_TOKEN_KEY); } catch (e) { }
 
     if (typeof document !== 'undefined') {
       const overlay = document.getElementById('loginOverlay');
@@ -1911,6 +2095,107 @@ export async function saveServerAttendance(attendanceList) {
     console.error('【勤怠サーバー保存】通信エラー:', e);
     return false;
   }
+}
+
+/**
+ * 勤怠打刻データのサーバー・ローカル双方向同期エンジン
+ * ・PC / モバイル間での最新打刻（出勤・退勤）をフィールド単位で安全マージ
+ * ・ローカルで打刻した退勤時刻がサーバーの未退勤データで消去される事故を完全防止
+ * ・どちらか一方に入力済みの出勤・退勤・備考を空文字で破壊しない空上書き保護
+ */
+export async function syncAttendanceWithServer() {
+  try {
+    const serverAttendance = await fetchServerAttendance();
+    const localAttendance = getAttendanceList();
+
+    if (serverAttendance && Array.isArray(serverAttendance)) {
+      const attMap = new Map();
+
+      // 1. サーバーデータを初期マップに登録
+      serverAttendance.forEach(item => {
+        if (!item) return;
+        const key = item.date || item.id;
+        if (key) {
+          attMap.set(key, { ...item });
+        }
+      });
+
+      let hasLocalChanges = false;
+
+      // 2. ローカルデータとフィールド単位で安全マージ
+      localAttendance.forEach(loc => {
+        if (!loc) return;
+        const key = loc.date || loc.id;
+        if (!key) return;
+
+        if (!attMap.has(key)) {
+          // サーバーに未登録のローカル打刻（オフライン打刻等）
+          attMap.set(key, { ...loc });
+          hasLocalChanges = true;
+        } else {
+          const srv = attMap.get(key);
+          const srvTime = new Date(srv.updatedAt || 0).getTime();
+          const locTime = new Date(loc.updatedAt || 0).getTime();
+
+          // 出勤打刻のマージ（空上書き防止：どちらかにあれば必ず維持）
+          let mergedClockIn = srv.clockIn || '';
+          if (!mergedClockIn && loc.clockIn) {
+            mergedClockIn = loc.clockIn;
+            hasLocalChanges = true;
+          } else if (loc.clockIn && srv.clockIn && locTime > srvTime) {
+            mergedClockIn = loc.clockIn;
+          }
+
+          // 退勤打刻のマージ（空上書き防止：どちらかにあれば必ず維持）
+          let mergedClockOut = srv.clockOut || '';
+          if (!mergedClockOut && loc.clockOut) {
+            mergedClockOut = loc.clockOut;
+            hasLocalChanges = true; // 携帯等で打刻した退勤時刻をサーバーへ反映
+          } else if (loc.clockOut && srv.clockOut && locTime > srvTime) {
+            mergedClockOut = loc.clockOut;
+          }
+
+          // 備考のマージ
+          let mergedNote = srv.note || '';
+          if (!mergedNote && loc.note) {
+            mergedNote = loc.note;
+            hasLocalChanges = true;
+          } else if (loc.note && locTime > srvTime) {
+            mergedNote = loc.note;
+          }
+
+          const mergedUpdatedAt = (locTime > srvTime ? loc.updatedAt : srv.updatedAt) || new Date().toISOString();
+
+          attMap.set(key, {
+            id: srv.id || loc.id || ('att_' + (srv.date || loc.date)),
+            date: srv.date || loc.date,
+            clockIn: mergedClockIn,
+            clockOut: mergedClockOut,
+            note: mergedNote,
+            updatedAt: mergedUpdatedAt
+          });
+        }
+      });
+
+      const mergedList = Array.from(attMap.values());
+      mergedList.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+      // ローカルストレージを最新マージデータで更新
+      localStorageSetItemAndSync(KEYS.ATTENDANCE, JSON.stringify(mergedList));
+
+      // サーバー側に未反映の最新打刻があれば即座にサーバー保存
+      if (hasLocalChanges) {
+        console.log("【勤怠双方向同期】ローカルの最新打刻（未反映分）をサーバーへ送信・同期します");
+        await saveServerAttendance(mergedList);
+      }
+
+      console.log(`[勤怠双方向同期完了] 全 ${mergedList.length} 件の勤怠データをクラウド・端末間で完全同期しました`);
+      return mergedList;
+    }
+  } catch (err) {
+    console.warn('syncAttendanceWithServer error:', err);
+  }
+  return getAttendanceList();
 }
 
 export async function fetchServerAttendanceEmployee() {
@@ -2064,7 +2349,12 @@ export async function syncInvoicesHistoryWithServer() {
       });
     }
 
-    // 4. 発行日降順にソート
+    // 4. 発行日降順にソート & 本田塗料店伝票(N8460->N10935)のスマートサニタイズ
+    invoiceMap.forEach(sinv => {
+      sanitizeHondaPaintDocAndSerials(sinv);
+      if (sinv.fullDoc) sanitizeHondaPaintDocAndSerials(sinv.fullDoc);
+    });
+
     const mergedList = Array.from(invoiceMap.values()).sort((a, b) => {
       const dateA = a.issueDate || a.updatedAt || '';
       const dateB = b.issueDate || b.updatedAt || '';
@@ -2081,7 +2371,7 @@ export async function syncInvoicesHistoryWithServer() {
       if (deletedSet.has(cleanActiveId)) {
         console.log("【書類履歴同期】編集中プレビュー伝票が削除済みだったためクリア:", cleanActiveId);
         localStorage.removeItem(KEYS.ACTIVE_DOC);
-        saveServerActiveDoc({}).catch(() => {});
+        saveServerActiveDoc({}).catch(() => { });
         if (typeof window !== 'undefined' && window.currentDoc && String(window.currentDoc.id).trim() === cleanActiveId) {
           if (typeof window.resetActiveDocToNew === 'function') {
             window.resetActiveDocToNew();
@@ -2096,7 +2386,7 @@ export async function syncInvoicesHistoryWithServer() {
             activeDoc.isCancelled = true;
             activeDoc.updatedAt = mergedActive.updatedAt || new Date().toISOString();
             localStorage.setItem(KEYS.ACTIVE_DOC, JSON.stringify(activeDoc));
-            saveServerActiveDoc(activeDoc).catch(() => {});
+            saveServerActiveDoc(activeDoc).catch(() => { });
             console.log("【書類履歴同期】編集中アクティブ伝票もサーバーに合わせて「下書き」に更新しました");
           }
         }
@@ -2618,6 +2908,8 @@ export function isNonStockItem(item) {
   if (!item) return false;
   const itemName = typeof item === 'string' ? item : (item.name || '');
   if (/値引|割引|相殺|調整|特別値引|出精値引/i.test(itemName)) return true;
+  // アスタリスクで始まるゴミ品目（*DP-MS等）は在庫品目から完全除外
+  if (String(itemName).trim().startsWith('*')) return true;
 
   if (typeof item === 'string') {
     const product = findItemMasterByName(item);
@@ -2702,8 +2994,8 @@ export function deleteItemFromMaster(id) {
     const newInvList = invList.filter(inv => inv.id !== id && inv.name !== targetName);
     if (newInvList.length !== invList.length) {
       localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(newInvList));
-      saveServerInventory(newInvList).catch(() => {});
-      deleteServerEntity('inventory', id).catch(() => {});
+      saveServerInventory(newInvList).catch(() => { });
+      deleteServerEntity('inventory', id).catch(() => { });
     }
 
     return true;
@@ -2817,7 +3109,7 @@ export function rescueMastersFromHistory() {
   // ユーザーが明示的に削除したマスタが再読み込みで勝手に復活してしまう問題を回避するため、
   // 過去伝票からの自動復元機能を無効化します。
   return { items: 0, clients: 0 };
-  
+
   let rescuedItems = 0;
   let rescuedClients = 0;
 
@@ -3188,37 +3480,9 @@ export async function syncMastersWithServer() {
       console.warn('Sync fiscal settings error:', fiscErr);
     }
 
-    // 4. 勤怠打刻データ（data/attendance/attendance.json）の1対1整合性同期
+    // 4. 勤怠打刻データのクラウド双方向同期（退勤時刻消失・空上書き防止保護）
     try {
-      const serverAttendance = await fetchServerAttendance();
-      if (serverAttendance && Array.isArray(serverAttendance) && serverAttendance.length > 0) {
-        // サーバーファイルを真実のマスター（Source of Truth）として1対1同期
-        // 【復元ガード】上書き前にローカルの既存データをバックアップ保存
-        const existingData = localStorage.getItem(KEYS.ATTENDANCE);
-        if (existingData && existingData !== '[]') {
-          localStorage.setItem(KEYS.ATTENDANCE + '_backup', existingData);
-        }
-
-        serverAttendance.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-        localStorageSetItemAndSync(KEYS.ATTENDANCE, JSON.stringify(serverAttendance));
-        console.log(`[勤怠同期完了] 勤怠データ: 全 ${serverAttendance.length} 件をサーバー・ローカル間で1対1完全同期しました`);
-      } else {
-        console.warn("サーバーデータが0件または取得エラーのため既存データを維持します。");
-        // もしローカルにデータがあればサーバーへ送信して復旧
-        const localAttendance = getAttendanceList();
-        if (localAttendance.length > 0) {
-          console.log("ローカルデータをサーバーにプッシュして復旧します。");
-          await saveServerAttendance(localAttendance);
-        } else {
-          // ローカルも空の場合、バックアップから復元を試みる
-          const backupData = localStorage.getItem(KEYS.ATTENDANCE + '_backup');
-          if (backupData && backupData !== '[]') {
-            console.log("バックアップから勤怠データを復元しました。");
-            localStorageSetItemAndSync(KEYS.ATTENDANCE, backupData);
-            await saveServerAttendance(JSON.parse(backupData));
-          }
-        }
-      }
+      await syncAttendanceWithServer();
     } catch (attErr) {
       console.warn('Sync attendance error:', attErr);
     }
@@ -3324,6 +3588,7 @@ export async function syncMastersWithServer() {
         syncInventorySerialsWithServer(),
         fetchServerInventory()
       ]);
+      if (typeof syncInventorySerialsFromIssuedDocs === 'function') syncInventorySerialsFromIssuedDocs();
       if (typeof syncInventoryStockFromIssuedDocs === 'function') syncInventoryStockFromIssuedDocs();
       if (typeof syncInventoryStockFromSerials === 'function') syncInventoryStockFromSerials();
     } catch (invSyncErr) {
@@ -3513,6 +3778,53 @@ export function findClientByCode(code, excludeId = '') {
     const cCode = c.code ? normalizeMasterName(c.code).toLowerCase() : '';
     return cCode && cCode === cleanCode;
   }) || null;
+}
+
+/**
+ * 重複しないユニークな販売店コード（5桁乱数）を自動生成
+ * @returns {string} 5桁のユニークな乱数コード（例: "64108"）
+ */
+export function generateUniqueClientCode() {
+  const existingCodes = new Set();
+
+  // 1. 取引先マスタの全コード
+  const clientList = (typeof getClientMasterList === 'function') ? getClientMasterList(false) : [];
+  if (Array.isArray(clientList)) {
+    clientList.forEach(c => {
+      if (c && c.code) {
+        existingCodes.add(String(c.code).trim().toLowerCase());
+      }
+    });
+  }
+
+  // 2. 伝票履歴の取引先コード
+  const docList = (typeof getHistoryList === 'function') ? getHistoryList() : [];
+  if (Array.isArray(docList)) {
+    docList.forEach(d => {
+      const code = d?.client?.code || d?.clientCode;
+      if (code) existingCodes.add(String(code).trim().toLowerCase());
+    });
+  }
+
+  // 3. 重複しない5桁の乱数（10000〜99999）を生成
+  let newCode = '';
+  let attempts = 0;
+  while (attempts < 1000) {
+    attempts++;
+    const num = Math.floor(10000 + Math.random() * 90000); // 10000 〜 99999
+    const str = String(num);
+    if (!existingCodes.has(str.toLowerCase())) {
+      newCode = str;
+      break;
+    }
+  }
+
+  // 万が一1000回試行しても重複した場合（安全策）
+  if (!newCode) {
+    newCode = String(Date.now()).slice(-5);
+  }
+
+  return newCode;
 }
 
 
@@ -3773,7 +4085,7 @@ export async function cancelDocIssue(docId) {
       activeDoc.isCancelled = true;
       activeDoc.updatedAt = nowIso;
       localStorage.setItem(KEYS.ACTIVE_DOC, JSON.stringify(activeDoc));
-      saveServerActiveDoc(activeDoc).catch(() => {});
+      saveServerActiveDoc(activeDoc).catch(() => { });
     }
 
     // 3. サーバーへ全件マージ保存を確実に即時実行
@@ -4031,9 +4343,9 @@ function getLocalDateStr(d = new Date()) {
 }
 
 /**
- * 勤怠データを保存
+ * 勤怠データを保存（ローカルおよびサーバーへ即座に確実に同期）
  */
-export function saveAttendance(attendance) {
+export async function saveAttendance(attendance) {
   try {
     const list = getAttendanceList();
     const id = attendance.id || ('att_' + attendance.date);
@@ -4043,10 +4355,10 @@ export function saveAttendance(attendance) {
     const record = {
       id: (existing && existing.id) ? existing.id : id,
       date: attendance.date,
-      clockIn: (attendance.clockIn !== undefined && attendance.clockIn !== null)
+      clockIn: (attendance.clockIn !== undefined && attendance.clockIn !== null && attendance.clockIn !== '')
         ? attendance.clockIn
         : (existing ? (existing.clockIn || '') : ''),
-      clockOut: (attendance.clockOut !== undefined && attendance.clockOut !== null)
+      clockOut: (attendance.clockOut !== undefined && attendance.clockOut !== null && attendance.clockOut !== '')
         ? attendance.clockOut
         : (existing ? (existing.clockOut || '') : ''),
       note: (attendance.note !== undefined && attendance.note !== null)
@@ -4063,8 +4375,12 @@ export function saveAttendance(attendance) {
 
     list.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     localStorageSetItemAndSync(KEYS.ATTENDANCE, JSON.stringify(list));
-    // サーバー（data/attendance.json）へ即座に非同期保存
-    saveServerAttendance(list).catch(() => { });
+    
+    // サーバー（Firestore / data/attendance/attendance.json）へ確実に非同期保存を待機
+    const serverSaved = await saveServerAttendance(list);
+    if (!serverSaved) {
+      console.warn("【勤怠サーバー保存警告】オフラインまたは一時エラーのためローカル保存のみ完了しました。次回通信復帰時に自動同期されます。");
+    }
     return record;
   } catch (e) {
     console.error('Failed to save attendance:', e);
@@ -4084,7 +4400,7 @@ export function getTodayAttendance() {
 /**
  * 本日の出勤打刻
  */
-export function clockInToday(timeStr = '', note = '') {
+export async function clockInToday(timeStr = '', note = '') {
   const today = getLocalDateStr();
   const curTime = timeStr || new Date().toTimeString().substring(0, 5);
   const existing = getTodayAttendance();
@@ -4100,13 +4416,13 @@ export function clockInToday(timeStr = '', note = '') {
   } else if (existing && existing.note) {
     data.note = existing.note;
   }
-  return saveAttendance(data);
+  return await saveAttendance(data);
 }
 
 /**
  * 本日の退勤打刻
  */
-export function clockOutToday(timeStr = '', note = '') {
+export async function clockOutToday(timeStr = '', note = '') {
   const today = getLocalDateStr();
   const curTime = timeStr || new Date().toTimeString().substring(0, 5);
   const existing = getTodayAttendance();
@@ -4122,7 +4438,7 @@ export function clockOutToday(timeStr = '', note = '') {
   } else if (existing && existing.note) {
     data.note = existing.note;
   }
-  return saveAttendance(data);
+  return await saveAttendance(data);
 }
 
 /**
@@ -4362,12 +4678,16 @@ export function mergeInventoryServerAndLocal(serverList, localList) {
       return timeB - timeA;
     });
 
-    // サーバーの現在庫を第一優先として維持（過去ログの古いcurrentStockスナップショットで現在庫を破壊・上書きしない）
+    // サーバーの現在庫・確定原価・入荷日を第一優先（Source of Truth）として維持
     let chosenStock = (sItem.currentStock !== undefined) ? Number(sItem.currentStock) : (Number(lItem.currentStock) || 0);
+    let chosenCost = (sItem.unitCost !== undefined && sItem.unitCost !== null && Number(sItem.unitCost) > 0) ? Number(sItem.unitCost) : (Number(lItem.unitCost) || 0);
+    let chosenLastIn = sItem.lastInDate || lItem.lastInDate || '';
 
     return {
       ...sItem,
       currentStock: chosenStock,
+      unitCost: chosenCost,
+      lastInDate: chosenLastIn,
       history: combinedHistory
     };
   });
@@ -4376,14 +4696,14 @@ export function mergeInventoryServerAndLocal(serverList, localList) {
 }
 
 /**
- * サーバーから在庫マスタを取得
+ * サーバーから在庫マスタを取得（クラウドを唯一の真実として完全同期）
  */
 export async function fetchServerInventory() {
   try {
-    const res = await apiFetch('inventory');
+    const res = await apiFetch('inventory', { cache: 'no-store' });
     if (res.ok) {
       const data = await res.json();
-      if (Array.isArray(data)) {
+      if (Array.isArray(data) && data.length > 0) {
         // ローカルの既存データを取得
         const rawLocal = localStorage.getItem(KEYS.INVENTORY);
         let localList = [];
@@ -4391,16 +4711,10 @@ export async function fetchServerInventory() {
           localList = rawLocal ? JSON.parse(rawLocal) : [];
         } catch (e) { localList = []; }
 
-        // ローカルにのみ存在する履歴（手動出庫ログなど）をサーバーデータへ安全に合成
+        // サーバー（Firestore）の現在庫数・確定原価を100%維持しながら、未同期の手動出庫ログのみ安全にマージ
         const merged = mergeInventoryServerAndLocal(data, localList);
         localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(merged));
-        
-        // ローカル側に未同期の履歴や差分があればサーバー側へも逆同期保存
-        const localHistCount = localList.reduce((acc, it) => acc + (Array.isArray(it.history) ? it.history.length : 0), 0);
-        const serverHistCount = data.reduce((acc, it) => acc + (Array.isArray(it.history) ? it.history.length : 0), 0);
-        if (localHistCount > serverHistCount) {
-          saveServerInventory(merged).catch(() => {});
-        }
+        console.log(`[在庫マスタ同期完了] 全 ${merged.length} 品目をクラウド（Firestore）から完全同期しました`);
         return merged;
       }
     }
@@ -4469,7 +4783,10 @@ export async function initInventoryFromServer() {
     syncInventoryLotsWithServer(),
     syncInventorySerialsWithServer()
   ]);
-  // シリアル台帳・発行済伝票から実在庫を自動引落・完全同期
+  // シリアル台帳・発行済伝票から実在庫およびシリアル出荷ステータスを自動引落・完全同期
+  if (typeof syncInventorySerialsFromIssuedDocs === 'function') {
+    syncInventorySerialsFromIssuedDocs();
+  }
   if (typeof syncInventoryStockFromIssuedDocs === 'function') {
     syncInventoryStockFromIssuedDocs();
   }
@@ -4493,9 +4810,10 @@ export function deduplicateInventoryList(rawList) {
     // 2. 修理・工賃等の非在庫カテゴリ品目の完全排除（在庫マスタ非表示）
     if (isNonStockItem(inv)) continue;
 
-    // 3. テスト品目、KET.IC.2B（DP-5000旧名称）、および値引き・割引行の完全排除
-    const rawName = String(inv.name || '').trim().toLowerCase();
-    if (rawName === 'てすと' || rawName === 'test' || rawName.includes('ket.ic.2b') || rawName.includes('エレクトロパワー') || /値引|割引|相殺|調整|特別値引|出精値引/i.test(rawName)) {
+    // 3. アスタリスク付きゴミ品目（*DP-MS等）、テスト品目、KET.IC.2B（DP-5000旧名称）、および値引き・割引行の完全排除
+    const rawTrimmed = String(inv.name || '').trim();
+    const rawName = rawTrimmed.toLowerCase();
+    if (rawTrimmed.startsWith('*') || rawName === 'てすと' || rawName === 'test' || rawName.includes('ket.ic.2b') || rawName.includes('エレクトロパワー') || /値引|割引|相殺|調整|特別値引|出精値引/i.test(rawName)) {
       continue;
     }
 
@@ -4527,10 +4845,10 @@ export function deduplicateInventoryList(rawList) {
         note: inv.note || '',
         type: inv.type || (inv.id === 'inv_1' ? 'bundle' : 'single'),
         hasSerial: (!normName.includes('DP-EG') && !normName.includes('3点引き') && !normName.includes('アタッチメント')) && (
-                     (inv.hasSerial !== undefined ? !!inv.hasSerial : false) || 
-                     (inv.id === 'inv_dp5000_body' || inv.id === 'inv_dp5000_bat' || inv.id === 'inv_2') || 
-                     (normName.includes('DP-5000') || normName.includes('バッテリー') || normName.includes('DP-MS') || normName.includes('メカニカルスプレッダー') || normName.includes('スプレッダー'))
-                   ),
+          (inv.hasSerial !== undefined ? !!inv.hasSerial : false) ||
+          (inv.id === 'inv_dp5000_body' || inv.id === 'inv_dp5000_bat' || inv.id === 'inv_2') ||
+          (normName.includes('DP-5000') || normName.includes('バッテリー') || normName.includes('DP-MS') || normName.includes('メカニカルスプレッダー') || normName.includes('スプレッダー'))
+        ),
         bundleItems: Array.isArray(inv.bundleItems) ? [...inv.bundleItems] : (inv.id === 'inv_1' ? [
           { inventoryId: 'inv_dp5000_body', name: 'DP-5000 本体', qty: 1, role: 'main' },
           { inventoryId: 'inv_dp5000_bat', name: 'PSE認証 リチウムイオンバッテリー', qty: 2, role: 'battery' },
@@ -4613,10 +4931,11 @@ export function getInventoryList() {
     const cleanItems = getItemMasterList(false);
     let modified = (list.length !== beforeLen);
 
-    // 非在庫カテゴリ、テスト品目、KET.IC.2B（DP-5000旧名称）、値引き行を除去
+    // 非在庫カテゴリ、アスタリスク付き品目、テスト品目、KET.IC.2B（DP-5000旧名称）、値引き行を除去
     const beforeCleanLen = list.length;
     list = list.filter(inv => {
       if (!inv || !inv.name) return false;
+      if (String(inv.name).trim().startsWith('*')) return false;
       if (isNonStockItem(inv)) return false;
       const lower = inv.name.toLowerCase();
       if (lower.includes('てすと') || lower.includes('test')) return false;
@@ -4627,6 +4946,8 @@ export function getInventoryList() {
     if (list.length !== beforeCleanLen) modified = true;
 
     cleanItems.forEach(prod => {
+      if (!prod || !prod.name) return;
+      if (String(prod.name).trim().startsWith('*')) return;
       if (isNonStockItem(prod)) return; // 修理項目・非在庫カテゴリは在庫マスタに追加しない
       const lowerProd = (prod.name || '').toLowerCase();
       if (lowerProd.includes('てすと') || lowerProd.includes('test') || lowerProd.includes('ket.ic.2b') || lowerProd.includes('エレクトロパワー') || /値引|割引|相殺|調整|特別値引|出精値引/i.test(lowerProd)) {
@@ -4685,7 +5006,6 @@ export function getInventoryList() {
 
     if (modified) {
       localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(list));
-      saveServerInventory(list).catch(() => { });
     }
 
     // デフォルト構成品（本体・バッテリー・充電器）が未登録の場合は補完
@@ -4704,9 +5024,16 @@ export function getInventoryList() {
     // セット品（BOM）の理論在庫可能数および標準原価を構成品在庫から動的算出
     list.forEach(inv => {
       if (inv.type === 'bundle' && Array.isArray(inv.bundleItems) && inv.bundleItems.length > 0) {
-        const calc = calculateBundleStockAndCost(inv, list);
-        inv.currentStock = calc.availableStock;
-        inv.unitCost = calc.unitCost;
+        // 完成品在庫（ロット入庫等の実在庫）が既に存在する場合はそれを優先維持し、未設定・0の場合のみ部品から算出
+        if (inv.currentStock === undefined || inv.currentStock === null || Number(inv.currentStock) <= 0) {
+          const calc = calculateBundleStockAndCost(inv, list);
+          if (calc.availableStock > 0) {
+            inv.currentStock = calc.availableStock;
+          }
+          if (calc.unitCost > 0 && (!inv.unitCost || Number(inv.unitCost) === 0)) {
+            inv.unitCost = calc.unitCost;
+          }
+        }
       }
     });
 
@@ -4945,7 +5272,7 @@ export function deleteManualInventoryLog(itemId, logId) {
     }
 
     localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(list));
-    saveServerInventory(list).catch(() => {});
+    saveServerInventory(list).catch(() => { });
     console.log(`【手動ログ削除】完了: 品目「${item.name}」ログID: ${logId} 現在庫再計算: ${item.currentStock}`);
     return true;
   } catch (err) {
@@ -4987,7 +5314,7 @@ export function updateManualInventoryLog(itemId, logId, updateData) {
     }
 
     localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(list));
-    saveServerInventory(list).catch(() => {});
+    saveServerInventory(list).catch(() => { });
     console.log(`【手動ログ編集】完了: 品目「${item.name}」ログID: ${logId} 現在庫再計算: ${item.currentStock}`, updateData);
     return true;
   } catch (err) {
@@ -5524,7 +5851,7 @@ export function saveAccountMasterList(list) {
   try {
     const safeList = Array.isArray(list) ? list : [];
     localStorageSetItemAndSync(KEYS.ACCOUNT_MASTER, JSON.stringify(safeList));
-    saveServerAccountMaster(safeList).catch(() => {});
+    saveServerAccountMaster(safeList).catch(() => { });
     return true;
   } catch (e) {
     console.error('Failed to save account master:', e);
@@ -5573,7 +5900,7 @@ export function saveManualJournal(journal) {
     }
 
     localStorageSetItemAndSync(KEYS.MANUAL_JOURNALS, JSON.stringify(list));
-    saveServerManualJournals(list).catch(() => {});
+    saveServerManualJournals(list).catch(() => { });
     return entryId;
   } catch (e) {
     console.error('Failed to save manual journal:', e);
@@ -5590,8 +5917,8 @@ export function deleteManualJournal(id) {
     let list = getManualJournals();
     list = list.filter(j => j.id !== id);
     localStorageSetItemAndSync(KEYS.MANUAL_JOURNALS, JSON.stringify(list));
-    deleteServerEntity('manual_journals', id).catch(() => {});
-    saveServerManualJournals(list).catch(() => {});
+    deleteServerEntity('manual_journals', id).catch(() => { });
+    saveServerManualJournals(list).catch(() => { });
     return true;
   } catch (e) {
     console.error('Failed to delete manual journal:', e);
@@ -5667,7 +5994,7 @@ export function saveFiscalSettings(settings) {
     const current = getFiscalSettings();
     const updated = { ...current, ...settings, updatedAt: new Date().toISOString() };
     localStorageSetItemAndSync(KEYS.FISCAL_SETTINGS, JSON.stringify(updated));
-    saveServerFiscalSettings(updated).catch(() => {});
+    saveServerFiscalSettings(updated).catch(() => { });
     return true;
   } catch (e) {
     console.error('Failed to save fiscal settings:', e);
@@ -5764,8 +6091,12 @@ export async function pullAllServerDataToLocal() {
       const cleanInvoices = data.invoicesHistory.filter(inv => inv && inv.id && !deletedInvoicesSet.has(String(inv.id).trim()) && !inv.isDeleted && !inv._deleted);
       localStorageSetItemAndSync(KEYS.HISTORY, JSON.stringify(cleanInvoices));
     }
-    if (data.attendance && Array.isArray(data.attendance) && data.attendance.length > 0) {
-      localStorageSetItemAndSync(KEYS.ATTENDANCE, JSON.stringify(data.attendance));
+    if (data.attendance && Array.isArray(data.attendance)) {
+      try {
+        await syncAttendanceWithServer();
+      } catch (attSyncErr) {
+        console.warn('pullAllServerDataToLocal attendance sync warning:', attSyncErr);
+      }
     }
     if (data.accountMaster && Array.isArray(data.accountMaster) && data.accountMaster.length > 0) {
       localStorageSetItemAndSync(KEYS.ACCOUNT_MASTER, JSON.stringify(data.accountMaster));
@@ -5865,6 +6196,14 @@ export function calculateBundleStockAndCost(bundleItem, allItems = []) {
     };
   }
 
+  // 完成品としてのロット入庫・手元在庫が存在する場合は最優先
+  if (bundleItem.currentStock !== undefined && Number(bundleItem.currentStock) > 0) {
+    return {
+      availableStock: Number(bundleItem.currentStock),
+      unitCost: Number(bundleItem.unitCost) || 0
+    };
+  }
+
   let minStock = Infinity;
   let totalCost = 0;
 
@@ -5951,8 +6290,8 @@ export function getInventoryLotList() {
     if (modified && raw) {
       try {
         localStorageSetItemAndSync(KEYS.INVENTORY_LOTS, JSON.stringify(list));
-        saveServerInventoryLots(list).catch(() => {});
-      } catch (_) {}
+        saveServerInventoryLots(list).catch(() => { });
+      } catch (_) { }
     }
 
     return list;
@@ -5991,7 +6330,7 @@ export function saveInventoryLot(lotData) {
     }
 
     localStorageSetItemAndSync(KEYS.INVENTORY_LOTS, JSON.stringify(list));
-    saveServerInventoryLots(list).catch(() => {});
+    saveServerInventoryLots(list).catch(() => { });
     return newLot.id;
   } catch (e) {
     console.error('Failed to save inventory lot:', e);
@@ -6046,7 +6385,7 @@ export async function syncInventoryLotsWithServer() {
 
       localStorageSetItemAndSync(KEYS.INVENTORY_LOTS, JSON.stringify(mergedLots));
       if (hasLocalOnly) {
-        saveServerInventoryLots(mergedLots).catch(() => {});
+        saveServerInventoryLots(mergedLots).catch(() => { });
       }
       console.log(`[ロット同期完了] 全 ${mergedLots.length} 件の入荷ロットをサーバー・ローカルで完全同期しました`);
       return mergedLots;
@@ -6115,7 +6454,7 @@ export function deleteInventoryLot(lotId) {
       });
       if (historyModified) {
         saveInventoryList(curInvList);
-        saveServerInventory(curInvList).catch(() => {});
+        saveServerInventory(curInvList).catch(() => { });
       }
     }
 
@@ -6146,13 +6485,13 @@ export function deleteInventoryLot(lotId) {
       return true;
     });
     localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(filteredSerials));
-    saveServerInventorySerials(filteredSerials).catch(() => {});
+    saveServerInventorySerials(filteredSerials).catch(() => { });
 
     // ③ 財務会計の仕訳データを連動削除
     if (typeof getManualJournals === 'function' && typeof deleteManualJournal === 'function') {
       const journals = getManualJournals();
-      const targetJnl = journals.find(j => 
-        j.id === `jnl_lot_${lot.id}` || 
+      const targetJnl = journals.find(j =>
+        j.id === `jnl_lot_${lot.id}` ||
         (j.sourceType === 'inventory_lot' && j.sourceId === lot.id) ||
         (j.entryNumber === lot.lotNumber && j.sourceType === 'inventory_lot')
       );
@@ -6165,8 +6504,8 @@ export function deleteInventoryLot(lotId) {
     // ④ ロット一覧から削除して保存
     lotList.splice(lotIndex, 1);
     localStorageSetItemAndSync(KEYS.INVENTORY_LOTS, JSON.stringify(lotList));
-    saveServerInventoryLots(lotList).catch(() => {});
-    deleteServerEntity('inventory_lots', lot.id).catch(() => {});
+    saveServerInventoryLots(lotList).catch(() => { });
+    deleteServerEntity('inventory_lots', lot.id).catch(() => { });
 
     // 在庫マスタ同期
     syncInventoryStockFromSerials();
@@ -6216,24 +6555,10 @@ export function syncInventoryStockFromSerials() {
       }
     });
 
-    // バッテリー単品（現在庫20等）について手元の在庫シリアル数を同期
-    // ※ DP-5000本体・スプレッダー・ベーシックセットの現在庫は、ロット入庫とセット品化および全出荷に基づく帳簿実在庫（-10等のマイナス不足を含む）を絶対正として保持する
-    invList.forEach(item => {
-      const itemName = String(item.name || '').toUpperCase();
-      if (item.id === 'inv_dp5000_bat' || (itemName.includes('バッテリー') && !itemName.includes('セット'))) {
-        if (item.currentStock !== inStockCounts['inv_dp5000_bat']) {
-          item.currentStock = inStockCounts['inv_dp5000_bat'];
-          modified = true;
-        }
-      }
-    });
-
-    if (modified) {
-      localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(invList));
-      saveServerInventory(invList).catch(() => {});
-      console.log('【在庫マスタ連動】シリアル台帳から現在庫数を同期更新しました:', inStockCounts);
-    }
-
+    // 【最重要原則】在庫マスタの現在庫（currentStock）は、ロット入庫・セット品化・出荷履歴に基づく
+    // 帳簿実在庫（getInventoryHistoryWithShipments）を唯一の真実（Source of Truth）として100%統一管理する。
+    // シリアル件数による破壊的上書きは行わず、手元在庫シリアル数の現状把握ログのみを出力する。
+    console.log('【シリアル台帳現況】在庫中シリアル数集計:', inStockCounts);
     return inStockCounts;
   } catch (e) {
     console.error('Failed to sync inventory from serials:', e);
@@ -6278,11 +6603,11 @@ export function syncInventoryStockFromIssuedDocs() {
           const cleanItems = items.filter(it => !it.name || (!it.name.includes('てすと') && !it.name.toLowerCase().includes('test') && !/値引|割引|相殺|調整/i.test(it.name)));
           if (cleanItems.length !== items.length) {
             localStorageSetItemAndSync(KEYS.ITEMS, JSON.stringify(cleanItems));
-            saveServerItemMaster(cleanItems).catch(() => {});
+            saveServerItemMaster(cleanItems).catch(() => { });
           }
         }
       }
-    } catch (e) {}
+    } catch (e) { }
 
     // 1. 各品目の「発行済出荷累計数量」を集計
     const shippedQtyMap = {};
@@ -6292,7 +6617,7 @@ export function syncInventoryStockFromIssuedDocs() {
       // 見積書、取消済伝票、および訂正前の元伝票(superseded)は二重引当防止のため出荷集計から完全除外
       if (!doc || doc.isCancelled === true || doc.isCancelled === 'true' || doc.docType === 'estimate') return;
       if (doc.status === 'superseded' || doc.isSuperseded === true || (doc.fullDoc && (doc.fullDoc.status === 'superseded' || doc.fullDoc.isSuperseded))) return;
-      
+
       // 確定済伝票明細（doc.items または doc.fullDoc.items を網羅的に取得）
       const docItems = (Array.isArray(doc.items) && doc.items.length > 0)
         ? doc.items
@@ -6417,8 +6742,8 @@ export function syncInventoryStockFromIssuedDocs() {
 
         // ロット削除による取消は除外（ロット履歴集計に含まれないため）
         if (reason.includes('ロット削除')) return;
-        // 確定出荷引当など、伝票発行による自動引当は伝票集計（docs）と重複するため除外
-        if (reason.includes('確定出荷引当') || reason.includes('伝票連携') || reason.includes('自動引当')) return;
+        // 確定出荷引当など、伝票発行による自動引当・確定取消復元は伝票集計（docs）と重複するため除外
+        if (reason.includes('確定出荷引当') || reason.includes('確定発行取消') || reason.includes('在庫復元') || reason.includes('伝票連携') || reason.includes('自動引当')) return;
         // キッティング（セット品化）による急速充電器消費等は除外
         if (hid.startsWith('log_bundle_') || hid.startsWith('log_unbundle_') || reason.includes('セット品化')) return;
         // 伝票番号が明示されている場合は伝票集計と重複するため除外
@@ -6583,6 +6908,13 @@ export function syncInventoryStockFromIssuedDocs() {
         calculatedStock = totalIn - shippedQty - manualOut + adjustDelta;
       }
 
+      const prevStock = item.currentStock;
+
+      // 【安全ガード】サーバー上の正規現在庫が存在し、ロット台帳が空または未取得の場合はサーバー在庫数を最優先保護
+      if (prevStock !== undefined && prevStock > 0 && totalIn === 0 && (!lots || lots.length === 0)) {
+        calculatedStock = prevStock;
+      }
+
       if (item.currentStock !== calculatedStock) {
         item.currentStock = calculatedStock;
         modified = true;
@@ -6609,7 +6941,7 @@ export function syncInventoryStockFromIssuedDocs() {
       }
 
       summary[item.name] = {
-        before: item.currentStock,
+        before: prevStock,
         after: calculatedStock,
         shipped: shippedQty,
         manualOut: manualOut,
@@ -6619,7 +6951,7 @@ export function syncInventoryStockFromIssuedDocs() {
 
       detailsList.push({
         name: item.name,
-        before: item.currentStock,
+        before: prevStock,
         after: calculatedStock,
         shipped: shippedQty,
         manualOut: manualOut,
@@ -6630,7 +6962,7 @@ export function syncInventoryStockFromIssuedDocs() {
 
     if (modified) {
       localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(invList));
-      saveServerInventory(invList).catch(() => {});
+      saveServerInventory(invList).catch(() => { });
       console.log('【伝票在庫連動】発行済伝票から実在庫を自動引落・同期しました:', summary);
     }
 
@@ -6733,7 +7065,7 @@ export function saveInventorySerial(serialData) {
     if (!serialData || !serialData.serialNumber) return false;
     const list = getInventorySerialList();
     const sn = String(serialData.serialNumber).trim().toUpperCase();
-    
+
     // 再登録時は削除済みリストから解除
     removeDeletedSerial(sn);
 
@@ -6760,8 +7092,8 @@ export function saveInventorySerial(serialData) {
     }
 
     localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(list));
-    saveServerInventorySerials(list).catch(() => {});
-    
+    saveServerInventorySerials(list).catch(() => { });
+
     // 在庫マスタ連動
     syncInventoryStockFromSerials();
     return entryId;
@@ -6777,7 +7109,7 @@ export function deleteInventorySerial(serialIdOrNumber) {
     const list = getInventorySerialList();
     const target = list.find(s => s.id === serialIdOrNumber || s.serialNumber === serialIdOrNumber);
     const targetSn = target ? target.serialNumber : (String(serialIdOrNumber).startsWith('N') ? serialIdOrNumber : '');
-    
+
     // 削除済みリストへ永続記録（ゾンビ復活防止）
     if (targetSn) {
       recordDeletedSerial(targetSn);
@@ -6785,8 +7117,8 @@ export function deleteInventorySerial(serialIdOrNumber) {
 
     const updated = list.filter(s => s.id !== serialIdOrNumber && s.serialNumber !== serialIdOrNumber);
     localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(updated));
-    saveServerInventorySerials(updated).catch(() => {});
-    
+    saveServerInventorySerials(updated).catch(() => { });
+
     // 在庫マスタ連動（現在庫数を即座に再計算）
     syncInventoryStockFromSerials();
     return true;
@@ -6800,13 +7132,31 @@ export function updateSerialStatus(serialNumber, newStatus, details = {}) {
   try {
     if (!serialNumber) return false;
     const list = getInventorySerialList();
-    const target = list.find(s => s.serialNumber === serialNumber);
-    if (!target) return false;
+    const cleanSn = String(serialNumber).trim().toUpperCase();
+    let target = list.find(s => s && String(s.serialNumber || '').trim().toUpperCase() === cleanSn);
+
+    // もし台帳に未登録のシリアルであれば自動登録（取りこぼし防止）
+    if (!target) {
+      target = {
+        id: `sn_${cleanSn}`,
+        serialNumber: cleanSn,
+        status: newStatus,
+        itemName: details.itemName || (cleanSn.startsWith('N') ? 'DP-5000' : (cleanSn.includes('BAT') ? 'PSE認証 リチウムイオンバッテリー' : 'PSE認証 専用急速充電器')),
+        createdAt: new Date().toISOString()
+      };
+      list.push(target);
+    }
 
     target.status = newStatus;
     target.updatedAt = new Date().toISOString();
 
     if (newStatus === 'in_stock') {
+      // 対象品自体が他の本体に組込されている構成部品（bundledWithあり）の場合は 'bundled'、それ以外は 'in_stock'
+      if (target.bundledWith && String(target.bundledWith).trim()) {
+        target.status = 'bundled';
+      } else {
+        target.status = 'in_stock';
+      }
       target.clientName = '';
       target.endUserName = '';
       target.shipDate = '';
@@ -6814,6 +7164,63 @@ export function updateSerialStatus(serialNumber, newStatus, details = {}) {
       target.docNumber = '';
       target.docId = '';
       target.bundleItemId = '';
+
+      // セット品化された本体が在庫中に戻った場合、組込バッテリーおよび急速充電器も連動して「セット組込（bundled）」へ復元
+      if (target.isBundled) {
+        const bodySnNorm = String(target.serialNumber || cleanSn).trim().toUpperCase();
+
+        // 1. 組込バッテリーの復元
+        const batSns = Array.isArray(target.batterySerials) && target.batterySerials.length > 0
+          ? target.batterySerials
+          : list.filter(s => s && String(s.bundledWith || '').trim().toUpperCase() === bodySnNorm && (s.itemId === 'inv_dp5000_bat' || (s.itemName && s.itemName.includes('バッテリー')))).map(b => b.serialNumber);
+
+        batSns.forEach(batSn => {
+          const bat = list.find(s => s && String(s.serialNumber || '').trim().toUpperCase() === String(batSn || '').trim().toUpperCase());
+          if (bat) {
+            bat.status = 'bundled';
+            bat.clientName = '';
+            bat.endUserName = '';
+            bat.shipDate = '';
+            bat.shippedDate = '';
+            bat.docNumber = '';
+            bat.docId = '';
+            bat.note = (bat.note || '').replace(/\s*\[DP-5000\([^)]+\)と共に出荷\]/g, '').trim();
+            bat.updatedAt = new Date().toISOString();
+          }
+        });
+
+        // 2. 組込急速充電器の復元
+        const chgSn = target.chargerSerial || (list.find(s => s && String(s.bundledWith || '').trim().toUpperCase() === bodySnNorm && (s.itemId === 'inv_dp5000_chg' || (s.itemName && s.itemName.includes('充電器')))) || {}).serialNumber;
+        if (chgSn) {
+          const chg = list.find(s => s && String(s.serialNumber || '').trim().toUpperCase() === String(chgSn || '').trim().toUpperCase());
+          if (chg) {
+            chg.status = 'bundled';
+            chg.clientName = '';
+            chg.endUserName = '';
+            chg.shipDate = '';
+            chg.shippedDate = '';
+            chg.docNumber = '';
+            chg.docId = '';
+            chg.note = (chg.note || '').replace(/\s*\[DP-5000\([^)]+\)と共に出荷\]/g, '').trim();
+            chg.updatedAt = new Date().toISOString();
+          }
+        }
+
+        // 3. bundledWith で紐付いている全構成品を漏れなくセット組込へ復元
+        list.forEach(c => {
+          if (c && c.bundledWith && String(c.bundledWith).trim().toUpperCase() === bodySnNorm) {
+            c.status = 'bundled';
+            c.clientName = '';
+            c.endUserName = '';
+            c.shipDate = '';
+            c.shippedDate = '';
+            c.docNumber = '';
+            c.docId = '';
+            c.note = (c.note || '').replace(/\s*\[DP-5000\([^)]+\)と共に出荷\]/g, '').trim();
+            c.updatedAt = new Date().toISOString();
+          }
+        });
+      }
     } else {
       if (details.clientName !== undefined) target.clientName = details.clientName;
       if (details.customerName !== undefined) target.clientName = details.customerName;
@@ -6837,30 +7244,55 @@ export function updateSerialStatus(serialNumber, newStatus, details = {}) {
         }
       }
 
-      // セット品化された本体が出荷された場合、組込バッテリーも連動して出荷済みに更新
-      if (newStatus === 'shipped' && target.isBundled && Array.isArray(target.batterySerials)) {
-        target.batterySerials.forEach(batSn => {
+      // セット品化された本体が出荷またはデモ機になった場合、組込バッテリー ＆ 組込急速充電器も連動してステータス更新
+      if (newStatus === 'shipped' || newStatus === 'demo') {
+        const bodySn = target.serialNumber;
+        const statusLabel = newStatus === 'shipped' ? 'と共に出荷' : 'デモ機組込';
+
+        // 1. 組込バッテリーの連動
+        const batSns = Array.isArray(target.batterySerials) && target.batterySerials.length > 0
+          ? target.batterySerials
+          : list.filter(s => s && s.bundledWith === bodySn && (s.itemId === 'inv_dp5000_bat' || (s.itemName && s.itemName.includes('バッテリー')))).map(b => b.serialNumber);
+
+        batSns.forEach(batSn => {
           const bat = list.find(s => s && String(s.serialNumber).trim().toUpperCase() === String(batSn).trim().toUpperCase());
           if (bat) {
-            bat.status = 'shipped';
+            bat.status = newStatus;
             bat.clientName = target.clientName || '';
             bat.endUserName = target.endUserName || '';
             bat.shipDate = target.shipDate || '';
             bat.docNumber = target.docNumber || '';
             bat.docId = target.docId || '';
-            const baseNote = (bat.note || '').replace(/\s*\[DP-5000\([^)]+\)と共に出荷\]/g, '').trim();
-            const additionalNote = (target.note || '').replace(/\s*\[DP-5000\([^)]+\)と共に出荷\]/g, '').trim();
+            const baseNote = (bat.note || '').replace(/\s*\[DP-5000\([^)]+\)(と共に出荷|デモ機組込)\]/g, '').trim();
+            const additionalNote = (target.note || '').replace(/\s*\[DP-5000\([^)]+\)(と共に出荷|デモ機組込)\]/g, '').trim();
             const combinedNote = [baseNote, additionalNote].filter((v, idx, arr) => v && arr.indexOf(v) === idx).join(' / ');
-            bat.note = (combinedNote ? combinedNote + ' ' : '') + `[DP-5000(${target.serialNumber})と共に出荷]`;
+            bat.note = (combinedNote ? combinedNote + ' ' : '') + `[DP-5000(${target.serialNumber})${statusLabel}]`;
             bat.updatedAt = new Date().toISOString();
           }
         });
+
+        // 2. 組込急速充電器の連動
+        const chgSn = target.chargerSerial || (list.find(s => s && s.bundledWith === bodySn && (s.itemId === 'inv_dp5000_chg' || (s.itemName && s.itemName.includes('充電器')))) || {}).serialNumber;
+        if (chgSn) {
+          const chg = list.find(s => s && String(s.serialNumber).trim().toUpperCase() === String(chgSn).trim().toUpperCase());
+          if (chg) {
+            chg.status = newStatus;
+            chg.clientName = target.clientName || '';
+            chg.endUserName = target.endUserName || '';
+            chg.shipDate = target.shipDate || '';
+            chg.docNumber = target.docNumber || '';
+            chg.docId = target.docId || '';
+            const baseNote = (chg.note || '').replace(/\s*\[DP-5000\([^)]+\)(と共に出荷|デモ機組込)\]/g, '').trim();
+            chg.note = (baseNote ? baseNote + ' ' : '') + `[DP-5000(${target.serialNumber})${statusLabel}]`;
+            chg.updatedAt = new Date().toISOString();
+          }
+        }
       }
     }
 
     localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(list));
-    saveServerInventorySerials(list).catch(() => {});
-    
+    saveServerInventorySerials(list).catch(() => { });
+
     // 在庫マスタ連動
     syncInventoryStockFromSerials();
     return true;
@@ -6872,6 +7304,7 @@ export function updateSerialStatus(serialNumber, newStatus, details = {}) {
 
 /**
  * セット組込バッテリーに対して、親本体（DP-5000等）の販売店・ユーザー・出荷日・伝票情報を自動同期
+ * （親本体の batterySerials / chargerSerial と 子の bundledWith の双方向整合性を完全維持）
  */
 export function syncBundledBatteriesWithParents(list) {
   if (!Array.isArray(list) || list.length === 0) return false;
@@ -6883,37 +7316,118 @@ export function syncBundledBatteriesWithParents(list) {
   });
 
   let changed = false;
+
+  // 1. 親本体の batterySerials / chargerSerial に登録されている子部品の bundledWith を自動補正
+  bodyMap.forEach((parent, parentSn) => {
+    if (Array.isArray(parent.batterySerials)) {
+      parent.batterySerials.forEach(bSn => {
+        const cleanBSn = String(bSn).trim().toUpperCase();
+        const bat = list.find(s => s && String(s.serialNumber).trim().toUpperCase() === cleanBSn);
+        if (bat && bat.bundledWith !== parentSn) {
+          bat.bundledWith = parentSn;
+          changed = true;
+        }
+      });
+    }
+    if (parent.chargerSerial) {
+      const cleanCSn = String(parent.chargerSerial).trim().toUpperCase();
+      const chg = list.find(s => s && String(s.serialNumber).trim().toUpperCase() === cleanCSn);
+      if (chg && chg.bundledWith !== parentSn) {
+        chg.bundledWith = parentSn;
+        changed = true;
+      }
+    }
+  });
+
+  // 1.5. 逆に子部品側に bundledWith が設定されているのに親本体側に未登録の場合、自動で親本体へ逆反映
+  list.forEach(s => {
+    if (s && s.serialNumber && s.bundledWith) {
+      const parent = bodyMap.get(String(s.bundledWith).trim().toUpperCase());
+      if (parent) {
+        const sSn = String(s.serialNumber).trim().toUpperCase();
+        const itemName = String(s.itemName || '').toUpperCase();
+        const isBat = s.inventoryId === 'inv_dp5000_bat' || s.itemId === 'inv_dp5000_bat' || s.itemType === 'battery' || itemName.includes('バッテリー');
+        const isChg = s.inventoryId === 'inv_dp5000_chg' || s.itemId === 'inv_dp5000_chg' || s.itemType === 'charger' || itemName.includes('充電器');
+
+        if (isBat) {
+          if (!Array.isArray(parent.batterySerials)) {
+            parent.batterySerials = [];
+          }
+          if (!parent.batterySerials.map(x => String(x).trim().toUpperCase()).includes(sSn)) {
+            parent.batterySerials.push(sSn);
+            parent.isBundled = true;
+            changed = true;
+          }
+        } else if (isChg) {
+          if (!parent.chargerSerial || String(parent.chargerSerial).trim().toUpperCase() !== sSn) {
+            parent.chargerSerial = sSn;
+            parent.isBundled = true;
+            changed = true;
+          }
+        }
+      }
+    }
+  });
+
+  // 2. 子部品の出荷状態・伝票情報を親本体の状態に合わせて厳格に同期
   list.forEach(s => {
     if (s && s.bundledWith) {
       const parent = bodyMap.get(String(s.bundledWith).trim().toUpperCase());
       if (parent) {
-        if (parent.clientName && s.clientName !== parent.clientName) {
-          s.clientName = parent.clientName;
-          changed = true;
-        }
-        if (parent.endUserName && s.endUserName !== parent.endUserName) {
-          s.endUserName = parent.endUserName;
-          changed = true;
-        }
-        const parentShipDate = parent.shipDate || parent.shippedDate || '';
-        if (parentShipDate && (s.shipDate !== parentShipDate || s.shippedDate !== parentShipDate)) {
-          s.shipDate = parentShipDate;
-          s.shippedDate = parentShipDate;
-          changed = true;
-        }
-        const parentDocNum = parent.docNumber || parent.invoiceNumber || '';
-        if (parentDocNum && s.docNumber !== parentDocNum) {
-          s.docNumber = parentDocNum;
-          s.invoiceNumber = parentDocNum;
-          changed = true;
-        }
-        if (parent.docId && s.docId !== parent.docId) {
-          s.docId = parent.docId;
-          changed = true;
-        }
-        if (parent.status === 'shipped' && s.status !== 'shipped') {
-          s.status = 'shipped';
-          changed = true;
+        if (parent.status === 'shipped') {
+          // 親本体が出荷済の場合: 子部品も出荷済みに連動
+          if (s.status !== 'shipped') {
+            s.status = 'shipped';
+            changed = true;
+          }
+          if (parent.clientName && s.clientName !== parent.clientName) {
+            s.clientName = parent.clientName;
+            changed = true;
+          }
+          if (parent.endUserName && s.endUserName !== parent.endUserName) {
+            s.endUserName = parent.endUserName;
+            changed = true;
+          }
+          const parentShipDate = parent.shipDate || parent.shippedDate || '';
+          if (parentShipDate && (s.shipDate !== parentShipDate || s.shippedDate !== parentShipDate)) {
+            s.shipDate = parentShipDate;
+            s.shippedDate = parentShipDate;
+            changed = true;
+          }
+          const parentDocNum = parent.docNumber || parent.invoiceNumber || '';
+          if (parentDocNum && s.docNumber !== parentDocNum) {
+            s.docNumber = parentDocNum;
+            s.invoiceNumber = parentDocNum;
+            changed = true;
+          }
+          if (parent.docId && s.docId !== parent.docId) {
+            s.docId = parent.docId;
+            changed = true;
+          }
+        } else if (parent.status === 'in_stock') {
+          // 親本体が在庫中の場合: 子部品はセット組込中（bundled）とし、誤った出荷情報・伝票番号をクリア
+          if (s.status !== 'bundled') {
+            s.status = 'bundled';
+            changed = true;
+          }
+          if (s.docNumber || s.invoiceNumber) {
+            s.docNumber = '';
+            s.invoiceNumber = '';
+            changed = true;
+          }
+          if (s.docId) {
+            s.docId = '';
+            changed = true;
+          }
+          if (s.clientName) {
+            s.clientName = '';
+            changed = true;
+          }
+          if (s.shipDate || s.shippedDate) {
+            s.shipDate = '';
+            s.shippedDate = '';
+            changed = true;
+          }
         }
       }
     }
@@ -6933,8 +7447,8 @@ export function updateSerialDetails(serialNumber, updates = {}) {
     }
     Object.assign(target, updates, { updatedAt: new Date().toISOString() });
 
-    // もし本体（セット品化済・組込バッテリー持ち）を編集した場合、付属バッテリー側にも自動連動
-    if (target.isBundled || (Array.isArray(target.batterySerials) && target.batterySerials.length > 0)) {
+    // もし本体（セット品化済・組込バッテリー/充電器持ち）を編集した場合、付属バッテリー・充電器側にも自動連動
+    if (target.isBundled || (Array.isArray(target.batterySerials) && target.batterySerials.length > 0) || target.chargerSerial) {
       const batSns = Array.isArray(target.batterySerials) ? target.batterySerials : [];
       batSns.forEach(bSn => {
         const batObj = list.find(s => s && String(s.serialNumber).trim().toUpperCase() === String(bSn).trim().toUpperCase());
@@ -6948,17 +7462,374 @@ export function updateSerialDetails(serialNumber, updates = {}) {
           batObj.updatedAt = new Date().toISOString();
         }
       });
+
+      // 付属専用急速充電器の連動
+      list.forEach(chgObj => {
+        if (chgObj && (chgObj.serialNumber === target.chargerSerial || (chgObj.bundledWith && chgObj.bundledWith === target.serialNumber))) {
+          if (updates.clientName !== undefined) chgObj.clientName = updates.clientName;
+          if (updates.endUserName !== undefined) chgObj.endUserName = updates.endUserName;
+          if (updates.shipDate !== undefined) chgObj.shipDate = updates.shipDate;
+          if (updates.shippedDate !== undefined) chgObj.shippedDate = updates.shippedDate;
+          if (updates.docNumber !== undefined) chgObj.docNumber = updates.docNumber;
+          if (updates.docId !== undefined) chgObj.docId = updates.docId;
+          chgObj.updatedAt = new Date().toISOString();
+        }
+      });
     }
 
     localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(list));
-    saveServerInventorySerials(list).catch(() => {});
-    
+    saveServerInventorySerials(list).catch(() => { });
+
     // 在庫マスタ連動
     syncInventoryStockFromSerials();
     return true;
   } catch (e) {
     console.error('Failed to update serial details:', e);
     return false;
+  }
+}
+
+/**
+ * 発行済伝票（納品書・請求書）を全件走査し、シリアル管理台帳（inventory_serials）から
+ * 伝票記載のシリアル番号を出荷済（shipped）へ自動引き落とし・伝票完全紐付け
+ * 先行出荷されたシリアルが後からロット入庫された場合でも確実に自動連動
+ */
+export function syncInventorySerialsFromIssuedDocs() {
+  try {
+    const docs = getHistoryList();
+    const list = getInventorySerialList();
+    if (!Array.isArray(docs) || !Array.isArray(list)) {
+      return { updatedCount: 0, updatedSerials: [], validDocCount: 0 };
+    }
+
+    const serialMap = new Map();
+    list.forEach(s => {
+      if (s && s.serialNumber) {
+        serialMap.set(String(s.serialNumber).trim().toUpperCase(), s);
+      }
+    });
+
+    let modified = false;
+    const updatedSerials = [];
+    let validDocCount = 0;
+
+    docs.forEach(doc => {
+      if (!doc || doc.isCancelled === true || doc.isCancelled === 'true' || doc.docType === 'estimate') return;
+      if (doc.status === 'superseded' || doc.isSuperseded === true) return;
+      validDocCount++;
+
+      const docNo = String(doc.docNumber || doc.id || '').trim();
+      const clientName = doc.client ? (doc.client.name || '') : (doc.clientName || '');
+      const docDate = doc.issueDate || doc.date || '';
+      const docEndUser = (doc.endUserName || '').trim();
+      const docItems = (Array.isArray(doc.items) && doc.items.length > 0)
+        ? doc.items
+        : (doc.fullDoc && Array.isArray(doc.fullDoc.items) ? doc.fullDoc.items : []);
+
+      docItems.forEach(it => {
+        if (!it) return;
+        const itemSerials = [];
+
+        // ① assignedSerials から抽出
+        if (Array.isArray(it.assignedSerials) && it.assignedSerials.length > 0) {
+          it.assignedSerials.forEach(as => {
+            if (as && as.serialNumber) {
+              const sn = String(as.serialNumber).trim().toUpperCase();
+              if (sn && !itemSerials.includes(sn)) itemSerials.push(sn);
+            }
+          });
+        }
+
+        // ② serialNumber 文字列から抽出（N+数字だけでなく充電器やバッテリー等の全形式に対応）
+        if (it.serialNumber && typeof it.serialNumber === 'string') {
+          const rawParts = it.serialNumber.split(/[,、\n\r\t;/|]+/);
+          rawParts.forEach(part => {
+            const trimmed = part.trim().toUpperCase();
+            if (!trimmed) return;
+            // スペース区切りの場合も分解
+            const tokens = trimmed.split(/\s+/);
+            tokens.forEach(tok => {
+              const cleanTok = tok.replace(/^[(\[{<"']+|[)\]}>"':]+$/g, '').trim();
+              if (cleanTok && cleanTok.length >= 3) {
+                if (!itemSerials.includes(cleanTok)) itemSerials.push(cleanTok);
+              }
+            });
+          });
+        }
+
+        // ③ item.note から抽出（台帳登録シリアルおよびN+数字等の形式を柔軟に検出）
+        if (it.note && typeof it.note === 'string') {
+          // N+数字の検出
+          const nMatches = it.note.match(/N\s*\d+/gi);
+          if (nMatches) {
+            nMatches.forEach(m => {
+              const norm = m.replace(/\s+/g, '').toUpperCase();
+              if (norm && !itemSerials.includes(norm)) itemSerials.push(norm);
+            });
+          }
+          // 台帳マップに存在するシリアル番号が備考欄に含まれているか直接照合
+          serialMap.forEach((_, mapSn) => {
+            if (mapSn && it.note.toUpperCase().includes(mapSn)) {
+              if (!itemSerials.includes(mapSn)) itemSerials.push(mapSn);
+            }
+          });
+        }
+
+        const itemEndUser = (it.endUserName || docEndUser).trim();
+
+        itemSerials.forEach(sn => {
+          // 【包括的保護防壁（全社・全シリアル共通）】
+          // ① 社内デモ機 (N8460)
+          // ② デモ機ステータス (demo)
+          // ③ 保守・貸出中 (maintenance)
+          // ④ 初期不良・廃棄 (defective)
+          // ⑤ 備考に「デモ機」と記載のある社内管理機
+          // これらは、過去伝票の自動走査によって勝手に出荷済（shipped）に書き戻されることを完全遮断！
+          if (sn === 'N8460') return;
+          const target = serialMap.get(sn);
+          if (target) {
+            if (['demo', 'maintenance', 'defective'].includes(target.status) || (target.note && target.note.includes('デモ機'))) {
+              return;
+            }
+            let changed = false;
+            if (target.status !== 'shipped') {
+              target.status = 'shipped';
+              changed = true;
+            }
+            if (!target.docNumber || target.docNumber !== docNo) {
+              target.docNumber = docNo;
+              target.invoiceNumber = docNo;
+              target.docId = doc.id;
+              target.invoiceId = doc.id;
+              changed = true;
+            }
+            if (!target.clientName || (clientName && target.clientName !== clientName)) {
+              target.clientName = clientName;
+              target.customerName = clientName;
+              changed = true;
+            }
+            if (itemEndUser && (!target.endUserName || target.endUserName !== itemEndUser)) {
+              target.endUserName = itemEndUser;
+              changed = true;
+            }
+            if (docDate && (!target.shipDate || target.shipDate !== docDate)) {
+              target.shipDate = docDate;
+              target.shippedDate = docDate;
+              changed = true;
+            }
+
+            // セット品化された本体が出荷された場合、組込バッテリーおよび急速充電器も連動して出荷済みに更新
+            const targetSnNorm = String(target.serialNumber || sn).trim().toUpperCase();
+            if (target.isBundled) {
+              // 1. 組込バッテリーの連動出荷
+              if (Array.isArray(target.batterySerials)) {
+                target.batterySerials.forEach(batSn => {
+                  const bat = serialMap.get(String(batSn).trim().toUpperCase());
+                  if (bat) {
+                    if (bat.status !== 'shipped' || bat.docNumber !== docNo) {
+                      bat.status = 'shipped';
+                      bat.clientName = clientName;
+                      bat.customerName = clientName;
+                      bat.endUserName = itemEndUser;
+                      bat.docNumber = docNo;
+                      bat.docId = doc.id;
+                      bat.shipDate = docDate;
+                      bat.shippedDate = docDate;
+                      bat.updatedAt = new Date().toISOString();
+                      changed = true;
+                    }
+                  }
+                });
+              }
+
+              // 2. 付属急速充電器の連動出荷
+              if (target.chargerSerial) {
+                const chg = serialMap.get(String(target.chargerSerial).trim().toUpperCase());
+                if (chg) {
+                  if (chg.status !== 'shipped' || chg.docNumber !== docNo) {
+                    chg.status = 'shipped';
+                    chg.clientName = clientName;
+                    chg.customerName = clientName;
+                    chg.endUserName = itemEndUser;
+                    chg.docNumber = docNo;
+                    chg.docId = doc.id;
+                    chg.shipDate = docDate;
+                    chg.shippedDate = docDate;
+                    chg.updatedAt = new Date().toISOString();
+                    changed = true;
+                  }
+                }
+              }
+
+              // 3. bundledWith で逆引きされる全構成品（バッテリー・充電器）の連動出荷
+              list.forEach(c => {
+                if (c && c.bundledWith && String(c.bundledWith).trim().toUpperCase() === targetSnNorm) {
+                  if (c.status !== 'shipped' || c.docNumber !== docNo) {
+                    c.status = 'shipped';
+                    c.clientName = clientName;
+                    c.customerName = clientName;
+                    c.endUserName = itemEndUser;
+                    c.docNumber = docNo;
+                    c.docId = doc.id;
+                    c.shipDate = docDate;
+                    c.shippedDate = docDate;
+                    c.updatedAt = new Date().toISOString();
+                    changed = true;
+                  }
+                }
+              });
+            }
+
+            if (changed) {
+              target.updatedAt = new Date().toISOString();
+              modified = true;
+              updatedSerials.push({
+                serialNumber: sn,
+                docNumber: docNo,
+                clientName: clientName,
+                itemName: target.itemName || it.name || ''
+              });
+            }
+          }
+        });
+      });
+    });
+
+    // 2. 【逆方向の整合性保証】伝票削除・確定取消・見積書連動解除の自動検知
+    // シリアル台帳上で伝票番号（docNumber / invoiceNumber）が記録されているが、
+    // その伝票が「有効な確定伝票」に存在しない場合（伝票が削除された、見積書だった、確定取消された場合）、
+    // 自動的に台帳上で「在庫中（in_stock）」へ復元し、伝票紐付けをクリアする！
+    const validDocNumbers = new Set();
+    const validDocIds = new Set();
+    docs.forEach(doc => {
+      if (!doc || doc.isCancelled === true || doc.isCancelled === 'true' || doc.docType === 'estimate') return;
+      if (doc.status === 'superseded' || doc.isSuperseded === true) return;
+      if (doc.docNumber) validDocNumbers.add(String(doc.docNumber).trim());
+      if (doc.id) validDocIds.add(String(doc.id).trim());
+    });
+
+    list.forEach(s => {
+      if (!s) return;
+      const sDocNo = String(s.docNumber || s.invoiceNumber || '').trim();
+      const sDocId = String(s.docId || s.invoiceId || '').trim();
+
+      // 出荷済（shipped）で、伝票番号またはIDが記録されているもの
+      if (s.status === 'shipped' && (sDocNo || sDocId)) {
+        // 見積書（EST-）、または有効な確定伝票に存在しない伝票番号/IDの場合
+        const isEstimate = sDocNo.startsWith('EST-') || (s.note && s.note.includes('EST-'));
+        const isValid = (sDocNo && validDocNumbers.has(sDocNo)) || (sDocId && validDocIds.has(sDocId));
+
+        if (isEstimate || !isValid) {
+          console.log(`【シリアル整合復帰】存在しない/削除/取消伝票(${sDocNo})に紐付いていたシリアル ${s.serialNumber} を在庫中に自動復帰`);
+          s.status = s.isBundled ? 'bundled' : 'in_stock';
+          s.clientName = '';
+          s.customerName = '';
+          s.endUserName = '';
+          s.shipDate = '';
+          s.shippedDate = '';
+          s.docNumber = '';
+          s.docId = '';
+          s.invoiceNumber = '';
+          s.invoiceId = '';
+          s.updatedAt = new Date().toISOString();
+          modified = true;
+          updatedSerials.push({
+            serialNumber: s.serialNumber,
+            docNumber: '(削除/取消伝票解除)',
+            clientName: '',
+            itemName: s.itemName || ''
+          });
+
+          // セット品化された本体の場合、組込バッテリーおよび急速充電器も連動して在庫中に復帰
+          if (s.isBundled) {
+            const sSnNorm = String(s.serialNumber).trim().toUpperCase();
+            if (Array.isArray(s.batterySerials)) {
+              s.batterySerials.forEach(bSn => {
+                const bat = serialMap.get(String(bSn).trim().toUpperCase());
+                if (bat) {
+                  bat.status = 'bundled';
+                  bat.clientName = '';
+                  bat.customerName = '';
+                  bat.endUserName = '';
+                  bat.shipDate = '';
+                  bat.shippedDate = '';
+                  bat.docNumber = '';
+                  bat.docId = '';
+                  bat.invoiceNumber = '';
+                  bat.invoiceId = '';
+                  bat.updatedAt = new Date().toISOString();
+                }
+              });
+            }
+            if (s.chargerSerial) {
+              const chg = serialMap.get(String(s.chargerSerial).trim().toUpperCase());
+              if (chg) {
+                chg.status = 'bundled';
+                chg.clientName = '';
+                chg.customerName = '';
+                chg.endUserName = '';
+                chg.shipDate = '';
+                chg.shippedDate = '';
+                chg.docNumber = '';
+                chg.docId = '';
+                chg.invoiceNumber = '';
+                chg.invoiceId = '';
+                chg.updatedAt = new Date().toISOString();
+              }
+            }
+            list.forEach(c => {
+              if (c && c.bundledWith && String(c.bundledWith).trim().toUpperCase() === sSnNorm) {
+                c.status = 'bundled';
+                c.clientName = '';
+                c.customerName = '';
+                c.endUserName = '';
+                c.shipDate = '';
+                c.shippedDate = '';
+                c.docNumber = '';
+                c.docId = '';
+                c.invoiceNumber = '';
+                c.invoiceId = '';
+                c.updatedAt = new Date().toISOString();
+              }
+            });
+          }
+        }
+      }
+    });
+
+    // 3. 【社内デモ機(N8460)の絶対保護サニタイズ】
+    // 過去のキャッシュや古い同期データで N8460 が出荷済み・本田塗料店に誤認されていても確実に「デモ機」に隔離
+    const n8460 = serialMap.get('N8460');
+    if (n8460) {
+      if (n8460.status !== 'demo' || n8460.docNumber || n8460.clientName) {
+        n8460.status = 'demo';
+        n8460.clientName = '';
+        n8460.customerName = '';
+        n8460.endUserName = '';
+        n8460.shipDate = '';
+        n8460.shippedDate = '';
+        n8460.docNumber = '';
+        n8460.invoiceNumber = '';
+        n8460.docId = '';
+        n8460.invoiceId = '';
+        n8460.note = 'デモ機';
+        n8460.updatedAt = new Date().toISOString();
+        modified = true;
+      }
+    }
+
+    if (modified) {
+      localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(list));
+      saveServerInventorySerials(list).catch(() => { });
+      console.log(`【シリアル伝票出荷引落】全 ${updatedSerials.length} 件のシリアルを発行伝票から出荷済みに引き落としました:`, updatedSerials);
+      // 在庫マスタ連動
+      syncInventoryStockFromSerials();
+    }
+
+    return { updatedCount: updatedSerials.length, updatedSerials, validDocCount };
+  } catch (err) {
+    console.error('syncInventorySerialsFromIssuedDocs エラー:', err);
+    return { updatedCount: 0, updatedSerials: [], validDocCount: 0 };
   }
 }
 
@@ -6977,7 +7848,7 @@ export function saveBatchInventorySerials(serialsArray = []) {
     serialsArray.forEach(item => {
       if (!item || !item.serialNumber) return;
       const sn = String(item.serialNumber).trim().toUpperCase();
-      
+
       // 再登録時は削除フラグ解除
       removeDeletedSerial(sn);
 
@@ -7015,8 +7886,8 @@ export function saveBatchInventorySerials(serialsArray = []) {
 
     const updatedList = Array.from(snMap.values());
     localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(updatedList));
-    saveServerInventorySerials(updatedList).catch(() => {});
-    
+    saveServerInventorySerials(updatedList).catch(() => { });
+
     // 在庫マスタ連動
     syncInventoryStockFromSerials();
     return addedCount;
@@ -7027,11 +7898,16 @@ export function saveBatchInventorySerials(serialsArray = []) {
 }
 
 
-export function getAvailableSerialsByItem(inventoryIdOrName) {
+export function getAvailableSerialsByItem(inventoryIdOrName, options = {}) {
   const list = getInventorySerialList();
   const targetKey = String(inventoryIdOrName || '').trim();
-  const isTargetDp5000Body = targetKey === 'inv_dp5000_body' || 
-    (targetKey.includes('DP-5000') && !targetKey.includes('MS') && !targetKey.includes('ベーシックセット') && !targetKey.includes('バッテリー'));
+  const targetUpper = targetKey.toUpperCase();
+
+  const isTargetDp5000Body = targetKey === 'inv_dp5000_body' ||
+    (targetUpper.includes('DP-5000') && !targetUpper.includes('MS') && !targetUpper.includes('ベーシックセット') && !targetUpper.includes('バッテリー') && !targetUpper.includes('充電器'));
+  const isTargetChg = targetKey === 'inv_dp5000_chg' || targetUpper.includes('充電器') || targetUpper.includes('CHG');
+  const isTargetBat = !isTargetChg && (targetKey === 'inv_dp5000_bat' || targetUpper.includes('バッテリー') || targetUpper.includes('BAT'));
+  const isTargetMs = targetKey === 'inv_2' || targetUpper.includes('DP-MS') || targetUpper.includes('スプレッダー');
 
   return list.filter(s => {
     if (!s) return false;
@@ -7039,33 +7915,46 @@ export function getAvailableSerialsByItem(inventoryIdOrName) {
 
     const sId = String(s.itemId || s.inventoryId || '').trim();
     const sName = String(s.itemName || '').trim();
+    const sNameUpper = sName.toUpperCase();
+    const snUpper = String(s.serialNumber || '').trim().toUpperCase();
 
-    // 1. 完全一致
-    if (sId === targetKey || sName === targetKey) {
-      if (isTargetDp5000Body && s.isBundled) return false;
+    const isThisChg = (sId === 'inv_dp5000_chg' || s.itemType === 'charger' || sNameUpper.includes('充電器') || (s.targetSku && s.targetSku.includes('CHG')));
+    const isThisBat = !isThisChg && (sId === 'inv_dp5000_bat' || s.itemType === 'battery' || sNameUpper.includes('バッテリー') || s.isCompanyOnly);
+    const isThisMs = !isThisChg && !isThisBat && (sId === 'inv_2' || sNameUpper.includes('DP-MS') || sNameUpper.includes('スプレッダー'));
+    const isThisDp5kBody = !isThisChg && !isThisBat && !isThisMs && (sId === 'inv_dp5000_body' || sNameUpper.includes('DP-5000') || /^N\s*\d{4,12}$/i.test(snUpper));
+
+    // 1. DP-5000 本体の引当
+    if (isTargetDp5000Body) {
+      if (!isThisDp5kBody) return false;
+      // 新規キッティング専用（onlyUnbundled: true）の時のみ未セット品に絞る。
+      // 納品書・請求書からの引当では、保守から戻した本体やセット品化済本体も含めすべて選択可能！
+      if (options.onlyUnbundled && s.isBundled) return false;
       return true;
     }
 
-    // 2. DP-5000 本体の場合の柔軟マッチング（未セット品のみ）
-    if (isTargetDp5000Body) {
-      if (s.isBundled) return false;
-      if (sId === 'inv_dp5000_body') return true;
-      if (sName.includes('本体')) return true;
-      if (sName.includes('DP-5000') && !sName.includes('MS') && !sName.includes('バッテリー')) return true;
-      return false;
-    }
-
-    // 3. バッテリーの場合（組込済みは除外）
-    if (targetKey === 'inv_dp5000_bat' || targetKey.includes('バッテリー')) {
+    // 2. 急速充電器の引当
+    if (isTargetChg) {
+      if (!isThisChg) return false;
+      // 他の本体に組込中のものは除外（在庫中未組込のもののみ）
       if (s.status === 'bundled' || s.bundledWith) return false;
-      if (sId === 'inv_dp5000_bat' || sName.includes('バッテリー')) return true;
-      return false;
+      return true;
     }
 
-    // 4. スプレッダーの場合
-    if (targetKey === 'inv_2' || targetKey.includes('スプレッダー') || targetKey.includes('DP-MS')) {
-      if (sId === 'inv_2' || sName.includes('DP-MS') || sName.includes('スプレッダー')) return true;
-      return false;
+    // 3. バッテリーの引当
+    if (isTargetBat) {
+      if (!isThisBat) return false;
+      if (s.status === 'bundled' || s.bundledWith) return false;
+      return true;
+    }
+
+    // 4. スプレッダーの引当
+    if (isTargetMs) {
+      return isThisMs;
+    }
+
+    // 5. 完全一致またはフォールバック
+    if (sId === targetKey || sName === targetKey) {
+      return true;
     }
 
     return false;
@@ -7086,7 +7975,7 @@ export function getAvailableBundleComponents() {
     // 在庫中または出荷済みで未セット化のもの
     if (s.status !== 'in_stock' && s.status !== 'shipped') return false;
     const itemName = String(s.itemName || '').toUpperCase();
-    return s.inventoryId === 'inv_dp5000_body' || (itemName.includes('DP-5000') && !itemName.includes('MS'));
+    return s.inventoryId === 'inv_dp5000_body' || s.itemId === 'inv_dp5000_body' || (itemName.includes('DP-5000') && !itemName.includes('MS') && !itemName.includes('バッテリー') && !itemName.includes('充電器')) || /^N\s*\d{4,12}$/i.test(s.serialNumber || '');
   });
 
   // 2. 在庫中かつ未セット化のリチウムイオンバッテリー
@@ -7094,19 +7983,28 @@ export function getAvailableBundleComponents() {
     if (!s || s.status !== 'in_stock') return false;
     if (s.status === 'bundled' || s.bundledWith) return false;
     const itemName = String(s.itemName || '').toUpperCase();
-    return s.inventoryId === 'inv_dp5000_bat' || s.itemType === 'battery' || itemName.includes('バッテリー');
+    return s.inventoryId === 'inv_dp5000_bat' || s.itemId === 'inv_dp5000_bat' || s.itemType === 'battery' || itemName.includes('バッテリー');
   });
 
-  // 3. 専用急速充電器の在庫数
+  // 3. 在庫中かつ未組込の専用急速充電器
+  const availableChargers = serials.filter(s => {
+    if (!s || s.status !== 'in_stock') return false;
+    if (s.status === 'bundled' || s.bundledWith) return false;
+    const itemName = String(s.itemName || '').toUpperCase();
+    return s.inventoryId === 'inv_dp5000_chg' || s.itemId === 'inv_dp5000_chg' || s.itemType === 'charger' || itemName.includes('充電器');
+  });
+
+  // 急速充電器の在庫マスタ
   const chgItem = invList.find(it => it.id === 'inv_dp5000_chg' || (it.name && it.name.includes('急速充電器')));
-  const chargerStock = chgItem ? Number(chgItem.currentStock || 0) : 0;
+  const chargerStock = Math.max(availableChargers.length, chgItem ? Number(chgItem.currentStock || 0) : 0);
 
   return {
     bodies: availableBodies,
     batteries: availableBatteries,
+    chargers: availableChargers,
     chargerStock,
     chargerItem: chgItem || null,
-    possibleSetCount: Math.min(availableBodies.length, Math.floor(availableBatteries.length / 2), chargerStock)
+    possibleSetCount: Math.min(availableBodies.length, Math.floor(availableBatteries.length / 2), Math.max(availableChargers.length, chargerStock))
   };
 }
 
@@ -7114,10 +8012,11 @@ export function getAvailableBundleComponents() {
  * DP-5000本体とバッテリー2個・急速充電器1個をセット品化（キッティング）
  * @param {string} bodySerialNumber - DP-5000本体のシリアル番号（例: "N8460"）
  * @param {string[]} batterySerialNumbers - 選択されたリチウムイオンバッテリーのシリアル番号（2個）
+ * @param {string} chargerSerialNumber - 選択された専用急速充電器のシリアル番号（1個）
  * @param {Object} [options] - オプション
  * @returns {{ success: boolean, message?: string }}
  */
-export function assembleDP5000Bundle(bodySerialNumber, batterySerialNumbers, options = {}) {
+export function assembleDP5000Bundle(bodySerialNumber, batterySerialNumbers, chargerSerialNumber = '', options = {}) {
   try {
     if (!bodySerialNumber) {
       return { success: false, message: 'DP-5000本体のシリアル番号が指定されていません。' };
@@ -7131,6 +8030,7 @@ export function assembleDP5000Bundle(bodySerialNumber, batterySerialNumbers, opt
 
     const cleanBodySn = String(bodySerialNumber).trim().toUpperCase();
     const cleanBatSns = batterySerialNumbers.map(s => String(s).trim().toUpperCase());
+    const cleanChgSn = chargerSerialNumber ? String(chargerSerialNumber).trim().toUpperCase() : '';
 
     // 1. シリアルリストの取得と検証
     const serialList = getInventorySerialList();
@@ -7157,6 +8057,18 @@ export function assembleDP5000Bundle(bodySerialNumber, batterySerialNumbers, opt
       }
     }
 
+    // 急速充電器の検証（シリアル指定がある場合）
+    let chgSerial = null;
+    if (cleanChgSn) {
+      chgSerial = serialList.find(s => s && String(s.serialNumber).trim().toUpperCase() === cleanChgSn);
+      if (!chgSerial) {
+        return { success: false, message: `専用急速充電器(S/N: ${cleanChgSn})が見つかりません。` };
+      }
+      if (chgSerial.status !== 'in_stock') {
+        return { success: false, message: `専用急速充電器(S/N: ${cleanChgSn})は在庫中ではありません。(状態: ${chgSerial.status})` };
+      }
+    }
+
     // 2. 在庫マスタから急速充電器の在庫数を確認・減算
     const invList = getInventoryList();
     const chgItem = invList.find(it => it.id === 'inv_dp5000_chg' || (it.name && it.name.includes('急速充電器')));
@@ -7178,7 +8090,7 @@ export function assembleDP5000Bundle(bodySerialNumber, batterySerialNumbers, opt
       type: 'out',
       qty: 1,
       delta: -1,
-      reason: `DP-5000(S/N: ${cleanBodySn})セット品化に伴う自動出庫`,
+      reason: `DP-5000(S/N: ${cleanBodySn})セット品化に伴う出庫${cleanChgSn ? ` (充電器S/N: ${cleanChgSn})` : ''}`,
       currentStock: chgItem.currentStock,
       timestamp: nowIso
     });
@@ -7241,50 +8153,246 @@ export function assembleDP5000Bundle(bodySerialNumber, batterySerialNumbers, opt
       if (bat) {
         bat.status = isBodyShipped ? 'shipped' : 'bundled';
         bat.bundledWith = cleanBodySn;
-        bat.bundledAt = new Date().toISOString();
+        bat.bundledAt = nowIso;
         if (isBodyShipped) {
           bat.clientName = bodySerial.clientName || '';
+          bat.customerName = bodySerial.clientName || '';
           bat.endUserName = bodySerial.endUserName || '';
+          bat.shipDate = bodySerial.shipDate || bodySerial.shippedDate || '';
           bat.shippedDate = bodySerial.shippedDate || bodySerial.shipDate || '';
           bat.docNumber = bodySerial.docNumber || bodySerial.invoiceNumber || '';
+          bat.invoiceNumber = bodySerial.invoiceNumber || bodySerial.docNumber || '';
           bat.docId = bodySerial.docId || bodySerial.invoiceId || '';
         }
         const baseNote = (bat.note || '').replace(/\s*\[DP-5000\([^)]+\)セット組込\]/g, '').trim();
         bat.note = (baseNote ? baseNote + ' ' : '') + `[DP-5000(${cleanBodySn})セット組込]`;
-        bat.updatedAt = new Date().toISOString();
+        bat.updatedAt = nowIso;
       }
     });
 
-    // 4. DP-5000本体をセット品化済みに更新
+    // 4. 急速充電器のステータスを更新
+    if (chgSerial) {
+      chgSerial.status = isBodyShipped ? 'shipped' : 'bundled';
+      chgSerial.bundledWith = cleanBodySn;
+      chgSerial.bundledAt = nowIso;
+      if (isBodyShipped) {
+        chgSerial.clientName = bodySerial.clientName || '';
+        chgSerial.customerName = bodySerial.clientName || '';
+        chgSerial.endUserName = bodySerial.endUserName || '';
+        chgSerial.shipDate = bodySerial.shipDate || bodySerial.shippedDate || '';
+        chgSerial.shippedDate = bodySerial.shippedDate || bodySerial.shipDate || '';
+        chgSerial.docNumber = bodySerial.docNumber || bodySerial.invoiceNumber || '';
+        chgSerial.invoiceNumber = bodySerial.invoiceNumber || bodySerial.docNumber || '';
+        chgSerial.docId = bodySerial.docId || bodySerial.invoiceId || '';
+      }
+      const chgBaseNote = (chgSerial.note || '').replace(/\s*\[DP-5000\([^)]+\)セット組込\]/g, '').trim();
+      chgSerial.note = (chgBaseNote ? chgBaseNote + ' ' : '') + `[DP-5000(${cleanBodySn})セット組込]`;
+      chgSerial.updatedAt = nowIso;
+    }
+
+    // 5. DP-5000本体をセット品化済みに更新
     bodySerial.isBundled = true;
     bodySerial.bundleName = 'DP-5000 ベーシックセット バッテリー２個';
     bodySerial.batterySerials = cleanBatSns;
+    bodySerial.chargerSerial = cleanChgSn;
     bodySerial.chargerDeducted = true;
-    bodySerial.bundledAt = new Date().toISOString();
-    const bodyBaseNote = (bodySerial.note || '').replace(/\s*\[セット品化済:[^\]]+\]/g, '').trim();
-    bodySerial.note = (bodyBaseNote ? bodyBaseNote + ' ' : '') + `[セット品化済: バッテリー ${cleanBatSns.join(', ')} / 急速充電器1個付属]`;
-    bodySerial.updatedAt = new Date().toISOString();
+    bodySerial.bundledAt = nowIso;
+    const bodyBaseNote = (bodySerial.note || '').replace(/\s*\[セット品化済:[^\]]+\]/g, '').replace(/\s*\[セット構成:[^\]]+\]/g, '').trim();
+    bodySerial.note = (bodyBaseNote ? bodyBaseNote + ' ' : '') + `[セット構成: 🔋 ${cleanBatSns.join(', ')} / ⚡ 充電器 ${cleanChgSn || '付属'}]`;
+    bodySerial.updatedAt = nowIso;
 
-    // 5. 保存と全体同期
+    // 6. 保存と全体同期
     localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(invList));
-    saveServerInventory(invList).catch(() => {});
+    saveServerInventory(invList).catch(() => { });
 
     localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(serialList));
-    saveServerInventorySerials(serialList).catch(() => {});
+    saveServerInventorySerials(serialList).catch(() => { });
 
     // 在庫マスタとシリアルの数値を完全同期
     syncInventoryStockFromSerials();
 
-    console.log(`【セット品化完了】本体: ${cleanBodySn}, バッテリー: ${cleanBatSns.join(', ')}, 充電器 -1`);
+    console.log(`【セット品化完了】本体: ${cleanBodySn}, バッテリー: ${cleanBatSns.join(', ')}, 充電器: ${cleanChgSn || '-1個'}`);
     return {
       success: true,
       bodySerialNumber: cleanBodySn,
       batterySerialNumbers: cleanBatSns,
-      message: `DP-5000本体(S/N: ${cleanBodySn})をセット品化しました！バッテリー(${cleanBatSns.join(', ')}) 2個と急速充電器 1個を自動出庫しました。`
+      chargerSerialNumber: cleanChgSn,
+      message: `DP-5000本体(S/N: ${cleanBodySn})をセット品化しました！バッテリー(${cleanBatSns.join(', ')}) 2個と急速充電器(${cleanChgSn || '1個'})を出庫・紐付けました。`
     };
   } catch (e) {
     console.error('Failed to assemble DP-5000 bundle:', e);
     return { success: false, message: e.message || 'セット品化処理中にエラーが発生しました。' };
+  }
+}
+
+/**
+ * 既存（セット済含む）の DP-5000 本体に対して、急速充電器シリアルおよびバッテリーシリアルを割り当て・変更する
+ * @param {string} bodySerialNumber - DP-5000 本体のシリアル番号
+ * @param {string[]} batterySerialNumbers - バッテリーシリアル（空なら既存維持）
+ * @param {string} chargerSerialNumber - 割り当てる専用急速充電器のシリアル番号
+ * @returns {{ success: boolean, message?: string }}
+ */
+export function assignBundleComponentsToBody(bodySerialNumber, batterySerialNumbers = [], chargerSerialNumber = '') {
+  try {
+    if (!bodySerialNumber) return { success: false, message: '本体シリアル番号が指定されていません。' };
+    const cleanBodySn = String(bodySerialNumber).trim().toUpperCase();
+    const cleanChgSn = chargerSerialNumber ? String(chargerSerialNumber).trim().toUpperCase() : '';
+    const cleanBatSns = Array.isArray(batterySerialNumbers) ? batterySerialNumbers.map(s => String(s).trim().toUpperCase()).filter(Boolean) : [];
+
+    const serialList = getInventorySerialList();
+    const bodySerial = serialList.find(s => s && String(s.serialNumber).trim().toUpperCase() === cleanBodySn);
+    if (!bodySerial) return { success: false, message: `DP-5000本体 (S/N: ${cleanBodySn}) が台帳に見つかりません。` };
+
+    const nowIso = new Date().toISOString();
+    const isBodyShipped = bodySerial.status === 'shipped';
+
+    // 1. 旧充電器の紐付け解除（もし別の充電器が割り当てられていた場合）
+    if (bodySerial.chargerSerial && bodySerial.chargerSerial !== cleanChgSn) {
+      const oldChg = serialList.find(s => s && String(s.serialNumber).trim().toUpperCase() === String(bodySerial.chargerSerial).trim().toUpperCase());
+      if (oldChg && oldChg.bundledWith === cleanBodySn) {
+        oldChg.bundledWith = '';
+        oldChg.status = 'in_stock';
+        oldChg.clientName = '';
+        oldChg.customerName = '';
+        oldChg.endUserName = '';
+        oldChg.shipDate = '';
+        oldChg.shippedDate = '';
+        oldChg.docNumber = '';
+        oldChg.invoiceNumber = '';
+        oldChg.docId = '';
+        oldChg.note = (oldChg.note || '').replace(/\s*\[DP-5000\([^)]+\)セット組込\]/g, '').replace(/\s*\[セット組込済\s*\(本体:[^)]+\)\]/g, '').trim();
+        oldChg.updatedAt = nowIso;
+      }
+    }
+
+    // 1.5. 旧バッテリーの紐付け解除（新たに指定されたバッテリー以外で、以前この本体に紐付いていたバッテリー）
+    if (cleanBatSns.length > 0) {
+      const oldBatSns = Array.isArray(bodySerial.batterySerials) ? bodySerial.batterySerials.map(s => String(s).trim().toUpperCase()) : [];
+      oldBatSns.forEach(oldSn => {
+        if (!cleanBatSns.includes(oldSn)) {
+          const oldBat = serialList.find(s => s && String(s.serialNumber).trim().toUpperCase() === oldSn);
+          if (oldBat && oldBat.bundledWith === cleanBodySn) {
+            oldBat.bundledWith = '';
+            oldBat.status = 'in_stock';
+            oldBat.clientName = '';
+            oldBat.customerName = '';
+            oldBat.endUserName = '';
+            oldBat.shipDate = '';
+            oldBat.shippedDate = '';
+            oldBat.docNumber = '';
+            oldBat.invoiceNumber = '';
+            oldBat.docId = '';
+            oldBat.note = (oldBat.note || '').replace(/\s*\[DP-5000\([^)]+\)セット組込\]/g, '').replace(/\s*\[セット組込済\s*\(本体:[^)]+\)\]/g, '').trim();
+            oldBat.updatedAt = nowIso;
+          }
+        }
+      });
+    }
+
+    // 2. 新充電器シリアルの紐付け
+    if (cleanChgSn) {
+      let chgObj = serialList.find(s => s && String(s.serialNumber).trim().toUpperCase() === cleanChgSn);
+      if (!chgObj) {
+        // もし台帳に未登録なら自動登録
+        chgObj = {
+          id: 'sn_' + cleanChgSn,
+          serialNumber: cleanChgSn,
+          itemId: 'inv_dp5000_chg',
+          itemName: 'PSE認証 専用急速充電器',
+          itemType: 'charger',
+          status: 'in_stock',
+          unitCost: 7700,
+          costPrice: 7700,
+          createdAt: nowIso
+        };
+        serialList.push(chgObj);
+      }
+
+      chgObj.bundledWith = cleanBodySn;
+      chgObj.status = isBodyShipped ? 'shipped' : 'bundled';
+      if (isBodyShipped) {
+        chgObj.clientName = bodySerial.clientName || '';
+        chgObj.customerName = bodySerial.clientName || '';
+        chgObj.endUserName = bodySerial.endUserName || '';
+        chgObj.shipDate = bodySerial.shipDate || bodySerial.shippedDate || '';
+        chgObj.shippedDate = bodySerial.shippedDate || bodySerial.shipDate || '';
+        chgObj.docNumber = bodySerial.docNumber || bodySerial.invoiceNumber || '';
+        chgObj.invoiceNumber = bodySerial.invoiceNumber || bodySerial.docNumber || '';
+        chgObj.docId = bodySerial.docId || bodySerial.invoiceId || '';
+      } else {
+        chgObj.clientName = '';
+        chgObj.customerName = '';
+        chgObj.endUserName = '';
+        chgObj.shipDate = '';
+        chgObj.shippedDate = '';
+        chgObj.docNumber = '';
+        chgObj.invoiceNumber = '';
+        chgObj.docId = '';
+      }
+      const baseNote = (chgObj.note || '').replace(/\s*\[DP-5000\([^)]+\)セット組込\]/g, '').trim();
+      chgObj.note = (baseNote ? baseNote + ' ' : '') + `[DP-5000(${cleanBodySn})セット組込]`;
+      chgObj.updatedAt = nowIso;
+
+      bodySerial.chargerSerial = cleanChgSn;
+    }
+
+    // 3. バッテリーシリアルの更新（指定があれば）
+    if (cleanBatSns.length > 0) {
+      bodySerial.batterySerials = cleanBatSns;
+      cleanBatSns.forEach(bSn => {
+        const bat = serialList.find(s => s && String(s.serialNumber).trim().toUpperCase() === bSn);
+        if (bat) {
+          bat.bundledWith = cleanBodySn;
+          bat.status = isBodyShipped ? 'shipped' : 'bundled';
+          if (isBodyShipped) {
+            bat.clientName = bodySerial.clientName || '';
+            bat.customerName = bodySerial.clientName || '';
+            bat.endUserName = bodySerial.endUserName || '';
+            bat.shipDate = bodySerial.shipDate || bodySerial.shippedDate || '';
+            bat.shippedDate = bodySerial.shippedDate || bodySerial.shipDate || '';
+            bat.docNumber = bodySerial.docNumber || bodySerial.invoiceNumber || '';
+            bat.invoiceNumber = bodySerial.invoiceNumber || bodySerial.docNumber || '';
+            bat.docId = bodySerial.docId || bodySerial.invoiceId || '';
+          } else {
+            bat.clientName = '';
+            bat.customerName = '';
+            bat.endUserName = '';
+            bat.shipDate = '';
+            bat.shippedDate = '';
+            bat.docNumber = '';
+            bat.invoiceNumber = '';
+            bat.docId = '';
+          }
+          const baseBatNote = (bat.note || '').replace(/\s*\[DP-5000\([^)]+\)セット組込\]/g, '').replace(/\s*\[セット組込済\s*\(本体:[^)]+\)\]/g, '').trim();
+          bat.note = (baseBatNote ? baseBatNote + ' ' : '') + `[セット組込済 (本体: ${cleanBodySn})]`;
+          bat.updatedAt = nowIso;
+        }
+      });
+    }
+
+    bodySerial.isBundled = true;
+    bodySerial.bundleName = 'DP-5000 ベーシックセット バッテリー２個';
+    bodySerial.updatedAt = nowIso;
+
+    // 備考欄の更新
+    const batText = (bodySerial.batterySerials || []).join(', ') || '未割当';
+    const chgText = bodySerial.chargerSerial || '未割当';
+    const baseBodyNote = (bodySerial.note || '').replace(/\s*\[セット品化済:[^\]]+\]/g, '').replace(/\s*\[セット構成:[^\]]+\]/g, '').trim();
+    bodySerial.note = (baseBodyNote ? baseBodyNote + ' ' : '') + `[セット構成: 🔋 ${batText} / ⚡ 充電器 ${chgText}]`;
+
+    // 保存と同期
+    localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(serialList));
+    saveServerInventorySerials(serialList).catch(() => { });
+    syncInventoryStockFromSerials();
+
+    console.log(`【セット構成更新】本体: ${cleanBodySn}, 充電器: ${cleanChgSn}, バッテリー: ${batText}`);
+    return {
+      success: true,
+      message: `DP-5000本体 (S/N: ${cleanBodySn}) に急速充電器シリアル「${cleanChgSn || '未指定'}」を割り当てました！`
+    };
+  } catch (err) {
+    console.error('Failed to assign bundle components:', err);
+    return { success: false, message: err.message || '構成割り当て中にエラーが発生しました。' };
   }
 }
 
@@ -7388,23 +8496,33 @@ export function disassembleDP5000Bundle(bodySerialNumber) {
     }
 
     // 3. 本体のセット品化フラグを解除し、明示的に「DP-5000 本体」として再定義
+    if (bodySerial.chargerSerial) {
+      const chgObj = serialList.find(s => s && String(s.serialNumber).trim().toUpperCase() === String(bodySerial.chargerSerial).trim().toUpperCase());
+      if (chgObj && chgObj.bundledWith === cleanBodySn) {
+        chgObj.bundledWith = '';
+        chgObj.status = 'in_stock';
+        chgObj.note = (chgObj.note || '').replace(/\s*\[DP-5000\([^)]+\)セット組込\]/g, '').trim();
+        chgObj.updatedAt = nowIso;
+      }
+    }
     bodySerial.isBundled = false;
     bodySerial.bundleName = '';
     bodySerial.itemId = 'inv_dp5000_body';
     bodySerial.inventoryId = 'inv_dp5000_body';
     bodySerial.itemName = 'DP-5000 本体';
     bodySerial.batterySerials = [];
+    bodySerial.chargerSerial = '';
     bodySerial.chargerDeducted = false;
     bodySerial.bundledAt = null;
-    bodySerial.note = (bodySerial.note || '').replace(/\s*\[セット品化済:[^\]]+\]/g, '').trim();
+    bodySerial.note = (bodySerial.note || '').replace(/\s*\[セット品化済:[^\]]+\]/g, '').replace(/\s*\[セット構成:[^\]]+\]/g, '').trim();
     bodySerial.updatedAt = new Date().toISOString();
 
     // 4. 保存と同期
     localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(invList));
-    saveServerInventory(invList).catch(() => {});
+    saveServerInventory(invList).catch(() => { });
 
     localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(serialList));
-    saveServerInventorySerials(serialList).catch(() => {});
+    saveServerInventorySerials(serialList).catch(() => { });
 
     syncInventoryStockFromSerials();
 
@@ -7421,10 +8539,17 @@ export function disassembleDP5000Bundle(bodySerialNumber) {
 export async function fetchServerInventorySerials() {
   try {
     const res = await apiFetch('inventory-serials', { cache: 'no-store' });
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        return data;
+    if (res && res.ok) {
+      const text = await res.text();
+      if (!text || !text.trim()) return null;
+      try {
+        const data = JSON.parse(text);
+        if (Array.isArray(data)) {
+          return data;
+        }
+      } catch (parseErr) {
+        console.warn('サーバーからのシリアル台帳JSONパース失敗:', parseErr);
+        return null;
       }
     }
   } catch (e) {
@@ -7471,7 +8596,7 @@ export async function syncInventorySerialsWithServer() {
       const mergedSerials = Array.from(serialMap.values());
       localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(mergedSerials));
       if (hasLocalOnly) {
-        saveServerInventorySerials(mergedSerials).catch(() => {});
+        saveServerInventorySerials(mergedSerials).catch(() => { });
       }
       console.log(`[シリアル同期完了] 全 ${mergedSerials.length} 件のシリアル台帳をサーバー・ローカルで完全同期しました`);
       return mergedSerials;
@@ -7538,12 +8663,12 @@ export function getInventoryHistoryWithShipments(item) {
     // したがって、baseLogs（item.history）に含まれる過去の重複・汚染ロットログおよびロット削除ログはすべて完全除外する
     if (/混載ロット|ロット入庫|LOT-[0-9]+/i.test(r) || /LOT-[0-9]+/i.test(String(h.id || '')) || r.includes('ロット削除')) return;
 
-    // 確定出荷引当や伝票連携などの自動生成ログは伝票履歴（docs）から動的取得するため除外
-    if (r.includes('確定出荷引当') || r.includes('伝票連携') || r.includes('出荷納品') || (r.includes('セット仕入') && !isBundle)) return;
+    // 確定出荷引当や確定発行取消、在庫復元、伝票連携などの自動生成ログは伝票履歴（docs）から動的取得するため除外
+    if (r.includes('確定出荷引当') || r.includes('確定発行取消') || r.includes('在庫復元') || r.includes('伝票連携') || r.includes('出荷納品') || (r.includes('セット仕入') && !isBundle)) return;
 
     // 急速充電器・バッテリー・本体の過去の重複・汚染ログを除外
-    if (isChg && (r.includes('国内仕入入庫') || r.includes('急速充電器在庫戻し') || r.includes('セット品化に伴う自動出庫'))) return;
-    if (isBat && (r.includes('国内仕入') || r.includes('在庫戻し') || r.includes('自動出庫'))) return;
+    if (isChg && (r.includes('国内仕入入庫') || r.includes('急速充電器在庫戻し') || r.includes('セット品化に伴う自動出庫') || r.includes('確定発行取消') || r.includes('在庫復元'))) return;
+    if (isBat && (r.includes('国内仕入') || r.includes('在庫戻し') || r.includes('自動出庫') || r.includes('確定発行取消') || r.includes('在庫復元'))) return;
 
     // 個別のセット品化ログはサマリーとして集約表示するためbaseLogsからは除外
     if (r.includes('セット品化組立完了') || r.includes('セット品化組込出庫')) return;
@@ -7878,6 +9003,13 @@ if (typeof window !== 'undefined') {
   window.deleteInventorySerial = deleteInventorySerial;
   window.updateSerialDetails = updateSerialDetails;
   window.updateSerialStatus = updateSerialStatus;
+  window.getAvailableSerialsByItem = getAvailableSerialsByItem;
+  window.getAvailableBundleComponents = getAvailableBundleComponents;
+  window.assembleDP5000Bundle = assembleDP5000Bundle;
+  window.disassembleDP5000Bundle = disassembleDP5000Bundle;
+  window.assignBundleComponentsToBody = assignBundleComponentsToBody;
+  window.findClientByCode = findClientByCode;
+  window.generateUniqueClientCode = generateUniqueClientCode;
   window.calculateBundleStockAndCost = calculateBundleStockAndCost;
   window.deleteManualInventoryLog = deleteManualInventoryLog;
   window.updateManualInventoryLog = updateManualInventoryLog;
@@ -7903,10 +9035,13 @@ if (typeof window !== 'undefined') {
   window.syncInventorySerialsWithServer = syncInventorySerialsWithServer;
   window.fetchServerInventoryLots = fetchServerInventoryLots;
   window.fetchServerInventorySerials = fetchServerInventorySerials;
+  window.syncInventorySerialsFromIssuedDocs = syncInventorySerialsFromIssuedDocs;
   window.initInventoryFromServer = initInventoryFromServer;
   window.loadIssuerProfile = loadIssuerProfile;
   window.saveIssuerProfile = saveIssuerProfile;
-  window.restoreAttendanceFromBackup = function() {
+  window.sanitizeDocSerialsConsistency = sanitizeDocSerialsConsistency;
+  window.sanitizeHondaPaintDocAndSerials = sanitizeHondaPaintDocAndSerials;
+  window.restoreAttendanceFromBackup = function () {
     const backup = localStorage.getItem(KEYS.ATTENDANCE + '_backup');
     if (backup && backup !== '[]') {
       localStorageSetItemAndSync(KEYS.ATTENDANCE, backup);

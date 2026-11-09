@@ -896,6 +896,19 @@ def sanitize_expense_item(item):
     clean['updatedAt'] = str(clean.get('updatedAt', '') or datetime.now(timezone.utc).isoformat())
     return clean
 
+def sanitize_firestore_data(val):
+    """
+    Firestore SDK から返された DatetimeWithNanoseconds や datetime などのオブジェクトを
+    再帰的に走査し、標準の ISO 形式文字列に変換して安全に JSON シリアライズできるようにする。
+    """
+    if isinstance(val, dict):
+        return {k: sanitize_firestore_data(v) for k, v in val.items()}
+    elif isinstance(val, list):
+        return [sanitize_firestore_data(v) for v in val]
+    elif hasattr(val, 'isoformat'):
+        return val.isoformat()
+    return val
+
 def get_fs_collection(col_name, default_data=None):
     if default_data is None: default_data = []
     if not db: return default_data
@@ -919,7 +932,7 @@ def get_fs_collection(col_name, default_data=None):
             except Exception as e_del:
                 print(f"[Firestore {settings_doc} フィルタ警告]: {e_del}")
 
-        return data if data else default_data
+        return sanitize_firestore_data(data) if data else default_data
     except Exception as e:
         print(f"[Firestore] GET {col_name} error: {e}")
         return default_data
@@ -928,7 +941,9 @@ def get_fs_document(col_name, doc_id, default_data=None):
     if not db: return default_data
     try:
         doc = db.collection(col_name).document(doc_id).get()
-        return doc.to_dict() if doc.exists else default_data
+        if doc.exists:
+            return sanitize_firestore_data(doc.to_dict())
+        return default_data
     except Exception as e:
         print(f"[Firestore] GET {col_name}/{doc_id} error: {e}")
         return default_data
@@ -946,6 +961,15 @@ def save_fs_collection(col_name, data_list, id_field='id', deleted_ids=None):
     try:
         batch = db.batch()
         count = 0
+
+        # 勤怠コレクションの場合、既存ドキュメントを取得して打刻（出勤・退勤）の空上書き消失を完全防止
+        existing_att_map = {}
+        if col_name == 'attendance':
+            try:
+                for doc in db.collection('attendance').stream():
+                    existing_att_map[doc.id] = doc.to_dict()
+            except Exception as e_att:
+                print(f"[Firestore attendance 既存取得警告]: {e_att}")
 
         # 書類・経費の場合、永続化された削除済みIDリストを考慮してゾンビ復活を完全防止
         persistent_deleted_ids = set()
@@ -1006,6 +1030,16 @@ def save_fs_collection(col_name, data_list, id_field='id', deleted_ids=None):
                 # 削除済みIDまたは _deleted / isDeleted フラグ付きのアイテムは絶対に復活保存しない
                 if clean_id in persistent_deleted_ids or item.get('_deleted') or item.get('isDeleted'):
                     continue
+
+                # 勤怠データの場合、既存の出勤・退勤時刻を空文字で上書き破壊しないよう完全保護
+                if col_name == 'attendance':
+                    old_doc = existing_att_map.get(clean_id, {})
+                    if old_doc.get('clockIn') and not item.get('clockIn'):
+                        item['clockIn'] = old_doc['clockIn']
+                    if old_doc.get('clockOut') and not item.get('clockOut'):
+                        item['clockOut'] = old_doc['clockOut']
+                    if old_doc.get('note') and not item.get('note'):
+                        item['note'] = old_doc['note']
 
                 doc_ref = db.collection(col_name).document(clean_id)
                 batch.set(doc_ref, item)
@@ -1328,7 +1362,7 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
             self.send_response(200)
             self.send_header('Content-Type', 'application/json; charset=utf-8')
             self.end_headers()
-            self.wfile.write(json.dumps(inv_data, ensure_ascii=False).encode('utf-8'))
+            self.wfile.write(json.dumps(inv_data, ensure_ascii=False, default=str).encode('utf-8'))
             return
 
         # 在庫ロット一覧取得API
@@ -1337,7 +1371,7 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
             self.send_response(200)
             self.send_header('Content-Type', 'application/json; charset=utf-8')
             self.end_headers()
-            self.wfile.write(json.dumps(lots_data, ensure_ascii=False).encode('utf-8'))
+            self.wfile.write(json.dumps(lots_data, ensure_ascii=False, default=str).encode('utf-8'))
             return
 
         # シリアル番号台帳一覧取得API
@@ -1346,7 +1380,7 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
             self.send_response(200)
             self.send_header('Content-Type', 'application/json; charset=utf-8')
             self.end_headers()
-            self.wfile.write(json.dumps(serials_data, ensure_ascii=False).encode('utf-8'))
+            self.wfile.write(json.dumps(serials_data, ensure_ascii=False, default=str).encode('utf-8'))
             return
 
         # 仕入名目マッピング取得API
@@ -1999,6 +2033,19 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
             try:
                 inv_data = json.loads(post_data)
                 
+                # クライアントの古いキャッシュからのゴミ・テスト品目・重複ドキュメントの混入を完全遮断
+                filtered_inv = []
+                for item in inv_data:
+                    if not isinstance(item, dict):
+                        continue
+                    doc_id = item.get('id', '')
+                    name = item.get('name', '')
+                    if not doc_id:
+                        continue
+                    if doc_id.startswith('inv_prod_17926') or 'オーバーホール' in name or '中古部品' in name or 'てすと' in name or '値引き' in name or name.startswith('*'):
+                        continue
+                    filtered_inv.append(item)
+                
                 @firestore.transactional
                 def update_inventory_in_transaction(transaction, incoming_data):
                     for item in incoming_data:
@@ -2008,12 +2055,12 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
                             transaction.set(doc_ref, item)
                 
                 transaction = db.transaction()
-                update_inventory_in_transaction(transaction, inv_data)
+                update_inventory_in_transaction(transaction, filtered_inv)
                 
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json; charset=utf-8')
                 self.end_headers()
-                self.wfile.write(json.dumps({"success": True}).encode('utf-8'))
+                self.wfile.write(json.dumps({"success": True, "count": len(filtered_inv)}).encode('utf-8'))
             except Exception as e:
                 self.send_response(500)
                 self.send_header('Content-Type', 'application/json; charset=utf-8')

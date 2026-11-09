@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Alva ERP</title>
+
+  <!-- iOS / iPhone ホーム画面ショートカット・PWA設定 -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Alva ERP">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="apple-touch-icon-precomposed" href="apple-touch-icon.png">
+  <link rel="icon" type="image/png" href="apple-touch-icon.png">
+
+  <!-- 100% 強制キャッシュ無効化 -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background: #0f172a;
+      color: #ffffff;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      text-align: center;
+      padding: 24px;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .logo-container {
+      width: 76px;
+      height: 76px;
+      border-radius: 20px;
+      background: linear-gradient(135deg, #4f46e5, #06b6d4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2.2rem;
+      font-weight: 800;
+      color: #ffffff;
+      box-shadow: 0 12px 28px rgba(79, 70, 229, 0.45);
+      margin-bottom: 24px;
+      animation: pulse 1.6s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% {
+        transform: scale(1);
+        opacity: 1;
+      }
+      50% {
+        transform: scale(1.05);
+        opacity: 0.92;
+      }
+    }
+
+    .spinner {
+      width: 32px;
+      height: 32px;
+      border: 3px solid rgba(255, 255, 255, 0.15);
+      border-top-color: #38bdf8;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      margin-bottom: 18px;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    h1 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+    }
+
+    p {
+      font-size: 0.825rem;
+      color: #94a3b8;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="logo-container">A</div>
+  <div class="spinner"></div>
+  <h1>Alva ERP を起動中</h1>
+  <p>最新のクラウドデータを強制読み込みしています...</p>
+
+  <script>
+    (function () {
+      try {
+        // 現在のクエリパラメータを取得
+        const search = new URLSearchParams(window.location.search);
+
+        // 毎回ユニークな現在時刻タイムスタンプ（ミリ秒）を付与（キャッシュ100%完全回避）
+        search.set('_t', Date.now());
+
+        // デフォルトでは出退勤・勤怠打刻画面を開く（?view=attendance）
+        // ※ポータル画面を開きたい場合は open.html?view=portal
+        if (!search.has('view')) {
+          search.set('view', 'attendance');
+        }
+
+        const destination = 'index.html?' + search.toString();
+
+        // 履歴を汚さず即座に最新ページへ強制ジャンプ
+        window.location.replace(destination);
+      } catch (err) {
+        // フォールバック
+        window.location.replace('index.html?view=attendance&_t=' + Date.now());
+      }
+    })();
+  </script>
+</body>
+
+</html>
+
