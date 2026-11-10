@@ -7669,9 +7669,40 @@ export function syncInventorySerialsFromIssuedDocs() {
           // ④ 初期不良・廃棄 (defective)
           // ⑤ 備考に「デモ機」と記載のある社内管理機
           // これらは、過去伝票の自動走査によって勝手に出荷済（shipped）に書き戻されることを完全遮断！
-          if (sn === 'N8460') return;
           const target = serialMap.get(sn);
           if (target) {
+            // 社内デモ機配備伝票（DEL-20250115-01, DEL-20250729-01等）の場合：status は demo を維持したまま伝票番号・出荷日を確実に紐付け
+            const isDemoDoc = docNo.includes('DEL-20250115') || docNo.includes('DEL-20250729') || clientName.includes('社内デモ') || (doc.title && doc.title.includes('社内デモ'));
+            if (target.status === 'demo' && isDemoDoc) {
+              let changed = false;
+              if (!target.docNumber || target.docNumber !== docNo) {
+                target.docNumber = docNo;
+                target.invoiceNumber = docNo;
+                target.docId = doc.id;
+                target.invoiceId = doc.id;
+                changed = true;
+              }
+              if (!target.clientName || target.clientName !== clientName) {
+                target.clientName = clientName;
+                target.customerName = clientName;
+                changed = true;
+              }
+              if (docDate && (!target.shipDate || target.shipDate !== docDate)) {
+                target.shipDate = docDate;
+                target.shippedDate = docDate;
+                changed = true;
+              }
+              if (itemEndUser && (!target.endUserName || target.endUserName !== itemEndUser)) {
+                target.endUserName = itemEndUser;
+                changed = true;
+              }
+              if (changed) {
+                modified = true;
+                updatedSerials.push(target);
+              }
+              return;
+            }
+
             // 本田塗料店(DEL-20261105-235)に割り当てられたN10935はメンテナンスから正常出荷へ移行
             if (sn === 'N10935' && docNo.includes('DEL-20261105-235')) {
               target.status = 'shipped';
