@@ -55,8 +55,14 @@ export function getDeletedExpenseIds() {
  * @param {string} id
  */
 
-// 過去のテスト用・架空シリアル番号の完全排除ブラックリスト
-const PURGED_TEST_SERIALS = ['N8001', 'N8002', 'N8003', 'N8004', 'N8005'];
+// 過去のテスト用・架空シリアル番号の完全排除ブラックリスト（入荷ロット未登録・ゾンビ復活防止用）
+const PURGED_TEST_SERIALS = [
+  'N8001', 'N8002', 'N8003', 'N8004', 'N8005',
+  'BAT-2610-001', 'BAT-2610-002', 'BAT-2610-003', 'BAT-2610-004', 'BAT-2610-005',
+  'BAT-2610-006', 'BAT-2610-007', 'BAT-2610-008', 'BAT-2610-009', 'BAT-2610-010',
+  'N4850870086',
+  'N2001', 'N2002'
+];
 
 /**
  * 削除済みシリアル番号セットを取得（台帳からの完全削除・ゾンビ復活防止用）
@@ -964,9 +970,7 @@ export const DEFAULT_INVENTORY_SERIALS = [
   { id: "sn_N36115", serialNumber: "N36115", inventoryId: "inv_2", itemName: "DP-MS", itemType: "spreader", status: "shipped", clientName: "奥村塗料株式会社", endUserName: "", shipDate: "2026-03-07", docNumber: "INV-20260307-01", docId: "doc_20260307_01", note: "DP-5000(N10417)同時出荷", inDate: "2026-02-01", unitCost: 40000, updatedAt: new Date().toISOString() },
   { id: "sn_N36116", serialNumber: "N36116", inventoryId: "inv_2", itemName: "DP-MS", itemType: "spreader", status: "shipped", clientName: "有限会社近藤", endUserName: "", shipDate: "2026-10-13", docNumber: "INV-20261013", docId: "doc_20261013", note: "単体出荷", inDate: "2026-02-01", unitCost: 40000, updatedAt: new Date().toISOString() },
   { id: "sn_N36707", serialNumber: "N36707", inventoryId: "inv_2", itemName: "DP-MS", itemType: "spreader", status: "shipped", clientName: "R・Cペイント販売株式会社", endUserName: "", shipDate: "2026-07-06", docNumber: "INV-20260706-01", docId: "doc_20260706_01", note: "DP-5000(N10419)同時出荷", inDate: "2026-02-01", unitCost: 40000, updatedAt: new Date().toISOString() },
-  { id: "sn_N36709", serialNumber: "N36709", inventoryId: "inv_2", itemName: "DP-MS", itemType: "spreader", status: "shipped", clientName: "株式会社宮田自動車商会 苫小牧営業所", endUserName: "", shipDate: "2026-10-01", docNumber: "INV-20261001-02", docId: "doc_20261001_02", note: "DP-5000(N10938)同時出荷", inDate: "2026-02-01", unitCost: 40000, updatedAt: new Date().toISOString() },
-  { id: "sn_N2001", serialNumber: "N2001", inventoryId: "inv_2", itemName: "DP-MS", itemType: "spreader", status: "in_stock", clientName: "", endUserName: "", shipDate: "", docNumber: "", docId: "", note: "在庫中", inDate: "2026-09-25", unitCost: 40000, updatedAt: new Date().toISOString() },
-  { id: "sn_N2002", serialNumber: "N2002", inventoryId: "inv_2", itemName: "DP-MS", itemType: "spreader", status: "in_stock", clientName: "", endUserName: "", shipDate: "", docNumber: "", docId: "", note: "在庫中", inDate: "2026-09-25", unitCost: 40000, updatedAt: new Date().toISOString() }
+  { id: "sn_N36709", serialNumber: "N36709", inventoryId: "inv_2", itemName: "DP-MS", itemType: "spreader", status: "shipped", clientName: "株式会社宮田自動車商会 苫小牧営業所", endUserName: "", shipDate: "2026-10-01", docNumber: "INV-20261001-02", docId: "doc_20261001_02", note: "DP-5000(N10938)同時出荷", inDate: "2026-02-01", unitCost: 40000, updatedAt: new Date().toISOString() }
 ];
 
 export const DEFAULT_INVENTORY_LOTS = [];
@@ -7906,7 +7910,12 @@ export function getAvailableSerialsByItem(inventoryIdOrName, options = {}) {
   const isTargetDp5000Body = targetKey === 'inv_dp5000_body' ||
     (targetUpper.includes('DP-5000') && !targetUpper.includes('MS') && !targetUpper.includes('ベーシックセット') && !targetUpper.includes('バッテリー') && !targetUpper.includes('充電器'));
   const isTargetChg = targetKey === 'inv_dp5000_chg' || targetUpper.includes('充電器') || targetUpper.includes('CHG');
-  const isTargetBat = !isTargetChg && (targetKey === 'inv_dp5000_bat' || targetUpper.includes('バッテリー') || targetUpper.includes('BAT'));
+
+  // バッテリー判定の細分化（DP-BT-CS, DP-BT-SK, 汎用バッテリー）
+  const isTargetBtCs = targetKey === 'inv_prod_1794209910003_eqxd' || targetKey === 'prod_1794209910003_eqxd' || targetUpper.includes('DP-BT-CS') || targetUpper.includes('BT-CS');
+  const isTargetBtSk = targetKey === 'inv_prod_1794209994433_ij47' || targetKey === 'prod_1794209994433_ij47' || targetUpper.includes('DP-BT-SK') || targetUpper.includes('BT-SK');
+  const isTargetBat = !isTargetChg && (isTargetBtCs || isTargetBtSk || targetKey === 'inv_dp5000_bat' || targetUpper.includes('バッテリー') || targetUpper.includes('BAT'));
+
   const isTargetMs = targetKey === 'inv_2' || targetUpper.includes('DP-MS') || targetUpper.includes('スプレッダー');
 
   return list.filter(s => {
@@ -7919,7 +7928,9 @@ export function getAvailableSerialsByItem(inventoryIdOrName, options = {}) {
     const snUpper = String(s.serialNumber || '').trim().toUpperCase();
 
     const isThisChg = (sId === 'inv_dp5000_chg' || s.itemType === 'charger' || sNameUpper.includes('充電器') || (s.targetSku && s.targetSku.includes('CHG')));
-    const isThisBat = !isThisChg && (sId === 'inv_dp5000_bat' || s.itemType === 'battery' || sNameUpper.includes('バッテリー') || s.isCompanyOnly);
+    const isThisBtCs = !isThisChg && (sId === 'inv_prod_1794209910003_eqxd' || s.productId === 'prod_1794209910003_eqxd' || s.sku === 'DP-BT-CS' || sNameUpper.includes('DP-BT-CS') || sNameUpper.includes('BT-CS') || snUpper.startsWith('BAT-') || snUpper.startsWith('N485'));
+    const isThisBtSk = !isThisChg && (sId === 'inv_prod_1794209994433_ij47' || s.productId === 'prod_1794209994433_ij47' || s.sku === 'DP-BT-SK' || sNameUpper.includes('DP-BT-SK') || sNameUpper.includes('BT-SK') || snUpper.startsWith('0031077'));
+    const isThisBat = isThisBtCs || isThisBtSk || (sId === 'inv_dp5000_bat' || s.itemType === 'battery' || sNameUpper.includes('バッテリー') || s.isCompanyOnly);
     const isThisMs = !isThisChg && !isThisBat && (sId === 'inv_2' || sNameUpper.includes('DP-MS') || sNameUpper.includes('スプレッダー'));
     const isThisDp5kBody = !isThisChg && !isThisBat && !isThisMs && (sId === 'inv_dp5000_body' || sNameUpper.includes('DP-5000') || /^N\s*\d{4,12}$/i.test(snUpper));
 
@@ -7940,10 +7951,22 @@ export function getAvailableSerialsByItem(inventoryIdOrName, options = {}) {
       return true;
     }
 
-    // 3. バッテリーの引当
+    // 3. バッテリーの引当（個別の型番指定がある場合は優先絞り込み）
+    if (isTargetBtCs) {
+      if (!isThisBtCs) return false;
+      if (s.status === 'bundled' || s.bundledWith) return false;
+      return true;
+    }
+    if (isTargetBtSk) {
+      if (!isThisBtSk) return false;
+      if (s.status === 'bundled' || s.bundledWith) return false;
+      return true;
+    }
     if (isTargetBat) {
       if (!isThisBat) return false;
       if (s.status === 'bundled' || s.bundledWith) return false;
+      return true;
+    }
       return true;
     }
 

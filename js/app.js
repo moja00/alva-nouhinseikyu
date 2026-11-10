@@ -7703,6 +7703,12 @@ function renderSerialsManagementTable() {
   const countBat = serialList.filter(s => (s.itemName || '').includes('バッテリー') || s.inventoryId === 'inv_dp5000_bat').length;
   const inStockBat = serialList.filter(s => ((s.itemName || '').includes('バッテリー') || s.inventoryId === 'inv_dp5000_bat') && s.status === 'in_stock').length;
 
+  const countBtCs = serialList.filter(s => (s.itemName || '').includes('DP-BT-CS') || s.sku === 'DP-BT-CS' || (s.itemId && s.itemId.includes('eqxd')) || (s.serialNumber || '').startsWith('BAT-') || (s.serialNumber || '').startsWith('N485')).length;
+  const inStockBtCs = serialList.filter(s => ((s.itemName || '').includes('DP-BT-CS') || s.sku === 'DP-BT-CS' || (s.itemId && s.itemId.includes('eqxd')) || (s.serialNumber || '').startsWith('BAT-') || (s.serialNumber || '').startsWith('N485')) && s.status === 'in_stock').length;
+
+  const countBtSk = serialList.filter(s => (s.itemName || '').includes('DP-BT-SK') || s.sku === 'DP-BT-SK' || (s.itemId && s.itemId.includes('ij47')) || (s.serialNumber || '').startsWith('0031077')).length;
+  const inStockBtSk = serialList.filter(s => ((s.itemName || '').includes('DP-BT-SK') || s.sku === 'DP-BT-SK' || (s.itemId && s.itemId.includes('ij47')) || (s.serialNumber || '').startsWith('0031077')) && s.status === 'in_stock').length;
+
   const countChg = serialList.filter(s => (s.itemName || '').includes('充電器') || s.inventoryId === 'inv_dp5000_chg' || s.itemId === 'inv_dp5000_chg' || s.itemType === 'charger').length;
   const inStockChg = serialList.filter(s => ((s.itemName || '').includes('充電器') || s.inventoryId === 'inv_dp5000_chg' || s.itemId === 'inv_dp5000_chg' || s.itemType === 'charger') && s.status === 'in_stock').length;
 
@@ -7720,7 +7726,8 @@ function renderSerialsManagementTable() {
       <div style="display: flex; flex-direction: column; gap: 2px;">
         <div>🔵 DP-5000: 在庫 <strong>${inStockDp5000}</strong> / 全${countDp5000}台</div>
         <div>🟡 DP-MS: 在庫 <strong>${inStockDpMs}</strong> / 全${countDpMs}台</div>
-        <div>⚪ バッテリー: 在庫 <strong>${inStockBat}</strong> / 全${countBat}台</div>
+        <div>🟣 DP-BT-CS: 在庫 <strong>${inStockBtCs}</strong> / 全${countBtCs}本</div>
+        <div>🟢 DP-BT-SK: 在庫 <strong>${inStockBtSk}</strong> / 全${countBtSk}本</div>
         <div>🔌 充電器: 在庫 <strong>${inStockChg}</strong> / 全${countChg}台</div>
       </div>
     `;
@@ -7739,8 +7746,14 @@ function renderSerialsManagementTable() {
       if (itemFilter === 'DP-MS') {
         return name.includes('DP-MS') || invId === 'inv_2';
       }
+      if (itemFilter === 'DP-BT-CS') {
+        return name.includes('DP-BT-CS') || s.sku === 'DP-BT-CS' || (s.itemId && s.itemId.includes('eqxd')) || (s.serialNumber || '').startsWith('BAT-') || (s.serialNumber || '').startsWith('N485');
+      }
+      if (itemFilter === 'DP-BT-SK') {
+        return name.includes('DP-BT-SK') || s.sku === 'DP-BT-SK' || (s.itemId && s.itemId.includes('ij47')) || (s.serialNumber || '').startsWith('0031077');
+      }
       if (itemFilter === 'PSE認証リチウムイオンバッテリー') {
-        return name.includes('バッテリー') || invId === 'inv_dp5000_bat' || s.isCompanyOnly;
+        return name.includes('バッテリー') || invId === 'inv_dp5000_bat' || s.sku === 'DP-BT-CS' || s.sku === 'DP-BT-SK' || s.isCompanyOnly;
       }
       if (itemFilter === 'PSE認証 専用急速充電器' || itemFilter === '急速充電器') {
         return name.includes('充電器') || invId === 'inv_dp5000_chg' || s.itemId === 'inv_dp5000_chg' || s.itemType === 'charger';
@@ -7802,8 +7815,10 @@ function renderSerialsManagementTable() {
 
   filtered.forEach(s => {
     const isChg = (s.itemName || '').includes('充電器') || s.inventoryId === 'inv_dp5000_chg' || s.itemId === 'inv_dp5000_chg' || s.itemType === 'charger';
-    const isBat = !isChg && ((s.itemName || '').includes('バッテリー') || s.inventoryId === 'inv_dp5000_bat' || s.isCompanyOnly);
-    const isMs = !isChg && ((s.itemName || '').includes('DP-MS') || s.inventoryId === 'inv_2');
+    const isBtCs = !isChg && ((s.itemName || '').includes('DP-BT-CS') || s.sku === 'DP-BT-CS' || (s.itemId && s.itemId.includes('eqxd')) || (s.serialNumber || '').startsWith('BAT-') || (s.serialNumber || '').startsWith('N485'));
+    const isBtSk = !isChg && ((s.itemName || '').includes('DP-BT-SK') || s.sku === 'DP-BT-SK' || (s.itemId && s.itemId.includes('ij47')) || (s.serialNumber || '').startsWith('0031077'));
+    const isBat = isBtCs || isBtSk || (!isChg && ((s.itemName || '').includes('バッテリー') || s.inventoryId === 'inv_dp5000_bat' || s.isCompanyOnly));
+    const isMs = !isChg && !isBat && ((s.itemName || '').includes('DP-MS') || s.inventoryId === 'inv_2');
     const isDp5k = !isChg && !isBat && !isMs;
 
     let itemBadge = '';
@@ -7840,6 +7855,20 @@ function renderSerialsManagementTable() {
       itemBadge = `
         <div style="display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;">
           <span class="badge" style="background: #fdf4ff; color: #86198f; font-weight: 700; padding: 2px 5px; border-radius: 4px; border: 1px solid #f0abfc; font-size: 0.72rem; white-space: nowrap;">🔌 急速充電器</span>
+          ${(s.status === 'bundled' || effectiveBundledWith) ? `<span class="badge" style="background:#fef3c7; color:#92400e; font-size:0.65rem; font-weight:700; padding:1px 4px; border-radius:3px; border: 1px solid #fde68a; white-space: nowrap;">📦 組込 [${escapeHtml(effectiveBundledWith)}]</span>` : ''}
+        </div>
+      `;
+    } else if (isBtCs) {
+      itemBadge = `
+        <div style="display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;">
+          <span class="badge" style="background: #f5f3ff; color: #6d28d9; font-weight: 700; padding: 2px 6px; border-radius: 4px; border: 1px solid #ddd6fe; font-size: 0.72rem; white-space: nowrap;">🔋 DP-BT-CS</span>
+          ${(s.status === 'bundled' || effectiveBundledWith) ? `<span class="badge" style="background:#fef3c7; color:#92400e; font-size:0.65rem; font-weight:700; padding:1px 4px; border-radius:3px; border: 1px solid #fde68a; white-space: nowrap;">📦 組込 [${escapeHtml(effectiveBundledWith)}]</span>` : ''}
+        </div>
+      `;
+    } else if (isBtSk) {
+      itemBadge = `
+        <div style="display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;">
+          <span class="badge" style="background: #ecfdf5; color: #047857; font-weight: 700; padding: 2px 6px; border-radius: 4px; border: 1px solid #a7f3d0; font-size: 0.72rem; white-space: nowrap;">🔋 DP-BT-SK</span>
           ${(s.status === 'bundled' || effectiveBundledWith) ? `<span class="badge" style="background:#fef3c7; color:#92400e; font-size:0.65rem; font-weight:700; padding:1px 4px; border-radius:3px; border: 1px solid #fde68a; white-space: nowrap;">📦 組込 [${escapeHtml(effectiveBundledWith)}]</span>` : ''}
         </div>
       `;
