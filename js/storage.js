@@ -954,7 +954,7 @@ export const DEFAULT_INVENTORY = [
 ];
 
 export const DEFAULT_INVENTORY_SERIALS = [
-  { id: "sn_N8460", serialNumber: "N8460", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "demo", clientName: "", endUserName: "デモ機", shipDate: "", docNumber: "", docId: "", note: "デモ機", inDate: "2025-07-01", unitCost: 152000, updatedAt: new Date().toISOString() },
+  { id: "sn_N8460", serialNumber: "N8460", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "demo", clientName: "社内デモ機", customerName: "社内デモ機", endUserName: "デモ機", shipDate: "2025-01-15", shippedDate: "2025-01-15", docNumber: "DEL-20250115-01", invoiceNumber: "DEL-20250115-01", docId: "doc_20250115_demo", invoiceId: "doc_20250115_demo", note: "デモ機", inDate: "2025-07-01", unitCost: 152000, isBundled: true, chargerSerial: "20250115-01", batterySerials: ["BAT-2601-001", "BAT-2601-002"], updatedAt: new Date().toISOString() },
   { id: "sn_N8461", serialNumber: "N8461", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "shipped", clientName: "株式会社朝日エージェンシー", endUserName: "", shipDate: "2025-07-03", docNumber: "INV-20250703-01", docId: "doc_20250703_01", note: "数量限定特別価格 (KET.IC.2B エレクトロパワー)", inDate: "2025-07-01", unitCost: 152000, updatedAt: new Date().toISOString() },
   { id: "sn_N8462", serialNumber: "N8462", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "demo", clientName: "", endUserName: "デモ機", shipDate: "", docNumber: "", docId: "", note: "デモ機", inDate: "2025-07-01", unitCost: 152000, updatedAt: new Date().toISOString() },
   { id: "sn_N8463", serialNumber: "N8463", inventoryId: "inv_dp5000_body", itemName: "DP-5000", itemType: "body", status: "shipped", clientName: "Ｙ’ｓボディー", endUserName: "NCRAFT 様", shipDate: "2025-12-22", docNumber: "INV-20251222-01", docId: "doc_20251222_01", note: "NCRAFT様分 特別価格", inDate: "2025-07-01", unitCost: 152000, updatedAt: new Date().toISOString() },
@@ -1321,6 +1321,7 @@ export function sanitizeDocSerialsConsistency(doc) {
   const docNo = String(doc.docNumber || doc.id || '').trim();
   const clientName = doc.client ? (doc.client.name || '') : (doc.clientName || '');
   const isHonda = docNo.includes('DEL-20261105-235') || doc.id === 'doc_1793843756482_m0tc1' || clientName.includes('本田塗料');
+  const isDemoDoc = docNo.includes('DEL-20250115') || doc.id === 'doc_20250115_demo' || clientName.includes('社内デモ') || (doc.title && doc.title.includes('社内デモ'));
 
   const items = (Array.isArray(doc.items) && doc.items.length > 0)
     ? doc.items
@@ -1388,8 +1389,8 @@ export function sanitizeDocSerialsConsistency(doc) {
       }
     }
 
-    // ③ 全伝票共通：社内デモ機(N8460)が通常伝票に誤混入していた場合の自動消去
-    if (!isHonda && it.assignedSerials && Array.isArray(it.assignedSerials)) {
+    // ③ 全伝票共通：社内デモ機(N8460)が通常伝票（社内デモ機配備伝票以外）に誤混入していた場合の自動消去
+    if (!isHonda && !isDemoDoc && it.assignedSerials && Array.isArray(it.assignedSerials)) {
       const hadDemo = it.assignedSerials.some(a => String(a.serialNumber || '').trim().toUpperCase() === 'N8460');
       if (hadDemo) {
         it.assignedSerials = it.assignedSerials.filter(a => String(a.serialNumber || '').trim().toUpperCase() !== 'N8460');
