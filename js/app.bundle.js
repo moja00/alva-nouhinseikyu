@@ -11258,8 +11258,6 @@ function getAvailableSerialsByItem(inventoryIdOrName, options = {}) {
       if (s.status === 'bundled' || s.bundledWith) return false;
       return true;
     }
-      return true;
-    }
 
     // 4. スプレッダーの引当
     if (isTargetMs) {
