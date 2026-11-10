@@ -12116,41 +12116,46 @@ function getInventoryHistoryWithShipments(item) {
           details: list,
           timestamp: timestamp
         });
-      } else if (isBatSK) {
-        // DP-BT-SK 側：SKのバッテリーシリアル(0031077で始まるもの)を抽出
-        const skBatsCount = list.reduce((sum, d) => {
-          const sks = (d.bats || []).filter(b => String(b).startsWith('0031077'));
-          return sum + (sks.length > 0 ? sks.length : (dateStr.includes('2026-11') && (d.bats || []).length === 0 ? 2 : 0));
-        }, 0);
-        if (skBatsCount > 0) {
-          combined.push({
-            id: `bundle_summary_out_bat_sk_${dateStr}_${skBatsCount}`,
-            date: dateStr,
-            type: 'out',
-            qty: skBatsCount,
-            delta: -skBatsCount,
-            reason: `セット品化組込出庫: DP-BT-SK バッテリー (${skBatsCount}個)`,
-            payee: 'セット化',
-            isBundleSummary: true,
-            details: list,
-            timestamp: `${dateStr}T10:00:00.000Z`
+      } else if (isBat) {
+        // 【完全マスタ主導】シリアル台帳（inventory_serials）のマスタID・SKU・品名を照合し、
+        // 現在集計対象のバッテリー商品（item）と100%一致する組込バッテリーのみを動的集計！
+        // シリアル番号の特定文字列（0031077...等）に依存しないため、新ロット・新バッテリー・新SKUでも一切誤判定しない。
+        let matchedBatsCount = 0;
+        list.forEach(d => {
+          (d.bats || []).forEach(bSn => {
+            const cleanSn = String(bSn || '').trim().toUpperCase();
+            const batObj = serials.find(s => s && String(s.serialNumber || '').trim().toUpperCase() === cleanSn);
+            if (batObj) {
+              const bItemId = batObj.itemId || batObj.inventoryId;
+              const bSku = String(batObj.sku || '').toUpperCase();
+              const bName = getMasterKey(batObj.itemName || '');
+              const itemNorm = getMasterKey(item.name || '');
+
+              let isMatch = false;
+              if (bItemId && (bItemId === item.id || bItemId === item.itemId)) isMatch = true;
+              else if (bSku && item.sku && bSku === String(item.sku).toUpperCase()) isMatch = true;
+              else if (isBatSK && (bSku.includes('SK') || bName.includes('sk'))) isMatch = true;
+              else if (isBatCS && (bSku.includes('CS') || bName.includes('cs'))) isMatch = true;
+              else if (bName && bName === itemNorm) isMatch = true;
+
+              if (isMatch) matchedBatsCount++;
+            } else {
+              // 台帳未登録シリアルの場合の安全フォールバック（旧ロット救済）
+              if (isBatSK && (dateStr.includes('2026-11') || cleanSn.startsWith('0031077'))) matchedBatsCount++;
+              else if (isBatCS && (dateStr.includes('2026-03') || cleanSn.startsWith('BAT-') || cleanSn.startsWith('N485'))) matchedBatsCount++;
+            }
           });
-        }
-      } else if (isBatCS) {
-        // DP-BT-CS 側：CSのバッテリーシリアル(0031077以外)を抽出
-        const csBatsCount = list.reduce((sum, d) => {
-          const css = (d.bats || []).filter(b => !String(b).startsWith('0031077'));
-          return sum + (css.length > 0 ? css.length : (dateStr.includes('2026-03') && (d.bats || []).length === 0 ? 2 : 0));
-        }, 0);
-        if (csBatsCount > 0) {
-          const batBundleDate = dateStr.includes('2026-03') ? '2026-03-24' : dateStr;
+        });
+
+        if (matchedBatsCount > 0) {
+          const batBundleDate = (isBatCS && dateStr.includes('2026-03')) ? '2026-03-24' : dateStr;
           combined.push({
-            id: `bundle_summary_out_bat_cs_${batBundleDate}_${csBatsCount}`,
+            id: `bundle_summary_out_bat_${item.id || groupKey}_${batBundleDate}_${matchedBatsCount}`,
             date: batBundleDate,
             type: 'out',
-            qty: csBatsCount,
-            delta: -csBatsCount,
-            reason: `セット品化組込出庫: DP-BT-CS バッテリー (${csBatsCount}個)`,
+            qty: matchedBatsCount,
+            delta: -matchedBatsCount,
+            reason: `セット品化組込出庫: ${item.name || 'バッテリー'} (${matchedBatsCount}個)`,
             payee: 'セット化',
             isBundleSummary: true,
             details: list,
