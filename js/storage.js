@@ -8273,6 +8273,9 @@ export function assembleDP5000Bundle(bodySerialNumber, batterySerialNumbers, cha
 
     // 在庫マスタとシリアルの数値を完全同期
     syncInventoryStockFromSerials();
+    if (typeof syncInventoryStockFromIssuedDocs === 'function') {
+      try { syncInventoryStockFromIssuedDocs(); } catch (_) { }
+    }
 
     console.log(`【セット品化完了】本体: ${cleanBodySn}, バッテリー: ${cleanBatSns.join(', ')}, 充電器: ${cleanChgSn || '-1個'}`);
     return {
@@ -8474,7 +8477,13 @@ export function disassembleDP5000Bundle(bodySerialNumber) {
       return { success: false, message: `指定された本体(S/N: ${cleanBodySn})はセット品化されていません。` };
     }
 
+    // 【安全ガード】既に出荷済みの本体セットは、過去の伝票や納品履歴の整合性を保つため解除不可
+    if (bodySerial.status === 'shipped') {
+      return { success: false, message: `DP-5000(S/N: ${cleanBodySn})は既に出荷済み（納品書に紐付け）のため、セット品化を解除できません。` };
+    }
+
     const batSns = Array.isArray(bodySerial.batterySerials) ? bodySerial.batterySerials : [];
+    const nowIso = new Date().toISOString();
 
     // 1. バッテリーを在庫中(in_stock)に戻す
     batSns.forEach(batSn => {
@@ -8483,82 +8492,12 @@ export function disassembleDP5000Bundle(bodySerialNumber) {
         bat.status = 'in_stock';
         bat.bundledWith = '';
         bat.bundledAt = null;
-        bat.note = (bat.note || '').replace(/\s*\[DP-5000\([^)]+\)セット組込\]/g, '').trim();
-        bat.updatedAt = new Date().toISOString();
+        bat.note = (bat.note || '').replace(/\s*\[DP-5000\([^)]+\)セット組込\]/g, '').replace(/\s*\[セット組込済\s*\(本体:[^)]+\)\]/g, '').trim();
+        bat.updatedAt = nowIso;
       }
     });
 
-    // 2. 急速充電器の在庫を +1 戻す
-    const invList = getInventoryList();
-    const chgItem = invList.find(it => it.id === 'inv_dp5000_chg' || (it.name && it.name.includes('急速充電器')));
-    const bundleItem = invList.find(it => it.id === 'inv_1' || (it.name && it.name.includes('ベーシックセット')));
-    const bodyItem = invList.find(it => it.id === 'inv_dp5000_body' || (it.name && it.name.includes('本体') && it.type !== 'bundle'));
-    const batItem = invList.find(it => it.id === 'inv_dp5000_bat' || (it.name && it.name.includes('バッテリー') && !it.name.includes('セット') && it.type !== 'bundle'));
-
-    const todayStr = new Date().toISOString().split('T')[0];
-    const nowIso = new Date().toISOString();
-
-    if (chgItem) {
-      chgItem.currentStock = Number(chgItem.currentStock || 0) + 1;
-      if (!Array.isArray(chgItem.history)) chgItem.history = [];
-      chgItem.history.unshift({
-        id: 'log_unbundle_chg_' + Date.now(),
-        date: todayStr,
-        type: 'in',
-        qty: 1,
-        delta: 1,
-        reason: `DP-5000(S/N: ${cleanBodySn})セット品化解除に伴う急速充電器の在庫戻し`,
-        currentStock: chgItem.currentStock,
-        timestamp: nowIso
-      });
-    }
-
-    if (bundleItem) {
-      bundleItem.currentStock = Math.max(0, Number(bundleItem.currentStock || 0) - 1);
-      if (!Array.isArray(bundleItem.history)) bundleItem.history = [];
-      bundleItem.history.unshift({
-        id: 'log_unbundle_bundle_' + Date.now(),
-        date: todayStr,
-        type: 'out',
-        qty: 1,
-        delta: -1,
-        reason: `DP-5000(S/N: ${cleanBodySn})セット品化解除に伴う完成品セット減算`,
-        currentStock: bundleItem.currentStock,
-        timestamp: nowIso
-      });
-    }
-
-    if (bodyItem) {
-      bodyItem.currentStock = Number(bodyItem.currentStock || 0) + 1;
-      if (!Array.isArray(bodyItem.history)) bodyItem.history = [];
-      bodyItem.history.unshift({
-        id: 'log_unbundle_body_' + Date.now(),
-        date: todayStr,
-        type: 'in',
-        qty: 1,
-        delta: 1,
-        reason: `DP-5000(S/N: ${cleanBodySn})セット品化解除に伴う本体在庫戻し`,
-        currentStock: bodyItem.currentStock,
-        timestamp: nowIso
-      });
-    }
-
-    if (batItem) {
-      batItem.currentStock = Number(batItem.currentStock || 0) + 2;
-      if (!Array.isArray(batItem.history)) batItem.history = [];
-      batItem.history.unshift({
-        id: 'log_unbundle_bat_' + Date.now(),
-        date: todayStr,
-        type: 'in',
-        qty: 2,
-        delta: 2,
-        reason: `DP-5000(S/N: ${cleanBodySn})セット品化解除に伴うバッテリー在庫戻し`,
-        currentStock: batItem.currentStock,
-        timestamp: nowIso
-      });
-    }
-
-    // 3. 本体のセット品化フラグを解除し、明示的に「DP-5000 本体」として再定義
+    // 2. 急速充電器の紐付け解除と在庫戻し
     if (bodySerial.chargerSerial) {
       const chgObj = serialList.find(s => s && String(s.serialNumber).trim().toUpperCase() === String(bodySerial.chargerSerial).trim().toUpperCase());
       if (chgObj && chgObj.bundledWith === cleanBodySn) {
@@ -8568,6 +8507,8 @@ export function disassembleDP5000Bundle(bodySerialNumber) {
         chgObj.updatedAt = nowIso;
       }
     }
+
+    // 3. 本体のセット品化フラグを解除し、「DP-5000 本体」に戻す
     bodySerial.isBundled = false;
     bodySerial.bundleName = '';
     bodySerial.itemId = 'inv_dp5000_body';
@@ -8578,20 +8519,25 @@ export function disassembleDP5000Bundle(bodySerialNumber) {
     bodySerial.chargerDeducted = false;
     bodySerial.bundledAt = null;
     bodySerial.note = (bodySerial.note || '').replace(/\s*\[セット品化済:[^\]]+\]/g, '').replace(/\s*\[セット構成:[^\]]+\]/g, '').trim();
-    bodySerial.updatedAt = new Date().toISOString();
+    bodySerial.updatedAt = nowIso;
 
-    // 4. 保存と同期
+    // 4. 保存と全体同期
+    const invList = getInventoryList();
     localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(invList));
     saveServerInventory(invList).catch(() => { });
 
     localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(serialList));
     saveServerInventorySerials(serialList).catch(() => { });
 
+    // 在庫マスタ数値をシリアル台帳・時系列集計から完全同期
     syncInventoryStockFromSerials();
+    if (typeof syncInventoryStockFromIssuedDocs === 'function') {
+      try { syncInventoryStockFromIssuedDocs(); } catch (_) { }
+    }
 
     return {
       success: true,
-      message: `DP-5000(S/N: ${cleanBodySn})のセット品化を解除しました。バッテリー2個と急速充電器1個を通常在庫に戻しました。`
+      message: `DP-5000(S/N: ${cleanBodySn})のセット品化を解除しました。本体1台、バッテリー${batSns.length}個、急速充電器1台を通常在庫に戻しました。`
     };
   } catch (e) {
     console.error('Failed to disassemble DP-5000 bundle:', e);
@@ -8737,7 +8683,8 @@ export function getInventoryHistoryWithShipments(item) {
     if (isBat && (r.includes('国内仕入') || r.includes('在庫戻し') || r.includes('自動出庫') || r.includes('確定発行取消') || r.includes('在庫復元'))) return;
 
     // セット品化・セット品化解除のログは動的集約表示するためbaseLogsからは除外
-    if (r.includes('セット品化組立完了') || r.includes('セット品化組込出庫') || r.includes('セット品化解除')) return;
+    const hidStr = String(h.id || '');
+    if (hidStr.startsWith('log_bundle_') || hidStr.startsWith('log_unbundle_') || r.includes('セット品化') || r.includes('セット品化解除') || r.includes('在庫戻し')) return;
 
     const delta = h.delta !== undefined ? Number(h.delta) : (h.type === 'out' ? -Number(h.qty || 0) : Number(h.qty || 0));
     const hid = h.id || `${h.date}_${h.type}_${h.qty}_${r}`;
@@ -8844,7 +8791,7 @@ export function getInventoryHistoryWithShipments(item) {
       const isBodySn = (bSn.startsWith('N84') || bSn.startsWith('N10') || bSn.startsWith('N11')) && bSn.length <= 6;
       if (!isBodySn) return;
 
-      const dateStr = s.inDate || s.arrivalDate || (bSn.startsWith('N109') ? bodyArrivalDate : '2026-11-04');
+      const dateStr = (s.bundledAt ? s.bundledAt.split('T')[0] : (s.inDate || s.arrivalDate || (bSn.startsWith('N109') ? bodyArrivalDate : '2026-11-04')));
       if (!postAssembledMapByDate.has(dateStr)) postAssembledMapByDate.set(dateStr, []);
       postAssembledMapByDate.get(dateStr).push({
         sn: bSn,
@@ -8881,37 +8828,47 @@ export function getInventoryHistoryWithShipments(item) {
           details: list,
           timestamp: timestamp
         });
-      } else if (isBatSK && dateStr.includes('2026-11')) {
-        // DP-BT-SK 側：最新ロットセット品への組込出庫 (N11665, N11669 各2本 = 4本)
-        const totalBats = list.reduce((sum, d) => sum + (d.bats.length || 2), 0);
-        combined.push({
-          id: `bundle_summary_out_bat_sk_${dateStr}_${totalBats}`,
-          date: dateStr,
-          type: 'out',
-          qty: totalBats,
-          delta: -totalBats,
-          reason: `セット品化組込出庫: DP-BT-SK バッテリー (${totalBats}個)`,
-          payee: 'セット化',
-          isBundleSummary: true,
-          details: list,
-          timestamp: `${dateStr}T10:00:00.000Z`
-        });
-      } else if (isBatCS && dateStr.includes('2026-03')) {
-        // DP-BT-CS 側：過去ロットセット品への組込出庫 (N109xx 10台 = 20本)
-        const batBundleDate = '2026-03-24';
-        const totalBats = list.reduce((sum, d) => sum + (d.bats.length || 2), 0);
-        combined.push({
-          id: `bundle_summary_out_bat_cs_${batBundleDate}_${totalBats}`,
-          date: batBundleDate,
-          type: 'out',
-          qty: totalBats,
-          delta: -totalBats,
-          reason: `セット品化組込出庫: DP-BT-CS バッテリー (${totalBats}個)`,
-          payee: 'セット化',
-          isBundleSummary: true,
-          details: list,
-          timestamp: `${batBundleDate}T10:00:00.000Z`
-        });
+      } else if (isBatSK) {
+        // DP-BT-SK 側：SKのバッテリーシリアル(0031077で始まるもの)を抽出
+        const skBatsCount = list.reduce((sum, d) => {
+          const sks = (d.bats || []).filter(b => String(b).startsWith('0031077'));
+          return sum + (sks.length > 0 ? sks.length : (dateStr.includes('2026-11') && (d.bats || []).length === 0 ? 2 : 0));
+        }, 0);
+        if (skBatsCount > 0) {
+          combined.push({
+            id: `bundle_summary_out_bat_sk_${dateStr}_${skBatsCount}`,
+            date: dateStr,
+            type: 'out',
+            qty: skBatsCount,
+            delta: -skBatsCount,
+            reason: `セット品化組込出庫: DP-BT-SK バッテリー (${skBatsCount}個)`,
+            payee: 'セット化',
+            isBundleSummary: true,
+            details: list,
+            timestamp: `${dateStr}T10:00:00.000Z`
+          });
+        }
+      } else if (isBatCS) {
+        // DP-BT-CS 側：CSのバッテリーシリアル(0031077以外)を抽出
+        const csBatsCount = list.reduce((sum, d) => {
+          const css = (d.bats || []).filter(b => !String(b).startsWith('0031077'));
+          return sum + (css.length > 0 ? css.length : (dateStr.includes('2026-03') && (d.bats || []).length === 0 ? 2 : 0));
+        }, 0);
+        if (csBatsCount > 0) {
+          const batBundleDate = dateStr.includes('2026-03') ? '2026-03-24' : dateStr;
+          combined.push({
+            id: `bundle_summary_out_bat_cs_${batBundleDate}_${csBatsCount}`,
+            date: batBundleDate,
+            type: 'out',
+            qty: csBatsCount,
+            delta: -csBatsCount,
+            reason: `セット品化組込出庫: DP-BT-CS バッテリー (${csBatsCount}個)`,
+            payee: 'セット化',
+            isBundleSummary: true,
+            details: list,
+            timestamp: `${batBundleDate}T10:00:00.000Z`
+          });
+        }
       } else if (isChg) {
         // 充電器側：セット品への組込出庫
         const chgDate = dateStr.includes('2026-03') ? '2026-03-24' : dateStr;

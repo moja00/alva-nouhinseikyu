@@ -7995,12 +7995,12 @@ function renderSerialsManagementTable() {
         <!-- 操作 -->
         <td style="padding: 6px 4px; text-align: center;">
           <div style="display: flex; gap: 2px; justify-content: center; align-items: center;">
-            ${(isDp5k && s.isBundled) ? `
-              <button type="button" class="btn btn-xs" onclick="window.disassembleBundleConfirm('${escapeHtml(s.serialNumber)}')" title="セット品化を解除" style="background:#fee2e2; color:#991b1b; border: 1px solid #fca5a5; font-size: 0.65rem; font-weight: 700; padding: 1px 3px;">
+            ${(isDp5k && s.isBundled && s.status !== 'shipped') ? `
+              <button type="button" class="btn btn-xs" onclick="window.disassembleBundleConfirm('${escapeHtml(s.serialNumber)}')" title="セット品化を解除（本体・バッテリー・充電器を通常在庫に戻す）" style="background:#fee2e2; color:#991b1b; border: 1px solid #fca5a5; font-size: 0.65rem; font-weight: 700; padding: 1px 3px;">
                 解除
               </button>
-            ` : (isDp5k && !s.isBundled ? `
-              <button type="button" class="btn btn-xs" onclick="window.openBundleAssemblyModal('inv_dp5000_body', '${escapeHtml(s.serialNumber)}')" title="${s.status === 'shipped' ? '出荷済み本体をセット品化（バッテリー2個と紐付け）' : 'セット品化'}" style="background:#e0e7ff; color:#3730a3; border: 1px solid #c7d2fe; font-size: 0.65rem; font-weight: 700; padding: 1px 3px;">
+            ` : (isDp5k && !s.isBundled && s.status !== 'shipped' ? `
+              <button type="button" class="btn btn-xs" onclick="window.openBundleAssemblyModal('inv_dp5000_body', '${escapeHtml(s.serialNumber)}')" title="本体・バッテリー・充電器をセット品化" style="background:#e0e7ff; color:#3730a3; border: 1px solid #c7d2fe; font-size: 0.65rem; font-weight: 700; padding: 1px 3px;">
                 📦セット
               </button>
             ` : '')}
@@ -8664,7 +8664,7 @@ window.handleBundleAssemblyExecute = handleBundleAssemblyExecute;
 
 function disassembleBundleConfirm(bodySerialNumber) {
   if (!bodySerialNumber) return;
-  if (!confirm(`DP-5000本体「${bodySerialNumber}」のセット品化を解除しますか？\n\n・組み込まれていたリチウムイオンバッテリー2個が在庫中に戻ります\n・急速充電器の現在庫数が 1 個戻ります`)) {
+  if (!confirm(`DP-5000本体「${bodySerialNumber}」のセット品化を解除しますか？\n\n・本体 1台が単品在庫（通常在庫）に戻ります\n・組み込まれていたリチウムイオンバッテリー 2個が在庫に戻ります\n・専用急速充電器 1台が在庫に戻ります\n・完成品セット（ベーシックセット）の在庫が 1 減算されます`)) {
     return;
   }
 
