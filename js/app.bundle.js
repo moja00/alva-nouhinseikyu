@@ -20431,6 +20431,7 @@ window.exportSerialsToCsv = exportSerialsToCsv;
  * シリアル単一登録/編集モーダルを開く
  */
 function openSerialSingleModal(snToEdit = '') {
+  console.log('【シリアル編集モーダル】表示開始', { snToEdit });
   const modal = document.getElementById('serialSingleRegisterModal');
   if (!modal) return;
 
@@ -20501,8 +20502,10 @@ function openSerialSingleModal(snToEdit = '') {
         snInput.readOnly = true;
       }
       const isChg = (item.itemName || '').includes('充電器') || item.inventoryId === 'inv_dp5000_chg' || item.itemId === 'inv_dp5000_chg' || item.itemType === 'charger';
-      const isMs = (item.itemName || '').includes('DP-MS') || item.inventoryId === 'inv_2';
-      const isBat = (item.itemName || '').includes('バッテリー') || item.isCompanyOnly;
+      const isBtCs = !isChg && ((item.itemName || '').includes('DP-BT-CS') || item.sku === 'DP-BT-CS' || (item.itemId && item.itemId.includes('eqxd')) || (item.inventoryId && item.inventoryId.includes('eqxd')) || (item.serialNumber || '').startsWith('BAT-') || (item.serialNumber || '').startsWith('N485'));
+      const isBtSk = !isChg && ((item.itemName || '').includes('DP-BT-SK') || item.sku === 'DP-BT-SK' || (item.itemId && item.itemId.includes('ij47')) || (item.inventoryId && item.inventoryId.includes('ij47')) || (item.serialNumber || '').startsWith('0031077'));
+      const isBat = isBtCs || isBtSk || (!isChg && ((item.itemName || '').includes('バッテリー') || item.inventoryId === 'inv_dp5000_bat' || item.isCompanyOnly));
+      const isMs = !isChg && !isBat && ((item.itemName || '').includes('DP-MS') || item.inventoryId === 'inv_2');
       const isDp5k = !isChg && !isMs && !isBat;
 
       if (itemSelect) {
@@ -20656,6 +20659,7 @@ function openSerialSingleModal(snToEdit = '') {
 
   modal.classList.add('active');
   modal.style.display = 'flex';
+  console.log('【シリアル編集モーダル】表示完了', { snToEdit });
 }
 window.openSerialSingleModal = openSerialSingleModal;
 
@@ -20681,6 +20685,8 @@ function saveSerialSingleModal() {
   const endUserName = (document.getElementById('inputModalSerialEndUser')?.value || '').trim();
   const docNumber = (document.getElementById('inputModalSerialDocNo')?.value || '').trim();
   const note = (document.getElementById('inputModalSerialNote')?.value || '').trim();
+
+  console.log('【シリアル単一保存】実行開始', { editId, rawSn, itemType, status, shipDate, clientName, endUserName, docNumber, note });
 
   // バリデーション: シリアル番号の入力チェック（N番号、CHG/BAT番号、ロット番号、数値等に対応）
   const normSn = rawSn.replace(/\s+/g, '').toUpperCase();
@@ -20751,6 +20757,7 @@ function saveSerialSingleModal() {
   renderSerialsManagementTable();
   if (typeof renderInventoryTable === 'function') renderInventoryTable();
   if (typeof renderInventorySerialTable === 'function') renderInventorySerialTable();
+  console.log('【シリアル単一保存】完了', serialData);
   showToast(`シリアル番号「${normSn}」を保存し、在庫マスタおよびセット構成と連動しました！`, 'success');
 }
 window.saveSerialSingleModal = saveSerialSingleModal;
@@ -29995,6 +30002,14 @@ document.addEventListener('click', (e) => {
     e.preventDefault();
     console.log("【月次締め実行】クリック (イベント委譲)");
     handleLockMonth();
+  } else if (btn.id === 'btnSaveSerialSingleModal') {
+    e.preventDefault();
+    console.log("【シリアル単一保存】クリック (イベント委譲)");
+    saveSerialSingleModal();
+  } else if (btn.id === 'btnCancelSerialSingleModal' || btn.id === 'btnCloseSerialSingleModal') {
+    e.preventDefault();
+    console.log("【シリアル単一モーダル閉じる】クリック (イベント委譲)");
+    closeSerialSingleModal();
   }
 });
 
