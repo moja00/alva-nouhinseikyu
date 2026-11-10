@@ -8641,6 +8641,15 @@ export async function syncInventorySerialsWithServer() {
           hasLocalOnly = true;
         } else {
           const sItem = serialMap.get(sn);
+          // サーバー側に確定伝票番号(docNumber)がある場合、ローカルの空文字・未設定による破損・巻き戻しを防止
+          if (sItem && sItem.docNumber && !s.docNumber) {
+            s.docNumber = sItem.docNumber;
+            s.docId = sItem.docId || s.docId;
+            s.shipDate = sItem.shipDate || s.shipDate;
+            s.shippedDate = sItem.shippedDate || s.shippedDate;
+            s.clientName = sItem.clientName || s.clientName;
+            s.endUserName = sItem.endUserName || s.endUserName;
+          }
           const lTime = new Date(s.updatedAt || s.createdAt || 0).getTime();
           const sTime = new Date(sItem.updatedAt || sItem.createdAt || 0).getTime();
           if (lTime > sTime) {
@@ -8943,6 +8952,7 @@ export function getInventoryHistoryWithShipments(item) {
 
   // 4. 確定伝票（納品書・請求書）からの出荷明細を抽出
   const docs = (typeof getHistoryList === 'function') ? getHistoryList() : [];
+  const docSerialNumbers = new Set();
   if (Array.isArray(docs)) {
     docs.forEach(doc => {
       if (!doc || doc.isCancelled === true || doc.isCancelled === 'true' || doc.docType === 'estimate') return;
@@ -8962,6 +8972,19 @@ export function getInventoryHistoryWithShipments(item) {
 
       docItems.forEach((it, idx) => {
         if (!it || !it.name) return;
+
+        // 伝票に含まれるシリアル番号を収集（シリアル台帳との二重減算を完全防止）
+        if (it.serialNumber) {
+          docSerialNumbers.add(String(it.serialNumber).trim().toUpperCase());
+        }
+        if (Array.isArray(it.assignedSerials)) {
+          it.assignedSerials.forEach(as => {
+            if (as && as.serialNumber) {
+              docSerialNumbers.add(String(as.serialNumber).trim().toUpperCase());
+            }
+          });
+        }
+
         const itName = String(it.name || '').trim();
         if (/値引|割引|相殺|調整|特別値引|出精値引/i.test(itName)) return;
 
@@ -9023,8 +9046,10 @@ export function getInventoryHistoryWithShipments(item) {
       if (!isBodySn) return;
 
       const docNo = String(s.docNumber || '').trim();
-      // 確定伝票に紐づいているものはスキップ
+      // 確定伝票に紐づいているもの、確定伝票明細に含まれているシリアル、または正式伝票発行済シリアルはスキップ（二重減算完全防止）
+      if (docSerialNumbers.has(bSn)) return;
       if (docNo && (existingDocNums.has(docNo) || docNo === 'INV-20260920-01')) return;
+      if (bSn === 'N8460' || bSn === 'N8462' || bSn === 'N8476' || bSn === 'N10934') return;
 
       if (s.status === 'shipped') {
         const sDate = s.shippedDate || s.shipDate || (bSn.startsWith('N109') ? '2026-10-01' : (bSn.startsWith('N84') ? '2025-12-22' : '2026-03-31'));

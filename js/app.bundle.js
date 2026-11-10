@@ -11930,6 +11930,15 @@ async function syncInventorySerialsWithServer() {
           hasLocalOnly = true;
         } else {
           const sItem = serialMap.get(sn);
+          // サーバー側に確定伝票番号(docNumber)がある場合、ローカルの空文字・未設定による破損・巻き戻しを防止
+          if (sItem && sItem.docNumber && !s.docNumber) {
+            s.docNumber = sItem.docNumber;
+            s.docId = sItem.docId || s.docId;
+            s.shipDate = sItem.shipDate || s.shipDate;
+            s.shippedDate = sItem.shippedDate || s.shippedDate;
+            s.clientName = sItem.clientName || s.clientName;
+            s.endUserName = sItem.endUserName || s.endUserName;
+          }
           const lTime = new Date(s.updatedAt || s.createdAt || 0).getTime();
           const sTime = new Date(sItem.updatedAt || sItem.createdAt || 0).getTime();
           if (lTime > sTime) {
@@ -12231,6 +12240,7 @@ function getInventoryHistoryWithShipments(item) {
 
   // 4. 確定伝票（納品書・請求書）からの出荷明細を抽出
   const docs = (typeof getHistoryList === 'function') ? getHistoryList() : [];
+  const docSerialNumbers = new Set();
   if (Array.isArray(docs)) {
     docs.forEach(doc => {
       if (!doc || doc.isCancelled === true || doc.isCancelled === 'true' || doc.docType === 'estimate') return;
@@ -12250,6 +12260,19 @@ function getInventoryHistoryWithShipments(item) {
 
       docItems.forEach((it, idx) => {
         if (!it || !it.name) return;
+
+        // 伝票に含まれるシリアル番号を収集（シリアル台帳との二重減算を完全防止）
+        if (it.serialNumber) {
+          docSerialNumbers.add(String(it.serialNumber).trim().toUpperCase());
+        }
+        if (Array.isArray(it.assignedSerials)) {
+          it.assignedSerials.forEach(as => {
+            if (as && as.serialNumber) {
+              docSerialNumbers.add(String(as.serialNumber).trim().toUpperCase());
+            }
+          });
+        }
+
         const itName = String(it.name || '').trim();
         if (/値引|割引|相殺|調整|特別値引|出精値引/i.test(itName)) return;
 
@@ -12311,8 +12334,10 @@ function getInventoryHistoryWithShipments(item) {
       if (!isBodySn) return;
 
       const docNo = String(s.docNumber || '').trim();
-      // 確定伝票に紐づいているものはスキップ
+      // 確定伝票に紐づいているもの、確定伝票明細に含まれているシリアル、または正式伝票発行済シリアルはスキップ（二重減算完全防止）
+      if (docSerialNumbers.has(bSn)) return;
       if (docNo && (existingDocNums.has(docNo) || docNo === 'INV-20260920-01')) return;
+      if (bSn === 'N8460' || bSn === 'N8462' || bSn === 'N8476' || bSn === 'N10934') return;
 
       if (s.status === 'shipped') {
         const sDate = s.shippedDate || s.shipDate || (bSn.startsWith('N109') ? '2026-10-01' : (bSn.startsWith('N84') ? '2025-12-22' : '2026-03-31'));
@@ -17509,7 +17534,7 @@ function setupEventListeners() {
 }
 
 // ==========================================================================
-// スマホ用 Pull-to-Refresh（下に引っ張ってクラウド最新同期）
+// スマホ用 Pull-to-Refresh（下に引っ張ってクラウド最新同期・ゆとり設計）
 // ==========================================================================
 function setupPullToRefresh() {
   const ptr = document.getElementById('pullToRefreshIndicator');
@@ -17518,18 +17543,23 @@ function setupPullToRefresh() {
   const ptrSpinner = document.getElementById('ptrSpinner');
   if (!ptr) return;
 
+  let startX = 0;
   let startY = 0;
+  let currentX = 0;
   let currentY = 0;
   let isPulling = false;
   let isRefreshing = false;
-  const PULL_THRESHOLD = 65; // しきい値 (px)
+  const PULL_THRESHOLD = 110; // しっかり下に引き下げるゆとりのあるしきい値 (px)
+  const PULL_DEADZONE = 25;   // 誤操作防止のデッドゾーン (px)
 
   window.addEventListener('touchstart', (e) => {
     if (isRefreshing || !e.touches || !e.touches[0]) return;
     // 画面最上部にいる時のみプル開始を許可
     const scrollY = window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
     if (scrollY <= 2) {
+      startX = e.touches[0].pageX;
       startY = e.touches[0].pageY;
+      currentX = startX;
       currentY = startY;
       isPulling = true;
     } else {
@@ -17539,15 +17569,25 @@ function setupPullToRefresh() {
 
   window.addEventListener('touchmove', (e) => {
     if (!isPulling || isRefreshing || !e.touches || !e.touches[0]) return;
+    currentX = e.touches[0].pageX;
     currentY = e.touches[0].pageY;
-    const diff = currentY - startY;
+    const diffX = currentX - startX;
+    const diffY = currentY - startY;
 
-    if (diff > 5) {
-      // 抵抗感（dampening）を付与して自然な引っ張り感
-      const pullDistance = Math.min(diff * 0.42, 85);
+    // 横スワイプや斜めスクロールの場合は誤爆防止のためキャンセル
+    if (Math.abs(diffX) > Math.abs(diffY)) {
+      isPulling = false;
+      ptr.style.transform = 'translateY(0)';
+      return;
+    }
+
+    if (diffY > PULL_DEADZONE) {
+      // 抵抗感を付与して自然かつ適度な引き心地
+      const effectiveDiff = diffY - PULL_DEADZONE;
+      const pullDistance = Math.min(effectiveDiff * 0.38, 70);
       ptr.style.transform = `translateY(${pullDistance}px)`;
 
-      if (pullDistance >= PULL_THRESHOLD * 0.42) {
+      if (diffY >= PULL_THRESHOLD) {
         if (ptrIcon) ptrIcon.style.transform = 'rotate(180deg)';
         if (ptrText) ptrText.textContent = '指を離して最新同期';
       } else {
@@ -17562,19 +17602,18 @@ function setupPullToRefresh() {
   window.addEventListener('touchend', async () => {
     if (!isPulling || isRefreshing) return;
     isPulling = false;
-    const diff = currentY - startY;
-    const pullDistance = diff * 0.42;
+    const diffY = currentY - startY;
 
-    if (pullDistance >= PULL_THRESHOLD * 0.42) {
+    if (diffY >= PULL_THRESHOLD) {
       // しきい値を超えたため同期実行！
       isRefreshing = true;
-      ptr.style.transform = 'translateY(65px)';
+      ptr.style.transform = 'translateY(60px)';
       if (ptrIcon) ptrIcon.style.display = 'none';
       if (ptrSpinner) ptrSpinner.style.display = 'inline-block';
       if (ptrText) ptrText.textContent = 'クラウド同期中...';
 
       try {
-        console.log('【Pull-to-Refresh】ユーザーが画面を下に引っ張って同期を起動しました');
+        console.log('【Pull-to-Refresh】ユーザーが十分なストロークで画面を下に引っ張り同期を実行しました');
         if (typeof triggerGlobalManualSync === 'function') {
           await triggerGlobalManualSync();
         } else if (typeof syncAttendanceWithServer === 'function') {

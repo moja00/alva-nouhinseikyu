@@ -5175,7 +5175,7 @@ function setupEventListeners() {
 }
 
 // ==========================================================================
-// スマホ用 Pull-to-Refresh（下に引っ張ってクラウド最新同期）
+// スマホ用 Pull-to-Refresh（下に引っ張ってクラウド最新同期・ゆとり設計）
 // ==========================================================================
 function setupPullToRefresh() {
   const ptr = document.getElementById('pullToRefreshIndicator');
@@ -5184,18 +5184,23 @@ function setupPullToRefresh() {
   const ptrSpinner = document.getElementById('ptrSpinner');
   if (!ptr) return;
 
+  let startX = 0;
   let startY = 0;
+  let currentX = 0;
   let currentY = 0;
   let isPulling = false;
   let isRefreshing = false;
-  const PULL_THRESHOLD = 65; // しきい値 (px)
+  const PULL_THRESHOLD = 110; // しっかり下に引き下げるゆとりのあるしきい値 (px)
+  const PULL_DEADZONE = 25;   // 誤操作防止のデッドゾーン (px)
 
   window.addEventListener('touchstart', (e) => {
     if (isRefreshing || !e.touches || !e.touches[0]) return;
     // 画面最上部にいる時のみプル開始を許可
     const scrollY = window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
     if (scrollY <= 2) {
+      startX = e.touches[0].pageX;
       startY = e.touches[0].pageY;
+      currentX = startX;
       currentY = startY;
       isPulling = true;
     } else {
@@ -5205,15 +5210,25 @@ function setupPullToRefresh() {
 
   window.addEventListener('touchmove', (e) => {
     if (!isPulling || isRefreshing || !e.touches || !e.touches[0]) return;
+    currentX = e.touches[0].pageX;
     currentY = e.touches[0].pageY;
-    const diff = currentY - startY;
+    const diffX = currentX - startX;
+    const diffY = currentY - startY;
 
-    if (diff > 5) {
-      // 抵抗感（dampening）を付与して自然な引っ張り感
-      const pullDistance = Math.min(diff * 0.42, 85);
+    // 横スワイプや斜めスクロールの場合は誤爆防止のためキャンセル
+    if (Math.abs(diffX) > Math.abs(diffY)) {
+      isPulling = false;
+      ptr.style.transform = 'translateY(0)';
+      return;
+    }
+
+    if (diffY > PULL_DEADZONE) {
+      // 抵抗感を付与して自然かつ適度な引き心地
+      const effectiveDiff = diffY - PULL_DEADZONE;
+      const pullDistance = Math.min(effectiveDiff * 0.38, 70);
       ptr.style.transform = `translateY(${pullDistance}px)`;
 
-      if (pullDistance >= PULL_THRESHOLD * 0.42) {
+      if (diffY >= PULL_THRESHOLD) {
         if (ptrIcon) ptrIcon.style.transform = 'rotate(180deg)';
         if (ptrText) ptrText.textContent = '指を離して最新同期';
       } else {
@@ -5228,19 +5243,18 @@ function setupPullToRefresh() {
   window.addEventListener('touchend', async () => {
     if (!isPulling || isRefreshing) return;
     isPulling = false;
-    const diff = currentY - startY;
-    const pullDistance = diff * 0.42;
+    const diffY = currentY - startY;
 
-    if (pullDistance >= PULL_THRESHOLD * 0.42) {
+    if (diffY >= PULL_THRESHOLD) {
       // しきい値を超えたため同期実行！
       isRefreshing = true;
-      ptr.style.transform = 'translateY(65px)';
+      ptr.style.transform = 'translateY(60px)';
       if (ptrIcon) ptrIcon.style.display = 'none';
       if (ptrSpinner) ptrSpinner.style.display = 'inline-block';
       if (ptrText) ptrText.textContent = 'クラウド同期中...';
 
       try {
-        console.log('【Pull-to-Refresh】ユーザーが画面を下に引っ張って同期を起動しました');
+        console.log('【Pull-to-Refresh】ユーザーが十分なストロークで画面を下に引っ張り同期を実行しました');
         if (typeof triggerGlobalManualSync === 'function') {
           await triggerGlobalManualSync();
         } else if (typeof syncAttendanceWithServer === 'function') {
