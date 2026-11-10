@@ -343,7 +343,7 @@
           style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
           <span
-            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.10-fix-syntax</span>
+            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.10-purge-legacy-battery</span>
         </div>
       </div>
 
@@ -3034,7 +3034,8 @@
             <select id="selectModalSerialItem" class="form-select" style="font-size: 0.85rem; font-weight: 600;">
               <option value="DP-5000">DP-5000 (本体/セット共通)</option>
               <option value="DP-MS">DP-MS (スプレッダー)</option>
-              <option value="PSE認証リチウムイオンバッテリー">PSE認証リチウムイオンバッテリー (社内把握用)</option>
+              <option value="DP-BT-CS">🔋 DP-BT-CS (DP-5000用バッテリー)</option>
+              <option value="DP-BT-SK">🔋 DP-BT-SK (DP-5000用バッテリー)</option>
               <option value="PSE認証 専用急速充電器">PSE認証 専用急速充電器</option>
             </select>
           </div>
@@ -3172,7 +3173,8 @@
           <select id="selectBatchItem" class="form-select" style="font-size: 0.85rem; font-weight: 600;">
             <option value="DP-5000">DP-5000 (本体/セット共通)</option>
             <option value="DP-MS">DP-MS (スプレッダー)</option>
-            <option value="PSE認証リチウムイオンバッテリー">PSE認証リチウムイオンバッテリー (社内把握用)</option>
+            <option value="DP-BT-CS">🔋 DP-BT-CS (DP-5000用バッテリー)</option>
+            <option value="DP-BT-SK">🔋 DP-BT-SK (DP-5000用バッテリー)</option>
             <option value="PSE認証 専用急速充電器">PSE認証 専用急速充電器</option>
           </select>
         </div>
@@ -5101,7 +5103,7 @@
         <div>
           <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             <h2 class="view-screen-title" style="margin: 0;">勤怠管理・退勤タイムカード</h2>
-            <span style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.10-fix-syntax</span>
+            <span style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.10-purge-legacy-battery</span>
           </div>
           <span class="view-screen-subtitle">休憩1時間自動控除・ワンタップ出退勤打刻・月次出勤簿・打刻漏れ修正</span>
         </div>
@@ -7466,7 +7468,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261110_fix_syntax"></script>
+  <script src="js/app.bundle.js?v=20261110_purge_legacy_battery"></script>
 </body>
 
 </html>

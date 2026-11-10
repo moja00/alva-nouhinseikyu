@@ -4143,7 +4143,7 @@ const DEFAULT_INVENTORY = [
     hasSerial: false,
     bundleItems: [
       { inventoryId: 'inv_dp5000_body', name: 'DP-5000 本体', qty: 1, role: 'main' },
-      { inventoryId: 'inv_dp5000_bat', name: 'PSE認証 リチウムイオンバッテリー', qty: 2, role: 'battery' },
+      { inventoryId: 'inv_prod_1794209910003_eqxd', name: 'DP-BT-CS　DP-5000用バッテリー', qty: 2, role: 'battery' },
       { inventoryId: 'inv_dp5000_chg', name: 'PSE認証 専用急速充電器', qty: 1, role: 'charger' }
     ],
     currentStock: 0,
@@ -4173,19 +4173,37 @@ const DEFAULT_INVENTORY = [
     history: []
   },
   {
-    id: 'inv_dp5000_bat',
-    name: 'PSE認証 リチウムイオンバッテリー',
-    sku: 'BAT-DP5K',
+    id: 'inv_prod_1794209910003_eqxd',
+    itemId: 'prod_1794209910003_eqxd',
+    name: 'DP-BT-CS　DP-5000用バッテリー',
+    sku: 'DP-BT-CS',
     type: 'single',
     hasSerial: true, // シリアル管理対象
     currentStock: 0,
     safetyStock: 4,
     unit: '個',
     unitCost: 7700,
-    unitPrice: 15000,
+    unitPrice: 16500,
     location: 'パーツ保管棚 B-1',
     lastInDate: '2026-03-24',
-    note: '国内仕入PSE認証バッテリー（シリアル番号管理対象）',
+    note: 'DP-5000用バッテリー（CS製・シリアル番号管理対象）',
+    history: []
+  },
+  {
+    id: 'inv_prod_1794209994433_ij47',
+    itemId: 'prod_1794209994433_ij47',
+    name: 'DP-BT-SK　DP-5000用バッテリー',
+    sku: 'DP-BT-SK',
+    type: 'single',
+    hasSerial: true, // シリアル管理対象
+    currentStock: 15,
+    safetyStock: 4,
+    unit: '個',
+    unitCost: 7700,
+    unitPrice: 16500,
+    location: 'パーツ保管棚 B-1',
+    lastInDate: '2026-11-05',
+    note: 'DP-5000用バッテリー（SK製・シリアル番号管理対象）',
     history: []
   },
   {
@@ -8137,6 +8155,11 @@ function deduplicateInventoryList(rawList) {
       continue;
     }
 
+    // 4. 旧・汎用「PSE認証 リチウムイオンバッテリー」（DP-BT-CS / DP-BT-SK への移行に伴う完全排除）
+    if (inv.id === 'inv_dp5000_bat' || rawTrimmed === 'PSE認証 リチウムイオンバッテリー' || rawTrimmed === 'PSE認証リチウムイオンバッテリー') {
+      continue;
+    }
+
     let normName = normalizeMasterName(inv.name);
     let key = getMasterKey(normName);
     if (!key) continue;
@@ -8169,9 +8192,14 @@ function deduplicateInventoryList(rawList) {
           (inv.id === 'inv_dp5000_body' || inv.id === 'inv_dp5000_bat' || inv.id === 'inv_2') ||
           (normName.includes('DP-5000') || normName.includes('バッテリー') || normName.includes('DP-MS') || normName.includes('メカニカルスプレッダー') || normName.includes('スプレッダー'))
         ),
-        bundleItems: Array.isArray(inv.bundleItems) ? [...inv.bundleItems] : (inv.id === 'inv_1' ? [
+        bundleItems: Array.isArray(inv.bundleItems) ? inv.bundleItems.map(b => {
+          if (b.inventoryId === 'inv_dp5000_bat' || (b.name && b.name.includes('PSE認証 リチウムイオンバッテリー'))) {
+            return { inventoryId: 'inv_prod_1794209910003_eqxd', name: 'DP-BT-CS　DP-5000用バッテリー', qty: 2, role: 'battery' };
+          }
+          return b;
+        }) : (inv.id === 'inv_1' ? [
           { inventoryId: 'inv_dp5000_body', name: 'DP-5000 本体', qty: 1, role: 'main' },
-          { inventoryId: 'inv_dp5000_bat', name: 'PSE認証 リチウムイオンバッテリー', qty: 2, role: 'battery' },
+          { inventoryId: 'inv_prod_1794209910003_eqxd', name: 'DP-BT-CS　DP-5000用バッテリー', qty: 2, role: 'battery' },
           { inventoryId: 'inv_dp5000_chg', name: 'PSE認証 専用急速充電器', qty: 1, role: 'charger' }
         ] : []),
         history: Array.isArray(inv.history) ? [...inv.history] : []
@@ -9840,7 +9868,8 @@ function syncInventoryStockFromSerials() {
     const inStockCounts = {
       'inv_dp5000_body': 0,
       'inv_2': 0,
-      'inv_dp5000_bat': 0
+      'inv_prod_1794209910003_eqxd': 0,
+      'inv_prod_1794209994433_ij47': 0
     };
 
     serials.forEach(s => {
@@ -9849,12 +9878,15 @@ function syncInventoryStockFromSerials() {
       if (s.isBundled) return;
 
       const itemName = String(s.itemName || '').toUpperCase();
+      const sSn = String(s.serialNumber || '').toUpperCase();
       if (s.inventoryId === 'inv_dp5000_body' || (itemName.includes('DP-5000') && !itemName.includes('MS'))) {
         inStockCounts['inv_dp5000_body']++;
       } else if (s.inventoryId === 'inv_2' || itemName.includes('DP-MS')) {
         inStockCounts['inv_2']++;
-      } else if (s.inventoryId === 'inv_dp5000_bat' || s.itemType === 'battery' || itemName.includes('バッテリー')) {
-        inStockCounts['inv_dp5000_bat']++;
+      } else if (s.inventoryId === 'inv_prod_1794209910003_eqxd' || itemName.includes('DP-BT-CS') || s.sku === 'DP-BT-CS' || sSn.startsWith('BAT-') || sSn.startsWith('N485')) {
+        inStockCounts['inv_prod_1794209910003_eqxd']++;
+      } else if (s.inventoryId === 'inv_prod_1794209994433_ij47' || itemName.includes('DP-BT-SK') || s.sku === 'DP-BT-SK' || sSn.startsWith('0031077')) {
+        inStockCounts['inv_prod_1794209994433_ij47']++;
       }
     });
 
@@ -20434,7 +20466,9 @@ function openSerialSingleModal(snToEdit = '') {
       if (itemSelect) {
         if (isChg) itemSelect.value = 'PSE認証 専用急速充電器';
         else if (isMs) itemSelect.value = 'DP-MS';
-        else if (isBat) itemSelect.value = 'PSE認証リチウムイオンバッテリー';
+        else if (isBtCs) itemSelect.value = 'DP-BT-CS';
+        else if (isBtSk) itemSelect.value = 'DP-BT-SK';
+        else if (isBat) itemSelect.value = 'DP-BT-CS';
         else itemSelect.value = 'DP-5000';
       }
       if (statusSelect) statusSelect.value = item.status || 'in_stock';
@@ -20620,10 +20654,12 @@ function saveSerialSingleModal() {
   if (itemType === 'DP-MS') {
     inventoryId = 'inv_2';
     itemName = 'DP-MS';
-  } else if (itemType === 'PSE認証リチウムイオンバッテリー') {
-    inventoryId = 'inv_dp5000_bat';
-    itemName = 'PSE認証リチウムイオンバッテリー';
-    isCompanyOnly = true;
+  } else if (itemType === 'DP-BT-CS') {
+    inventoryId = 'inv_prod_1794209910003_eqxd';
+    itemName = 'DP-BT-CS　DP-5000用バッテリー';
+  } else if (itemType === 'DP-BT-SK') {
+    inventoryId = 'inv_prod_1794209994433_ij47';
+    itemName = 'DP-BT-SK　DP-5000用バッテリー';
   } else if (itemType === 'PSE認証 専用急速充電器' || itemType === '急速充電器') {
     inventoryId = 'inv_dp5000_chg';
     itemName = 'PSE認証 専用急速充電器';
@@ -21002,11 +21038,14 @@ function executeSerialBatchModal() {
     inventoryId = 'inv_2';
     itemName = 'DP-MS';
     unitCost = 40000;
-  } else if (itemType === 'PSE認証リチウムイオンバッテリー') {
-    inventoryId = 'inv_dp5000_bat';
-    itemName = 'PSE認証リチウムイオンバッテリー';
-    isCompanyOnly = true;
-    unitCost = 8000;
+  } else if (itemType === 'DP-BT-CS') {
+    inventoryId = 'inv_prod_1794209910003_eqxd';
+    itemName = 'DP-BT-CS　DP-5000用バッテリー';
+    unitCost = 7700;
+  } else if (itemType === 'DP-BT-SK') {
+    inventoryId = 'inv_prod_1794209994433_ij47';
+    itemName = 'DP-BT-SK　DP-5000用バッテリー';
+    unitCost = 7700;
   } else if (itemType === 'PSE認証 専用急速充電器' || itemType === '急速充電器') {
     inventoryId = 'inv_dp5000_chg';
     itemName = 'PSE認証 専用急速充電器';
