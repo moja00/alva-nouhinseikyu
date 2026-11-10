@@ -7300,11 +7300,6 @@ function renderInventoryTable() {
     );
   }
 
-  let lowCount = 0;
-  list.forEach(i => {
-    if (i.currentStock <= i.safetyStock) lowCount++;
-  });
-
   if (filter === 'low') {
     filtered = filtered.filter(i => i.currentStock <= i.safetyStock);
   } else if (filter === 'zero') {
@@ -7318,7 +7313,7 @@ function renderInventoryTable() {
   }
 
   if (DOM.inventorySummaryStatus) {
-    DOM.inventorySummaryStatus.textContent = `在庫品目総数: ${list.length}件 (⚠️ 安全在庫割れアラート: ${lowCount}件)`;
+    DOM.inventorySummaryStatus.textContent = `在庫品目総数: ${list.length}件`;
   }
 
   if (filtered.length === 0) {
@@ -7336,7 +7331,6 @@ function renderInventoryTable() {
         <tr>
           <th style="min-width: 200px;">品名 / SKU / 区分</th>
           <th style="text-align: right; min-width: 95px;">現在庫</th>
-          <th style="min-width: 80px; text-align: center;">状態</th>
           <th style="min-width: 50px;">単位</th>
           <th style="text-align: right; min-width: 95px;">仕入原価</th>
           <th style="min-width: 90px;">保管場所</th>
@@ -7357,16 +7351,6 @@ function renderInventoryTable() {
         }
       }
     } catch (e) {}
-
-    const isZero = item.currentStock <= 0;
-    const isLow = !isZero && item.currentStock <= item.safetyStock;
-
-    let statusBadge = '<span class="stock-val-pill stock-safe">正常</span>';
-    if (isZero) {
-      statusBadge = '<span class="stock-val-pill stock-danger">❌ 在庫切</span>';
-    } else if (isLow) {
-      statusBadge = '<span class="stock-val-pill stock-warn">⚠️ 僅少</span>';
-    }
 
     const isBundle = item.type === 'bundle';
     const hasSerial = !!item.hasSerial;
@@ -7394,22 +7378,17 @@ function renderInventoryTable() {
           </div>
         </td>
         <td style="text-align: right;">
-          <span style="font-size: 1.05rem; font-weight: 700; color: ${item.currentStock < 0 ? '#b91c1c' : (isZero ? '#dc2626' : (isLow ? '#d97706' : '#059669'))};">
+          <span style="font-size: 1.1rem; font-weight: 700; color: ${item.currentStock < 0 ? '#b91c1c' : (item.currentStock === 0 ? '#64748b' : '#0f172a')};">
             ${Number(item.currentStock).toLocaleString()}
           </span>
           ${item.currentStock < 0
         ? `<span style="font-size: 0.65rem; color: #b91c1c; font-weight: 700; display: block; background: #fee2e2; border-radius: 3px; padding: 1px 4px; margin-top: 2px;">🚨 未入庫不足: ${Math.abs(item.currentStock)}台</span>`
-        : (isBundle
-          ? '<span style="font-size: 0.65rem; color: #2563eb; display: block;">(理論構成可能数)</span>'
-          : `<span style="font-size: 0.725rem; color: #64748b; display: block;">適正: ${Number(item.safetyStock).toLocaleString()}</span>`
-        )
+        : ''
       }
         </td>
-        <td style="text-align: center;">${statusBadge}</td>
         <td>${escapeHtml(item.unit || '個')}</td>
         <td style="text-align: right; font-family: monospace;">
           ${formattedCost}
-          ${isBundle ? '<span style="font-size: 0.65rem; color: #64748b; display: block;">(BOM標準)</span>' : ''}
         </td>
         <td><span style="font-size: 0.8rem; color: #475569;">${escapeHtml(item.location || '-')}</span></td>
         <td style="font-size: 0.75rem; color: #64748b;">${escapeHtml(item.lastInDate || '-')}</td>
