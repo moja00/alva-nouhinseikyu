@@ -6762,10 +6762,10 @@ export function syncInventoryStockFromIssuedDocs() {
       const rawNorm = String(item.name || '').toLowerCase();
       const norm = getMasterKey(item.name);
       const isBundle = item.id === 'inv_1' || item.type === 'bundle' || norm.includes('ベーシックセット');
-      const isBatSK = item.id === 'inv_prod_1794209994433_ij47' || norm.includes('dpbtsk') || (norm.includes('バッテリー') && (rawNorm.includes('sk') || norm.includes('sk')));
-      const isBatCS = item.id === 'inv_prod_1794209910003_eqxd' || norm.includes('dpbtcs') || (norm.includes('バッテリー') && (rawNorm.includes('cs') || norm.includes('cs')));
-      const isBat = isBatSK || isBatCS || item.id === 'inv_dp5000_bat' || (norm.includes('バッテリー') && !isBundle);
-      const isChg = item.id === 'inv_dp5000_chg' || norm.includes('急速充電器');
+      const isChg = item.id === 'inv_dp5000_chg' || norm.includes('急速充電器') || norm.includes('充電器');
+      const isBatSK = !isChg && (item.id === 'inv_prod_1794209994433_ij47' || norm.includes('dpbtsk') || (norm.includes('バッテリー') && (rawNorm.includes('sk') || norm.includes('sk'))));
+      const isBatCS = !isChg && (item.id === 'inv_prod_1794209910003_eqxd' || norm.includes('dpbtcs') || (norm.includes('バッテリー') && (rawNorm.includes('cs') || norm.includes('cs'))));
+      const isBat = !isChg && (isBatSK || isBatCS || item.id === 'inv_dp5000_bat' || (norm.includes('バッテリー') && !isBundle));
       const isBody = item.id === 'inv_dp5000_body' || (norm.includes('dp5000') && !isBundle && !isBat && !isChg && !norm.includes('スプレッダー') && !norm.includes('アクセサリー') && !norm.includes('3点引き'));
 
       let groupKey = norm;
@@ -6854,10 +6854,10 @@ export function syncInventoryStockFromIssuedDocs() {
             const rawLotNorm = String(lot.itemName || '').toLowerCase();
             const itIsBundle = it.itemId === 'inv_1' || itNorm.includes('ベーシックセット') || (itNorm.includes('dp5000') && itNorm.includes('セット'));
             const isBasicSet = itIsBundle;
-            const itIsBatSK = it.itemId === 'inv_prod_1794209994433_ij47' || lot.itemId === 'inv_prod_1794209994433_ij47' || itNorm.includes('dpbtsk') || lotNorm.includes('dpbtsk') || ((itNorm.includes('バッテリー') || lotNorm.includes('バッテリー')) && (lotNum.includes('20261105') || rawNorm.includes('sk') || rawLotNorm.includes('sk')));
-            const itIsBatCS = it.itemId === 'inv_prod_1794209910003_eqxd' || lot.itemId === 'inv_prod_1794209910003_eqxd' || itNorm.includes('dpbtcs') || lotNorm.includes('dpbtcs') || ((itNorm.includes('バッテリー') || lotNorm.includes('バッテリー')) && (lotNum.includes('20260324') || rawNorm.includes('cs') || rawLotNorm.includes('cs')));
-            const itIsBat = itIsBatSK || itIsBatCS || it.itemId === 'inv_dp5000_bat' || (itNorm.includes('バッテリー') && !itIsBundle);
-            const itIsChg = it.itemId === 'inv_dp5000_chg' || itNorm.includes('急速充電器');
+            const itIsChg = it.itemId === 'inv_dp5000_chg' || itNorm.includes('急速充電器') || itNorm.includes('充電器');
+            const itIsBatSK = !itIsChg && (it.itemId === 'inv_prod_1794209994433_ij47' || itNorm.includes('dpbtsk') || (itNorm.includes('バッテリー') && (lotNum.includes('20261105') || rawNorm.includes('sk') || rawLotNorm.includes('sk'))));
+            const itIsBatCS = !itIsChg && (it.itemId === 'inv_prod_1794209910003_eqxd' || itNorm.includes('dpbtcs') || (itNorm.includes('バッテリー') && (lotNum.includes('20260324') || rawNorm.includes('cs') || rawLotNorm.includes('cs'))));
+            const itIsBat = !itIsChg && (itIsBatSK || itIsBatCS || it.itemId === 'inv_dp5000_bat' || (itNorm.includes('バッテリー') && !itIsBundle));
             const itIsBody = it.itemId === 'inv_dp5000_body' || (itNorm.includes('dp5000') && !itIsBundle && !itIsBat && !itIsChg && !itNorm.includes('スプレッダー') && !itNorm.includes('アクセサリー') && !itNorm.includes('3点引き'));
 
             let groupKey = itNorm;
@@ -6897,10 +6897,10 @@ export function syncInventoryStockFromIssuedDocs() {
           const rawLotNorm = String(lot.itemName || '').toLowerCase();
           const itIsBundle = lot.itemId === 'inv_1' || itNorm.includes('ベーシックセット') || (itNorm.includes('dp5000') && itNorm.includes('セット'));
           const isBasicSet = itIsBundle;
-          const itIsBatSK = lot.itemId === 'inv_prod_1794209994433_ij47' || itNorm.includes('dpbtsk') || (itNorm.includes('バッテリー') && (lotNum.includes('20261105') || rawLotNorm.includes('sk')));
-          const itIsBatCS = lot.itemId === 'inv_prod_1794209910003_eqxd' || itNorm.includes('dpbtcs') || (itNorm.includes('バッテリー') && (lotNum.includes('20260324') || rawLotNorm.includes('cs')));
-          const itIsBat = itIsBatSK || itIsBatCS || lot.itemId === 'inv_dp5000_bat' || (itNorm.includes('バッテリー') && !itIsBundle);
-          const itIsChg = lot.itemId === 'inv_dp5000_chg' || itNorm.includes('急速充電器');
+          const itIsChg = lot.itemId === 'inv_dp5000_chg' || itNorm.includes('急速充電器') || itNorm.includes('充電器');
+          const itIsBatSK = !itIsChg && (lot.itemId === 'inv_prod_1794209994433_ij47' || itNorm.includes('dpbtsk') || (itNorm.includes('バッテリー') && (lotNum.includes('20261105') || rawLotNorm.includes('sk'))));
+          const itIsBatCS = !itIsChg && (lot.itemId === 'inv_prod_1794209910003_eqxd' || itNorm.includes('dpbtcs') || (itNorm.includes('バッテリー') && (lotNum.includes('20260324') || rawLotNorm.includes('cs'))));
+          const itIsBat = !itIsChg && (itIsBatSK || itIsBatCS || lot.itemId === 'inv_dp5000_bat' || (itNorm.includes('バッテリー') && !itIsBundle));
           const itIsBody = lot.itemId === 'inv_dp5000_body' || (itNorm.includes('dp5000') && !itIsBundle && !itIsBat && !itIsChg && !itNorm.includes('スプレッダー') && !itNorm.includes('アクセサリー') && !itNorm.includes('3点引き'));
 
           let groupKey = itNorm;
@@ -6943,10 +6943,10 @@ export function syncInventoryStockFromIssuedDocs() {
       const rawNorm = String(item.name || '').toLowerCase();
       const norm = getMasterKey(item.name);
       const isBundle = item.id === 'inv_1' || item.type === 'bundle' || norm.includes('ベーシックセット');
-      const isBatSK = item.id === 'inv_prod_1794209994433_ij47' || norm.includes('dpbtsk') || (norm.includes('バッテリー') && (rawNorm.includes('sk') || norm.includes('sk')));
-      const isBatCS = item.id === 'inv_prod_1794209910003_eqxd' || norm.includes('dpbtcs') || (norm.includes('バッテリー') && (rawNorm.includes('cs') || norm.includes('cs')));
-      const isBat = isBatSK || isBatCS || item.id === 'inv_dp5000_bat' || (norm.includes('バッテリー') && !isBundle);
-      const isChg = item.id === 'inv_dp5000_chg' || norm.includes('急速充電器');
+      const isChg = item.id === 'inv_dp5000_chg' || norm.includes('急速充電器') || norm.includes('充電器');
+      const isBatSK = !isChg && (item.id === 'inv_prod_1794209994433_ij47' || norm.includes('dpbtsk') || (norm.includes('バッテリー') && (rawNorm.includes('sk') || norm.includes('sk'))));
+      const isBatCS = !isChg && (item.id === 'inv_prod_1794209910003_eqxd' || norm.includes('dpbtcs') || (norm.includes('バッテリー') && (rawNorm.includes('cs') || norm.includes('cs'))));
+      const isBat = !isChg && (isBatSK || isBatCS || item.id === 'inv_dp5000_bat' || (norm.includes('バッテリー') && !isBundle));
       const isBody = item.id === 'inv_dp5000_body' || (norm.includes('dp5000') && !isBundle && !isBat && !isChg && !norm.includes('スプレッダー') && !norm.includes('アクセサリー') && !norm.includes('3点引き'));
 
       let groupKey = norm;
