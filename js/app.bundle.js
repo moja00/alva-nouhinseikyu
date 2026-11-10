@@ -30208,7 +30208,7 @@ function renderExpenseSettlementSummaryBar() {
     claimantStats[claimant].totalCount++;
 
     if (!exp.isSettled) {
-      const amt = Math.round((Number(exp.amount) || 0) * (1 + (Number(exp.taxRate !== undefined ? exp.taxRate : 10) / 100)));
+      const amt = Number(exp.amount) || 0;
       claimantStats[claimant].count++;
       claimantStats[claimant].amount += amt;
       totalUnsettledCount++;
@@ -30284,7 +30284,7 @@ function openEmployeeExpenseBatchSettlementModal(targetClaimant = '') {
     // 未精算件数付きでオプション生成
     Array.from(claimantsSet).forEach(c => {
       const unsettled = allExpenses.filter(e => !e.isSettled && (e.claimant || '小林俊介') === c);
-      const sum = unsettled.reduce((s, e) => s + Math.round((Number(e.amount) || 0) * (1 + (Number(e.taxRate !== undefined ? e.taxRate : 10) / 100))), 0);
+      const sum = unsettled.reduce((s, e) => s + (Number(e.amount) || 0), 0);
       const opt = document.createElement('option');
       opt.value = c;
       opt.textContent = `${c} (未精算: ${unsettled.length}件 / ¥${sum.toLocaleString()})`;
@@ -30295,7 +30295,7 @@ function openEmployeeExpenseBatchSettlementModal(targetClaimant = '') {
     const optAll = document.createElement('option');
     optAll.value = 'all';
     const allUnsettled = allExpenses.filter(e => !e.isSettled && !['会社', '会社立替/その他', '会社直接', 'none', ''].includes((e.claimant || '').trim()));
-    const allSum = allUnsettled.reduce((s, e) => s + Math.round((Number(e.amount) || 0) * (1 + (Number(e.taxRate !== undefined ? e.taxRate : 10) / 100))), 0);
+    const allSum = allUnsettled.reduce((s, e) => s + (Number(e.amount) || 0), 0);
     optAll.textContent = `全社員一括 (未精算: ${allUnsettled.length}件 / ¥${allSum.toLocaleString()})`;
     select.appendChild(optAll);
 
@@ -30343,7 +30343,7 @@ function updateBatchSettlementEmployeePreview() {
 
   let totalAmount = 0;
   items.forEach(e => {
-    const amt = Math.round((Number(e.amount) || 0) * (1 + (Number(e.taxRate !== undefined ? e.taxRate : 10) / 100)));
+    const amt = Number(e.amount) || 0;
     totalAmount += amt;
   });
 
@@ -30391,7 +30391,7 @@ function updateBatchSettlementEmployeePreview() {
 
     let rows = '';
     items.forEach(it => {
-      const amtInc = Math.round((Number(it.amount) || 0) * (1 + (Number(it.taxRate !== undefined ? it.taxRate : 10) / 100)));
+      const amtInc = Number(it.amount) || 0;
       const catName = ACCOUNT_CATEGORIES[it.category]?.name || it.category || '経費';
       rows += `
         <tr style="border-bottom: 1px solid #f1f5f9;">
@@ -30442,7 +30442,7 @@ function executeEmployeeExpenseBatchSettlement() {
 
   let totalAmount = 0;
   items.forEach(e => {
-    const amt = Math.round((Number(e.amount) || 0) * (1 + (Number(e.taxRate !== undefined ? e.taxRate : 10) / 100)));
+    const amt = Number(e.amount) || 0;
     totalAmount += amt;
   });
 
