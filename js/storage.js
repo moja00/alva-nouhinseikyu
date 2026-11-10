@@ -7212,6 +7212,16 @@ export function deleteInventorySerial(serialIdOrNumber) {
   }
 }
 
+export function sanitizeSerialNote(note) {
+  if (!note) return '';
+  return String(note)
+    .replace(/(\s*[\/\-]?\s*お振込手数料は貴社にてご負担[^\n]*(\n[^\n]*お問い合わせください[^\n]*)?)+/g, '')
+    .replace(/(\s*[\/\-]?\s*ご不明な点がございましたらお気軽にお問い合わせください[。]?)+/g, '')
+    .replace(/^\s*[\/\-]\s*/, '')
+    .replace(/\s*[\/\-]\s*$/, '')
+    .trim();
+}
+
 export function updateSerialStatus(serialNumber, newStatus, details = {}) {
   try {
     if (!serialNumber) return false;
@@ -7318,7 +7328,7 @@ export function updateSerialStatus(serialNumber, newStatus, details = {}) {
       if (details.invoiceNumber !== undefined) target.docNumber = details.invoiceNumber;
       if (details.docId !== undefined) target.docId = details.docId;
       if (details.note !== undefined && details.note) {
-        const cleanDetailNote = String(details.note).trim();
+        const cleanDetailNote = sanitizeSerialNote(details.note);
         if (cleanDetailNote) {
           if (target.note && target.note !== cleanDetailNote && !target.note.includes(cleanDetailNote)) {
             target.note = `${target.note} / ${cleanDetailNote}`;
@@ -7922,21 +7932,21 @@ export function syncInventorySerialsFromIssuedDocs() {
       }
     });
 
-    // 3. 【社内デモ機(N8460)の絶対保護サニタイズ】
-    // 過去のキャッシュや古い同期データで N8460 が出荷済み・本田塗料店に誤認されていても確実に「デモ機」に隔離
+    // 3. 【社内デモ機(N8460)の整合性保護】
+    // N8460 は社内デモ機配備伝票（DEL-20250115-01）に確実に紐付け
     const n8460 = serialMap.get('N8460');
     if (n8460) {
-      if (n8460.status !== 'demo' || n8460.docNumber || n8460.clientName) {
+      if (n8460.status !== 'demo' || n8460.docNumber !== 'DEL-20250115-01' || !n8460.clientName) {
         n8460.status = 'demo';
-        n8460.clientName = '';
-        n8460.customerName = '';
-        n8460.endUserName = '';
-        n8460.shipDate = '';
-        n8460.shippedDate = '';
-        n8460.docNumber = '';
-        n8460.invoiceNumber = '';
-        n8460.docId = '';
-        n8460.invoiceId = '';
+        n8460.clientName = '社内デモ機';
+        n8460.customerName = '社内デモ機';
+        n8460.endUserName = 'デモ機';
+        n8460.shipDate = '2025-01-15';
+        n8460.shippedDate = '2025-01-15';
+        n8460.docNumber = 'DEL-20250115-01';
+        n8460.invoiceNumber = 'DEL-20250115-01';
+        n8460.docId = 'doc_20250115_demo';
+        n8460.invoiceId = 'doc_20250115_demo';
         n8460.note = 'デモ機';
         n8460.updatedAt = new Date().toISOString();
         modified = true;
@@ -8691,6 +8701,21 @@ export async function syncInventorySerialsWithServer() {
       });
 
       const mergedSerials = Array.from(serialMap.values());
+      // 全シリアルの備考欄を自動サニタイズ（請求書支払案内文の混入を完全除去）
+      mergedSerials.forEach(s => {
+        if (s && s.note) s.note = sanitizeSerialNote(s.note);
+        if (s && s.serialNumber === 'N8460') {
+          s.status = 'demo';
+          s.docNumber = 'DEL-20250115-01';
+          s.invoiceNumber = 'DEL-20250115-01';
+          s.docId = 'doc_20250115_demo';
+          s.shipDate = '2025-01-15';
+          s.shippedDate = '2025-01-15';
+          s.clientName = '社内デモ機';
+          s.customerName = '社内デモ機';
+          s.endUserName = 'デモ機';
+        }
+      });
       localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(mergedSerials));
       if (hasLocalOnly) {
         saveServerInventorySerials(mergedSerials).catch(() => { });
