@@ -7624,7 +7624,10 @@ export function syncInventorySerialsFromIssuedDocs() {
           if (sn === 'N8460') return;
           const target = serialMap.get(sn);
           if (target) {
-            if (['demo', 'maintenance', 'defective'].includes(target.status) || (target.note && target.note.includes('デモ機'))) {
+            // 本田塗料店(DEL-20261105-235)に割り当てられたN10935はメンテナンスから正常出荷へ移行
+            if (sn === 'N10935' && docNo.includes('DEL-20261105-235')) {
+              target.status = 'shipped';
+            } else if (['demo', 'maintenance', 'defective'].includes(target.status) || (target.note && target.note.includes('デモ機'))) {
               return;
             }
             let changed = false;
@@ -7654,8 +7657,15 @@ export function syncInventorySerialsFromIssuedDocs() {
               changed = true;
             }
 
-            // セット品化された本体が出荷された場合、組込バッテリーおよび急速充電器も連動して出荷済みに更新
+            // ベーシックセット伝票で本体が出荷された場合、自動的に isBundled: true を付与
+            const itNorm = getMasterKey(it.name || '');
+            const itIsBundle = it.itemId === 'inv_1' || itNorm.includes('ベーシックセット') || itNorm.includes('ket.ic.2b') || itNorm.includes('エレクトロパワー');
             const targetSnNorm = String(target.serialNumber || sn).trim().toUpperCase();
+            const isBodySn = (targetSnNorm.startsWith('N84') || targetSnNorm.startsWith('N10') || targetSnNorm.startsWith('N11')) && targetSnNorm.length <= 6;
+            if (itIsBundle && isBodySn && !target.isBundled) {
+              target.isBundled = true;
+              changed = true;
+            }
             if (target.isBundled) {
               // 1. 組込バッテリーの連動出荷
               if (Array.isArray(target.batterySerials)) {
@@ -8682,13 +8692,17 @@ export function getInventoryHistoryWithShipments(item) {
 
   const norm = getMasterKey(normalizeMasterName(item.name || ''));
   const isBundle = item.id === 'inv_1' || item.type === 'bundle' || norm.includes('ベーシックセット');
-  const isBody = item.id === 'inv_dp5000_body' || (norm.includes('dp-5000') && !isBundle && !norm.includes('スプレッダー'));
-  const isBat = item.id === 'inv_dp5000_bat' || (norm.includes('バッテリー') && !isBundle);
+  const isBatSK = item.id === 'inv_prod_1794209994433_ij47' || norm.includes('dp-bt-sk') || (norm.includes('バッテリー') && norm.includes('sk'));
+  const isBatCS = item.id === 'inv_prod_1794209910003_eqxd' || norm.includes('dp-bt-cs') || (norm.includes('バッテリー') && norm.includes('cs'));
+  const isBat = isBatSK || isBatCS || item.id === 'inv_dp5000_bat' || (norm.includes('バッテリー') && !isBundle);
   const isChg = item.id === 'inv_dp5000_chg' || norm.includes('急速充電器');
+  const isBody = item.id === 'inv_dp5000_body' || (norm.includes('dp-5000') && !isBundle && !isBat && !isChg && !norm.includes('スプレッダー') && !norm.includes('アクセサリー') && !norm.includes('3点引き'));
 
   let groupKey = norm;
   if (isBundle) groupKey = 'grp_dp5000_bundle';
   else if (isBody) groupKey = 'grp_dp5000_body';
+  else if (isBatSK) groupKey = 'grp_dp5000_bat_sk';
+  else if (isBatCS) groupKey = 'grp_dp5000_bat_cs';
   else if (isBat) groupKey = 'grp_dp5000_bat';
   else if (isChg) groupKey = 'grp_dp5000_chg';
   else if (norm.includes('dp-ms') || norm.includes('スプレッダー')) groupKey = 'grp_dpms';
@@ -8701,7 +8715,6 @@ export function getInventoryHistoryWithShipments(item) {
   const combined = [];
   const existingDocNums = new Set();
   const seenLots = new Set();
-  const seenBundleSn = new Set();
 
   baseLogs.forEach(h => {
     if (!h) return;
@@ -8723,8 +8736,8 @@ export function getInventoryHistoryWithShipments(item) {
     if (isChg && (r.includes('国内仕入入庫') || r.includes('急速充電器在庫戻し') || r.includes('セット品化に伴う自動出庫') || r.includes('確定発行取消') || r.includes('在庫復元'))) return;
     if (isBat && (r.includes('国内仕入') || r.includes('在庫戻し') || r.includes('自動出庫') || r.includes('確定発行取消') || r.includes('在庫復元'))) return;
 
-    // 個別のセット品化ログはサマリーとして集約表示するためbaseLogsからは除外
-    if (r.includes('セット品化組立完了') || r.includes('セット品化組込出庫')) return;
+    // セット品化・セット品化解除のログは動的集約表示するためbaseLogsからは除外
+    if (r.includes('セット品化組立完了') || r.includes('セット品化組込出庫') || r.includes('セット品化解除')) return;
 
     const delta = h.delta !== undefined ? Number(h.delta) : (h.type === 'out' ? -Number(h.qty || 0) : Number(h.qty || 0));
     const hid = h.id || `${h.date}_${h.type}_${h.qty}_${r}`;
@@ -8733,12 +8746,12 @@ export function getInventoryHistoryWithShipments(item) {
       id: hid,
       delta: delta,
       qty: Math.abs(delta),
-      isManual: true // ユーザー様による手動出入庫・棚卸ログ（編集・削除対象）
+      isManual: true
     });
     if (h.sourceRef) existingDocNums.add(String(h.sourceRef).trim());
     if (h.docNumber) existingDocNums.add(String(h.docNumber).trim());
-    if (h.reason && /INV-|EST-|ORD-/i.test(h.reason)) {
-      const match = h.reason.match(/INV-[A-Za-z0-9_\-]+/i);
+    if (h.reason && /INV-|EST-|ORD-|DEL-/i.test(h.reason)) {
+      const match = h.reason.match(/(INV|EST|ORD|DEL)-[A-Za-z0-9_\-]+/i);
       if (match) existingDocNums.add(match[0]);
     }
   });
@@ -8757,13 +8770,17 @@ export function getInventoryHistoryWithShipments(item) {
           if (!it) return;
           const itNorm = getMasterKey(it.itemName || '');
           const itIsBundle = it.itemId === 'inv_1' || itNorm.includes('ベーシックセット');
-          const itIsBody = it.itemId === 'inv_dp5000_body' || (itNorm.includes('dp-5000') && !itIsBundle && !itNorm.includes('スプレッダー'));
-          const itIsBat = it.itemId === 'inv_dp5000_bat' || (itNorm.includes('バッテリー') && !itIsBundle);
+          const itIsBatSK = it.itemId === 'inv_prod_1794209994433_ij47' || itNorm.includes('dp-bt-sk') || (itNorm.includes('バッテリー') && (lNum.includes('20261105') || itNorm.includes('sk')));
+          const itIsBatCS = it.itemId === 'inv_prod_1794209910003_eqxd' || itNorm.includes('dp-bt-cs') || (itNorm.includes('バッテリー') && (lNum.includes('20260324') || itNorm.includes('cs')));
+          const itIsBat = itIsBatSK || itIsBatCS || it.itemId === 'inv_dp5000_bat' || (itNorm.includes('バッテリー') && !itIsBundle);
           const itIsChg = it.itemId === 'inv_dp5000_chg' || itNorm.includes('急速充電器');
+          const itIsBody = it.itemId === 'inv_dp5000_body' || (itNorm.includes('dp-5000') && !itIsBundle && !itIsBat && !itIsChg && !itNorm.includes('スプレッダー') && !itNorm.includes('アクセサリー') && !itNorm.includes('3点引き'));
 
           let itGk = itNorm;
           if (itIsBundle) itGk = 'grp_dp5000_bundle';
           else if (itIsBody) itGk = 'grp_dp5000_body';
+          else if (itIsBatSK) itGk = 'grp_dp5000_bat_sk';
+          else if (itIsBatCS) itGk = 'grp_dp5000_bat_cs';
           else if (itIsBat) itGk = 'grp_dp5000_bat';
           else if (itIsChg) itGk = 'grp_dp5000_chg';
           else if (itNorm.includes('dp-ms') || itNorm.includes('スプレッダー')) itGk = 'grp_dpms';
@@ -8802,7 +8819,7 @@ export function getInventoryHistoryWithShipments(item) {
     });
   }
 
-  // 3. シリアル台帳（inventory_serials）から後からセット品化した10台の履歴を本体入荷日に設定して補完
+  // 3. シリアル台帳（inventory_serials）から社内キッティング（セット品化）履歴を動的集約
   const serials = (typeof getInventorySerialList === 'function') ? getInventorySerialList() : [];
   let bodyArrivalDate = '2026-03-16';
   if (Array.isArray(lots)) {
@@ -8813,86 +8830,105 @@ export function getInventoryHistoryWithShipments(item) {
   }
 
   if (Array.isArray(serials)) {
-    // 本体単品として仕入れ、後からセット化したシリアル（LOT-20260316 または N10933〜N10942）のみを抽出
-    const postAssembledList = [];
+    // ロットで最初から完成品セット(inv_1)として入荷したシリアル（LOT-20260115, LOT-20251125, および LOT-20261104-01のN11667/N11670）以外の、
+    // 本体単品として入荷し社内でセット品化(isBundled)されたシリアルを日付グループごとに動的抽出
+    const postAssembledMapByDate = new Map();
     serials.forEach(s => {
       if (!s || !s.isBundled) return;
       const bSn = String(s.serialNumber || '').trim().toUpperCase();
-      const isPostAssembled = (s.lotNumber === 'LOT-20260316' || bSn.startsWith('N109'));
-      if (!isPostAssembled) return;
+      // 最初から完成品セットとして直接入庫したシリアルは除外
+      if (s.lotNumber === 'LOT-20260115' || s.lotNumber === 'LOT-20251125') return;
+      if (bSn.startsWith('N84') || (bSn.startsWith('N104') && bSn !== 'N10414')) return;
+      if (bSn === 'N11667' || bSn === 'N11670') return;
 
-      postAssembledList.push({
+      const isBodySn = (bSn.startsWith('N84') || bSn.startsWith('N10') || bSn.startsWith('N11')) && bSn.length <= 6;
+      if (!isBodySn) return;
+
+      const dateStr = s.inDate || s.arrivalDate || (bSn.startsWith('N109') ? bodyArrivalDate : '2026-11-04');
+      if (!postAssembledMapByDate.has(dateStr)) postAssembledMapByDate.set(dateStr, []);
+      postAssembledMapByDate.get(dateStr).push({
         sn: bSn,
         bats: Array.isArray(s.batterySerials) ? s.batterySerials : [],
-        bundledAt: `${bodyArrivalDate}T09:30:00.000Z`
+        bundledAt: `${dateStr}T09:30:00.000Z`
       });
     });
 
-    if (postAssembledList.length > 0) {
-      const bundleDate = bodyArrivalDate;
-      const timestamp = `${bundleDate}T09:30:00.000Z`;
-
+    postAssembledMapByDate.forEach((list, dateStr) => {
+      const timestamp = `${dateStr}T09:30:00.000Z`;
       if (isBundle) {
-        // セット品側：完成品としての入庫（本体が入った日に10台まとめて1行表示）
         combined.push({
-          id: `bundle_summary_in_${bundleDate}`,
-          date: bundleDate,
+          id: `bundle_summary_in_${dateStr}_${list.length}`,
+          date: dateStr,
           type: 'in',
-          qty: postAssembledList.length,
-          delta: postAssembledList.length,
-          reason: `セット品化組立完了: DP-5000 (${postAssembledList.length}台)`,
+          qty: list.length,
+          delta: list.length,
+          reason: `セット品化組立完了: DP-5000 (${list.length}台)`,
           payee: '社内キッティング',
           isBundleSummary: true,
-          details: postAssembledList,
+          details: list,
           timestamp: timestamp
         });
       } else if (isBody) {
-        // 本体側：セット品への組込出庫（本体が入った日に10台まとめて1行表示）
         combined.push({
-          id: `bundle_summary_out_body_${bundleDate}`,
-          date: bundleDate,
+          id: `bundle_summary_out_body_${dateStr}_${list.length}`,
+          date: dateStr,
           type: 'out',
-          qty: postAssembledList.length,
-          delta: -postAssembledList.length,
-          reason: `セット品化組込出庫: DP-5000 本体 (${postAssembledList.length}台)`,
+          qty: list.length,
+          delta: -list.length,
+          reason: `セット品化組込出庫: DP-5000 本体 (${list.length}台)`,
           payee: 'セット化',
           isBundleSummary: true,
-          details: postAssembledList,
+          details: list,
           timestamp: timestamp
         });
-      } else if (isBat) {
-        // バッテリー側：セット品への組込出庫（20個まとめて1行表示、バッテリー入荷日2026-03-24に合わせて出庫）
-        const batBundleDate = '2026-03-24';
-        const totalBats = postAssembledList.reduce((sum, d) => sum + (d.bats.length || 2), 0);
+      } else if (isBatSK && dateStr.includes('2026-11')) {
+        // DP-BT-SK 側：最新ロットセット品への組込出庫 (N11665, N11669 各2本 = 4本)
+        const totalBats = list.reduce((sum, d) => sum + (d.bats.length || 2), 0);
         combined.push({
-          id: `bundle_summary_out_bat_${batBundleDate}`,
+          id: `bundle_summary_out_bat_sk_${dateStr}_${totalBats}`,
+          date: dateStr,
+          type: 'out',
+          qty: totalBats,
+          delta: -totalBats,
+          reason: `セット品化組込出庫: DP-BT-SK バッテリー (${totalBats}個)`,
+          payee: 'セット化',
+          isBundleSummary: true,
+          details: list,
+          timestamp: `${dateStr}T10:00:00.000Z`
+        });
+      } else if (isBatCS && dateStr.includes('2026-03')) {
+        // DP-BT-CS 側：過去ロットセット品への組込出庫 (N109xx 10台 = 20本)
+        const batBundleDate = '2026-03-24';
+        const totalBats = list.reduce((sum, d) => sum + (d.bats.length || 2), 0);
+        combined.push({
+          id: `bundle_summary_out_bat_cs_${batBundleDate}_${totalBats}`,
           date: batBundleDate,
           type: 'out',
           qty: totalBats,
           delta: -totalBats,
-          reason: `セット品化組込出庫: リチウムイオンバッテリー (${totalBats}個)`,
+          reason: `セット品化組込出庫: DP-BT-CS バッテリー (${totalBats}個)`,
           payee: 'セット化',
           isBundleSummary: true,
-          details: postAssembledList,
+          details: list,
           timestamp: `${batBundleDate}T10:00:00.000Z`
         });
       } else if (isChg) {
-        // 急速充電器側：セット品への組込出庫（10個まとめて1行表示、充電器入荷日2026-03-24に合わせて出庫）
-        const chgBundleDate = '2026-03-24';
+        // 充電器側：セット品への組込出庫
+        const chgDate = dateStr.includes('2026-03') ? '2026-03-24' : dateStr;
         combined.push({
-          id: `bundle_summary_out_chg_${chgBundleDate}`,
-          date: chgBundleDate,
+          id: `bundle_summary_out_chg_${chgDate}_${list.length}`,
+          date: chgDate,
           type: 'out',
-          qty: postAssembledList.length,
-          delta: -postAssembledList.length,
-          reason: `セット品化組込出庫: 専用急速充電器 (${postAssembledList.length}個)`,
+          qty: list.length,
+          delta: -list.length,
+          reason: `セット品化組込出庫: 専用急速充電器 (${list.length}個)`,
           payee: 'セット化',
           isBundleSummary: true,
-          details: postAssembledList,
-          timestamp: `${chgBundleDate}T10:00:00.000Z`
+          details: list,
+          timestamp: `${chgDate}T10:00:00.000Z`
         });
       }
-    }
+    });
   }
 
   // 4. 確定伝票（納品書・請求書）からの出荷明細を抽出
@@ -8921,13 +8957,17 @@ export function getInventoryHistoryWithShipments(item) {
 
         const itNorm = getMasterKey(itName);
         const itIsBundle = it.itemId === 'inv_1' || itNorm.includes('ベーシックセット') || itNorm.includes('ket.ic.2b') || itNorm.includes('エレクトロパワー');
-        const itIsBody = it.itemId === 'inv_dp5000_body' || (itNorm.includes('dp-5000') && !itIsBundle && !itNorm.includes('スプレッダー'));
-        const itIsBat = it.itemId === 'inv_dp5000_bat' || (itNorm.includes('バッテリー') && !itIsBundle);
+        const itIsBatSK = it.itemId === 'inv_prod_1794209994433_ij47' || itNorm.includes('dp-bt-sk') || (itNorm.includes('バッテリー') && itNorm.includes('sk'));
+        const itIsBatCS = it.itemId === 'inv_prod_1794209910003_eqxd' || itNorm.includes('dp-bt-cs') || (itNorm.includes('バッテリー') && itNorm.includes('cs'));
+        const itIsBat = itIsBatSK || itIsBatCS || it.itemId === 'inv_dp5000_bat' || (itNorm.includes('バッテリー') && !itIsBundle);
         const itIsChg = it.itemId === 'inv_dp5000_chg' || itNorm.includes('急速充電器');
+        const itIsBody = it.itemId === 'inv_dp5000_body' || (itNorm.includes('dp-5000') && !itIsBundle && !itIsBat && !itIsChg && !itNorm.includes('スプレッダー') && !itNorm.includes('アクセサリー') && !itNorm.includes('3点引き'));
 
         let itGk = itNorm;
         if (itIsBundle) itGk = 'grp_dp5000_bundle';
         else if (itIsBody) itGk = 'grp_dp5000_body';
+        else if (itIsBatSK) itGk = 'grp_dp5000_bat_sk';
+        else if (itIsBatCS) itGk = 'grp_dp5000_bat_cs';
         else if (itIsBat) itGk = 'grp_dp5000_bat';
         else if (itIsChg) itGk = 'grp_dp5000_chg';
         else if (itNorm.includes('dp-ms') || itNorm.includes('スプレッダー')) itGk = 'grp_dpms';
@@ -8964,16 +9004,16 @@ export function getInventoryHistoryWithShipments(item) {
     });
   }
 
-  // 4.5. シリアル管理台帳から確定伝票外の出荷およびメンテナンス出庫を統合（在庫整合の担保）
+  // 4.5. シリアル管理台帳から確定伝票外の出荷・デモ機・メンテナンス出庫を統合（在庫整合の担保）
   if (isBundle && Array.isArray(serials)) {
     serials.forEach(s => {
       if (!s) return;
       const bSn = String(s.serialNumber || '').trim().toUpperCase();
-      const isBodySn = bSn.startsWith('N10') || bSn.startsWith('N84');
+      const isBodySn = (bSn.startsWith('N10') || bSn.startsWith('N84')) && bSn.length <= 6;
       if (!isBodySn) return;
 
       const docNo = String(s.docNumber || '').trim();
-      // 確定伝票（または訂正後新伝票に置換されたINV-20260920-01）に紐づいているものはスキップ
+      // 確定伝票に紐づいているものはスキップ
       if (docNo && (existingDocNums.has(docNo) || docNo === 'INV-20260920-01')) return;
 
       if (s.status === 'shipped') {
@@ -8989,6 +9029,19 @@ export function getInventoryHistoryWithShipments(item) {
           sourceRef: docNo || bSn,
           timestamp: `${sDate}T15:00:00.000Z`,
           isShipment: true
+        });
+      } else if (s.status === 'demo' || (s.note && s.note.includes('デモ機'))) {
+        const dDate = '2025-07-01';
+        combined.push({
+          id: `serial_demo_${bSn}`,
+          date: dDate,
+          type: 'out',
+          qty: 1,
+          delta: -1,
+          reason: `社内デモ機出庫（販売在庫対象外）: S/N ${bSn}`,
+          payee: '社内デモ',
+          sourceRef: bSn,
+          timestamp: `${dDate}T12:00:00.000Z`
         });
       } else if (s.status === 'maintenance' || (s.note && s.note.includes('部品足らない'))) {
         const mDate = '2026-10-01';

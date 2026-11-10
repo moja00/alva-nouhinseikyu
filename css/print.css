@@ -135,6 +135,22 @@
     background: #ffffff !important;
   }
 
+  /* 複数ページ（請求書・納品書・領収書）印刷時の強制改ページ制御 */
+  .invoice-sheet-page {
+    page-break-after: always !important;
+    break-after: page !important;
+    display: block !important;
+  }
+
+  .invoice-sheet-page:last-child {
+    page-break-after: auto !important;
+    break-after: auto !important;
+  }
+
+  .sheet-page-indicator {
+    display: none !important;
+  }
+
   .invoice-sheet .sheet-header {
     margin-bottom: 14px !important;
   }
