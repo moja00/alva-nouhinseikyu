@@ -1466,17 +1466,102 @@ export function getHistoryList(includeSuperseded = false) {
 /**
  * 書類を履歴に保存（新規追加または上書き）
  */
+/**
+ * 明細行の商品情報から在庫マスタ上の仕入単価（unitCost）を解決する
+ * @param {Object} item
+ * @param {Array|null} invList
+ * @returns {number}
+ */
+export function resolveInventoryMasterCostForLine(item, invList = null) {
+  if (!item || (Number(item.unitPrice) || 0) <= 0) return 0;
+  const list = Array.isArray(invList) ? invList : getInventoryList();
+  const normName = String(item.name || '').replace(/[\u3000\s]+/g, ' ').trim();
+  const sku = String(item.sku || '').trim();
+  const matched = list.find(c => {
+    if (!c) return false;
+    if (item.inventoryId && c.id === item.inventoryId) return true;
+    if (item.itemId && (c.itemId === item.itemId || c.id === item.itemId)) return true;
+    const cName = String(c.name || '').replace(/[\u3000\s]+/g, ' ').trim();
+    const cSku = String(c.sku || '').trim();
+    if (sku && cSku && cSku === sku) return true;
+    if (normName && cName && cName === normName) return true;
+    if (normName && cSku && normName.startsWith(cSku)) return true;
+    return false;
+  });
+  return matched ? (Number(matched.unitCost) || 0) : 0;
+}
+
+/**
+ * 伝票の全明細行（1行目〜最終行）から売上原価を単一ソースで動的再集計し、
+ * 明細・伝票ヘッダの assignedCogs / costTotal を同期更新する
+ * @param {Object} doc
+ * @returns {number}
+ */
+export function recalculateDocCostTotals(doc) {
+  if (!doc || !Array.isArray(doc.items)) return 0;
+  const invList = getInventoryList();
+  let totalDocCogs = 0;
+
+  doc.items.forEach(it => {
+    if (!it) return;
+    const unitPrice = Number(it.unitPrice) || 0;
+    const qty = Math.max(1, Number(it.quantity) || 1);
+    if (unitPrice < 0) {
+      it.assignedCogs = 0;
+      it.costPrice = 0;
+      return;
+    }
+
+    const hasSerialAssign = Array.isArray(it.assignedSerials) && it.assignedSerials.length > 0;
+    let lineCogs = 0;
+
+    if (hasSerialAssign) {
+      const serialSum = it.assignedSerials.reduce((s, a) => s + (Number(a && a.costPrice) || 0), 0);
+      lineCogs = Math.max(serialSum, Number(it.assignedCogs) || 0);
+      if (lineCogs === 0 && Number(it.costPrice) > 0) {
+        lineCogs = Number(it.costPrice) * qty;
+      }
+      if (lineCogs > 0 && !Number(it.costPrice)) {
+        it.costPrice = Math.round(lineCogs / qty);
+      }
+      if (lineCogs > 0) {
+        it.assignedCogs = lineCogs;
+      }
+    } else if (Number(it.costPrice) > 0) {
+      lineCogs = Number(it.costPrice) * qty;
+      it.assignedCogs = lineCogs;
+    } else if (Number(it.assignedCogs) > 0) {
+      lineCogs = Number(it.assignedCogs);
+      it.costPrice = Math.round(lineCogs / qty);
+    } else if (unitPrice > 0) {
+      const masterUnitCost = resolveInventoryMasterCostForLine(it, invList);
+      if (masterUnitCost > 0) {
+        it.costPrice = masterUnitCost;
+        lineCogs = masterUnitCost * qty;
+        it.assignedCogs = lineCogs;
+      }
+    }
+
+    totalDocCogs += lineCogs;
+  });
+
+  doc.assignedCogs = totalDocCogs;
+  doc.costTotal = totalDocCogs;
+  return totalDocCogs;
+}
+
 export function saveDocToHistory(doc) {
   try {
     // ⚠️ 既存伝票の上書き時は全件（superseded含む）を対象に探す
     const list = getHistoryList(true);
     const existingIndex = list.findIndex(item => item.id === doc.id || (item.docNumber && doc.docNumber && item.docNumber === doc.docNumber));
 
-    // 金額・税金の計算（インボイス制度準拠：税率別小計合算後に端数処理）
+    // 金額・税金および売上原価を全明細行から毎回動的に単一ソース再集計（古いキャッシュズレ防止）
     const totals = calculateTotals(Array.isArray(doc.items) ? doc.items : [], doc.taxFractionRule || 'floor');
     const subtotal = totals.subtotalWithoutTax;
     const taxTotal = totals.taxTotal;
     const grandTotal = totals.grandTotal;
+    const docCogs = recalculateDocCostTotals(doc);
     const isPaid = !!(doc.isPaid || doc.paymentStatus === 'paid');
 
     const nowIso = new Date().toISOString();
@@ -1496,6 +1581,8 @@ export function saveDocToHistory(doc) {
       subtotal,
       taxTotal,
       grandTotal,
+      assignedCogs: docCogs,
+      costTotal: docCogs,
       isPaid,
       paymentStatus: isPaid ? 'paid' : 'unpaid',
       paidDate: doc.paidDate || (isPaid ? nowIso.split('T')[0] : ''),
@@ -9320,6 +9407,8 @@ if (typeof window !== 'undefined') {
   window.saveIssuerProfile = saveIssuerProfile;
   window.sanitizeDocSerialsConsistency = sanitizeDocSerialsConsistency;
   window.sanitizeHondaPaintDocAndSerials = sanitizeHondaPaintDocAndSerials;
+  window.resolveInventoryMasterCostForLine = resolveInventoryMasterCostForLine;
+  window.recalculateDocCostTotals = recalculateDocCostTotals;
   window.restoreAttendanceFromBackup = function () {
     const backup = localStorage.getItem(KEYS.ATTENDANCE + '_backup');
     if (backup && backup !== '[]') {

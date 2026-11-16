@@ -161,10 +161,11 @@ export function normalizeInvoiceDoc(raw) {
 
   let costTotal = 0;
   items.forEach(it => {
+    if (!it || (Number(it.unitPrice) || 0) < 0) return; // 値引き行は原価対象外
     const qty = Number(it.quantity) || 0;
-    if (it.assignedCogs) {
+    if (Number(it.assignedCogs) > 0) {
       costTotal += Number(it.assignedCogs);
-    } else if (it.costPrice) {
+    } else if (Number(it.costPrice) > 0) {
       costTotal += qty * Number(it.costPrice);
     }
   });
@@ -185,7 +186,8 @@ export function normalizeInvoiceDoc(raw) {
   }
 
   const explicitCogs = Number(doc.assignedCogs || raw.assignedCogs || doc.cogsTotal || raw.cogsTotal || 0);
-  const finalCogs = explicitCogs > 0 ? explicitCogs : costTotal;
+  // 明細行の合算 costTotal を単一ソースとして優先（古いヘッダ値による上書きを防止）
+  const finalCogs = costTotal > 0 ? costTotal : explicitCogs;
 
   return {
     id,

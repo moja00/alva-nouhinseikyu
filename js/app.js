@@ -104,7 +104,9 @@ import {
   syncInventoryStockFromIssuedDocs,
   isRepairItem,
   isNonStockItem,
-  getMasterKey
+  getMasterKey,
+  resolveInventoryMasterCostForLine,
+  recalculateDocCostTotals
 } from './storage.js';
 
 import {
@@ -2225,6 +2227,38 @@ function issueAndSyncAccountingDocument(options = {}) {
     isPrint
   });
 
+  // 0. 確定前：全明細の原価再集計＋マスタ補完および原価漏れバリデーション（安全ガード）
+  if (currentDoc && currentDoc.docType !== 'estimate' && Array.isArray(currentDoc.items)) {
+    recalculateDocCostTotals(currentDoc);
+    if (isExplicitIssue) {
+      const invList = getInventoryList();
+      const missingCostRows = [];
+      currentDoc.items.forEach((it, idx) => {
+        if (!it || (Number(it.unitPrice) || 0) <= 0) return;
+        if ((Number(it.assignedCogs) || 0) > 0 || (Number(it.costPrice) || 0) > 0) return;
+        const normN = String(it.name || '').replace(/[\u3000\s]+/g, ' ').trim();
+        const inInv = invList.some(c => c && (
+          String(c.name || '').replace(/[\u3000\s]+/g, ' ').trim() === normN ||
+          (c.sku && normN.startsWith(String(c.sku).trim()))
+        ));
+        if (inInv || isSerialTargetItem(it)) {
+          missingCostRows.push(`${idx + 1}行目: ${it.name || '名称未設定'}`);
+        }
+      });
+      if (missingCostRows.length > 0 && typeof confirm === 'function') {
+        const ok = confirm(
+          `⚠️ 以下の有償明細に売上原価（仕入原価 / シリアル引当）が設定されていません（¥0）:\n\n` +
+          `・${missingCostRows.join('\n・')}\n\n` +
+          `このまま確定発行を続行しますか？（キャンセルすると戻ってシリアル引当・原価確認ができます）`
+        );
+        if (!ok) {
+          console.warn('【確定発行・キャンセル】原価漏れガードにより中断:', missingCostRows);
+          return false;
+        }
+      }
+    }
+  }
+
   // 1. 発行フラグ・日時の設定
   const nowIso = new Date().toISOString();
   currentDoc.isIssued = true;
@@ -2348,32 +2382,25 @@ function issueAndSyncAccountingDocument(options = {}) {
 
       // ③ シリアル非管理品目・未設定行の場合：在庫マスタの仕入単価（unitCost）を自動補完（DP-AC/DP-EG等の原価欠落防止）
       if (itemAssignedCogs === 0 && (Number(it.unitPrice) || 0) > 0) {
-        try {
-          const invList = getInventoryList();
-          const normN = String(it.name || '').replace(/[\u3000\s]+/g, ' ').trim();
-          const matchedInv = invList.find(c => {
-            if (!c) return false;
-            const cName = String(c.name || '').replace(/[\u3000\s]+/g, ' ').trim();
-            const cSku = String(c.sku || '').trim();
-            return (cName && cName === normN) || (cSku && normN.startsWith(cSku));
-          });
-          if (matchedInv && Number(matchedInv.unitCost) > 0) {
-            const q = Number(it.quantity) || 1;
-            const uCost = Number(matchedInv.unitCost);
-            itemAssignedCogs = uCost * q;
-            it.costPrice = uCost;
-            it.assignedCogs = itemAssignedCogs;
-          }
-        } catch (invErr) {
-          console.warn('在庫マスタ原価自動補完エラー:', invErr);
+        const uCost = resolveInventoryMasterCostForLine(it);
+        if (uCost > 0) {
+          const q = Math.max(1, Number(it.quantity) || 1);
+          itemAssignedCogs = uCost * q;
+          it.costPrice = uCost;
+          it.assignedCogs = itemAssignedCogs;
+        }
+      } else if (itemAssignedCogs > 0) {
+        it.assignedCogs = itemAssignedCogs;
+        if (!Number(it.costPrice)) {
+          it.costPrice = Math.round(itemAssignedCogs / Math.max(1, Number(it.quantity) || 1));
         }
       }
       docAssignedCogs += itemAssignedCogs;
     });
 
-    if (docAssignedCogs > 0) {
-      currentDoc.assignedCogs = docAssignedCogs;
-    }
+    currentDoc.assignedCogs = docAssignedCogs;
+    currentDoc.costTotal = docAssignedCogs;
+    console.log('【確定発行・原価同期完了】', { docNumber: docNo, docAssignedCogs, lineCount: currentDoc.items.length });
   }
 
   // 4. 書類履歴へ保存（財務会計への即時データ投入）
@@ -3314,8 +3341,9 @@ function renderItemInputCards() {
       });
     }
 
-    // 基本項目の変更イベント
+    // 基本項目の変更イベント（数量変更・商品名変更時も原価×数量を動的再集計）
     const handleItemChange = () => {
+      const prevName = item.name;
       item.name = inputName.value;
       if (inputDescription) item.description = inputDescription.value;
       item.quantity = Number(inputQty.value) || 0;
@@ -3323,6 +3351,18 @@ function renderItemInputCards() {
       item.unitPrice = Number(inputPrice.value) || 0;
       item.taxRate = Number(selectTax.value);
       if (inputNote) item.note = inputNote.value;
+
+      const hasSerialAssign = Array.isArray(item.assignedSerials) && item.assignedSerials.length > 0;
+      if (prevName !== item.name && !hasSerialAssign) {
+        const masterCost = resolveInventoryMasterCostForLine(item);
+        item.costPrice = masterCost;
+        item.assignedCogs = masterCost * Math.max(1, item.quantity || 1);
+      } else if (!hasSerialAssign && Number(item.costPrice) > 0 && item.unitPrice >= 0) {
+        item.assignedCogs = Number(item.costPrice) * Math.max(1, item.quantity || 1);
+      }
+      if (typeof recalculateDocCostTotals === 'function' && currentDoc) {
+        recalculateDocCostTotals(currentDoc);
+      }
 
       displayTotal.textContent = formatCurrency(item.quantity * item.unitPrice);
       updatePreviewBar();
@@ -6272,9 +6312,12 @@ function duplicateDocFromHistory(id) {
       it.serialNumber = '';
       delete it.assignedSerials;
       delete it.assignedCogs;
+      delete it.costPrice;
       delete it.bundleItemId;
     });
   }
+  newDoc.assignedCogs = 0;
+  newDoc.costTotal = 0;
 
   currentDoc = newDoc;
   populateFormFromDoc();
@@ -6908,8 +6951,15 @@ function renderItemMasterList(searchQuery = '') {
       };
       if (isSerialTargetItem(newItem)) {
         autoAssignYoungestSerialIfNeeded(newItem, currentDoc.items);
+      } else {
+        const masterCost = resolveInventoryMasterCostForLine(newItem);
+        if (masterCost > 0) {
+          newItem.costPrice = masterCost;
+          newItem.assignedCogs = masterCost * newItem.quantity;
+        }
       }
       currentDoc.items.push(newItem);
+      recalculateDocCostTotals(currentDoc);
       renderItemInputCards();
       renderAll();
       if (typeof switchEditorTab === 'function') {
@@ -12966,13 +13016,19 @@ function confirmSerialAssign() {
     });
 
     currentDoc.updatedAt = new Date().toISOString();
+    // 伝票全体の売上原価合計を全明細から再集計して保存（ヘッダと明細の同期ズレ防止）
+    if (typeof recalculateDocCostTotals === 'function') {
+      recalculateDocCostTotals(currentDoc);
+    }
     // 伝票データを履歴・サーバーへ自動保存
     if (typeof saveDocToHistory === 'function') {
       saveDocToHistory(currentDoc);
     }
+  } else if (typeof recalculateDocCostTotals === 'function') {
+    recalculateDocCostTotals(currentDoc);
   }
 
-  console.log('【シリアル引当確定】完了', { assignedCount: assigned.length, totalCost, serialNumber: item.serialNumber });
+  console.log('【シリアル引当確定】完了', { assignedCount: assigned.length, totalCost, docAssignedCogs: currentDoc.assignedCogs, serialNumber: item.serialNumber });
   closeSerialAssignModal();
   renderItemInputCards();
   renderAll();
