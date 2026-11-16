@@ -632,7 +632,9 @@ export function calculateProfitAndLoss(invoices = [], expenses = [], periodFilte
   let totalSga = 0;               // 販管費（600番台）
   let totalNonOperatingExpense = 0; // 営業外費用（700番台）
 
-  const expenseByCategory = {};
+  const costOfSalesByCategory = {};
+  const sgaByCategory = {};
+  const nonOperatingExpenseByCategory = {};
   const revenueByCategory = {};
 
   // 統合仕訳からP/L科目（収益・費用）を抽出集計
@@ -653,12 +655,14 @@ export function calculateProfitAndLoss(invoices = [], expenses = [], periodFilte
         // 貸方に費用科目が来た場合（要件2: 期末棚卸による売上原価控除など）
         if (acc.subType === 'cost_of_sales') {
           totalCostOfSales -= amt;
+          costOfSalesByCategory[acc.name] = (costOfSalesByCategory[acc.name] || 0) - amt;
         } else if (acc.subType === 'non_operating_expense') {
           totalNonOperatingExpense -= amt;
+          nonOperatingExpenseByCategory[acc.name] = (nonOperatingExpenseByCategory[acc.name] || 0) - amt;
         } else {
           totalSga -= amt;
+          sgaByCategory[acc.name] = (sgaByCategory[acc.name] || 0) - amt;
         }
-        expenseByCategory[acc.name] = (expenseByCategory[acc.name] || 0) - amt;
       }
     });
 
@@ -670,12 +674,14 @@ export function calculateProfitAndLoss(invoices = [], expenses = [], periodFilte
       if (acc.type === 'expense') {
         if (acc.subType === 'cost_of_sales') {
           totalCostOfSales += amt;
+          costOfSalesByCategory[acc.name] = (costOfSalesByCategory[acc.name] || 0) + amt;
         } else if (acc.subType === 'non_operating_expense') {
           totalNonOperatingExpense += amt;
+          nonOperatingExpenseByCategory[acc.name] = (nonOperatingExpenseByCategory[acc.name] || 0) + amt;
         } else {
           totalSga += amt;
+          sgaByCategory[acc.name] = (sgaByCategory[acc.name] || 0) + amt;
         }
-        expenseByCategory[acc.name] = (expenseByCategory[acc.name] || 0) + amt;
       } else if (acc.type === 'revenue') {
         // 借方に収益科目が来た場合（売上取消・返品等）
         if (acc.subType === 'operating_revenue') {
@@ -734,7 +740,10 @@ export function calculateProfitAndLoss(invoices = [], expenses = [], periodFilte
     ordinaryProfit,
     netIncome, // ★当期純利益（B/S純資産連動用）
     revenueByCategory,
-    expenseByCategory
+    costOfSalesByCategory,
+    sgaByCategory,
+    nonOperatingExpenseByCategory,
+    expenseByCategory: sgaByCategory
   };
 }
 

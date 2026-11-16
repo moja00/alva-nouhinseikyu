@@ -109,6 +109,7 @@ import {
 
 import {
   ACCOUNT_CATEGORIES,
+  findAccountDef,
   calculateProfitAndLoss,
   generateJournalEntries,
   exportJournalsToCSV,
@@ -14198,6 +14199,34 @@ function renderAccountingDashboard(periodFilter = currentAccGlobalPeriod) {
   }
 }
 
+function buildPlCategoryRowsHtml(entries, totalSales, emptyLabel) {
+  if (!entries || entries.length === 0) {
+    return `
+      <tr style="border-bottom: 1px solid #f1f5f9; font-size: 0.775rem;">
+        <td style="padding: 4px 12px;"></td>
+        <td style="padding: 4px 12px; padding-left: 28px; color: #94a3b8;">${escapeHtml(emptyLabel)}</td>
+        <td style="padding: 4px 12px; text-align: right; font-family: monospace; color: #94a3b8;">¥0</td>
+        <td style="padding: 4px 12px;"></td>
+        <td style="padding: 4px 12px; text-align: right; font-size: 10px; color: #94a3b8;">0.0%</td>
+      </tr>
+    `;
+  }
+  return entries.map(([catName, amt]) => {
+    const accDef = typeof findAccountDef === 'function' ? findAccountDef(catName) : null;
+    const accCode = accDef && accDef.code ? accDef.code : '-';
+    const itemRatio = totalSales > 0 ? ((amt / totalSales) * 100).toFixed(1) : '0.0';
+    return `
+      <tr style="border-bottom: 1px solid #f1f5f9; font-size: 0.775rem;">
+        <td style="padding: 4px 12px; font-family: monospace; color: #94a3b8; font-size: 10px;">${escapeHtml(accCode)}</td>
+        <td style="padding: 4px 12px; padding-left: 28px; color: #475569;">${escapeHtml(catName)}</td>
+        <td style="padding: 4px 12px; text-align: right; font-family: monospace; color: #64748b;">${formatCurrency(amt)}</td>
+        <td style="padding: 4px 12px; text-align: right; font-family: monospace;"></td>
+        <td style="padding: 4px 12px; text-align: right; font-size: 10px; color: #94a3b8;">${itemRatio}%</td>
+      </tr>
+    `;
+  }).join('');
+}
+
 function renderFormalProfitAndLossTable(pnl) {
   const tbody = document.getElementById('plFormalTableBody');
   const badge = document.getElementById('plNetProfitBadge');
@@ -14226,9 +14255,26 @@ function renderFormalProfitAndLossTable(pnl) {
     }
   }
 
-  const sgaItems = Object.entries(pnl.expenseByCategory || {})
-    .filter(([_, amt]) => amt > 0)
+  // 500番台（売上原価）と 600番台（販管費）を明確に分離して内訳を生成
+  const costItems = Object.entries(pnl.costOfSalesByCategory || {})
+    .filter(([_, amt]) => amt !== 0)
     .sort((a, b) => b[1] - a[1]);
+
+  const sgaSource = pnl.sgaByCategory || pnl.expenseByCategory || {};
+  const sgaItems = Object.entries(sgaSource)
+    .filter(([catName, amt]) => {
+      if (amt === 0) return false;
+      const def = typeof findAccountDef === 'function' ? findAccountDef(catName) : null;
+      return !def || (def.subType !== 'cost_of_sales' && def.subType !== 'non_operating_expense');
+    })
+    .sort((a, b) => b[1] - a[1]);
+
+  console.log('【P/L描画】売上原価/販管費内訳分離完了', {
+    costOfSales,
+    costItemsCount: costItems.length,
+    totalSga,
+    sgaItemsCount: sgaItems.length
+  });
 
   let html = '';
 
@@ -14243,17 +14289,18 @@ function renderFormalProfitAndLossTable(pnl) {
     </tr>
   `;
 
-  // 2. 売上原価
+  // 2. 売上原価 (500番台)
   const costRatio = totalSales > 0 ? ((costOfSales / totalSales) * 100).toFixed(1) : '0.0';
   html += `
-    <tr style="border-bottom: 1px solid #f1f5f9;">
-      <td style="padding: 6px 12px; font-family: monospace; color: #94a3b8;">500番台</td>
-      <td style="padding: 6px 12px; padding-left: 24px; color: #475569;">Ⅱ 売上原価（仕入・外注費等）</td>
-      <td style="padding: 6px 12px; text-align: right; font-family: monospace; color: #64748b;">${formatCurrency(costOfSales)}</td>
-      <td style="padding: 6px 12px; text-align: right; font-family: monospace;"></td>
-      <td style="padding: 6px 12px; text-align: right; font-size: 11px; color: #64748b;">${costRatio}%</td>
+    <tr style="background: #f8fafc; font-weight: 700; color: #1e293b; border-top: 1px solid #cbd5e1;">
+      <td style="padding: 8px 12px; font-family: monospace; color: #64748b;">500番台</td>
+      <td style="padding: 8px 12px;">Ⅱ 売上原価（仕入・外注費・荷造運賃等）</td>
+      <td style="padding: 8px 12px; text-align: right; font-family: monospace;"></td>
+      <td style="padding: 8px 12px; text-align: right; font-family: monospace; font-size: 0.95rem; color: #475569;">${formatCurrency(costOfSales)}</td>
+      <td style="padding: 8px 12px; text-align: right; font-size: 11px; color: #64748b;">${costRatio}%</td>
     </tr>
   `;
+  html += buildPlCategoryRowsHtml(costItems, totalSales, '（売上原価計上なし）');
 
   // 3. 売上総利益（粗利益）
   const grossMargin = totalSales > 0 ? ((grossProfit / totalSales) * 100).toFixed(1) : '0.0';
@@ -14267,7 +14314,7 @@ function renderFormalProfitAndLossTable(pnl) {
     </tr>
   `;
 
-  // 4. 販売費及び一般管理費 (SGA)
+  // 4. 販売費及び一般管理費 (SGA: 600番台)
   const sgaRatio = totalSales > 0 ? ((totalSga / totalSales) * 100).toFixed(1) : '0.0';
   html += `
     <tr style="background: #f8fafc; font-weight: 700; color: #1e293b; border-top: 1px solid #cbd5e1;">
@@ -14278,32 +14325,7 @@ function renderFormalProfitAndLossTable(pnl) {
       <td style="padding: 8px 12px; text-align: right; font-size: 11px; color: #64748b;">${sgaRatio}%</td>
     </tr>
   `;
-
-  // SGAの内訳行
-  if (sgaItems.length > 0) {
-    sgaItems.forEach(([catName, amt]) => {
-      const itemRatio = totalSales > 0 ? ((amt / totalSales) * 100).toFixed(1) : '0.0';
-      html += `
-        <tr style="border-bottom: 1px solid #f1f5f9; font-size: 0.775rem;">
-          <td style="padding: 4px 12px; font-family: monospace; color: #94a3b8; font-size: 10px;">-</td>
-          <td style="padding: 4px 12px; padding-left: 28px; color: #475569;">${escapeHtml(catName)}</td>
-          <td style="padding: 4px 12px; text-align: right; font-family: monospace; color: #64748b;">${formatCurrency(amt)}</td>
-          <td style="padding: 4px 12px; text-align: right; font-family: monospace;"></td>
-          <td style="padding: 4px 12px; text-align: right; font-size: 10px; color: #94a3b8;">${itemRatio}%</td>
-        </tr>
-      `;
-    });
-  } else {
-    html += `
-      <tr style="border-bottom: 1px solid #f1f5f9; font-size: 0.775rem;">
-        <td style="padding: 4px 12px;"></td>
-        <td style="padding: 4px 12px; padding-left: 28px; color: #94a3b8;">（経費支出なし）</td>
-        <td style="padding: 4px 12px; text-align: right; font-family: monospace; color: #94a3b8;">¥0</td>
-        <td style="padding: 4px 12px;"></td>
-        <td style="padding: 4px 12px; text-align: right; font-size: 10px; color: #94a3b8;">0.0%</td>
-      </tr>
-    `;
-  }
+  html += buildPlCategoryRowsHtml(sgaItems, totalSales, '（販管費支出なし）');
 
   // 5. 営業利益
   const opMargin = totalSales > 0 ? ((operatingProfit / totalSales) * 100).toFixed(1) : '0.0';
@@ -14358,8 +14380,13 @@ function renderFormalProfitAndLossTable(pnl) {
 
 function renderExpenseCategoryBreakdown(pnl) {
   if (!DOM.accExpenseCategoryList) return;
-  const categories = Object.entries(pnl.expenseByCategory || {})
-    .filter(([_, amt]) => amt > 0)
+  const sgaSource = pnl.sgaByCategory || pnl.expenseByCategory || {};
+  const categories = Object.entries(sgaSource)
+    .filter(([catName, amt]) => {
+      if (amt <= 0) return false;
+      const def = typeof findAccountDef === 'function' ? findAccountDef(catName) : null;
+      return !def || (def.subType !== 'cost_of_sales' && def.subType !== 'non_operating_expense');
+    })
     .sort((a, b) => b[1] - a[1]);
 
   if (categories.length === 0) {
