@@ -9259,6 +9259,7 @@ if (typeof window !== 'undefined') {
   window.clearAllTrashDocs = clearAllTrashDocs;
   window.getAccountMasterList = getAccountMasterList;
   window.saveAccountMasterList = saveAccountMasterList;
+  window.getPayrollRecords = getPayrollRecords;
   window.getManualJournals = getManualJournals;
   window.saveManualJournal = saveManualJournal;
   window.deleteManualJournal = deleteManualJournal;

@@ -898,7 +898,19 @@ function splitTaxInclusiveAmount(amountInc, taxRate = 10) {
  * @param {object|Array} arg1
  * @returns {Array<object>} 統合仕訳リスト
  */
-function buildUnifiedJournals(arg1 = {}, arg2 = [], arg3 = [], arg4 = [], arg5 = 'all') {
+function resolvePayrollRecordsFallback(explicitArg) {
+  if (Array.isArray(explicitArg)) return explicitArg;
+  if (typeof window !== 'undefined' && typeof window.getPayrollRecords === 'function') {
+    try {
+      const list = window.getPayrollRecords();
+      return Array.isArray(list) ? list : [];
+    } catch (e) {
+      return [];
+    }
+  }
+  return [];
+}
+function buildUnifiedJournals(arg1 = {}, arg2 = [], arg3 = [], arg4 = null, arg5 = 'all') {
   let invoices = [];
   let expenses = [];
   let manualJournals = [];
@@ -910,7 +922,9 @@ function buildUnifiedJournals(arg1 = {}, arg2 = [], arg3 = [], arg4 = [], arg5 =
     invoices = Array.isArray(arg1.invoices) ? arg1.invoices : [];
     expenses = Array.isArray(arg1.expenses) ? arg1.expenses : [];
     manualJournals = Array.isArray(arg1.manualJournals) ? arg1.manualJournals : [];
-    payrollRecords = Array.isArray(arg1.payrollRecords) ? arg1.payrollRecords : [];
+    payrollRecords = arg1.payrollRecords !== undefined
+      ? (Array.isArray(arg1.payrollRecords) ? arg1.payrollRecords : [])
+      : resolvePayrollRecordsFallback(null);
     periodFilter = arg1.periodFilter || 'all';
   } else {
     // 位置引数形式: (invoices, expenses, manualJournals, payrollRecords, periodFilter)
@@ -924,12 +938,13 @@ function buildUnifiedJournals(arg1 = {}, arg2 = [], arg3 = [], arg4 = [], arg5 =
         payrollRecords = arg4;
         periodFilter = arg5 || 'all';
       } else {
-        periodFilter = arg4 || 'all';
+        payrollRecords = resolvePayrollRecordsFallback(null);
+        periodFilter = (typeof arg4 === 'string' || (arg4 && typeof arg4 === 'object')) ? arg4 : 'all';
       }
     } else {
       periodFilter = arg3 || 'all';
       manualJournals = Array.isArray(arg4) ? arg4 : [];
-      payrollRecords = Array.isArray(arg5) ? arg5 : [];
+      payrollRecords = resolvePayrollRecordsFallback(arg5);
     }
   }
 
@@ -944,10 +959,19 @@ function buildUnifiedJournals(arg1 = {}, arg2 = [], arg3 = [], arg4 = [], arg5 =
     if ((jnl.sourceType === 'reconciliation' || jnl.sourceType === 'reconcile') && jnl.sourceId) {
       manualReconciliationSourceIds.add(String(jnl.sourceId).trim());
     }
-    if (jnl.sourceType === 'payroll' && jnl.sourceId) {
-      manualPayrollSourceIds.add(String(jnl.sourceId).trim());
-      const cleanMonth = String(jnl.sourceId).replace(/^payroll_/, '').trim();
-      if (cleanMonth) manualPayrollSourceIds.add(cleanMonth);
+    if (jnl.sourceType === 'payroll') {
+      if (jnl.sourceId) {
+        manualPayrollSourceIds.add(String(jnl.sourceId).trim());
+        const cleanMonth = String(jnl.sourceId).replace(/^payroll_/, '').trim();
+        if (cleanMonth) manualPayrollSourceIds.add(cleanMonth);
+      }
+      if (jnl.entryNumber) {
+        const m = String(jnl.entryNumber).match(/PAY-(\d{4})(\d{2})/);
+        if (m) manualPayrollSourceIds.add(`${m[1]}-${m[2]}`);
+      }
+      if (jnl.date && jnl.date.length >= 7) {
+        manualPayrollSourceIds.add(jnl.date.substring(0, 7));
+      }
     }
   });
 
@@ -1162,55 +1186,65 @@ function buildUnifiedJournals(arg1 = {}, arg2 = [], arg3 = [], arg4 = [], arg5 =
     });
   });
 
-  // 2.5 給与計算データ自動仕訳（要件1: 手動給与仕訳がある場合はスキップ）
+  // 2.5 給与計算データ自動仕訳（未連携月を payroll_records から自動補完・既連携月はスキップ）
+  const seenAutoPayrollKeys = new Set();
   (payrollRecords || []).forEach(pay => {
     if (!pay) return;
     const cleanPayId = String(pay.id || pay.recordId || '').trim();
-    const payMonth = String(pay.targetMonth || '').trim();
+    const payMonth = String(pay.targetMonth || pay.paymentMonth || '').trim();
     if ((cleanPayId && manualPayrollSourceIds.has(cleanPayId)) ||
         (payMonth && manualPayrollSourceIds.has(payMonth)) ||
         (payMonth && manualPayrollSourceIds.has(`payroll_${payMonth}`))) {
       return; // 複合仕訳側で計上済みのためスキップ
     }
+    const autoKey = payMonth || cleanPayId;
+    if (autoKey && seenAutoPayrollKeys.has(autoKey)) return;
+    if (autoKey) seenAutoPayrollKeys.add(autoKey);
 
-    const date = pay.paymentDate || pay.date || pay.period || '';
+    const date = pay.paymentDate || pay.date || pay.period || (payMonth ? `${payMonth}-25` : '');
     if (!isDateInPeriod(date, periodFilter)) return;
 
-    const grossSalary = Number(pay.grossSalary || pay.totalPayment || pay.grossPay || pay.total || 0);
-    const deductions = Number(pay.deductionsTotal || pay.totalDeduction || pay.taxTotal || 0);
-    const netSalary = Number(pay.netPayment || pay.netSalary || (grossSalary - deductions));
-    const empName = pay.employeeName || pay.name || '従業員';
+    const grossSalary = Number(pay.totalGross ?? pay.grossSalary ?? pay.totalPayment ?? pay.grossPay ?? pay.total ?? 0);
+    const calcTaxSoc = (Number(pay.incomeTax) || 0) + (Number(pay.residentTax) || 0) + (Number(pay.totalSocialInsurance) || 0);
+    const dedRaw = pay.totalDeductions ?? pay.deductionsTotal ?? pay.totalDeduction ?? pay.taxTotal;
+    const deductions = (dedRaw !== undefined && dedRaw !== null) ? Number(dedRaw) : calcTaxSoc;
+    const netRaw = pay.netPay ?? pay.netPayment ?? pay.netSalary;
+    const netSalary = (netRaw !== undefined && netRaw !== null) ? Number(netRaw) : (grossSalary - deductions);
+    const empName = pay.empName || pay.employeeName || pay.name || '役員・従業員';
 
     if (grossSalary <= 0 && netSalary <= 0) return;
 
+    const balancedGross = grossSalary > 0 ? grossSalary : (netSalary + deductions);
+    const balancedNet = balancedGross - deductions;
+
     const debLines = [
-      { accountCode: '602', accountName: '給料手当', subAccount: empName, amount: grossSalary || netSalary, taxType: 'non_taxable', invoiceType: 'none' }
+      { accountCode: '602', accountName: '給料手当', subAccount: empName, amount: balancedGross, taxType: 'non_taxable', invoiceType: 'none' }
     ];
     const credLines = [];
-    if (netSalary > 0) {
-      credLines.push({ accountCode: '102', accountName: '普通預金', subAccount: '', amount: netSalary, taxType: 'out_of_scope', invoiceType: 'none' });
-    }
     if (deductions > 0) {
-      credLines.push({ accountCode: '214', accountName: '預り金', subAccount: '源泉税・社保控除', amount: deductions, taxType: 'out_of_scope', invoiceType: 'none' });
+      credLines.push({ accountCode: '214', accountName: '預り金', subAccount: '源泉税・住民税・社保控除', amount: deductions, taxType: 'out_of_scope', invoiceType: 'none' });
+    }
+    if (balancedNet > 0) {
+      credLines.push({ accountCode: '102', accountName: '普通預金', subAccount: '給与振込', amount: balancedNet, taxType: 'out_of_scope', invoiceType: 'none' });
     }
     if (credLines.length === 0) {
-      credLines.push({ accountCode: '102', accountName: '普通預金', subAccount: '', amount: grossSalary, taxType: 'out_of_scope', invoiceType: 'none' });
+      credLines.push({ accountCode: '102', accountName: '普通預金', subAccount: '給与振込', amount: balancedGross, taxType: 'out_of_scope', invoiceType: 'none' });
     }
 
-    const totDeb = debLines.reduce((s, l) => s + l.amount, 0);
-    const totCred = credLines.reduce((s, l) => s + l.amount, 0);
+    const ymParts = payMonth ? payMonth.split('-') : [];
+    const ymLabel = ymParts.length === 2 ? `${ymParts[0]}年${parseInt(ymParts[1], 10)}月度 ` : '';
 
     unified.push({
-      id: `jnl_pay_${cleanPayId || Date.now()}`,
+      id: `jnl_pay_${cleanPayId || payMonth || Date.now()}`,
       date: date || new Date().toISOString().split('T')[0],
-      entryNumber: `PAY-${(cleanPayId || '').slice(-6) || 'AUTO'}`,
-      description: `給与支給: ${empName}`,
+      entryNumber: payMonth ? `PAY-${payMonth.replace('-', '')}` : `PAY-${(cleanPayId || '').slice(-6) || 'AUTO'}`,
+      description: `${ymLabel}給料手当・役員報酬 支給（給与明細自動補完）`,
       sourceType: 'payroll',
-      sourceId: cleanPayId,
+      sourceId: payMonth ? `payroll_${payMonth}` : cleanPayId,
       debitLines: debLines,
       creditLines: credLines,
-      totalDebit: totDeb,
-      totalCredit: totCred
+      totalDebit: balancedGross,
+      totalCredit: balancedGross
     });
   });
 
@@ -1339,7 +1373,7 @@ function generateJournalEntries(invoices = [], expenses = [], periodFilter = 'al
 // 6. 損益計算書（P/L）集計
 //    【要件3: 売上原価 cost_of_sales と 販管費 sga の段階利益集計】
 // ==========================================================================
-function calculateProfitAndLoss(invoices = [], expenses = [], periodFilter = 'all', manualJournals = []) {
+function calculateProfitAndLoss(invoices = [], expenses = [], periodFilter = 'all', manualJournals = [], payrollRecords = null) {
   if (typeof invoices === 'string' || (invoices && typeof invoices === 'object' && !Array.isArray(invoices) && invoices.start !== undefined)) {
     periodFilter = invoices || 'all';
     invoices = [];
@@ -1349,7 +1383,8 @@ function calculateProfitAndLoss(invoices = [], expenses = [], periodFilter = 'al
   if (!Array.isArray(expenses)) expenses = [];
   if (!periodFilter) periodFilter = 'all';
 
-  const unified = buildUnifiedJournals({ invoices, expenses, manualJournals, periodFilter });
+  const resolvedPayrolls = resolvePayrollRecordsFallback(payrollRecords);
+  const unified = buildUnifiedJournals({ invoices, expenses, manualJournals, payrollRecords: resolvedPayrolls, periodFilter });
 
   let totalSales = 0;             // 総売上高（401）
   let totalNonOperatingRevenue = 0; // 営業外収益（411, 412）
@@ -1506,7 +1541,7 @@ function calculateProfitAndLoss(invoices = [], expenses = [], periodFilter = 'al
  * @param {object|Array} arg2 
  * @returns {object} 元帳明細および残高推移
  */
-function calculateGeneralLedger(targetAccountCodeOrName, arg2 = {}, arg3 = [], arg4 = {}, arg5 = [], arg6 = [], arg7 = 'all') {
+function calculateGeneralLedger(targetAccountCodeOrName, arg2 = {}, arg3 = [], arg4 = {}, arg5 = [], arg6 = [], arg7 = 'all', arg8 = null) {
   let accountMaster = DEFAULT_ACCOUNT_MASTER;
   let openingBalances = {};
   let unifiedJournals = [];
@@ -1521,16 +1556,17 @@ function calculateGeneralLedger(targetAccountCodeOrName, arg2 = {}, arg3 = [], a
     periodFilter = arg2.periodFilter || 'all';
     subAccount = arg2.subAccount || '';
   } else if (Array.isArray(arg2)) {
-    // 位置引数形式: calculateGeneralLedger(selectedAccount, invoices, expenses, fiscalSettings, accountMaster, manualJournals, periodFilter)
+    // 位置引数形式: calculateGeneralLedger(selectedAccount, invoices, expenses, fiscalSettings, accountMaster, manualJournals, periodFilter, payrollRecords)
     const invoices = arg2;
     const expenses = Array.isArray(arg3) ? arg3 : [];
     const fiscalSettings = (arg4 && typeof arg4 === 'object' && !Array.isArray(arg4)) ? arg4 : {};
     accountMaster = (Array.isArray(arg5) && arg5.length > 0) ? arg5 : DEFAULT_ACCOUNT_MASTER;
     const manualJournals = Array.isArray(arg6) ? arg6 : [];
     periodFilter = arg7 || fiscalSettings.periodFilter || 'all';
+    const resolvedPayrolls = resolvePayrollRecordsFallback(arg8);
 
     openingBalances = fiscalSettings.openingBalances || fiscalSettings || {};
-    unifiedJournals = buildUnifiedJournals(invoices, expenses, manualJournals, [], periodFilter);
+    unifiedJournals = buildUnifiedJournals(invoices, expenses, manualJournals, resolvedPayrolls, periodFilter);
   }
 
   const accDef = findAccountDef(targetAccountCodeOrName, accountMaster);
@@ -1661,7 +1697,7 @@ function calculateGeneralLedger(targetAccountCodeOrName, arg2 = {}, arg3 = [], a
  * @param {object|Array} arg1
  * @returns {object} 全科目の期首・借方計・貸方計・期末残高および合計バランス
  */
-function calculateTrialBalance(arg1 = {}, arg2 = {}, arg3 = {}, arg4 = [], arg5 = [], arg6 = 'all') {
+function calculateTrialBalance(arg1 = {}, arg2 = {}, arg3 = {}, arg4 = [], arg5 = [], arg6 = 'all', arg7 = null) {
   let accountMaster = DEFAULT_ACCOUNT_MASTER;
   let openingBalances = {};
   let unifiedJournals = [];
@@ -1674,16 +1710,17 @@ function calculateTrialBalance(arg1 = {}, arg2 = {}, arg3 = {}, arg4 = [], arg5 
     unifiedJournals = Array.isArray(arg1.unifiedJournals) ? arg1.unifiedJournals : [];
     periodFilter = arg1.periodFilter || 'all';
   } else if (Array.isArray(arg1)) {
-    // 位置引数形式: calculateTrialBalance(invoices, expenses, fiscalSettings, accountMaster, manualJournals, periodFilter)
+    // 位置引数形式: calculateTrialBalance(invoices, expenses, fiscalSettings, accountMaster, manualJournals, periodFilter, payrollRecords)
     const invoices = arg1;
     const expenses = Array.isArray(arg2) ? arg2 : [];
     const fiscalSettings = (arg3 && typeof arg3 === 'object' && !Array.isArray(arg3)) ? arg3 : {};
     accountMaster = (Array.isArray(arg4) && arg4.length > 0) ? arg4 : DEFAULT_ACCOUNT_MASTER;
     const manualJournals = Array.isArray(arg5) ? arg5 : [];
     periodFilter = arg6 || fiscalSettings.periodFilter || 'all';
+    const resolvedPayrolls = resolvePayrollRecordsFallback(arg7);
 
     openingBalances = fiscalSettings.openingBalances || fiscalSettings || {};
-    unifiedJournals = buildUnifiedJournals(invoices, expenses, manualJournals, [], periodFilter);
+    unifiedJournals = buildUnifiedJournals(invoices, expenses, manualJournals, resolvedPayrolls, periodFilter);
   }
 
   const master = Array.isArray(accountMaster) && accountMaster.length > 0 ? accountMaster : DEFAULT_ACCOUNT_MASTER;
@@ -1810,7 +1847,7 @@ function calculateTrialBalance(arg1 = {}, arg2 = {}, arg3 = {}, arg4 = [], arg5 
  * @param {object|Array} arg1
  * @returns {object} 資産・負債・純資産の部および完全一致バランス検証
  */
-function calculateBalanceSheet(arg1 = {}, arg2 = {}, arg3 = {}, arg4 = [], arg5 = [], arg6 = 'all') {
+function calculateBalanceSheet(arg1 = {}, arg2 = {}, arg3 = {}, arg4 = [], arg5 = [], arg6 = 'all', arg7 = null) {
   let accountMaster = DEFAULT_ACCOUNT_MASTER;
   let openingBalances = {};
   let unifiedJournals = [];
@@ -1825,17 +1862,18 @@ function calculateBalanceSheet(arg1 = {}, arg2 = {}, arg3 = {}, arg4 = [], arg5 
     periodFilter = arg1.periodFilter || 'all';
     profitAndLoss = arg1.profitAndLoss || null;
   } else if (Array.isArray(arg1)) {
-    // 位置引数形式: calculateBalanceSheet(invoices, expenses, fiscalSettings, accountMaster, manualJournals, periodFilter)
+    // 位置引数形式: calculateBalanceSheet(invoices, expenses, fiscalSettings, accountMaster, manualJournals, periodFilter, payrollRecords)
     const invoices = arg1;
     const expenses = Array.isArray(arg2) ? arg2 : [];
     const fiscalSettings = (arg3 && typeof arg3 === 'object' && !Array.isArray(arg3)) ? arg3 : {};
     accountMaster = (Array.isArray(arg4) && arg4.length > 0) ? arg4 : DEFAULT_ACCOUNT_MASTER;
     const manualJournals = Array.isArray(arg5) ? arg5 : [];
     periodFilter = arg6 || fiscalSettings.periodFilter || 'all';
+    const resolvedPayrolls = resolvePayrollRecordsFallback(arg7);
 
     openingBalances = fiscalSettings.openingBalances || fiscalSettings || {};
-    unifiedJournals = buildUnifiedJournals(invoices, expenses, manualJournals, [], periodFilter);
-    profitAndLoss = calculateProfitAndLoss(invoices, expenses, periodFilter, manualJournals);
+    unifiedJournals = buildUnifiedJournals(invoices, expenses, manualJournals, resolvedPayrolls, periodFilter);
+    profitAndLoss = calculateProfitAndLoss(invoices, expenses, periodFilter, manualJournals, resolvedPayrolls);
   }
 
   // 試算表をベースに残高を算出
@@ -12711,6 +12749,7 @@ if (typeof window !== 'undefined') {
   window.clearAllTrashDocs = clearAllTrashDocs;
   window.getAccountMasterList = getAccountMasterList;
   window.saveAccountMasterList = saveAccountMasterList;
+  window.getPayrollRecords = getPayrollRecords;
   window.getManualJournals = getManualJournals;
   window.saveManualJournal = saveManualJournal;
   window.deleteManualJournal = deleteManualJournal;
