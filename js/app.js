@@ -106,6 +106,8 @@ import {
   isNonStockItem,
   getMasterKey,
   resolveInventoryMasterCostForLine,
+  resolveSerialUnitCostFromLots,
+  expandBundleSerialAssignment,
   recalculateDocCostTotals
 } from './storage.js';
 
@@ -2852,15 +2854,19 @@ function autoAssignYoungestSerialIfNeeded(item, docItems = []) {
   const available = getYoungestAvailableSerials(item, qty, usedSerials);
 
   if (available.length > 0) {
-    item.assignedSerials = available.map(s => ({
+    const rawSns = available.map(s => s.serialNumber);
+    const expanded = expandBundleSerialAssignment(rawSns, item);
+    item.assignedSerials = expanded.length > 0 ? expanded : available.map(s => ({
       serialNumber: s.serialNumber,
       itemId: s.itemId || s.inventoryId || '',
       itemName: s.itemName || item.name || '',
-      costPrice: s.costPrice || s.unitCost || 0
+      costPrice: resolveSerialUnitCostFromLots(s)
     }));
     item.serialNumber = available.map(s => s.serialNumber).join(', ');
-    item.assignedCogs = available.reduce((acc, s) => acc + (Number(s.costPrice || s.unitCost) || 0), 0);
-    if (!item.costPrice) item.costPrice = item.assignedCogs;
+    item.assignedCogs = item.assignedSerials.reduce((acc, s) => acc + (Number(s.costPrice) || 0), 0);
+    if (item.assignedCogs > 0) {
+      item.costPrice = Math.round(item.assignedCogs / Math.max(1, qty));
+    }
   }
 }
 window.autoAssignYoungestSerialIfNeeded = autoAssignYoungestSerialIfNeeded;
@@ -3396,18 +3402,9 @@ function renderItemInputCards() {
 
           const isIdentical = inputSns.length === currentAssignedSns.length && inputSns.every(sn => currentAssignedSns.includes(sn));
           if (!isIdentical) {
-            const allSerials = typeof getInventorySerialList === 'function' ? getInventorySerialList() : [];
-            item.assignedSerials = inputSns.map(sn => {
-              const found = allSerials.find(s => s && String(s.serialNumber).trim().toUpperCase() === sn);
-              return {
-                serialNumber: sn,
-                itemId: found ? (found.itemId || found.inventoryId || '') : '',
-                itemName: found ? (found.itemName || '') : (sn.startsWith('N') ? 'DP-5000 本体' : ''),
-                costPrice: found ? (found.costPrice || found.unitCost || 0) : 0
-              };
-            });
+            item.assignedSerials = expandBundleSerialAssignment(inputSns, item);
             item.assignedCogs = item.assignedSerials.reduce((acc, s) => acc + (Number(s.costPrice) || 0), 0);
-            if (item.assignedCogs > 0) item.costPrice = item.assignedCogs;
+            if (item.assignedCogs > 0) item.costPrice = Math.round(item.assignedCogs / Math.max(1, Number(item.quantity) || 1));
           }
         }
         renderAll();
@@ -9106,27 +9103,33 @@ function executeSerialBatchModal() {
     return;
   }
 
+  const invMasterList = getInventoryList();
+  const findUnitCostById = (targetId, fallbackCost = 0) => {
+    const found = invMasterList.find(i => i && i.id === targetId);
+    return (found && Number(found.unitCost) > 0) ? Number(found.unitCost) : fallbackCost;
+  };
+
   let inventoryId = 'inv_dp5000_body';
   let itemName = 'DP-5000';
   let isCompanyOnly = false;
-  let unitCost = 152000;
+  let unitCost = findUnitCostById('inv_dp5000_body', 77752);
 
   if (itemType === 'DP-MS') {
     inventoryId = 'inv_2';
     itemName = 'DP-MS';
-    unitCost = 40000;
+    unitCost = findUnitCostById('inv_2', 79838);
   } else if (itemType === 'DP-BT-CS') {
     inventoryId = 'inv_prod_1794209910003_eqxd';
     itemName = 'DP-BT-CS　DP-5000用バッテリー';
-    unitCost = 7700;
+    unitCost = findUnitCostById('inv_prod_1794209910003_eqxd', 7700);
   } else if (itemType === 'DP-BT-SK') {
     inventoryId = 'inv_prod_1794209994433_ij47';
     itemName = 'DP-BT-SK　DP-5000用バッテリー';
-    unitCost = 7700;
+    unitCost = findUnitCostById('inv_prod_1794209994433_ij47', 7700);
   } else if (itemType === 'PSE認証 専用急速充電器' || itemType === '急速充電器') {
     inventoryId = 'inv_dp5000_chg';
     itemName = 'PSE認証 専用急速充電器';
-    unitCost = 7700;
+    unitCost = findUnitCostById('inv_dp5000_chg', 7700);
   }
 
   const batchArray = [];
@@ -10160,7 +10163,7 @@ function addLotDp5000BundleSet(setCount = 1) {
   }
 
   const validSetCount = Math.max(1, Number(setCount) || 1);
-  const bodyCost = Number(bodyItem.unitCost) || 152000;
+  const bodyCost = Number(bodyItem.unitCost) || 77752;
   const batCost = Number(batItem.unitCost) || 7700;
   const chgCost = Number(chgItem.unitCost) || 7700;
 
@@ -12101,7 +12104,10 @@ function submitInventoryLotStockIn() {
       const batSns = serialsByGroupKey[`${r.rowId}_bat`] || [];
       const chgSns = serialsByGroupKey[`${r.rowId}_chg`] || [];
 
-      // 急速充電器シリアルを登録
+      const compUnitCost = Math.round(r.landedUnitCost * 0.08);
+      const bodyOnlyUnitCost = r.landedUnitCost - (compUnitCost * 3);
+
+      // 急速充電器シリアルを登録（8%按分）
       chgSns.forEach((cSn, idx) => {
         const pairedBodySn = bodySns[idx] || '';
         allSerialObjects.push({
@@ -12111,7 +12117,8 @@ function submitInventoryLotStockIn() {
           itemType: 'charger',
           lotId,
           lotNumber,
-          costPrice: Math.round(r.landedUnitCost * 0.08),
+          costPrice: compUnitCost,
+          unitCost: compUnitCost,
           status: pairedBodySn ? 'bundled' : 'in_stock',
           bundledWith: pairedBodySn,
           note: pairedBodySn ? `[セット組込済 (本体: ${pairedBodySn})]` : '',
@@ -12122,7 +12129,7 @@ function submitInventoryLotStockIn() {
         });
       });
 
-      // バッテリーシリアルを登録
+      // バッテリーシリアルを登録（各8%按分）
       batSns.forEach((bSn, idx) => {
         const pairedBodySn = bodySns[Math.floor(idx / 2)] || '';
         allSerialObjects.push({
@@ -12131,7 +12138,8 @@ function submitInventoryLotStockIn() {
           itemName: 'PSE認証 リチウムイオンバッテリー (15000mAh)',
           lotId,
           lotNumber,
-          costPrice: Math.round(r.landedUnitCost * 0.08),
+          costPrice: compUnitCost,
+          unitCost: compUnitCost,
           status: pairedBodySn ? 'bundled' : 'in_stock',
           bundledWith: pairedBodySn,
           note: pairedBodySn ? `[セット組込済 (本体: ${pairedBodySn})]` : '',
@@ -12142,7 +12150,7 @@ function submitInventoryLotStockIn() {
         });
       });
 
-      // 本体シリアルを登録（バッテリー2個・急速充電器1台と自動キッティング紐付け）
+      // 本体シリアルを登録（残額約76%を本体原価とし、4点セット合算が landedUnitCost と1円単位で一致）
       bodySns.forEach((bSn, idx) => {
         const pairedBats = [batSns[idx * 2], batSns[idx * 2 + 1]].filter(Boolean);
         const pairedChg = chgSns[idx] || '';
@@ -12152,7 +12160,8 @@ function submitInventoryLotStockIn() {
           itemName: 'DP-5000 本体',
           lotId,
           lotNumber,
-          costPrice: r.landedUnitCost,
+          costPrice: bodyOnlyUnitCost,
+          unitCost: bodyOnlyUnitCost,
           status: 'in_stock',
           isBundled: pairedBats.length === 2,
           batterySerials: pairedBats,
@@ -12475,7 +12484,7 @@ function classifySerialSelectRole(compName = '', compId = '') {
  * 既存シリアル1件分のセレクト<option>要素HTMLを構築
  */
 function buildSerialOptionHtml(s, isSelected, compRole, expectedSku = '') {
-  const sCost = Number(s.costPrice || s.unitCost || 0);
+  const sCost = resolveSerialUnitCostFromLots(s) || Number(s.costPrice || s.unitCost || 0);
   const costStr = sCost ? `(確定原価: ¥${sCost.toLocaleString()})` : '';
   const setTag = (compRole === 'body' && s.isBundled)
     ? ` [セット化済: 🔋${(s.batterySerials || []).join(',') || '有'} ⚡${s.chargerSerial || '有'}]`
@@ -12774,7 +12783,7 @@ function openSerialAssignModal(itemIndex) {
           if (batSel && (!onlyIfEmpty || !batSel.value)) {
             if (!Array.from(batSel.options).some(o => o.value === bSn)) {
               const bObj = allSerials.find(s => s && String(s.serialNumber).trim().toUpperCase() === String(bSn).trim().toUpperCase());
-              const bCost = bObj ? Number(bObj.costPrice || bObj.unitCost || 0) : 0;
+              const bCost = bObj ? resolveSerialUnitCostFromLots(bObj) : 0;
               const opt = document.createElement('option');
               opt.value = bSn;
               opt.dataset.cost = bCost;
@@ -12793,7 +12802,7 @@ function openSerialAssignModal(itemIndex) {
         if (chgSel && (!onlyIfEmpty || !chgSel.value)) {
           if (!Array.from(chgSel.options).some(o => o.value === chgSn)) {
             const cObj = allSerials.find(s => s && String(s.serialNumber).trim().toUpperCase() === String(chgSn).trim().toUpperCase());
-            const cCost = cObj ? Number(cObj.costPrice || cObj.unitCost || 0) : 0;
+            const cCost = cObj ? resolveSerialUnitCostFromLots(cObj) : 0;
             const opt = document.createElement('option');
             opt.value = chgSn;
             opt.dataset.cost = cCost;
