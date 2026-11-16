@@ -21123,26 +21123,6 @@ async function viewSupersededDoc(targetDocNumber) {
     } catch (e) { }
   }
 
-  // 3. マヒミアカラー東村の元伝票（INV-20260920-01）の確実なフォールバック
-  if (!foundDoc && cleanTarget.includes('20260920-01')) {
-    foundDoc = {
-      docNumber: 'INV-20260920-01',
-      invoiceNumber: 'INV-20260920-01',
-      date: '2026-09-20',
-      clientName: 'マヒミアカラー東村',
-      title: '展示会特価（訂正前）',
-      status: 'superseded',
-      supersededBy: 'INV-20260929-01',
-      supersededReason: '同行特価 価格訂正（20260920-01分）への改訂',
-      items: [
-        { name: 'DP-5000　ベーシックセット　バッテリー２個', quantity: 1, unitPrice: 300000, amount: 300000 }
-      ],
-      subtotal: 300000,
-      tax: 30000,
-      total: 330000
-    };
-  }
-
   if (!foundDoc) {
     body.innerHTML = `
       <div style="text-align: center; padding: 30px; color: #ef4444;">

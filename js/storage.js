@@ -1473,10 +1473,9 @@ export function expandBundleSerialAssignment(rawEntries, item, serialsList = nul
 }
 
 /**
- * 全伝票・全商品明細におけるシリアル番号の整合性自動サニタイズ（全社・全取引先共通の包括的恒久防壁）
- * 1. 画面上の手入力シリアルと内部引き当てデータ(assignedSerials)の乖離を全伝票で自動修復
- * 2. 古いゾンビシリアル（裏側に残った過去の若番割当など）を全伝票から完全消去・整合
- * 3. 本田塗料店伝票(DEL-20261105-235)におけるN8460->N10935置換＋ロット原価での自動修復
+ * 全伝票・全商品明細におけるシリアル番号の整合性自動サニタイズ（汎用ロジック）
+ * 1. 画面上の手入力シリアルと内部引き当てデータ(assignedSerials)の乖離を全伝票で自動同期
+ * 2. 台帳上でデモ機（status === 'demo'）と登録された個体が通常の販売伝票へ誤混入していた場合に自動除外
  */
 export function sanitizeDocSerialsConsistency(doc) {
   if (!doc) return false;
@@ -1484,8 +1483,7 @@ export function sanitizeDocSerialsConsistency(doc) {
 
   const docNo = String(doc.docNumber || doc.id || '').trim();
   const clientName = doc.client ? (doc.client.name || '') : (doc.clientName || '');
-  const isHonda = docNo.includes('DEL-20261105-235') || doc.id === 'doc_1793843756482_m0tc1' || clientName.includes('本田塗料');
-  const isDemoDoc = docNo.includes('DEL-20250115') || doc.id === 'doc_20250115_demo' || clientName.includes('社内デモ') || (doc.title && doc.title.includes('社内デモ'));
+  const isDemoDoc = clientName.includes('デモ') || (doc.title && doc.title.includes('デモ'));
 
   const items = (Array.isArray(doc.items) && doc.items.length > 0)
     ? doc.items
@@ -1493,40 +1491,19 @@ export function sanitizeDocSerialsConsistency(doc) {
 
   const allSerials = getInventorySerialList();
   const allLots = getInventoryLotList();
+  const serialByUpper = new Map();
+  allSerials.forEach(s => {
+    if (s && s.serialNumber) {
+      serialByUpper.set(String(s.serialNumber).trim().toUpperCase(), s);
+    }
+  });
 
   items.forEach(it => {
     if (!it) return;
 
-    // ① 本田塗料店伝票におけるN8460の確実なN10935置換（ロット原価ベースで計算）
-    if (isHonda) {
-      if (it.serialNumber && it.serialNumber.includes('N8460')) {
-        it.serialNumber = it.serialNumber.replace(/N8460/g, 'N10935');
-        updated = true;
-      }
-      const hasN8460Assigned = Array.isArray(it.assignedSerials) && it.assignedSerials.some(as => as && String(as.serialNumber).trim().toUpperCase() === 'N8460');
-      const isHondaN10935Line = it.serialNumber === 'N10935' || hasN8460Assigned ||
-        (Array.isArray(it.assignedSerials) && it.assignedSerials.some(as => as && String(as.serialNumber).trim().toUpperCase() === 'N10935'));
-      if (isHondaN10935Line) {
-        const expanded = expandBundleSerialAssignment(['N10935'], it, allSerials, allLots);
-        if (expanded.length > 0) {
-          const sumCost = expanded.reduce((s, a) => s + (Number(a.costPrice) || 0), 0);
-          const curSum = Array.isArray(it.assignedSerials) ? it.assignedSerials.reduce((s, a) => s + (Number(a && a.costPrice) || 0), 0) : 0;
-          const curLen = Array.isArray(it.assignedSerials) ? it.assignedSerials.length : 0;
-          if (hasN8460Assigned || curLen !== expanded.length || curSum !== sumCost || Number(it.costPrice) !== sumCost) {
-            it.assignedSerials = expanded;
-            if (sumCost > 0) {
-              it.costPrice = sumCost;
-              it.assignedCogs = sumCost;
-            }
-            updated = true;
-          }
-        }
-      }
-    }
-
-    // ② 全伝票共通：手入力シリアルと内部 assignedSerials の完全連動同期（ロット原価維持）
+    // ① 全伝票共通：手入力シリアルと内部 assignedSerials の完全連動同期（ロット原価維持）
     const manualSn = (it.serialNumber || '').trim();
-    if (manualSn && !isHonda) {
+    if (manualSn) {
       const manualParts = manualSn.split(/[,、\n\r\t;/|\s]+/)
         .map(p => p.replace(/^[(\[{<"']+|[)\]}>"':]+$/g, '').trim().toUpperCase())
         .filter(p => p.length >= 3);
@@ -1537,10 +1514,10 @@ export function sanitizeDocSerialsConsistency(doc) {
           const bodyAssignedSns = it.assignedSerials
             .filter(a => {
               const s = String(a && a.serialNumber || '').trim().toUpperCase();
-              return manualParts.includes(s) || s.startsWith('N84') || s.startsWith('N10') || s.startsWith('N11') || s.startsWith('N3');
+              const sObj = serialByUpper.get(s);
+              return manualParts.includes(s) || (sObj && (sObj.itemType === 'body' || sObj.itemType === 'spreader' || sObj.inventoryId === 'inv_dp5000_body' || sObj.inventoryId === 'inv_2'));
             })
             .map(a => String(a.serialNumber || '').trim().toUpperCase());
-          // 本体シリアルリストに対して手入力に存在しないシリアルが残っている場合のみ再同期
           const hasMismatch = manualParts.some(p => !assignedSns.includes(p)) ||
             bodyAssignedSns.some(bsn => !manualParts.includes(bsn));
           if (hasMismatch) {
@@ -1557,11 +1534,18 @@ export function sanitizeDocSerialsConsistency(doc) {
       }
     }
 
-    // ③ 全伝票共通：社内デモ機(N8460)が通常伝票（社内デモ機配備伝票以外）に誤混入していた場合の自動消去
-    if (!isHonda && !isDemoDoc && it.assignedSerials && Array.isArray(it.assignedSerials)) {
-      const hadDemo = it.assignedSerials.some(a => String(a.serialNumber || '').trim().toUpperCase() === 'N8460');
-      if (hadDemo) {
-        it.assignedSerials = it.assignedSerials.filter(a => String(a.serialNumber || '').trim().toUpperCase() !== 'N8460');
+    // ② 全伝票共通：台帳上で他伝票管理のデモ機（status === 'demo'）が別伝票に誤混入していた場合の自動除外
+    if (!isDemoDoc && Array.isArray(it.assignedSerials) && it.assignedSerials.length > 0) {
+      const filtered = it.assignedSerials.filter(a => {
+        const snUpper = String((a && a.serialNumber) || '').trim().toUpperCase();
+        const sObj = serialByUpper.get(snUpper);
+        if (!sObj || sObj.status !== 'demo') return true;
+        const linkedDocNo = String(sObj.docNumber || sObj.invoiceNumber || '').trim();
+        const linkedDocId = String(sObj.docId || sObj.invoiceId || '').trim();
+        return (linkedDocNo && linkedDocNo === docNo) || (linkedDocId && linkedDocId === String(doc.id || '').trim());
+      });
+      if (filtered.length !== it.assignedSerials.length) {
+        it.assignedSerials = filtered;
         updated = true;
       }
     }
@@ -1569,9 +1553,6 @@ export function sanitizeDocSerialsConsistency(doc) {
 
   return updated;
 }
-
-// 互換性エイリアス
-export const sanitizeHondaPaintDocAndSerials = sanitizeDocSerialsConsistency;
 
 /**
  * 書類履歴一覧を取得
@@ -1583,20 +1564,20 @@ export function getHistoryList(includeSuperseded = false) {
     let list = JSON.parse(raw);
     if (!Array.isArray(list)) return [];
 
-    // スプレッダーの品名統一 & 本田塗料店伝票(N8460->N10935)のキャッシュ自動サニタイズ
+    // スプレッダーの品名統一 & 全伝票シリアル・原価整合性の自動サニタイズ
     let anyUpdated = false;
     list.forEach(docItem => {
       if (docItem.fullDoc) {
         if (unifyMechanicalSpreaderDocItems(docItem.fullDoc)) anyUpdated = true;
-        if (sanitizeHondaPaintDocAndSerials(docItem.fullDoc)) anyUpdated = true;
+        if (sanitizeDocSerialsConsistency(docItem.fullDoc)) anyUpdated = true;
       }
       if (unifyMechanicalSpreaderDocItems(docItem)) anyUpdated = true;
-      if (sanitizeHondaPaintDocAndSerials(docItem)) anyUpdated = true;
+      if (sanitizeDocSerialsConsistency(docItem)) anyUpdated = true;
     });
 
     if (anyUpdated) {
       try {
-        localStorageSetItemAndSync(KEYS.HISTORY, JSON.stringify(list));
+        localStorage.setItem(KEYS.HISTORY, JSON.stringify(list));
       } catch (e) {
         console.warn('Failed to update synced history to localStorage:', e);
       }
@@ -2657,10 +2638,10 @@ export async function syncInvoicesHistoryWithServer() {
       });
     }
 
-    // 4. 発行日降順にソート & 本田塗料店伝票(N8460->N10935)のスマートサニタイズ
+    // 4. 発行日降順にソート & 全伝票シリアル整合性のスマートサニタイズ
     invoiceMap.forEach(sinv => {
-      sanitizeHondaPaintDocAndSerials(sinv);
-      if (sinv.fullDoc) sanitizeHondaPaintDocAndSerials(sinv.fullDoc);
+      sanitizeDocSerialsConsistency(sinv);
+      if (sinv.fullDoc) sanitizeDocSerialsConsistency(sinv.fullDoc);
     });
 
     const mergedList = Array.from(invoiceMap.values()).sort((a, b) => {
@@ -2669,8 +2650,12 @@ export async function syncInvoicesHistoryWithServer() {
       return dateB.localeCompare(dateA);
     });
 
-    // 5. ローカルストレージに保存
-    localStorageSetItemAndSync(KEYS.HISTORY, JSON.stringify(mergedList));
+    // 5. ローカルストレージに保存（マージ結果をローカルへ反映し、既存データ同期ループでの古いキャッシュ逆プッシュを防ぐ）
+    try {
+      localStorage.setItem(KEYS.HISTORY, JSON.stringify(mergedList));
+    } catch (e) {
+      console.warn('Failed to save merged history to localStorage:', e);
+    }
 
     // 6. 編集中アクティブ伝票(activeDoc)のゾンビ引きずりチェック
     const activeDoc = loadActiveDoc();
@@ -8029,7 +8014,7 @@ export function syncInventorySerialsFromIssuedDocs() {
 
         itemSerials.forEach(sn => {
           // 【包括的保護防壁（全社・全シリアル共通）】
-          // ① 社内デモ機 (N8460)
+          // ① 台帳上でデモ機扱い（status === 'demo'）
           // ② デモ機ステータス (demo)
           // ③ 保守・貸出中 (maintenance)
           // ④ 初期不良・廃棄 (defective)
@@ -8037,8 +8022,8 @@ export function syncInventorySerialsFromIssuedDocs() {
           // これらは、過去伝票の自動走査によって勝手に出荷済（shipped）に書き戻されることを完全遮断！
           const target = serialMap.get(sn);
           if (target) {
-            // 社内デモ機配備伝票（DEL-20250115-01, DEL-20250729-01等）の場合：status は demo を維持したまま伝票番号・出荷日を確実に紐付け
-            const isDemoDoc = docNo.includes('DEL-20250115') || docNo.includes('DEL-20250729') || clientName.includes('社内デモ') || (doc.title && doc.title.includes('社内デモ'));
+            // 社内デモ機伝票（クライアント名・タイトルにデモ記載、または該当デモシリアル自身が既に紐づく伝票）は demo ステータスを維持して紐付け
+            const isDemoDoc = clientName.includes('デモ') || (doc.title && doc.title.includes('デモ')) || (target.docNumber && target.docNumber === docNo);
             if (target.status === 'demo' && isDemoDoc) {
               let changed = false;
               if (!target.docNumber || target.docNumber !== docNo) {
@@ -8069,10 +8054,7 @@ export function syncInventorySerialsFromIssuedDocs() {
               return;
             }
 
-            // 本田塗料店(DEL-20261105-235)に割り当てられたN10935はメンテナンスから正常出荷へ移行
-            if (sn === 'N10935' && docNo.includes('DEL-20261105-235')) {
-              target.status = 'shipped';
-            } else if (['demo', 'maintenance', 'defective'].includes(target.status) || (target.note && target.note.includes('デモ機'))) {
+            if (['demo', 'maintenance', 'defective'].includes(target.status) || (target.note && target.note.includes('デモ機'))) {
               return;
             }
             let changed = false;
@@ -8288,26 +8270,7 @@ export function syncInventorySerialsFromIssuedDocs() {
       }
     });
 
-    // 3. 【社内デモ機(N8460)の整合性保護】
-    // N8460 は社内デモ機配備伝票（DEL-20250115-01）に確実に紐付け
-    const n8460 = serialMap.get('N8460');
-    if (n8460) {
-      if (n8460.status !== 'demo' || n8460.docNumber !== 'DEL-20250115-01' || !n8460.clientName) {
-        n8460.status = 'demo';
-        n8460.clientName = '社内デモ機';
-        n8460.customerName = '社内デモ機';
-        n8460.endUserName = 'デモ機';
-        n8460.shipDate = '2025-01-15';
-        n8460.shippedDate = '2025-01-15';
-        n8460.docNumber = 'DEL-20250115-01';
-        n8460.invoiceNumber = 'DEL-20250115-01';
-        n8460.docId = 'doc_20250115_demo';
-        n8460.invoiceId = 'doc_20250115_demo';
-        n8460.note = 'デモ機';
-        n8460.updatedAt = new Date().toISOString();
-        modified = true;
-      }
-    }
+    // 3. デモ機ステータス整合性保護（既に demo として伝票紐付済みのレコードは汎用的に保護）
 
     if (modified) {
       localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(list));
@@ -9060,17 +9023,6 @@ export async function syncInventorySerialsWithServer() {
       // 全シリアルの備考欄を自動サニタイズ（請求書支払案内文の混入を完全除去）
       mergedSerials.forEach(s => {
         if (s && s.note) s.note = sanitizeSerialNote(s.note);
-        if (s && s.serialNumber === 'N8460') {
-          s.status = 'demo';
-          s.docNumber = 'DEL-20250115-01';
-          s.invoiceNumber = 'DEL-20250115-01';
-          s.docId = 'doc_20250115_demo';
-          s.shipDate = '2025-01-15';
-          s.shippedDate = '2025-01-15';
-          s.clientName = '社内デモ機';
-          s.customerName = '社内デモ機';
-          s.endUserName = 'デモ機';
-        }
       });
       localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(mergedSerials));
       if (hasLocalOnly) {
@@ -9246,21 +9198,33 @@ export function getInventoryHistoryWithShipments(item) {
   }
 
   if (Array.isArray(serials)) {
-    // ロットで最初から完成品セット(inv_1)として入荷したシリアル（LOT-20260115, LOT-20251125, および LOT-20261104-01のN11667/N11670）以外の、
-    // 本体単品として入荷し社内でセット品化(isBundled)されたシリアルを日付グループごとに動的抽出
+    // ロット台帳（inventory_lots）で最初から完成品セット(inv_1)として入荷したシリアル集合を動的に抽出し、
+    // それ以外の「本体単品として入荷し社内でセット品化(isBundled)されたシリアル」のみを日付グループごとに集計
+    const directBundleLotSerials = new Set();
+    if (Array.isArray(lots)) {
+      lots.forEach(lot => {
+        if (!lot || !Array.isArray(lot.items)) return;
+        lot.items.forEach(li => {
+          if (li && (li.itemId === 'inv_1' || /セット/i.test(String(li.itemName || ''))) && Array.isArray(li.serials)) {
+            li.serials.forEach(sn => {
+              const up = String(sn || '').trim().toUpperCase();
+              if (up) directBundleLotSerials.add(up);
+            });
+          }
+        });
+      });
+    }
+
     const postAssembledMapByDate = new Map();
     serials.forEach(s => {
       if (!s || !s.isBundled) return;
       const bSn = String(s.serialNumber || '').trim().toUpperCase();
-      // 最初から完成品セットとして直接入庫したシリアルは除外
-      if (s.lotNumber === 'LOT-20260115' || s.lotNumber === 'LOT-20251125') return;
-      if (bSn.startsWith('N84') || (bSn.startsWith('N104') && bSn !== 'N10414')) return;
-      if (bSn === 'N11667' || bSn === 'N11670') return;
+      if (directBundleLotSerials.has(bSn)) return;
 
-      const isBodySn = (bSn.startsWith('N84') || bSn.startsWith('N10') || bSn.startsWith('N11')) && bSn.length <= 6;
+      const isBodySn = (s.itemType === 'body' || s.inventoryId === 'inv_dp5000_body' || s.itemId === 'inv_dp5000_body');
       if (!isBodySn) return;
 
-      const dateStr = (s.bundledAt ? s.bundledAt.split('T')[0] : (s.inDate || s.arrivalDate || (bSn.startsWith('N109') ? bodyArrivalDate : '2026-11-04')));
+      const dateStr = (s.bundledAt ? s.bundledAt.split('T')[0] : (s.inDate || s.arrivalDate || bodyArrivalDate));
       if (!postAssembledMapByDate.has(dateStr)) postAssembledMapByDate.set(dateStr, []);
       postAssembledMapByDate.get(dateStr).push({
         sn: bSn,
@@ -9458,10 +9422,10 @@ export function getInventoryHistoryWithShipments(item) {
       if (!isBodySn) return;
 
       const docNo = String(s.docNumber || '').trim();
-      // 確定伝票に紐づいているもの、確定伝票明細に含まれているシリアル、または正式伝票発行済シリアルはスキップ（二重減算完全防止）
+      // 確定伝票に紐づいているもの、確定伝票明細に含まれているシリアル、デモ機、または無効伝票はスキップ
       if (docSerialNumbers.has(bSn)) return;
-      if (docNo && (existingDocNums.has(docNo) || docNo === 'INV-20260920-01')) return;
-      if (bSn === 'N8460' || bSn === 'N8462' || bSn === 'N8476' || bSn === 'N10934') return;
+      if (s.status === 'demo') return;
+      if (docNo && existingDocNums.has(docNo)) return;
 
       if (s.status === 'shipped') {
         const sDate = s.shippedDate || s.shipDate || (bSn.startsWith('N109') ? '2026-10-01' : (bSn.startsWith('N84') ? '2025-12-22' : '2026-03-31'));
@@ -9595,7 +9559,6 @@ if (typeof window !== 'undefined') {
   window.loadIssuerProfile = loadIssuerProfile;
   window.saveIssuerProfile = saveIssuerProfile;
   window.sanitizeDocSerialsConsistency = sanitizeDocSerialsConsistency;
-  window.sanitizeHondaPaintDocAndSerials = sanitizeHondaPaintDocAndSerials;
   window.resolveInventoryMasterCostForLine = resolveInventoryMasterCostForLine;
   window.resolveSerialUnitCostFromLots = resolveSerialUnitCostFromLots;
   window.expandBundleSerialAssignment = expandBundleSerialAssignment;

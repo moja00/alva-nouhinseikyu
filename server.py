@@ -948,6 +948,21 @@ def get_fs_document(col_name, doc_id, default_data=None):
         print(f"[Firestore] GET {col_name}/{doc_id} error: {e}")
         return default_data
 
+def _parse_iso_epoch(val):
+    if not val:
+        return None
+    try:
+        s = str(val).strip()
+        if s.endswith('Z'):
+            s = s[:-1] + '+00:00'
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.timestamp()
+    except Exception:
+        return None
+
+
 def save_fs_collection(col_name, data_list, id_field='id', deleted_ids=None):
     """
     コレクション内のデータをUpsert（追加・更新）する。
@@ -962,14 +977,20 @@ def save_fs_collection(col_name, data_list, id_field='id', deleted_ids=None):
         batch = db.batch()
         count = 0
 
-        # 勤怠コレクションの場合、既存ドキュメントを取得して打刻（出勤・退勤）の空上書き消失を完全防止
+        # 既存ドキュメント取得（attendanceの時刻保護、および invoices/inventory_serials 等の古いupdatedAt先祖返り上書き防止）
         existing_att_map = {}
-        if col_name == 'attendance':
+        existing_ts_map = {}
+        if col_name in ('attendance', 'invoices', 'inventory_serials', 'inventory', 'inventory_lots'):
             try:
-                for doc in db.collection('attendance').stream():
-                    existing_att_map[doc.id] = doc.to_dict()
+                for doc in db.collection(col_name).stream():
+                    d = doc.to_dict() or {}
+                    if col_name == 'attendance':
+                        existing_att_map[doc.id] = d
+                    ep = _parse_iso_epoch(d.get('updatedAt'))
+                    if ep is not None:
+                        existing_ts_map[doc.id] = ep
             except Exception as e_att:
-                print(f"[Firestore attendance 既存取得警告]: {e_att}")
+                print(f"[Firestore {col_name} 既存取得警告]: {e_att}")
 
         # 書類・経費の場合、永続化された削除済みIDリストを考慮してゾンビ復活を完全防止
         persistent_deleted_ids = set()
@@ -1040,6 +1061,13 @@ def save_fs_collection(col_name, data_list, id_field='id', deleted_ids=None):
                         item['clockOut'] = old_doc['clockOut']
                     if old_doc.get('note') and not item.get('note'):
                         item['note'] = old_doc['note']
+
+                # 既存ドキュメントより古い updatedAt（未更新タブの古いキャッシュ等）での先祖返り上書きを防止
+                srv_ep = existing_ts_map.get(clean_id)
+                if srv_ep is not None:
+                    cli_ep = _parse_iso_epoch(item.get('updatedAt'))
+                    if cli_ep is None or cli_ep < (srv_ep - 0.5):
+                        continue
 
                 doc_ref = db.collection(col_name).document(clean_id)
                 batch.set(doc_ref, item)
