@@ -20389,13 +20389,18 @@ function handleSyncPayrollToAccounting(targetMonthOpt = null) {
   const gross = Number(r.totalGross) || 0;
   const incomeTax = Number(r.incomeTax) || 0;
   const socialInsurance = Number(r.totalSocialInsurance) || 0;
-  const deposit = incomeTax + socialInsurance; // 預り金（源泉所得税 ＋ 社会保険本人負担分）
+  const residentTax = Number(r.residentTax) || 0;
+  const deposit = incomeTax + socialInsurance + residentTax; // 預り金（源泉所得税 ＋ 住民税 ＋ 社会保険本人負担分）
   const net = Number(r.netPay) || (gross - deposit); // 普通預金（差引手取）
 
+  const existingManuals = typeof getManualJournals === 'function' ? getManualJournals() : [];
+  const existingPayrollJnl = existingManuals.find(j => j && j.sourceType === 'payroll' && String(j.sourceId || '') === `payroll_${ym}`);
+  const actionLabel = existingPayrollJnl ? '【上書き更新】既に計上済みの同月給与仕訳を上書き更新しますか？' : `${ymText} の給与明細（総支給額 ¥${formatPayrollCurrency(gross)}）を財務会計に複合仕訳として反映しますか？`;
+
   const msg = `【財務会計への給与仕訳計上】\n` +
-    `${ymText} の給与明細（総支給額 ¥${formatPayrollCurrency(gross)}）を財務会計に複合仕訳として反映しますか？\n\n` +
+    `${actionLabel}\n\n` +
     `【借方】給料手当: ¥${formatPayrollCurrency(gross)}\n` +
-    `【貸方】預り金（源泉税・社保控除）: ¥${formatPayrollCurrency(deposit)}\n` +
+    `【貸方】預り金（源泉税・住民税・社保控除）: ¥${formatPayrollCurrency(deposit)}\n` +
     `【貸方】普通預金（差引支給額）: ¥${formatPayrollCurrency(net)}`;
 
   if (!confirm(msg)) return;
@@ -20430,6 +20435,7 @@ function handleSyncPayrollToAccounting(targetMonthOpt = null) {
   }
 
   const journalData = {
+    ...(existingPayrollJnl ? { id: existingPayrollJnl.id, createdAt: existingPayrollJnl.createdAt } : {}),
     date: payDate,
     entryNumber: `PAY-${ym.replace('-', '')}`,
     description: `${ymText} 給料手当・役員報酬 支給（社保・所得税預り控除）`,
@@ -20447,6 +20453,7 @@ function handleSyncPayrollToAccounting(targetMonthOpt = null) {
     creditLines: creditLines
   };
 
+  console.log('【給与仕訳連携】実行開始', { sourceId: journalData.sourceId, isUpdate: Boolean(existingPayrollJnl), gross, deposit, net });
   if (typeof saveManualJournal === 'function') {
     saveManualJournal(journalData);
     console.log("【給与仕訳連携】複合仕訳保存完了", journalData);

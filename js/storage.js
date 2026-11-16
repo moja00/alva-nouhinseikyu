@@ -5923,41 +5923,52 @@ export function getManualJournals() {
     const list = raw ? JSON.parse(raw) : [];
     if (!Array.isArray(list)) return [];
 
-    // 削除済みロットの孤立仕訳および同一ロット重複仕訳を自動クリーンアップ（ゾンビ復活・二重計上防止）
+    // 削除済みロットの孤立仕訳および同一ロット/同一月給与の重複仕訳を自動クリーンアップ（ゾンビ復活・二重計上防止）
     const lotRaw = localStorage.getItem(KEYS.INVENTORY_LOTS);
     const lotList = lotRaw ? JSON.parse(lotRaw) : [];
-    if (Array.isArray(lotList) && lotList.length > 0) {
-      const validLotIds = new Set(lotList.map(l => l && l.id ? String(l.id).trim() : '').filter(Boolean));
-      const seenLotIds = new Set();
-      const removedIds = [];
-      const cleaned = list.filter(j => {
-        if (!j) return false;
-        if (j.sourceType === 'inventory_lot') {
-          const sId = String(j.sourceId || '').trim();
-          // 実在しないロットIDの孤立仕訳を除外
-          if (sId && !validLotIds.has(sId)) {
-            if (j.id) removedIds.push(j.id);
-            return false;
-          }
-          // 同一ロットIDに対する重複仕訳を除外
-          if (sId && seenLotIds.has(sId)) {
-            if (j.id) removedIds.push(j.id);
-            return false;
-          }
-          if (sId) seenLotIds.add(sId);
+    const checkLots = Array.isArray(lotList) && lotList.length > 0;
+    const validLotIds = checkLots
+      ? new Set(lotList.map(l => l && l.id ? String(l.id).trim() : '').filter(Boolean))
+      : null;
+    const seenLotIds = new Set();
+    const seenPayrollKeys = new Set();
+    const removedIds = [];
+
+    const cleaned = list.filter(j => {
+      if (!j) return false;
+      if (j.sourceType === 'inventory_lot' && checkLots) {
+        const sId = String(j.sourceId || '').trim();
+        // 実在しないロットIDの孤立仕訳を除外
+        if (sId && !validLotIds.has(sId)) {
+          if (j.id) removedIds.push(j.id);
+          return false;
         }
-        return true;
-      });
-      if (cleaned.length !== list.length) {
-        try {
-          localStorage.setItem(KEYS.MANUAL_JOURNALS, JSON.stringify(cleaned));
-          removedIds.forEach(rid => {
-            deleteServerEntity('manual_journals', rid).catch(() => { });
-          });
-          console.log('【仕訳整合】削除済み/重複ロットの孤立仕訳を自動除外しました:', removedIds);
-        } catch (cleanErr) { }
-        return cleaned;
+        // 同一ロットIDに対する重複仕訳を除外
+        if (sId && seenLotIds.has(sId)) {
+          if (j.id) removedIds.push(j.id);
+          return false;
+        }
+        if (sId) seenLotIds.add(sId);
+      } else if (j.sourceType === 'payroll') {
+        const pKey = String(j.sourceId || j.entryNumber || '').trim();
+        if (pKey && seenPayrollKeys.has(pKey)) {
+          if (j.id) removedIds.push(j.id);
+          return false;
+        }
+        if (pKey) seenPayrollKeys.add(pKey);
       }
+      return true;
+    });
+
+    if (cleaned.length !== list.length) {
+      try {
+        localStorage.setItem(KEYS.MANUAL_JOURNALS, JSON.stringify(cleaned));
+        removedIds.forEach(rid => {
+          deleteServerEntity('manual_journals', rid).catch(() => { });
+        });
+        console.log('【仕訳整合】削除済みロット・重複仕訳を自動除外しました:', removedIds);
+      } catch (cleanErr) { }
+      return cleaned;
     }
 
     return list;
@@ -5976,7 +5987,15 @@ export function saveManualJournal(journal) {
   try {
     if (!journal) return false;
     const list = getManualJournals();
-    const entryId = journal.id || `mj_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+    // 同一 sourceId の給与仕訳・ロット仕訳が既に存在する場合は既存IDを引き継いで上書き更新（二重計上防止）
+    let resolvedId = journal.id;
+    if (!resolvedId && journal.sourceId && (journal.sourceType === 'payroll' || journal.sourceType === 'inventory_lot')) {
+      const dupExisting = list.find(j => j && j.sourceType === journal.sourceType && String(j.sourceId || '') === String(journal.sourceId));
+      if (dupExisting && dupExisting.id) {
+        resolvedId = dupExisting.id;
+      }
+    }
+    const entryId = resolvedId || `mj_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
     const nowIso = new Date().toISOString();
     const newEntry = {
       ...journal,

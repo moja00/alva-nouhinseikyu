@@ -623,6 +623,7 @@ export function buildUnifiedJournals(arg1 = {}, arg2 = [], arg3 = [], arg4 = [],
   // 3. 手動・複合仕訳（振替伝票・消込差額・給与複合仕訳・ロット仕入仕訳）
   const seenLotJournalIds = new Set();
   const seenLotEntryNumbers = new Set();
+  const seenPayrollJournalIds = new Set();
   (manualJournals || []).forEach(jnl => {
     if (!jnl) return;
     if (jnl.sourceType === 'inventory_lot') {
@@ -633,6 +634,12 @@ export function buildUnifiedJournals(arg1 = {}, arg2 = [], arg3 = [], arg4 = [],
       }
       if (sId) seenLotJournalIds.add(sId);
       if (eNo) seenLotEntryNumbers.add(eNo);
+    } else if (jnl.sourceType === 'payroll') {
+      const pId = String(jnl.sourceId || jnl.entryNumber || '').trim();
+      if (pId && seenPayrollJournalIds.has(pId)) {
+        return; // 同一月度の給与仕訳の二重計上を防止
+      }
+      if (pId) seenPayrollJournalIds.add(pId);
     }
     const date = jnl.date || '';
     if (!isDateInPeriod(date, periodFilter)) return;

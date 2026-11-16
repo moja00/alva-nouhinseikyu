@@ -1217,6 +1217,7 @@ function buildUnifiedJournals(arg1 = {}, arg2 = [], arg3 = [], arg4 = [], arg5 =
   // 3. 手動・複合仕訳（振替伝票・消込差額・給与複合仕訳・ロット仕入仕訳）
   const seenLotJournalIds = new Set();
   const seenLotEntryNumbers = new Set();
+  const seenPayrollJournalIds = new Set();
   (manualJournals || []).forEach(jnl => {
     if (!jnl) return;
     if (jnl.sourceType === 'inventory_lot') {
@@ -1227,6 +1228,12 @@ function buildUnifiedJournals(arg1 = {}, arg2 = [], arg3 = [], arg4 = [], arg5 =
       }
       if (sId) seenLotJournalIds.add(sId);
       if (eNo) seenLotEntryNumbers.add(eNo);
+    } else if (jnl.sourceType === 'payroll') {
+      const pId = String(jnl.sourceId || jnl.entryNumber || '').trim();
+      if (pId && seenPayrollJournalIds.has(pId)) {
+        return; // 同一月度の給与仕訳の二重計上を防止
+      }
+      if (pId) seenPayrollJournalIds.add(pId);
     }
     const date = jnl.date || '';
     if (!isDateInPeriod(date, periodFilter)) return;
@@ -9385,41 +9392,52 @@ function getManualJournals() {
     const list = raw ? JSON.parse(raw) : [];
     if (!Array.isArray(list)) return [];
 
-    // 削除済みロットの孤立仕訳および同一ロット重複仕訳を自動クリーンアップ（ゾンビ復活・二重計上防止）
+    // 削除済みロットの孤立仕訳および同一ロット/同一月給与の重複仕訳を自動クリーンアップ（ゾンビ復活・二重計上防止）
     const lotRaw = localStorage.getItem(KEYS.INVENTORY_LOTS);
     const lotList = lotRaw ? JSON.parse(lotRaw) : [];
-    if (Array.isArray(lotList) && lotList.length > 0) {
-      const validLotIds = new Set(lotList.map(l => l && l.id ? String(l.id).trim() : '').filter(Boolean));
-      const seenLotIds = new Set();
-      const removedIds = [];
-      const cleaned = list.filter(j => {
-        if (!j) return false;
-        if (j.sourceType === 'inventory_lot') {
-          const sId = String(j.sourceId || '').trim();
-          // 実在しないロットIDの孤立仕訳を除外
-          if (sId && !validLotIds.has(sId)) {
-            if (j.id) removedIds.push(j.id);
-            return false;
-          }
-          // 同一ロットIDに対する重複仕訳を除外
-          if (sId && seenLotIds.has(sId)) {
-            if (j.id) removedIds.push(j.id);
-            return false;
-          }
-          if (sId) seenLotIds.add(sId);
+    const checkLots = Array.isArray(lotList) && lotList.length > 0;
+    const validLotIds = checkLots
+      ? new Set(lotList.map(l => l && l.id ? String(l.id).trim() : '').filter(Boolean))
+      : null;
+    const seenLotIds = new Set();
+    const seenPayrollKeys = new Set();
+    const removedIds = [];
+
+    const cleaned = list.filter(j => {
+      if (!j) return false;
+      if (j.sourceType === 'inventory_lot' && checkLots) {
+        const sId = String(j.sourceId || '').trim();
+        // 実在しないロットIDの孤立仕訳を除外
+        if (sId && !validLotIds.has(sId)) {
+          if (j.id) removedIds.push(j.id);
+          return false;
         }
-        return true;
-      });
-      if (cleaned.length !== list.length) {
-        try {
-          localStorage.setItem(KEYS.MANUAL_JOURNALS, JSON.stringify(cleaned));
-          removedIds.forEach(rid => {
-            deleteServerEntity('manual_journals', rid).catch(() => { });
-          });
-          console.log('【仕訳整合】削除済み/重複ロットの孤立仕訳を自動除外しました:', removedIds);
-        } catch (cleanErr) { }
-        return cleaned;
+        // 同一ロットIDに対する重複仕訳を除外
+        if (sId && seenLotIds.has(sId)) {
+          if (j.id) removedIds.push(j.id);
+          return false;
+        }
+        if (sId) seenLotIds.add(sId);
+      } else if (j.sourceType === 'payroll') {
+        const pKey = String(j.sourceId || j.entryNumber || '').trim();
+        if (pKey && seenPayrollKeys.has(pKey)) {
+          if (j.id) removedIds.push(j.id);
+          return false;
+        }
+        if (pKey) seenPayrollKeys.add(pKey);
       }
+      return true;
+    });
+
+    if (cleaned.length !== list.length) {
+      try {
+        localStorage.setItem(KEYS.MANUAL_JOURNALS, JSON.stringify(cleaned));
+        removedIds.forEach(rid => {
+          deleteServerEntity('manual_journals', rid).catch(() => { });
+        });
+        console.log('【仕訳整合】削除済みロット・重複仕訳を自動除外しました:', removedIds);
+      } catch (cleanErr) { }
+      return cleaned;
     }
 
     return list;
@@ -9438,7 +9456,15 @@ function saveManualJournal(journal) {
   try {
     if (!journal) return false;
     const list = getManualJournals();
-    const entryId = journal.id || `mj_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+    // 同一 sourceId の給与仕訳・ロット仕訳が既に存在する場合は既存IDを引き継いで上書き更新（二重計上防止）
+    let resolvedId = journal.id;
+    if (!resolvedId && journal.sourceId && (journal.sourceType === 'payroll' || journal.sourceType === 'inventory_lot')) {
+      const dupExisting = list.find(j => j && j.sourceType === journal.sourceType && String(j.sourceId || '') === String(journal.sourceId));
+      if (dupExisting && dupExisting.id) {
+        resolvedId = dupExisting.id;
+      }
+    }
+    const entryId = resolvedId || `mj_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
     const nowIso = new Date().toISOString();
     const newEntry = {
       ...journal,
@@ -33020,13 +33046,18 @@ function handleSyncPayrollToAccounting(targetMonthOpt = null) {
   const gross = Number(r.totalGross) || 0;
   const incomeTax = Number(r.incomeTax) || 0;
   const socialInsurance = Number(r.totalSocialInsurance) || 0;
-  const deposit = incomeTax + socialInsurance; // 預り金（源泉所得税 ＋ 社会保険本人負担分）
+  const residentTax = Number(r.residentTax) || 0;
+  const deposit = incomeTax + socialInsurance + residentTax; // 預り金（源泉所得税 ＋ 住民税 ＋ 社会保険本人負担分）
   const net = Number(r.netPay) || (gross - deposit); // 普通預金（差引手取）
 
+  const existingManuals = typeof getManualJournals === 'function' ? getManualJournals() : [];
+  const existingPayrollJnl = existingManuals.find(j => j && j.sourceType === 'payroll' && String(j.sourceId || '') === `payroll_${ym}`);
+  const actionLabel = existingPayrollJnl ? '【上書き更新】既に計上済みの同月給与仕訳を上書き更新しますか？' : `${ymText} の給与明細（総支給額 ¥${formatPayrollCurrency(gross)}）を財務会計に複合仕訳として反映しますか？`;
+
   const msg = `【財務会計への給与仕訳計上】\n` +
-    `${ymText} の給与明細（総支給額 ¥${formatPayrollCurrency(gross)}）を財務会計に複合仕訳として反映しますか？\n\n` +
+    `${actionLabel}\n\n` +
     `【借方】給料手当: ¥${formatPayrollCurrency(gross)}\n` +
-    `【貸方】預り金（源泉税・社保控除）: ¥${formatPayrollCurrency(deposit)}\n` +
+    `【貸方】預り金（源泉税・住民税・社保控除）: ¥${formatPayrollCurrency(deposit)}\n` +
     `【貸方】普通預金（差引支給額）: ¥${formatPayrollCurrency(net)}`;
 
   if (!confirm(msg)) return;
@@ -33061,6 +33092,7 @@ function handleSyncPayrollToAccounting(targetMonthOpt = null) {
   }
 
   const journalData = {
+    ...(existingPayrollJnl ? { id: existingPayrollJnl.id, createdAt: existingPayrollJnl.createdAt } : {}),
     date: payDate,
     entryNumber: `PAY-${ym.replace('-', '')}`,
     description: `${ymText} 給料手当・役員報酬 支給（社保・所得税預り控除）`,
@@ -33078,6 +33110,7 @@ function handleSyncPayrollToAccounting(targetMonthOpt = null) {
     creditLines: creditLines
   };
 
+  console.log('【給与仕訳連携】実行開始', { sourceId: journalData.sourceId, isUpdate: Boolean(existingPayrollJnl), gross, deposit, net });
   if (typeof saveManualJournal === 'function') {
     saveManualJournal(journalData);
     console.log("【給与仕訳連携】複合仕訳保存完了", journalData);
