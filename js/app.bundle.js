@@ -4823,6 +4823,9 @@ function saveDocToHistory(doc) {
     const grandTotal = subtotal + taxTotal;
     const isPaid = !!(doc.isPaid || doc.paymentStatus === 'paid');
 
+    const nowIso = new Date().toISOString();
+    doc.updatedAt = nowIso;
+
     const summaryItem = {
       id: doc.id,
       docType: doc.docType || 'invoice',
@@ -4839,10 +4842,10 @@ function saveDocToHistory(doc) {
       grandTotal,
       isPaid,
       paymentStatus: isPaid ? 'paid' : 'unpaid',
-      paidDate: doc.paidDate || (isPaid ? new Date().toISOString().split('T')[0] : ''),
+      paidDate: doc.paidDate || (isPaid ? nowIso.split('T')[0] : ''),
       isIssued: !!doc.isIssued,
       isCancelled: !!doc.isCancelled,
-      issuedAt: doc.issuedAt || (doc.isIssued ? new Date().toISOString() : null),
+      issuedAt: doc.issuedAt || (doc.isIssued ? nowIso : null),
       status: doc.status || 'draft',
       isSuperseded: !!doc.isSuperseded,
       supersededBy: doc.supersededBy || '',
@@ -4850,7 +4853,7 @@ function saveDocToHistory(doc) {
       supersededReason: doc.supersededReason || '',
       replacesDocNumber: doc.replacesDocNumber || '',
       replacesDocId: doc.replacesDocId || '',
-      updatedAt: new Date().toISOString(),
+      updatedAt: nowIso,
       fullDoc: doc
     };
 
@@ -4860,15 +4863,28 @@ function saveDocToHistory(doc) {
       list.unshift(summaryItem);
     }
 
-    // 最大50件まで保存
-    if (list.length > 50) {
-      list.length = 50;
+    // 過去伝票が欠落してシリアル台帳や在庫集計が外れないよう十分大きな上限（500件）を確保
+    if (list.length > 500) {
+      list.length = 500;
     }
 
     localStorageSetItemAndSync(KEYS.HISTORY, JSON.stringify(list));
-    // サーバーファイル（data/invoices/invoices_history.json）にも双方向マージ即時保存
-    syncInvoicesHistoryWithServer().catch(e => {
-      console.warn('Server invoices history sync failed:', e);
+    console.log('【書類履歴保存】ローカル保存＆サーバー即時送信開始:', {
+      id: summaryItem.id,
+      docNumber: summaryItem.docNumber,
+      isIssued: summaryItem.isIssued,
+      isCancelled: summaryItem.isCancelled,
+      updatedAt: nowIso
+    });
+    // ローカルの最新変更（確定発行・シリアル変更など）を先にサーバーへ確実送信（取得マージ前に上書きされるのを防止）
+    saveServerInvoicesHistory(list).then(ok => {
+      if (ok) {
+        console.log('【書類履歴保存】サーバー即時送信完了:', summaryItem.docNumber || summaryItem.id);
+      } else {
+        console.warn('【書類履歴保存】サーバー即時送信保留（バックグラウンド同期で再送）:', summaryItem.docNumber || summaryItem.id);
+      }
+    }).catch(e => {
+      console.warn('Server invoices history save failed:', e);
     });
     // 自社情報もプロファイルに保存
     if (doc.issuer) {
@@ -5675,18 +5691,19 @@ async function syncInvoicesHistoryWithServer() {
           if (!existing) {
             invoiceMap.set(cleanId, sinv);
           } else {
-            const serverDate = new Date(sinv.updatedAt || sinv.issuedAt || sinv.issueDate || 0).getTime();
-            const localDate = new Date(existing.updatedAt || existing.issuedAt || existing.issueDate || 0).getTime();
+            const serverDate = new Date(sinv.updatedAt || sinv.cancelledAt || sinv.issuedAt || sinv.issueDate || 0).getTime();
+            const localDate = new Date(existing.updatedAt || existing.cancelledAt || existing.issuedAt || existing.issueDate || 0).getTime();
 
-            const serverIsDraft = sinv.isCancelled === true || sinv.isIssued === false;
-            const localIsIssued = existing.isIssued === true && !existing.isCancelled;
-
-            // サーバー側で取消（下書き化）された場合、端末間の時計ズレでローカルが勝ってしまわないようサーバーの下書きを最優先
-            if (serverIsDraft && localIsIssued) {
-              console.log(`【書類履歴同期】端末間同期: 伝票(${cleanId}) をサーバー最新の「下書き（確定取消）」状態にマージ`);
+            // 原則として更新日時（updatedAt）が新しい方を正として採用する
+            // ※ 以前は serverIsDraft && localIsIssued で無条件にサーバーを優先していたため、
+            //   同一端末で下書き/取消→再発行した際に古いサーバー状態で最新の確定発行が巻き戻されるバグがあった
+            if (serverDate > localDate) {
               invoiceMap.set(cleanId, sinv);
-            } else if (serverDate >= localDate) {
+            } else if (serverDate === localDate && sinv.isCancelled === true && !existing.isCancelled) {
+              console.log(`【書類履歴同期】同時刻の確定取消状態を優先マージ: ${cleanId}`);
               invoiceMap.set(cleanId, sinv);
+            } else if (localDate > serverDate) {
+              console.log(`【書類履歴同期】ローカルの最新状態を保持（サーバーより新しい更新）: ${cleanId}`);
             }
           }
         }
@@ -5723,15 +5740,21 @@ async function syncInvoicesHistoryWithServer() {
         }
       } else {
         const mergedActive = invoiceMap.get(cleanActiveId);
-        if (mergedActive && (mergedActive.isCancelled === true || mergedActive.isIssued === false)) {
-          if (activeDoc.isIssued !== false || activeDoc.isCancelled !== true) {
-            activeDoc.isIssued = false;
-            activeDoc.issuedAt = null;
-            activeDoc.isCancelled = true;
+        if (mergedActive) {
+          const mergedTime = new Date(mergedActive.updatedAt || mergedActive.cancelledAt || mergedActive.issuedAt || 0).getTime();
+          const activeTime = new Date(activeDoc.updatedAt || activeDoc.cancelledAt || activeDoc.issuedAt || 0).getTime();
+          if (mergedTime > activeTime && (Boolean(activeDoc.isIssued) !== Boolean(mergedActive.isIssued) || Boolean(activeDoc.isCancelled) !== Boolean(mergedActive.isCancelled))) {
+            activeDoc.isIssued = !!mergedActive.isIssued;
+            activeDoc.issuedAt = mergedActive.issuedAt || null;
+            activeDoc.isCancelled = !!mergedActive.isCancelled;
             activeDoc.updatedAt = mergedActive.updatedAt || new Date().toISOString();
             localStorage.setItem(KEYS.ACTIVE_DOC, JSON.stringify(activeDoc));
             saveServerActiveDoc(activeDoc).catch(() => { });
-            console.log("【書類履歴同期】編集中アクティブ伝票もサーバーに合わせて「下書き」に更新しました");
+            console.log("【書類履歴同期】編集中アクティブ伝票をサーバー最新状態に同期しました:", {
+              id: cleanActiveId,
+              isIssued: activeDoc.isIssued,
+              isCancelled: activeDoc.isCancelled
+            });
           }
         }
       }
@@ -7404,12 +7427,16 @@ async function cancelDocIssue(docId) {
     item.isIssued = false;
     item.issuedAt = null;
     item.isCancelled = true;
+    item.status = 'draft';
+    item.cancelledAt = nowIso;
     item.updatedAt = nowIso;
 
     if (item.fullDoc) {
       item.fullDoc.isIssued = false;
       item.fullDoc.issuedAt = null;
       item.fullDoc.isCancelled = true;
+      item.fullDoc.status = 'draft';
+      item.fullDoc.cancelledAt = nowIso;
       item.fullDoc.updatedAt = nowIso;
     }
 
@@ -7422,6 +7449,8 @@ async function cancelDocIssue(docId) {
       activeDoc.isIssued = false;
       activeDoc.issuedAt = null;
       activeDoc.isCancelled = true;
+      activeDoc.status = 'draft';
+      activeDoc.cancelledAt = nowIso;
       activeDoc.updatedAt = nowIso;
       localStorage.setItem(KEYS.ACTIVE_DOC, JSON.stringify(activeDoc));
       saveServerActiveDoc(activeDoc).catch(() => { });
@@ -12521,6 +12550,7 @@ if (typeof window !== 'undefined') {
   window.fetchServerInventoryLots = fetchServerInventoryLots;
   window.fetchServerInventorySerials = fetchServerInventorySerials;
   window.syncInventorySerialsFromIssuedDocs = syncInventorySerialsFromIssuedDocs;
+  window.syncInventoryStockFromIssuedDocs = syncInventoryStockFromIssuedDocs;
   window.initInventoryFromServer = initInventoryFromServer;
   window.loadIssuerProfile = loadIssuerProfile;
   window.saveIssuerProfile = saveIssuerProfile;
@@ -14630,11 +14660,20 @@ window.triggerSafePrint = triggerSafePrint;
  */
 function issueAndSyncAccountingDocument(options = {}) {
   const { isPrint = false, isExplicitIssue = true } = options;
+  console.log('【確定発行・保存】実行開始', {
+    id: currentDoc?.id,
+    docNumber: currentDoc?.docNumber,
+    isExplicitIssue,
+    isPrint
+  });
 
   // 1. 発行フラグ・日時の設定
+  const nowIso = new Date().toISOString();
   currentDoc.isIssued = true;
   currentDoc.isCancelled = false;
-  currentDoc.issuedAt = currentDoc.issuedAt || new Date().toISOString();
+  currentDoc.status = 'issued';
+  currentDoc.issuedAt = currentDoc.issuedAt || nowIso;
+  currentDoc.updatedAt = nowIso;
   if (!currentDoc.paymentStatus) {
     currentDoc.paymentStatus = (currentDoc.docType === 'receipt') ? 'paid' : 'unpaid';
   }
@@ -14761,6 +14800,11 @@ function issueAndSyncAccountingDocument(options = {}) {
     return false;
   }
 
+  // 在庫マスタの実在庫も即時再計算・同期
+  if (typeof syncInventoryStockFromIssuedDocs === 'function') {
+    syncInventoryStockFromIssuedDocs();
+  }
+
   // 5. 財務会計ダッシュボード・売上消込・仕訳帳を即時再計算・同期
   initAccountingMonthSelector();
   const currentMonth = DOM.accSelectMonth ? DOM.accSelectMonth.value : '';
@@ -14787,10 +14831,114 @@ function issueAndSyncAccountingDocument(options = {}) {
     triggerSafePrint('printing-invoice');
   }
 
+  console.log('【確定発行・保存】完了', {
+    id: currentDoc?.id,
+    docNumber: currentDoc?.docNumber,
+    isIssued: currentDoc?.isIssued,
+    isCancelled: currentDoc?.isCancelled,
+    updatedAt: currentDoc?.updatedAt
+  });
   return true;
 }
 
 window.issueAndSyncAccountingDocument = issueAndSyncAccountingDocument;
+
+/**
+ * 明細1件から割り当て・入力されているシリアル番号（正規化済み大文字配列）を抽出する
+ */
+function extractDocItemSerials(it) {
+  const sns = [];
+  if (!it) return sns;
+  if (Array.isArray(it.assignedSerials)) {
+    it.assignedSerials.forEach(as => {
+      if (as && as.serialNumber) {
+        const sn = String(as.serialNumber).trim().toUpperCase();
+        if (sn && !sns.includes(sn)) sns.push(sn);
+      }
+    });
+  }
+  if (it.serialNumber && typeof it.serialNumber === 'string') {
+    it.serialNumber.split(/[,、\n\r\t;/|]+/).forEach(part => {
+      const trimmed = part.trim().toUpperCase();
+      if (!trimmed) return;
+      trimmed.split(/\s+/).forEach(tok => {
+        const cleanTok = tok.replace(/^[(\[{<"']+|[)\]}>"':]+$/g, '').trim();
+        if (cleanTok && cleanTok.length >= 3 && !sns.includes(cleanTok)) {
+          sns.push(cleanTok);
+        }
+      });
+    });
+  }
+  return sns;
+}
+
+/**
+ * 指定シリアルが excludeDocId 以外の有効な伝票で使用中か検索する
+ */
+function findOtherActiveDocUsingSerial(sn, excludeDocId) {
+  const targetSn = String(sn || '').trim().toUpperCase();
+  if (!targetSn || typeof getHistoryList !== 'function') return null;
+  const excludeId = String(excludeDocId || '').trim();
+  const docs = getHistoryList(false) || [];
+  for (const doc of docs) {
+    if (!doc) continue;
+    if (excludeId && String(doc.id || '').trim() === excludeId) continue;
+    if (doc.isCancelled === true || doc.isCancelled === 'true' || doc.docType === 'estimate') continue;
+    if (doc.status === 'superseded' || doc.isSuperseded === true) continue;
+    const docItems = (Array.isArray(doc.items) && doc.items.length > 0)
+      ? doc.items
+      : (doc.fullDoc && Array.isArray(doc.fullDoc.items) ? doc.fullDoc.items : []);
+    for (const it of docItems) {
+      if (extractDocItemSerials(it).includes(targetSn)) {
+        return { doc, item: it };
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * 他伝票で使用中でなければ指定シリアルを在庫中（in_stock）に復元し、他伝票で使用中なら紐づけを保護する
+ */
+function releaseSerialIfNotUsedElsewhere(sn, currentDocObj) {
+  const cleanSn = String(sn || '').trim().toUpperCase();
+  if (!cleanSn || typeof updateSerialStatus !== 'function') return false;
+  const curId = currentDocObj ? String(currentDocObj.id || '').trim() : '';
+
+  const otherUsed = findOtherActiveDocUsingSerial(cleanSn, curId);
+  if (otherUsed && otherUsed.doc) {
+    const oDoc = otherUsed.doc;
+    const oDocNo = String(oDoc.docNumber || oDoc.id || '').trim();
+    const oClient = oDoc.client ? (oDoc.client.name || '') : (oDoc.clientName || '');
+    const oDate = oDoc.issueDate || oDoc.date || '';
+    const oEndUser = (otherUsed.item?.endUserName || oDoc.endUserName || '').trim();
+    console.log(`【シリアル保護】${cleanSn} は別伝票(${oDocNo})で使用中のため在庫復帰せず紐づけを維持します`);
+    updateSerialStatus(cleanSn, 'shipped', {
+      clientName: oClient,
+      customerName: oClient,
+      endUserName: oEndUser,
+      docNumber: oDocNo,
+      invoiceNumber: oDocNo,
+      docId: oDoc.id,
+      invoiceId: oDoc.id,
+      shipDate: oDate,
+      shippedDate: oDate
+    });
+    return false;
+  }
+
+  const ledgerSerial = (typeof getInventorySerialList === 'function')
+    ? getInventorySerialList().find(s => s && String(s.serialNumber || '').trim().toUpperCase() === cleanSn)
+    : null;
+  if (ledgerSerial && ledgerSerial.docId && curId && String(ledgerSerial.docId).trim() !== curId) {
+    console.log(`【シリアル保護】${cleanSn} の台帳伝票ID(${ledgerSerial.docId})が現在書類(${curId})と異なるため在庫復帰をスキップします`);
+    return false;
+  }
+
+  console.log(`【シリアル引当解除】${cleanSn} を在庫中に復元`);
+  updateSerialStatus(cleanSn, 'in_stock');
+  return true;
+}
 
 /**
  * 編集中書類の確定発行を取り消し（未確定・下書きに戻す）
@@ -14804,45 +14952,33 @@ async function cancelCurrentDocIssue() {
   if (!confirm(confirmMsg)) {
     return false;
   }
+  console.log('【確定発行取消】実行開始', { id: currentDoc?.id, docNumber: docNo });
 
   // シリアル引当の在庫復元 & 非シリアル構成品の在庫戻し
   if (currentDoc && Array.isArray(currentDoc.items)) {
     currentDoc.items.forEach(it => {
-      const itemSerials = [];
-      if (Array.isArray(it.assignedSerials) && it.assignedSerials.length > 0) {
-        it.assignedSerials.forEach(as => {
-          if (as && as.serialNumber) itemSerials.push(as.serialNumber.trim().toUpperCase());
-        });
-      }
-      if (it.serialNumber && typeof it.serialNumber === 'string') {
-        const rawParts = it.serialNumber.split(/[,、\n\r\t;/|]+/);
-        rawParts.forEach(part => {
-          const trimmed = part.trim().toUpperCase();
-          if (!trimmed) return;
-          const tokens = trimmed.split(/\s+/);
-          tokens.forEach(tok => {
-            const cleanTok = tok.replace(/^[(\[{<"']+|[)\]}>"':]+$/g, '').trim();
-            if (cleanTok && cleanTok.length >= 3) {
-              if (!itemSerials.includes(cleanTok)) itemSerials.push(cleanTok);
-            }
-          });
-        });
-      }
-      itemSerials.forEach(sn => {
-        updateSerialStatus(sn, 'in_stock');
+      extractDocItemSerials(it).forEach(sn => {
+        releaseSerialIfNotUsedElsewhere(sn, currentDoc);
       });
       // 注意: 完成品セット出荷の確定取消時はセット品自体の出荷除外およびシリアル台帳（本体・バッテリー）のみが復元され、
       // 急速充電器等の非シリアル構成品の個別在庫を誤って増やすことは行いません。
     });
   }
 
+  const nowIso = new Date().toISOString();
   currentDoc.isIssued = false;
   currentDoc.isCancelled = true;
+  currentDoc.status = 'draft';
   currentDoc.issuedAt = null;
+  currentDoc.cancelledAt = nowIso;
+  currentDoc.updatedAt = nowIso;
 
   // 書類履歴内の該当書類も取消状態に更新（サーバーへも確実に即時送信完了を待機）
   if (currentDoc.id) {
     await cancelDocIssue(currentDoc.id);
+  }
+  if (typeof syncInventoryStockFromIssuedDocs === 'function') {
+    syncInventoryStockFromIssuedDocs();
   }
 
   // LocalStorageに保存
@@ -18324,7 +18460,9 @@ function filterAndRenderHistoryList() {
 
     const statusBadge = isIssued
       ? `<span style="background: #dcfce7; color: #166534; font-weight: 700; font-size: 0.725rem; padding: 2px 7px; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px;" title="財務会計（売上・売掛金消込・仕訳帳）に反映中"><span style="font-size: 7px; color: #15803d;">●</span> 確定発行済</span>`
-      : `<span style="background: #f1f5f9; color: #64748b; font-weight: 600; font-size: 0.725rem; padding: 2px 7px; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px;" title="下書き状態（財務会計には未反映）"><span style="font-size: 7px; color: #94a3b8;">●</span> 下書き</span>`;
+      : (item.isCancelled
+        ? `<span style="background: #fef2f2; color: #b91c1c; font-weight: 700; font-size: 0.725rem; padding: 2px 7px; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px;" title="確定発行が取り消された状態です（シリアル台帳・財務会計から除外中。再確定するには開いて確定発行してください）"><span style="font-size: 7px; color: #dc2626;">●</span> 確定取消(下書き)</span>`
+        : `<span style="background: #f1f5f9; color: #64748b; font-weight: 600; font-size: 0.725rem; padding: 2px 7px; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px;" title="下書き状態（財務会計には未反映）"><span style="font-size: 7px; color: #94a3b8;">●</span> 下書き</span>`);
 
     const cancelIssueBtnHtml = isIssued
       ? `<button type="button" class="btn btn-outline-danger btn-sm btn-cancel-issue" style="color: #ef4444; border-color: #fca5a5; font-size: 0.75rem; padding: 4px 9px;" title="確定発行を取り消し、財務会計から除外して下書きに戻します">確定取消</button>`
@@ -18510,7 +18648,9 @@ function filterAndRenderHistoryList() {
 function duplicateDocFromHistory(id) {
   const orig = getDocFromHistory(id);
   if (!orig) return;
+  console.log('【書類複製新規作成】実行開始', { origId: orig.id, origDocNumber: orig.docNumber });
 
+  const nowIso = new Date().toISOString();
   const newDoc = JSON.parse(JSON.stringify(orig));
   newDoc.id = `doc_${Date.now()}`;
   newDoc.docNumber = generateDocNumber(newDoc.docType || 'invoice');
@@ -18524,20 +18664,44 @@ function duplicateDocFromHistory(id) {
   const nextMonthLast = new Date(today.getFullYear(), today.getMonth() + 2, 0);
   newDoc.dueDate = `${nextMonthLast.getFullYear()}-${String(nextMonthLast.getMonth() + 1).padStart(2, '0')}-${String(nextMonthLast.getDate()).padStart(2, '0')}`;
 
-  // 確定発行フラグを初期化（下書き）
+  // 確定発行フラグ・更新日時・訂正メタを初期化（新規下書き）
   newDoc.isIssued = false;
   newDoc.isCancelled = false;
+  newDoc.status = 'draft';
   newDoc.issuedAt = null;
+  newDoc.cancelledAt = null;
+  newDoc.updatedAt = nowIso;
   newDoc.isPaid = false;
   newDoc.paymentStatus = 'unpaid';
+  newDoc.paidDate = '';
+  newDoc.assignedCogs = 0;
+  newDoc.isSuperseded = false;
+  newDoc.supersededBy = '';
+  newDoc.supersededAt = '';
+  newDoc.supersededReason = '';
+  newDoc.replacesDocNumber = '';
+  newDoc.replacesDocId = '';
+
+  // 複製時は別出荷のため、元伝票の引当済みシリアル番号を引き継がない（他伝票シリアル誤解除・二重出荷防止）
+  if (Array.isArray(newDoc.items)) {
+    newDoc.items.forEach(it => {
+      if (!it) return;
+      it.serialNumber = '';
+      delete it.assignedSerials;
+      delete it.assignedCogs;
+      delete it.bundleItemId;
+    });
+  }
 
   currentDoc = newDoc;
   populateFormFromDoc();
   updateThemeColor(currentDoc.themeColor || 'indigo');
   renderAll();
   closeHistoryModal();
-  showToast(`「${orig.clientName || '取引先'}」の明細構成を引き継いで新規作成しました！`, 'success');
+  console.log('【書類複製新規作成】完了', { newId: newDoc.id, newDocNumber: newDoc.docNumber });
+  showToast(`「${orig.clientName || '取引先'}」の明細構成を引き継いで新規作成しました（シリアル番号は未割当にリセット済みです）`, 'success');
 }
+window.duplicateDocFromHistory = duplicateDocFromHistory;
 
 function openBackupModal() {
   DOM.backupModal.classList.add('active');
@@ -25194,10 +25358,10 @@ function confirmSerialAssign() {
     const serialNote = (item.note || currentDoc.notes || '').trim();
 
     // 1. 今回除外された旧シリアルを「在庫中（in_stock）」へ復元
+    //    ※ ただし他の有効な伝票で使用中のシリアルは絶対に解除しない（別伝票の紐づけ保護）
     oldSnList.forEach(oldSn => {
       if (!newSnList.includes(oldSn)) {
-        console.log(`【シリアル引当解除】${oldSn} を在庫中に復元`);
-        updateSerialStatus(oldSn, 'in_stock');
+        releaseSerialIfNotUsedElsewhere(oldSn, currentDoc);
       }
     });
 
@@ -25218,6 +25382,7 @@ function confirmSerialAssign() {
       });
     });
 
+    currentDoc.updatedAt = new Date().toISOString();
     // 伝票データを履歴・サーバーへ自動保存
     if (typeof saveDocToHistory === 'function') {
       saveDocToHistory(currentDoc);

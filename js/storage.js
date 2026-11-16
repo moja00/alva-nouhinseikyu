@@ -1487,6 +1487,9 @@ export function saveDocToHistory(doc) {
     const grandTotal = subtotal + taxTotal;
     const isPaid = !!(doc.isPaid || doc.paymentStatus === 'paid');
 
+    const nowIso = new Date().toISOString();
+    doc.updatedAt = nowIso;
+
     const summaryItem = {
       id: doc.id,
       docType: doc.docType || 'invoice',
@@ -1503,10 +1506,10 @@ export function saveDocToHistory(doc) {
       grandTotal,
       isPaid,
       paymentStatus: isPaid ? 'paid' : 'unpaid',
-      paidDate: doc.paidDate || (isPaid ? new Date().toISOString().split('T')[0] : ''),
+      paidDate: doc.paidDate || (isPaid ? nowIso.split('T')[0] : ''),
       isIssued: !!doc.isIssued,
       isCancelled: !!doc.isCancelled,
-      issuedAt: doc.issuedAt || (doc.isIssued ? new Date().toISOString() : null),
+      issuedAt: doc.issuedAt || (doc.isIssued ? nowIso : null),
       status: doc.status || 'draft',
       isSuperseded: !!doc.isSuperseded,
       supersededBy: doc.supersededBy || '',
@@ -1514,7 +1517,7 @@ export function saveDocToHistory(doc) {
       supersededReason: doc.supersededReason || '',
       replacesDocNumber: doc.replacesDocNumber || '',
       replacesDocId: doc.replacesDocId || '',
-      updatedAt: new Date().toISOString(),
+      updatedAt: nowIso,
       fullDoc: doc
     };
 
@@ -1524,15 +1527,28 @@ export function saveDocToHistory(doc) {
       list.unshift(summaryItem);
     }
 
-    // 最大50件まで保存
-    if (list.length > 50) {
-      list.length = 50;
+    // 過去伝票が欠落してシリアル台帳や在庫集計が外れないよう十分大きな上限（500件）を確保
+    if (list.length > 500) {
+      list.length = 500;
     }
 
     localStorageSetItemAndSync(KEYS.HISTORY, JSON.stringify(list));
-    // サーバーファイル（data/invoices/invoices_history.json）にも双方向マージ即時保存
-    syncInvoicesHistoryWithServer().catch(e => {
-      console.warn('Server invoices history sync failed:', e);
+    console.log('【書類履歴保存】ローカル保存＆サーバー即時送信開始:', {
+      id: summaryItem.id,
+      docNumber: summaryItem.docNumber,
+      isIssued: summaryItem.isIssued,
+      isCancelled: summaryItem.isCancelled,
+      updatedAt: nowIso
+    });
+    // ローカルの最新変更（確定発行・シリアル変更など）を先にサーバーへ確実送信（取得マージ前に上書きされるのを防止）
+    saveServerInvoicesHistory(list).then(ok => {
+      if (ok) {
+        console.log('【書類履歴保存】サーバー即時送信完了:', summaryItem.docNumber || summaryItem.id);
+      } else {
+        console.warn('【書類履歴保存】サーバー即時送信保留（バックグラウンド同期で再送）:', summaryItem.docNumber || summaryItem.id);
+      }
+    }).catch(e => {
+      console.warn('Server invoices history save failed:', e);
     });
     // 自社情報もプロファイルに保存
     if (doc.issuer) {
@@ -2354,18 +2370,19 @@ export async function syncInvoicesHistoryWithServer() {
           if (!existing) {
             invoiceMap.set(cleanId, sinv);
           } else {
-            const serverDate = new Date(sinv.updatedAt || sinv.issuedAt || sinv.issueDate || 0).getTime();
-            const localDate = new Date(existing.updatedAt || existing.issuedAt || existing.issueDate || 0).getTime();
+            const serverDate = new Date(sinv.updatedAt || sinv.cancelledAt || sinv.issuedAt || sinv.issueDate || 0).getTime();
+            const localDate = new Date(existing.updatedAt || existing.cancelledAt || existing.issuedAt || existing.issueDate || 0).getTime();
 
-            const serverIsDraft = sinv.isCancelled === true || sinv.isIssued === false;
-            const localIsIssued = existing.isIssued === true && !existing.isCancelled;
-
-            // サーバー側で取消（下書き化）された場合、端末間の時計ズレでローカルが勝ってしまわないようサーバーの下書きを最優先
-            if (serverIsDraft && localIsIssued) {
-              console.log(`【書類履歴同期】端末間同期: 伝票(${cleanId}) をサーバー最新の「下書き（確定取消）」状態にマージ`);
+            // 原則として更新日時（updatedAt）が新しい方を正として採用する
+            // ※ 以前は serverIsDraft && localIsIssued で無条件にサーバーを優先していたため、
+            //   同一端末で下書き/取消→再発行した際に古いサーバー状態で最新の確定発行が巻き戻されるバグがあった
+            if (serverDate > localDate) {
               invoiceMap.set(cleanId, sinv);
-            } else if (serverDate >= localDate) {
+            } else if (serverDate === localDate && sinv.isCancelled === true && !existing.isCancelled) {
+              console.log(`【書類履歴同期】同時刻の確定取消状態を優先マージ: ${cleanId}`);
               invoiceMap.set(cleanId, sinv);
+            } else if (localDate > serverDate) {
+              console.log(`【書類履歴同期】ローカルの最新状態を保持（サーバーより新しい更新）: ${cleanId}`);
             }
           }
         }
@@ -2402,15 +2419,21 @@ export async function syncInvoicesHistoryWithServer() {
         }
       } else {
         const mergedActive = invoiceMap.get(cleanActiveId);
-        if (mergedActive && (mergedActive.isCancelled === true || mergedActive.isIssued === false)) {
-          if (activeDoc.isIssued !== false || activeDoc.isCancelled !== true) {
-            activeDoc.isIssued = false;
-            activeDoc.issuedAt = null;
-            activeDoc.isCancelled = true;
+        if (mergedActive) {
+          const mergedTime = new Date(mergedActive.updatedAt || mergedActive.cancelledAt || mergedActive.issuedAt || 0).getTime();
+          const activeTime = new Date(activeDoc.updatedAt || activeDoc.cancelledAt || activeDoc.issuedAt || 0).getTime();
+          if (mergedTime > activeTime && (Boolean(activeDoc.isIssued) !== Boolean(mergedActive.isIssued) || Boolean(activeDoc.isCancelled) !== Boolean(mergedActive.isCancelled))) {
+            activeDoc.isIssued = !!mergedActive.isIssued;
+            activeDoc.issuedAt = mergedActive.issuedAt || null;
+            activeDoc.isCancelled = !!mergedActive.isCancelled;
             activeDoc.updatedAt = mergedActive.updatedAt || new Date().toISOString();
             localStorage.setItem(KEYS.ACTIVE_DOC, JSON.stringify(activeDoc));
             saveServerActiveDoc(activeDoc).catch(() => { });
-            console.log("【書類履歴同期】編集中アクティブ伝票もサーバーに合わせて「下書き」に更新しました");
+            console.log("【書類履歴同期】編集中アクティブ伝票をサーバー最新状態に同期しました:", {
+              id: cleanActiveId,
+              isIssued: activeDoc.isIssued,
+              isCancelled: activeDoc.isCancelled
+            });
           }
         }
       }
@@ -4088,12 +4111,16 @@ export async function cancelDocIssue(docId) {
     item.isIssued = false;
     item.issuedAt = null;
     item.isCancelled = true;
+    item.status = 'draft';
+    item.cancelledAt = nowIso;
     item.updatedAt = nowIso;
 
     if (item.fullDoc) {
       item.fullDoc.isIssued = false;
       item.fullDoc.issuedAt = null;
       item.fullDoc.isCancelled = true;
+      item.fullDoc.status = 'draft';
+      item.fullDoc.cancelledAt = nowIso;
       item.fullDoc.updatedAt = nowIso;
     }
 
@@ -4106,6 +4133,8 @@ export async function cancelDocIssue(docId) {
       activeDoc.isIssued = false;
       activeDoc.issuedAt = null;
       activeDoc.isCancelled = true;
+      activeDoc.status = 'draft';
+      activeDoc.cancelledAt = nowIso;
       activeDoc.updatedAt = nowIso;
       localStorage.setItem(KEYS.ACTIVE_DOC, JSON.stringify(activeDoc));
       saveServerActiveDoc(activeDoc).catch(() => { });
@@ -9234,6 +9263,7 @@ if (typeof window !== 'undefined') {
   window.fetchServerInventoryLots = fetchServerInventoryLots;
   window.fetchServerInventorySerials = fetchServerInventorySerials;
   window.syncInventorySerialsFromIssuedDocs = syncInventorySerialsFromIssuedDocs;
+  window.syncInventoryStockFromIssuedDocs = syncInventoryStockFromIssuedDocs;
   window.initInventoryFromServer = initInventoryFromServer;
   window.loadIssuerProfile = loadIssuerProfile;
   window.saveIssuerProfile = saveIssuerProfile;
