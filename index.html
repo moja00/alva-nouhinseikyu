@@ -343,7 +343,7 @@
           style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
           <span
-            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.16-sales-ex-lot-dedup-fix</span>
+            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.16-pl-tax-excluded-fix</span>
         </div>
       </div>
 
@@ -4073,7 +4073,7 @@
                   📊 損益計算書 (Profit &amp; Loss Statement)
                 </h3>
                 <p style="font-size: 0.75rem; color: #64748b; margin: 2px 0 0 0;">
-                  選択期間の確定損益計算書（売上高 → 売上総利益 → 営業利益 → 当期純利益）
+                  選択期間の確定損益計算書（税抜基準：売上高 → 売上総利益 → 営業利益 → 当期純利益）
                 </p>
               </div>
               <div id="plNetProfitBadge"
@@ -4936,7 +4936,7 @@
 
               <div class="form-row" style="margin-bottom: 10px;">
                 <div class="form-group" style="flex: 1.4;">
-                  <label class="form-label" style="font-size: 0.75rem;" for="expenseInputAmount">金額 (税抜 または 税込) <span
+                  <label class="form-label" style="font-size: 0.75rem;" for="expenseInputAmount">金額 (税込・支払総額) <span
                       style="color: var(--danger);">*</span></label>
                   <input type="number" id="expenseInputAmount" class="form-input" placeholder="例: 1200" min="0"
                     style="font-size: 0.95rem; font-weight: 700;" required>
@@ -5103,7 +5103,7 @@
         <div>
           <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             <h2 class="view-screen-title" style="margin: 0;">勤怠管理・退勤タイムカード</h2>
-            <span style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.16-sales-ex-lot-dedup-fix</span>
+            <span style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.16-pl-tax-excluded-fix</span>
           </div>
           <span class="view-screen-subtitle">休憩1時間自動控除・ワンタップ出退勤打刻・月次出勤簿・打刻漏れ修正</span>
         </div>
@@ -7468,7 +7468,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261116_sales_ex_lot_dedup_fix"></script>
+  <script src="js/app.bundle.js?v=20261116_pl_tax_excluded_fix"></script>
 </body>
 
 </html>

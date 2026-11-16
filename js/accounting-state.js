@@ -145,8 +145,9 @@ export function normalizeInvoiceDoc(raw) {
   const paidDate = doc.paidDate || raw.paidDate || '';
   const taxFractionRule = doc.taxFractionRule || raw.taxFractionRule || 'floor';
   const id = String(doc.id || raw.id || `doc_${Date.now()}`);
+  const isSuperseded = !!(doc.isSuperseded || raw.isSuperseded || doc.status === 'superseded' || raw.status === 'superseded');
   const isCancelled = !!(doc.isCancelled || raw.isCancelled);
-  const isIssued = isCancelled ? false : (doc.isIssued !== undefined ? !!doc.isIssued : (raw.isIssued !== undefined ? !!raw.isIssued : true));
+  const isIssued = (isCancelled || isSuperseded) ? false : (doc.isIssued !== undefined ? !!doc.isIssued : (raw.isIssued !== undefined ? !!raw.isIssued : true));
 
   // インボイス制度準拠（税率ごとに合算した税抜小計に対して端数処理）で統一計算
   // ※ 従来の明細行ごとの Math.floor 計算では、100%値引き伝票（宣伝用寄贈・デモ機）で
@@ -198,6 +199,7 @@ export function normalizeInvoiceDoc(raw) {
     paymentStatus: isPaid ? 'paid' : 'unpaid',
     paidDate,
     taxFractionRule,
+    isSuperseded,
     isIssued,
     isCancelled,
     subtotal,
@@ -273,10 +275,29 @@ export function validateManualJournal(entry) {
 }
 
 // ==========================================================================
-// 5. 統合仕訳エンジン（Unified Journal Engine）
+// 5. 統合仕訳エンジン（Unified Journal Engine・税抜経理基準）
 //    【要件1: 売掛金消込・給与仕訳の二重計上防止排他制御】
 //    【要件4: インボイス区分 invoiceType 保持】
 // ==========================================================================
+
+/**
+ * 税込金額から税抜金額と消費税額を分離する（税抜経理基準）
+ * @param {number} amountInc 税込金額
+ * @param {number} taxRate 税率（10 | 8 | 0）
+ * @returns {{ amountEx: number, taxAmt: number }}
+ */
+export function splitTaxInclusiveAmount(amountInc, taxRate = 10) {
+  const inc = Number(amountInc) || 0;
+  const rate = Number(taxRate);
+  if (!inc || !rate || rate <= 0) {
+    return { amountEx: inc, taxAmt: 0 };
+  }
+  const taxAmt = Math.floor((inc * rate) / (100 + rate));
+  return {
+    amountEx: inc - taxAmt,
+    taxAmt
+  };
+}
 
 /**
  * 請求書、経費、手動・複合仕訳を1つの統合仕訳ストリームとして生成
@@ -336,11 +357,11 @@ export function buildUnifiedJournals(arg1 = {}, arg2 = [], arg3 = [], arg4 = [],
     }
   });
 
-  // 1. 伝票発行（売上計上）および入金消込仕訳
+  // 1. 伝票発行（売上計上：税抜＋仮受消費税分離）および入金消込仕訳
   (invoices || []).forEach(rawInv => {
     const inv = normalizeInvoiceDoc(rawInv);
     if (!inv || inv.docType === 'estimate') return;
-    if (!inv.isIssued || inv.isCancelled) return;
+    if (!inv.isIssued || inv.isCancelled || inv.isSuperseded) return;
 
     const date = inv.issueDate || new Date().toISOString().split('T')[0];
     const client = inv.clientName || '取引先';
@@ -348,33 +369,78 @@ export function buildUnifiedJournals(arg1 = {}, arg2 = [], arg3 = [], arg4 = [],
     const totalInc = inv.grandTotal;
     if (totalInc <= 0) return;
 
-    // ① 売上計上仕訳
+    const totalEx = Number(inv.subtotal) || 0;
+    const taxTotal = totalInc - totalEx;
+    const tax10Amt = Number(inv.tax10) || 0;
+    const tax8Amt = Number(inv.tax8) || 0;
+    const salesTaxType = (tax8Amt > 0 && tax10Amt === 0) ? 'taxable_8' : (taxTotal > 0 ? 'taxable_10' : 'exempt');
+
+    // ① 売上計上仕訳（税抜売上 401 ＋ 仮受消費税 216）
     if (isDateInPeriod(date, periodFilter)) {
+      const creditLines = [];
+      if (totalEx !== 0 || taxTotal === 0) {
+        creditLines.push({
+          accountCode: '401',
+          accountName: '売上高',
+          subAccount: client,
+          amount: totalEx,
+          taxType: salesTaxType,
+          invoiceType: 'qualified'
+        });
+      }
+      if (tax10Amt !== 0 && tax8Amt !== 0 && (tax10Amt + tax8Amt === taxTotal)) {
+        creditLines.push({
+          accountCode: '216',
+          accountName: '仮受消費税',
+          subAccount: '10%課税売上',
+          amount: tax10Amt,
+          taxType: 'out_of_scope',
+          invoiceType: 'qualified'
+        });
+        creditLines.push({
+          accountCode: '216',
+          accountName: '仮受消費税',
+          subAccount: '8%軽減課税売上',
+          amount: tax8Amt,
+          taxType: 'out_of_scope',
+          invoiceType: 'qualified'
+        });
+      } else if (taxTotal !== 0) {
+        creditLines.push({
+          accountCode: '216',
+          accountName: '仮受消費税',
+          subAccount: salesTaxType === 'taxable_8' ? '8%軽減課税売上' : '10%課税売上',
+          amount: taxTotal,
+          taxType: 'out_of_scope',
+          invoiceType: 'qualified'
+        });
+      }
+
       if (inv.docType === 'receipt') {
         // 領収書は即時現金売上
         unified.push({
           id: `jnl_rcpt_${inv.id}`,
           date,
           entryNumber: docNo || `RC-${inv.id.slice(-6)}`,
-          description: `領収書売上（現金回収）: ${client} (${docNo})`,
+          description: `領収書売上（現金回収・税抜）: ${client} (${docNo})`,
           sourceType: 'invoice_sales',
           sourceId: inv.id,
-          debitLines: [{ accountCode: '101', accountName: '現金', subAccount: '', amount: totalInc, taxType: 'taxable_10', invoiceType: 'qualified' }],
-          creditLines: [{ accountCode: '401', accountName: '売上高', subAccount: client, amount: totalInc, taxType: 'taxable_10', invoiceType: 'qualified' }],
+          debitLines: [{ accountCode: '101', accountName: '現金', subAccount: '', amount: totalInc, taxType: 'out_of_scope', invoiceType: 'qualified' }],
+          creditLines,
           totalDebit: totalInc,
           totalCredit: totalInc
         });
       } else {
-        // 請求書・納品書の売上計上: （借）売掛金 / （貸）売上高
+        // 請求書・納品書の売上計上: （借）売掛金 / （貸）売上高(税抜)＋仮受消費税
         unified.push({
           id: `jnl_inv_${inv.id}`,
           date,
           entryNumber: docNo || `INV-${inv.id.slice(-6)}`,
-          description: `売上計上: ${client} (${docNo})`,
+          description: `売上計上（税抜基準）: ${client} (${docNo})`,
           sourceType: 'invoice_sales',
           sourceId: inv.id,
           debitLines: [{ accountCode: '111', accountName: '売掛金', subAccount: client, amount: totalInc, taxType: 'out_of_scope', invoiceType: 'qualified' }],
-          creditLines: [{ accountCode: '401', accountName: '売上高', subAccount: client, amount: totalInc, taxType: 'taxable_10', invoiceType: 'qualified' }],
+          creditLines,
           totalDebit: totalInc,
           totalCredit: totalInc
         });
@@ -404,17 +470,18 @@ export function buildUnifiedJournals(arg1 = {}, arg2 = [], arg3 = [], arg4 = [],
       }
     }
 
-    // ③ 売上原価計上仕訳（要件4: シリアル引当実原価または品目原価を501仕入高 / 131商品・棚卸資産に連動）
+    // ③ 売上原価計上仕訳（要件4: シリアル引当実原価または品目原価は税抜原価として 501仕入高 / 131商品・棚卸資産 へ振替）
+    // ※ 仕入時の消費税はロット入庫時に 116 仮払消費税 で計上済みのため二重課税を防ぐべく out_of_scope
     const cogsAmount = Number(inv.assignedCogs || inv.costTotal || 0);
     if (isDateInPeriod(date, periodFilter) && cogsAmount > 0) {
       unified.push({
         id: `jnl_cogs_${inv.id}`,
         date,
         entryNumber: docNo ? `COG-${docNo}` : `COG-${inv.id.slice(-6)}`,
-        description: `売上原価計上（ロット・シリアル実原価）: ${client} (${docNo})`,
+        description: `売上原価計上（ロット・シリアル実原価・税抜）: ${client} (${docNo})`,
         sourceType: 'sales_cogs',
         sourceId: inv.id,
-        debitLines: [{ accountCode: '501', accountName: '仕入高', subAccount: client, amount: cogsAmount, taxType: 'taxable_10', invoiceType: 'qualified' }],
+        debitLines: [{ accountCode: '501', accountName: '仕入高', subAccount: client, amount: cogsAmount, taxType: 'out_of_scope', invoiceType: 'qualified' }],
         creditLines: [{ accountCode: '131', accountName: '商品・棚卸資産', subAccount: '', amount: cogsAmount, taxType: 'out_of_scope', invoiceType: 'none' }],
         totalDebit: cogsAmount,
         totalCredit: cogsAmount
@@ -422,7 +489,7 @@ export function buildUnifiedJournals(arg1 = {}, arg2 = [], arg3 = [], arg4 = [],
     }
   });
 
-  // 2. 経費明細仕訳（要件1: 給与複合仕訳がある場合は二重計上を確実に防止）
+  // 2. 経費明細仕訳（税抜経理基準：exp.amount はレシート支払総額[税込]として税抜経費＋116仮払消費税へ分離）
   (expenses || []).forEach(exp => {
     if (!exp) return;
     const cleanExpId = String(exp.id).trim();
@@ -433,15 +500,17 @@ export function buildUnifiedJournals(arg1 = {}, arg2 = [], arg3 = [], arg4 = [],
     const date = exp.date || new Date().toISOString().split('T')[0];
     if (!isDateInPeriod(date, periodFilter)) return;
 
-    const amount = Number(exp.amount) || 0;
+    const amountInc = Number(exp.amount) || 0;
     const taxRate = Number(exp.taxRate !== undefined ? exp.taxRate : 10);
-    const amountInc = Math.round(amount * (1 + taxRate / 100));
     const payee = exp.payee ? ` (${exp.payee})` : '';
     const expenseCat = exp.category || '雑費';
     const accDef = findAccountDef(expenseCat);
     const accCode = accDef ? accDef.code : '699';
     const taxType = taxRate === 8 ? 'taxable_8' : (taxRate === 10 ? 'taxable_10' : 'exempt');
     const invoiceType = exp.invoiceNumber ? 'qualified' : (exp.invoiceType || 'none');
+
+    // 非課税/免税科目で税率0、または0%指定以外は税込総額から消費税を分離
+    const { amountEx, taxAmt } = splitTaxInclusiveAmount(amountInc, taxRate);
 
     // 立替者判定（会社直接以外は社員立替）
     const claimant = String(exp.claimant || '').trim();
@@ -471,6 +540,19 @@ export function buildUnifiedJournals(arg1 = {}, arg2 = [], arg3 = [], arg4 = [],
     }
 
     const claimantTag = isEmployeeAdvance ? ` [立替:${claimant}${exp.isSettled ? '(精算済)' : '(未精算)'}]` : '';
+    const debitLines = [
+      { accountCode: accCode, accountName: expenseCat, subAccount: '', amount: amountEx, taxType, invoiceType }
+    ];
+    if (taxAmt > 0) {
+      debitLines.push({
+        accountCode: '116',
+        accountName: '仮払消費税',
+        subAccount: taxRate === 8 ? '8%軽減課税仕入' : '10%課税仕入',
+        amount: taxAmt,
+        taxType: 'out_of_scope',
+        invoiceType
+      });
+    }
 
     unified.push({
       id: `jnl_exp_${exp.id}`,
@@ -479,7 +561,7 @@ export function buildUnifiedJournals(arg1 = {}, arg2 = [], arg3 = [], arg4 = [],
       description: `${expenseCat}: ${exp.note || ''}${payee}${claimantTag}`.trim(),
       sourceType: 'expense',
       sourceId: exp.id,
-      debitLines: [{ accountCode: accCode, accountName: expenseCat, subAccount: '', amount: amountInc, taxType, invoiceType }],
+      debitLines,
       creditLines: [{ accountCode: creditCode, accountName: creditName, subAccount: creditSubAccount || method, amount: amountInc, taxType: 'out_of_scope', invoiceType: 'none' }],
       totalDebit: amountInc,
       totalCredit: amountInc
@@ -558,6 +640,38 @@ export function buildUnifiedJournals(arg1 = {}, arg2 = [], arg3 = [], arg4 = [],
     const val = validateManualJournal(jnl);
     if (!val.isValid) return;
 
+    let finalDebitLines = jnl.debitLines || [];
+    const finalCreditLines = jnl.creditLines || [];
+
+    // 振込手数料差引消込などで 116 仮払消費税 が分離されていない国内課税費用行を税抜＋仮払消費税へ分離
+    const isReconcile = jnl.sourceType === 'reconciliation' || jnl.sourceType === 'reconcile';
+    const hasInputTaxLine = finalDebitLines.some(l => l && (l.accountCode === '116' || l.accountName === '仮払消費税'));
+    if (isReconcile && !hasInputTaxLine) {
+      const splitDebits = [];
+      finalDebitLines.forEach(dl => {
+        if (!dl) return;
+        const rate = dl.taxType === 'taxable_10' ? 10 : (dl.taxType === 'taxable_8' ? 8 : 0);
+        const amt = Number(dl.amount) || 0;
+        if (rate > 0 && amt > 0) {
+          const { amountEx, taxAmt } = splitTaxInclusiveAmount(amt, rate);
+          splitDebits.push({ ...dl, amount: amountEx });
+          if (taxAmt > 0) {
+            splitDebits.push({
+              accountCode: '116',
+              accountName: '仮払消費税',
+              subAccount: dl.subAccount || '振込手数料等消費税',
+              amount: taxAmt,
+              taxType: 'out_of_scope',
+              invoiceType: dl.invoiceType || 'qualified'
+            });
+          }
+        } else {
+          splitDebits.push(dl);
+        }
+      });
+      finalDebitLines = splitDebits;
+    }
+
     unified.push({
       id: jnl.id,
       date,
@@ -565,8 +679,8 @@ export function buildUnifiedJournals(arg1 = {}, arg2 = [], arg3 = [], arg4 = [],
       description: jnl.description || '振替伝票',
       sourceType: jnl.sourceType || 'manual',
       sourceId: jnl.sourceId || '',
-      debitLines: jnl.debitLines || [],
-      creditLines: jnl.creditLines || [],
+      debitLines: finalDebitLines,
+      creditLines: finalCreditLines,
       totalDebit: val.totalDebit,
       totalCredit: val.totalCredit
     });
@@ -723,7 +837,7 @@ export function calculateProfitAndLoss(invoices = [], expenses = [], periodFilte
   invoices.forEach(rawInv => {
     const inv = normalizeInvoiceDoc(rawInv);
     if (!inv || inv.docType === 'estimate') return;
-    if (!inv.isIssued || inv.isCancelled) return;
+    if (!inv.isIssued || inv.isCancelled || inv.isSuperseded) return;
     if (!isDateInPeriod(inv.issueDate, periodFilter)) return;
 
     totalSalesEx += Number(inv.subtotal) || 0;
@@ -736,16 +850,30 @@ export function calculateProfitAndLoss(invoices = [], expenses = [], periodFilte
     }
   });
 
-  // 伝票外の手動売上仕訳差分がある場合は税抜換算で調整
-  const manualSalesDiff = totalSales - totalSalesInc;
-  const finalSalesEx = totalSalesEx + (manualSalesDiff !== 0 ? Math.round(manualSalesDiff / 1.1) : 0);
+  // 伝票外の売上仕訳（手動振替伝票等）がある場合も 401 売上高（税抜）に一致させる
+  const manualSalesDiff = totalSales - totalSalesEx;
+  const finalSalesEx = totalSalesEx + manualSalesDiff;
+  let manualOutputTax = 0;
+  if (manualSalesDiff !== 0) {
+    unified.forEach(jnl => {
+      if (jnl.sourceType === 'invoice_sales') return;
+      (jnl.creditLines || []).forEach(cl => {
+        if (!cl) return;
+        if (cl.accountCode === '216' || cl.accountName === '仮受消費税') {
+          manualOutputTax += (Number(cl.amount) || 0);
+        }
+      });
+    });
+  }
+  const finalSalesTax = totalSalesTaxExact + manualOutputTax;
+  const finalSalesInc = totalSalesInc + manualSalesDiff + manualOutputTax;
 
   return {
     periodFilter,
     totalSales,
     totalSalesEx: finalSalesEx,
-    totalSalesTax: totalSalesTaxExact,
-    totalSalesInc: totalSalesInc || totalSales,
+    totalSalesTax: finalSalesTax,
+    totalSalesInc: finalSalesInc || totalSales,
     paidSalesInc,
     unpaidSalesInc,
     collectionRate: totalSalesInc > 0 ? (paidSalesInc / totalSalesInc) * 100 : 100,

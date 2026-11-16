@@ -114,6 +114,7 @@ import {
   generateJournalEntries,
   exportJournalsToCSV,
   normalizeInvoiceDoc,
+  splitTaxInclusiveAmount,
   isDateInPeriod
 } from './accounting-state.js';
 
@@ -14164,7 +14165,16 @@ function renderAccountingDashboard(periodFilter = currentAccGlobalPeriod) {
   // KPI表示更新（当月売上高: 上段=税抜 / 下段=税込）
   const salesEx = pnl.totalSalesEx !== undefined ? pnl.totalSalesEx : pnl.totalSales;
   const salesInc = pnl.totalSalesInc !== undefined ? pnl.totalSalesInc : pnl.totalSales;
-  console.log('【財務ダッシュボード】KPI売上反映', { salesEx, salesInc, totalSalesTax: pnl.totalSalesTax });
+  console.log('【財務ダッシュボード】KPI売上・損益反映（税抜基準）', {
+    salesEx,
+    salesInc,
+    totalSalesTax: pnl.totalSalesTax,
+    totalCostOfGoodsSold: pnl.totalCostOfGoodsSold,
+    grossProfit: pnl.grossProfit,
+    totalOperatingExpenses: pnl.totalOperatingExpenses,
+    operatingProfit: pnl.operatingProfit,
+    netIncome: pnl.netIncome
+  });
   if (DOM.kpiTotalSales) DOM.kpiTotalSales.textContent = formatCurrency(salesEx);
   if (DOM.kpiTotalSalesInc) DOM.kpiTotalSalesInc.textContent = `(税込 ${formatCurrency(salesInc)})`;
   if (DOM.kpiGrossProfit) DOM.kpiGrossProfit.textContent = formatCurrency(pnl.grossProfit);
@@ -14281,23 +14291,23 @@ function renderFormalProfitAndLossTable(pnl) {
 
   let html = '';
 
-  // 1. 売上高
+  // 1. 売上高（税抜）
   html += `
     <tr style="background: #f8fafc; font-weight: 700; color: #1e293b; border-top: 1px solid #cbd5e1;">
       <td style="padding: 8px 12px; font-family: monospace; color: #64748b;">401</td>
-      <td style="padding: 8px 12px;">Ⅰ 売上高</td>
+      <td style="padding: 8px 12px;">Ⅰ 売上高（税抜）</td>
       <td style="padding: 8px 12px; text-align: right; font-family: monospace;"></td>
       <td style="padding: 8px 12px; text-align: right; font-family: monospace; font-size: 0.95rem; color: #1e40af;">${formatCurrency(totalSales)}</td>
       <td style="padding: 8px 12px; text-align: right; font-size: 11px; color: #64748b;">100.0%</td>
     </tr>
   `;
 
-  // 2. 売上原価 (500番台)
+  // 2. 売上原価 (500番台・税抜)
   const costRatio = totalSales > 0 ? ((costOfSales / totalSales) * 100).toFixed(1) : '0.0';
   html += `
     <tr style="background: #f8fafc; font-weight: 700; color: #1e293b; border-top: 1px solid #cbd5e1;">
       <td style="padding: 8px 12px; font-family: monospace; color: #64748b;">500番台</td>
-      <td style="padding: 8px 12px;">Ⅱ 売上原価（仕入・外注費・荷造運賃等）</td>
+      <td style="padding: 8px 12px;">Ⅱ 売上原価（税抜・仕入・外注費・荷造運賃等）</td>
       <td style="padding: 8px 12px; text-align: right; font-family: monospace;"></td>
       <td style="padding: 8px 12px; text-align: right; font-family: monospace; font-size: 0.95rem; color: #475569;">${formatCurrency(costOfSales)}</td>
       <td style="padding: 8px 12px; text-align: right; font-size: 11px; color: #64748b;">${costRatio}%</td>
@@ -14317,12 +14327,12 @@ function renderFormalProfitAndLossTable(pnl) {
     </tr>
   `;
 
-  // 4. 販売費及び一般管理費 (SGA: 600番台)
+  // 4. 販売費及び一般管理費 (SGA: 600番台・税抜)
   const sgaRatio = totalSales > 0 ? ((totalSga / totalSales) * 100).toFixed(1) : '0.0';
   html += `
     <tr style="background: #f8fafc; font-weight: 700; color: #1e293b; border-top: 1px solid #cbd5e1;">
       <td style="padding: 8px 12px; font-family: monospace; color: #64748b;">600番台</td>
-      <td style="padding: 8px 12px;">Ⅲ 販売費及び一般管理費</td>
+      <td style="padding: 8px 12px;">Ⅲ 販売費及び一般管理費（税抜）</td>
       <td style="padding: 8px 12px; text-align: right; font-family: monospace;"></td>
       <td style="padding: 8px 12px; text-align: right; font-family: monospace; font-size: 0.95rem; color: #d97706;">${formatCurrency(totalSga)}</td>
       <td style="padding: 8px 12px; text-align: right; font-size: 11px; color: #64748b;">${sgaRatio}%</td>
@@ -14522,9 +14532,10 @@ function renderMonthlyBarChart(periodFilter = currentAccGlobalPeriod) {
   const years = new Set(months.map(m => m.split('-')[0]));
   const isMultiYear = years.size > 1;
 
-  // 各月の損益を計算
+  // 各月の損益を計算（税抜基準・手動振替仕訳を含む）
+  const manualJournals = typeof getManualJournals === 'function' ? getManualJournals() : [];
   const data = months.map(m => {
-    const p = calculateProfitAndLoss(invoices, expenses, m);
+    const p = calculateProfitAndLoss(invoices, expenses, m, manualJournals);
     const [yy, mm] = m.split('-');
     const label = isMultiYear ? `${yy.slice(2)}/${Number(mm)}月` : `${Number(mm)}月`;
     return {
@@ -14637,36 +14648,86 @@ function renderTaxSummaryCard(periodFilter = currentAccGlobalPeriod) {
   const manual = typeof getManualJournals === 'function' ? getManualJournals() : [];
   const unified = typeof buildUnifiedJournals === 'function' ? buildUnifiedJournals({ invoices, expenses, manualJournals: manual, periodFilter }) : [];
 
+  console.log('【消費税集計】計算開始', { periodFilter, journalCount: unified.length });
+
+  const detectTaxBucket = (taxLine, peerLines) => {
+    const sub = String((taxLine && taxLine.subAccount) || '');
+    if (sub.includes('8')) return 8;
+    if (sub.includes('10')) return 10;
+    const has8 = (peerLines || []).some(l => l && l.taxType === 'taxable_8');
+    const has10 = (peerLines || []).some(l => l && l.taxType === 'taxable_10');
+    return (has8 && !has10) ? 8 : 10;
+  };
+
   let outTax10 = 0;
   let outTax8 = 0;
   let inTax10 = 0;
   let inTax8 = 0;
 
   unified.forEach(jnl => {
-    // 貸方: 課税売上（仮受消費税）
-    (jnl.creditLines || []).forEach(cl => {
+    const debitLines = jnl.debitLines || [];
+    const creditLines = jnl.creditLines || [];
+    const hasOutTaxLine = creditLines.some(l => l && (l.accountCode === '216' || l.accountName === '仮受消費税'))
+      || debitLines.some(l => l && (l.accountCode === '216' || l.accountName === '仮受消費税'));
+    const hasInTaxLine = debitLines.some(l => l && (l.accountCode === '116' || l.accountName === '仮払消費税'))
+      || creditLines.some(l => l && (l.accountCode === '116' || l.accountName === '仮払消費税'));
+
+    // 1. 仮受消費税（216）の実計上額を集計（貸方＝加算、借方＝返品・訂正減算）
+    creditLines.forEach(cl => {
+      if (!cl) return;
       const amt = Number(cl.amount) || 0;
-      if (cl.taxType === 'taxable_10') {
-        outTax10 += Math.round(amt * 10 / 110);
-      } else if (cl.taxType === 'taxable_8') {
-        outTax8 += Math.round(amt * 8 / 108);
+      if (cl.accountCode === '216' || cl.accountName === '仮受消費税') {
+        if (detectTaxBucket(cl, creditLines) === 8) outTax8 += amt;
+        else outTax10 += amt;
+      } else if (cl.accountCode === '116' || cl.accountName === '仮払消費税') {
+        if (detectTaxBucket(cl, creditLines) === 8) inTax8 -= amt;
+        else inTax10 -= amt;
       }
     });
 
-    // 借方: 課税仕入・経費（仮払消費税）
-    (jnl.debitLines || []).forEach(dl => {
+    // 2. 仮払消費税（116）の実計上額を集計（借方＝加算、貸方＝訂正減算）
+    debitLines.forEach(dl => {
+      if (!dl) return;
       const amt = Number(dl.amount) || 0;
-      if (dl.taxType === 'taxable_10') {
-        inTax10 += Math.round(amt * 10 / 110);
-      } else if (dl.taxType === 'taxable_8') {
-        inTax8 += Math.round(amt * 8 / 108);
+      if (dl.accountCode === '116' || dl.accountName === '仮払消費税') {
+        if (detectTaxBucket(dl, debitLines) === 8) inTax8 += amt;
+        else inTax10 += amt;
+      } else if (dl.accountCode === '216' || dl.accountName === '仮受消費税') {
+        if (detectTaxBucket(dl, debitLines) === 8) outTax8 -= amt;
+        else outTax10 -= amt;
       }
     });
+
+    // 3. 手動振替伝票等で 216 / 116 が未分離の内税仕訳のみフォールバック換算
+    if (!hasOutTaxLine) {
+      creditLines.forEach(cl => {
+        if (!cl) return;
+        const amt = Number(cl.amount) || 0;
+        if (cl.taxType === 'taxable_10') {
+          outTax10 += splitTaxInclusiveAmount(amt, 10).taxAmt;
+        } else if (cl.taxType === 'taxable_8') {
+          outTax8 += splitTaxInclusiveAmount(amt, 8).taxAmt;
+        }
+      });
+    }
+    if (!hasInTaxLine && jnl.sourceType !== 'inventory_lot' && jnl.sourceType !== 'sales_cogs') {
+      debitLines.forEach(dl => {
+        if (!dl) return;
+        const amt = Number(dl.amount) || 0;
+        if (dl.taxType === 'taxable_10') {
+          inTax10 += splitTaxInclusiveAmount(amt, 10).taxAmt;
+        } else if (dl.taxType === 'taxable_8') {
+          inTax8 += splitTaxInclusiveAmount(amt, 8).taxAmt;
+        }
+      });
+    }
   });
 
   const totalOutTax = outTax10 + outTax8;
   const totalInTax = inTax10 + inTax8;
   const netPayable = totalOutTax - totalInTax;
+
+  console.log('【消費税集計】計算完了', { outTax10, outTax8, totalOutTax, inTax10, inTax8, totalInTax, netPayable });
 
   const outTotEl = document.getElementById('taxOutputTotal');
   const out10El = document.getElementById('taxOutput10');
@@ -14783,6 +14844,7 @@ function handleUnlockMonth(ym) {
   renderMonthLockManagement();
 }
 
+window.renderAccountingDashboard = renderAccountingDashboard;
 window.renderTaxSummaryCard = renderTaxSummaryCard;
 window.renderMonthLockManagement = renderMonthLockManagement;
 window.handleLockMonth = handleLockMonth;
