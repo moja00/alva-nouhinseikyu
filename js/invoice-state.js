@@ -165,7 +165,7 @@ export function calculateTotals(items = [], fractionRule = 'floor') {
     const qty = Number(item.quantity) || 0;
     const price = Number(item.unitPrice) || 0;
     const lineTotal = Math.round(qty * price);
-    const rate = Number(item.taxRate);
+    const rate = Number(item.taxRate !== undefined && item.taxRate !== null && item.taxRate !== '' ? item.taxRate : 10);
 
     if (rate === 10) {
       subtotal10 += lineTotal;

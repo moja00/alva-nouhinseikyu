@@ -465,7 +465,7 @@ function calculateTotals(items = [], fractionRule = 'floor') {
     const qty = Number(item.quantity) || 0;
     const price = Number(item.unitPrice) || 0;
     const lineTotal = Math.round(qty * price);
-    const rate = Number(item.taxRate);
+    const rate = Number(item.taxRate !== undefined && item.taxRate !== null && item.taxRate !== '' ? item.taxRate : 10);
 
     if (rate === 10) {
       subtotal10 += lineTotal;
@@ -735,32 +735,27 @@ function normalizeInvoiceDoc(raw) {
   const issueDate = doc.issueDate || raw.issueDate || '';
   const dueDate = doc.dueDate || raw.dueDate || '';
   const docNumber = doc.docNumber || raw.docNumber || '';
-  const clientName = (doc.client && doc.client.name) ? doc.client.name : (raw.clientName || '名称未設定');
+  const clientName = (doc.client && doc.client.name) ? doc.client.name : (doc.clientName || raw.clientName || doc.customerName || raw.customerName || '名称未設定');
   const isPaid = !!(doc.isPaid || raw.isPaid || doc.paymentStatus === 'paid' || raw.paymentStatus === 'paid');
   const paidDate = doc.paidDate || raw.paidDate || '';
   const taxFractionRule = doc.taxFractionRule || raw.taxFractionRule || 'floor';
-  const id = doc.id || raw.id || `doc_${Date.now()}`;
+  const id = String(doc.id || raw.id || `doc_${Date.now()}`);
   const isCancelled = !!(doc.isCancelled || raw.isCancelled);
   const isIssued = isCancelled ? false : (doc.isIssued !== undefined ? !!doc.isIssued : (raw.isIssued !== undefined ? !!raw.isIssued : true));
 
-  let subtotal = 0;
-  let tax10 = 0;
-  let tax8 = 0;
-  let costTotal = 0;
+  // インボイス制度準拠（税率ごとに合算した税抜小計に対して端数処理）で統一計算
+  // ※ 従来の明細行ごとの Math.floor 計算では、100%値引き伝票（宣伝用寄贈・デモ機）で
+  //   負側の丸め誤差が重なり -1 円 / -2 円 になる不具合があったため統一する
+  const totals = calculateTotals(items, taxFractionRule);
+  let subtotal = totals.subtotalWithoutTax;
+  let tax10 = totals.tax10;
+  let tax8 = totals.tax8;
+  let taxTotal = totals.taxTotal;
+  let grandTotal = totals.grandTotal;
 
+  let costTotal = 0;
   items.forEach(it => {
     const qty = Number(it.quantity) || 0;
-    const price = Number(it.unitPrice) || 0;
-    const lineTotal = qty * price;
-    const taxRate = Number(it.taxRate !== undefined ? it.taxRate : 10);
-
-    subtotal += lineTotal;
-    if (taxRate === 10) {
-      tax10 += Math.floor(lineTotal * 0.10);
-    } else if (taxRate === 8) {
-      tax8 += Math.floor(lineTotal * 0.08);
-    }
-
     if (it.assignedCogs) {
       costTotal += Number(it.assignedCogs);
     } else if (it.costPrice) {
@@ -768,18 +763,19 @@ function normalizeInvoiceDoc(raw) {
     }
   });
 
-  let taxTotal = tax10 + tax8;
-  let grandTotal = subtotal + taxTotal;
-  if (grandTotal === 0) {
-    const rawGrand = Number(doc.grandTotal || raw.grandTotal || doc.totalAmount || raw.totalAmount || 0);
-    if (rawGrand > 0) {
-      grandTotal = rawGrand;
-      if (subtotal === 0) {
-        subtotal = Math.round(rawGrand / 1.1);
-        taxTotal = rawGrand - subtotal;
-        tax10 = taxTotal;
-      }
+  const rawGrand = Number(doc.grandTotal ?? raw.grandTotal ?? doc.totalAmount ?? raw.totalAmount ?? doc.total ?? raw.total ?? 0);
+  if (grandTotal === 0 && items.length === 0 && rawGrand > 0) {
+    grandTotal = rawGrand;
+    if (subtotal === 0) {
+      subtotal = Math.round(rawGrand / 1.1);
+      taxTotal = rawGrand - subtotal;
+      tax10 = taxTotal;
     }
+  } else if (id.startsWith('doc_imported_') && rawGrand > 0 && Math.abs(grandTotal - rawGrand) <= 1) {
+    // 過去のインポート済み・消込済み伝票の1円端数差は既存実績を保護
+    grandTotal = rawGrand;
+    taxTotal = Number(doc.taxTotal ?? raw.taxTotal ?? doc.tax ?? raw.tax ?? (rawGrand - subtotal));
+    tax10 = taxTotal;
   }
 
   const explicitCogs = Number(doc.assignedCogs || raw.assignedCogs || doc.cogsTotal || raw.cogsTotal || 0);
@@ -3347,6 +3343,7 @@ async function analyzeReceiptImage(dataUrlOrFile, onProgress = null, expenseHist
  * LocalStorage管理、自社プロファイル永続化、書類履歴、JSON入出力
  */
 
+
 const KEYS = {
   ACTIVE_DOC: 'quickdoc_active_doc',
   HISTORY: 'quickdoc_history_list',
@@ -4807,20 +4804,11 @@ function saveDocToHistory(doc) {
     const list = getHistoryList(true);
     const existingIndex = list.findIndex(item => item.id === doc.id || (item.docNumber && doc.docNumber && item.docNumber === doc.docNumber));
 
-    // 金額・税金の計算
-    let subtotal = 0;
-    let taxTotal = 0;
-    if (Array.isArray(doc.items)) {
-      doc.items.forEach(it => {
-        const qty = Number(it.quantity) || 0;
-        const price = Number(it.unitPrice) || 0;
-        const lineTotal = qty * price;
-        const rate = Number(it.taxRate !== undefined ? it.taxRate : 10);
-        subtotal += lineTotal;
-        taxTotal += Math.floor(lineTotal * (rate / 100));
-      });
-    }
-    const grandTotal = subtotal + taxTotal;
+    // 金額・税金の計算（インボイス制度準拠：税率別小計合算後に端数処理）
+    const totals = calculateTotals(Array.isArray(doc.items) ? doc.items : [], doc.taxFractionRule || 'floor');
+    const subtotal = totals.subtotalWithoutTax;
+    const taxTotal = totals.taxTotal;
+    const grandTotal = totals.grandTotal;
     const isPaid = !!(doc.isPaid || doc.paymentStatus === 'paid');
 
     const nowIso = new Date().toISOString();
@@ -27225,6 +27213,10 @@ function renderAccountingSales(filter = 'all', periodFilter = currentAccGlobalPe
     invoices = invoices.filter(doc => !!doc.isPaid);
   }
 
+  // 発行日降順で整列
+  invoices.sort((a, b) => String(b.issueDate || '').localeCompare(String(a.issueDate || '')));
+  console.log('【売上・入金消込台帳描画】実行', { filter, count: invoices.length });
+
   if (invoices.length === 0) {
     DOM.accSalesTableBody.innerHTML = `
       <tr>
@@ -27240,20 +27232,29 @@ function renderAccountingSales(filter = 'all', periodFilter = currentAccGlobalPe
   let html = '';
   invoices.forEach(doc => {
     const isPaid = !!doc.isPaid;
-    const grandTotal = doc.grandTotal;
+    const grandTotal = Number(doc.grandTotal) || 0;
     const meta = DOC_TYPES[doc.docType] || DOC_TYPES.invoice;
 
     const statusBadge = isPaid
       ? `<span class="badge" style="background: #dcfce7; color: #166534; font-weight: 600;">✓ 入金済</span>`
       : `<span class="badge" style="background: #fef3c7; color: #92400e; font-weight: 600;">⏳ 未入金</span>`;
 
+    const paidDateInfo = (isPaid && doc.paidDate)
+      ? `<span style="font-size: 11px; color: #047857; font-family: monospace; font-weight: 600; margin-right: 4px;" title="入金消込日">${escapeHtml(doc.paidDate)}</span>`
+      : '';
+
+    const feeReconcileBtn = grandTotal > 0
+      ? `<button type="button" class="btn btn-outline btn-xs" style="color: #4f46e5; border-color: #c7d2fe; background: #eef2ff; font-weight: 700; font-size: 11px; padding: 3px 7px;" title="振込手数料を差し引いて消込（複合仕訳自動作成）" onclick="window.__openReconcileFeeModal('${doc.id}')">手数料差引</button>`
+      : '';
+
     const toggleBtn = isPaid
-      ? `<button type="button" class="btn btn-outline btn-xs" style="color: #64748b; font-size: 11px; padding: 3px 8px;" onclick="window.__toggleInvoicePayment('${doc.id}', false)">未入金に戻す</button>`
+      ? `${paidDateInfo}<button type="button" class="btn btn-outline btn-xs" style="color: #64748b; font-size: 11px; padding: 3px 8px;" onclick="window.__toggleInvoicePayment('${doc.id}', false)">未入金に戻す</button>`
       : `<div style="display: inline-flex; gap: 4px;">
            <button type="button" class="btn btn-success btn-xs" style="background: #10b981; color: white; font-weight: 700; font-size: 11px; padding: 4px 8px; border-radius: 4px; box-shadow: 0 1px 3px rgba(16,185,129,0.3);" onclick="window.__toggleInvoicePayment('${doc.id}', true)">✓ 全額消込</button>
-           <button type="button" class="btn btn-outline btn-xs" style="color: #4f46e5; border-color: #c7d2fe; background: #eef2ff; font-weight: 700; font-size: 11px; padding: 3px 7px;" title="振込手数料を差し引いて消込（複合仕訳自動作成）" onclick="window.__openReconcileFeeModal('${doc.id}')">手数料差引</button>
+           ${feeReconcileBtn}
          </div>`;
 
+    // テーブルヘッダー順: 書類番号 | 取引先 | 発行日 | お支払期日 | 請求金額 (税込) | ステータス | 入金日 / 消込操作
     html += `
       <tr>
         <td style="font-family: monospace; font-weight: 600;">
@@ -27262,12 +27263,12 @@ function renderAccountingSales(filter = 'all', periodFilter = currentAccGlobalPe
             <a href="javascript:void(0)" onclick="window.__openInvoiceQuickEdit('${doc.id}')" style="color: #4338ca; font-weight: 700; text-decoration: underline; cursor: pointer;" title="クリックして請求書内容を確認・直接編集">${escapeHtml(doc.docNumber || '-')}</a>
           </div>
         </td>
-        <td>${escapeHtml(doc.issueDate || '-')}</td>
         <td style="font-weight: 600; color: var(--slate-800); cursor: pointer;" onclick="window.__openInvoiceQuickEdit('${doc.id}')" title="クリックして請求書内容を確認・直接編集">
           <span style="color: #1e293b; text-decoration: underline;">${escapeHtml(doc.clientName || '名称未設定')}</span>
         </td>
-        <td style="text-align: right; font-weight: 700; font-family: monospace; color: var(--indigo-700); font-size: 0.9rem;">${formatCurrency(grandTotal)}</td>
+        <td>${escapeHtml(doc.issueDate || '-')}</td>
         <td>${escapeHtml(doc.dueDate || '-')}</td>
+        <td style="text-align: right; font-weight: 700; font-family: monospace; color: var(--indigo-700); font-size: 0.9rem;">${formatCurrency(grandTotal)}</td>
         <td style="text-align: center;">${statusBadge}</td>
         <td style="text-align: center;">
           <div style="display: flex; gap: 4px; justify-content: center; align-items: center; flex-wrap: wrap;">
@@ -27281,6 +27282,7 @@ function renderAccountingSales(filter = 'all', periodFilter = currentAccGlobalPe
   });
   DOM.accSalesTableBody.innerHTML = html;
 }
+window.renderAccountingSales = renderAccountingSales;
 
 window.__toggleInvoicePayment = function (id, newStatus) {
   const full = (typeof getDocFromHistory === 'function') ? getDocFromHistory(id) : null;
@@ -27496,23 +27498,12 @@ function renderIqeItemsTable() {
 }
 
 function recalcIqeTotals() {
-  let subtotal = 0;
-  let taxTotal = 0;
+  const rule = (currentIqeDoc && currentIqeDoc.taxFractionRule) ? currentIqeDoc.taxFractionRule : 'floor';
+  const totals = calculateTotals(currentIqeItems, rule);
 
-  currentIqeItems.forEach(it => {
-    const qty = Number(it.quantity) || 0;
-    const price = Number(it.unitPrice) || 0;
-    const lineTotal = qty * price;
-    const rate = Number(it.taxRate !== undefined ? it.taxRate : 10);
-    subtotal += lineTotal;
-    taxTotal += Math.floor(lineTotal * (rate / 100));
-  });
-
-  const grandTotal = subtotal + taxTotal;
-
-  if (DOM.iqeSubtotal) DOM.iqeSubtotal.textContent = formatCurrency(subtotal);
-  if (DOM.iqeTaxTotal) DOM.iqeTaxTotal.textContent = formatCurrency(taxTotal);
-  if (DOM.iqeGrandTotal) DOM.iqeGrandTotal.textContent = formatCurrency(grandTotal);
+  if (DOM.iqeSubtotal) DOM.iqeSubtotal.textContent = formatCurrency(totals.subtotalWithoutTax);
+  if (DOM.iqeTaxTotal) DOM.iqeTaxTotal.textContent = formatCurrency(totals.taxTotal);
+  if (DOM.iqeGrandTotal) DOM.iqeGrandTotal.textContent = formatCurrency(totals.grandTotal);
 }
 
 function saveInvoiceQuickEditHandler() {

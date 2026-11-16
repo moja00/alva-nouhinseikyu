@@ -2,6 +2,7 @@
  * storage.js
  * LocalStorage管理、自社プロファイル永続化、書類履歴、JSON入出力
  */
+import { calculateTotals } from './invoice-state.js';
 
 const KEYS = {
   ACTIVE_DOC: 'quickdoc_active_doc',
@@ -1471,20 +1472,11 @@ export function saveDocToHistory(doc) {
     const list = getHistoryList(true);
     const existingIndex = list.findIndex(item => item.id === doc.id || (item.docNumber && doc.docNumber && item.docNumber === doc.docNumber));
 
-    // 金額・税金の計算
-    let subtotal = 0;
-    let taxTotal = 0;
-    if (Array.isArray(doc.items)) {
-      doc.items.forEach(it => {
-        const qty = Number(it.quantity) || 0;
-        const price = Number(it.unitPrice) || 0;
-        const lineTotal = qty * price;
-        const rate = Number(it.taxRate !== undefined ? it.taxRate : 10);
-        subtotal += lineTotal;
-        taxTotal += Math.floor(lineTotal * (rate / 100));
-      });
-    }
-    const grandTotal = subtotal + taxTotal;
+    // 金額・税金の計算（インボイス制度準拠：税率別小計合算後に端数処理）
+    const totals = calculateTotals(Array.isArray(doc.items) ? doc.items : [], doc.taxFractionRule || 'floor');
+    const subtotal = totals.subtotalWithoutTax;
+    const taxTotal = totals.taxTotal;
+    const grandTotal = totals.grandTotal;
     const isPaid = !!(doc.isPaid || doc.paymentStatus === 'paid');
 
     const nowIso = new Date().toISOString();

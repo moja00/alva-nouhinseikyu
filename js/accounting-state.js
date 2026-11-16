@@ -10,6 +10,8 @@
 // ==========================================================================
 // 1. 税区分・インボイス区分定数
 // ==========================================================================
+import { calculateTotals } from './invoice-state.js';
+
 export const TAX_TYPES = {
   taxable_10: { code: 'taxable_10', label: '課税 10%', rate: 0.10, isTaxable: true },
   taxable_8: { code: 'taxable_8', label: '軽減税率 8%', rate: 0.08, isTaxable: true },
@@ -138,32 +140,27 @@ export function normalizeInvoiceDoc(raw) {
   const issueDate = doc.issueDate || raw.issueDate || '';
   const dueDate = doc.dueDate || raw.dueDate || '';
   const docNumber = doc.docNumber || raw.docNumber || '';
-  const clientName = (doc.client && doc.client.name) ? doc.client.name : (raw.clientName || '名称未設定');
+  const clientName = (doc.client && doc.client.name) ? doc.client.name : (doc.clientName || raw.clientName || doc.customerName || raw.customerName || '名称未設定');
   const isPaid = !!(doc.isPaid || raw.isPaid || doc.paymentStatus === 'paid' || raw.paymentStatus === 'paid');
   const paidDate = doc.paidDate || raw.paidDate || '';
   const taxFractionRule = doc.taxFractionRule || raw.taxFractionRule || 'floor';
-  const id = doc.id || raw.id || `doc_${Date.now()}`;
+  const id = String(doc.id || raw.id || `doc_${Date.now()}`);
   const isCancelled = !!(doc.isCancelled || raw.isCancelled);
   const isIssued = isCancelled ? false : (doc.isIssued !== undefined ? !!doc.isIssued : (raw.isIssued !== undefined ? !!raw.isIssued : true));
 
-  let subtotal = 0;
-  let tax10 = 0;
-  let tax8 = 0;
-  let costTotal = 0;
+  // インボイス制度準拠（税率ごとに合算した税抜小計に対して端数処理）で統一計算
+  // ※ 従来の明細行ごとの Math.floor 計算では、100%値引き伝票（宣伝用寄贈・デモ機）で
+  //   負側の丸め誤差が重なり -1 円 / -2 円 になる不具合があったため統一する
+  const totals = calculateTotals(items, taxFractionRule);
+  let subtotal = totals.subtotalWithoutTax;
+  let tax10 = totals.tax10;
+  let tax8 = totals.tax8;
+  let taxTotal = totals.taxTotal;
+  let grandTotal = totals.grandTotal;
 
+  let costTotal = 0;
   items.forEach(it => {
     const qty = Number(it.quantity) || 0;
-    const price = Number(it.unitPrice) || 0;
-    const lineTotal = qty * price;
-    const taxRate = Number(it.taxRate !== undefined ? it.taxRate : 10);
-
-    subtotal += lineTotal;
-    if (taxRate === 10) {
-      tax10 += Math.floor(lineTotal * 0.10);
-    } else if (taxRate === 8) {
-      tax8 += Math.floor(lineTotal * 0.08);
-    }
-
     if (it.assignedCogs) {
       costTotal += Number(it.assignedCogs);
     } else if (it.costPrice) {
@@ -171,18 +168,19 @@ export function normalizeInvoiceDoc(raw) {
     }
   });
 
-  let taxTotal = tax10 + tax8;
-  let grandTotal = subtotal + taxTotal;
-  if (grandTotal === 0) {
-    const rawGrand = Number(doc.grandTotal || raw.grandTotal || doc.totalAmount || raw.totalAmount || 0);
-    if (rawGrand > 0) {
-      grandTotal = rawGrand;
-      if (subtotal === 0) {
-        subtotal = Math.round(rawGrand / 1.1);
-        taxTotal = rawGrand - subtotal;
-        tax10 = taxTotal;
-      }
+  const rawGrand = Number(doc.grandTotal ?? raw.grandTotal ?? doc.totalAmount ?? raw.totalAmount ?? doc.total ?? raw.total ?? 0);
+  if (grandTotal === 0 && items.length === 0 && rawGrand > 0) {
+    grandTotal = rawGrand;
+    if (subtotal === 0) {
+      subtotal = Math.round(rawGrand / 1.1);
+      taxTotal = rawGrand - subtotal;
+      tax10 = taxTotal;
     }
+  } else if (id.startsWith('doc_imported_') && rawGrand > 0 && Math.abs(grandTotal - rawGrand) <= 1) {
+    // 過去のインポート済み・消込済み伝票の1円端数差は既存実績を保護
+    grandTotal = rawGrand;
+    taxTotal = Number(doc.taxTotal ?? raw.taxTotal ?? doc.tax ?? raw.tax ?? (rawGrand - subtotal));
+    tax10 = taxTotal;
   }
 
   const explicitCogs = Number(doc.assignedCogs || raw.assignedCogs || doc.cogsTotal || raw.cogsTotal || 0);
