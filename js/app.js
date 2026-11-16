@@ -2342,6 +2342,31 @@ function issueAndSyncAccountingDocument(options = {}) {
 
       if (it.assignedCogs) {
         itemAssignedCogs = Math.max(itemAssignedCogs, Number(it.assignedCogs));
+      } else if (Number(it.costPrice) > 0) {
+        itemAssignedCogs = Math.max(itemAssignedCogs, Number(it.costPrice) * (Number(it.quantity) || 1));
+      }
+
+      // ③ シリアル非管理品目・未設定行の場合：在庫マスタの仕入単価（unitCost）を自動補完（DP-AC/DP-EG等の原価欠落防止）
+      if (itemAssignedCogs === 0 && (Number(it.unitPrice) || 0) > 0) {
+        try {
+          const invList = getInventoryList();
+          const normN = String(it.name || '').replace(/[\u3000\s]+/g, ' ').trim();
+          const matchedInv = invList.find(c => {
+            if (!c) return false;
+            const cName = String(c.name || '').replace(/[\u3000\s]+/g, ' ').trim();
+            const cSku = String(c.sku || '').trim();
+            return (cName && cName === normN) || (cSku && normN.startsWith(cSku));
+          });
+          if (matchedInv && Number(matchedInv.unitCost) > 0) {
+            const q = Number(it.quantity) || 1;
+            const uCost = Number(matchedInv.unitCost);
+            itemAssignedCogs = uCost * q;
+            it.costPrice = uCost;
+            it.assignedCogs = itemAssignedCogs;
+          }
+        } catch (invErr) {
+          console.warn('在庫マスタ原価自動補完エラー:', invErr);
+        }
       }
       docAssignedCogs += itemAssignedCogs;
     });
@@ -14532,19 +14557,28 @@ function renderMonthlyBarChart(periodFilter = currentAccGlobalPeriod) {
   const years = new Set(months.map(m => m.split('-')[0]));
   const isMultiYear = years.size > 1;
 
-  // 各月の損益を計算（税抜基準・手動振替仕訳を含む）
+  // 各月の損益を計算（税抜基準・売上原価＋販管費・手動振替・給与自動補完を含む）
   const manualJournals = typeof getManualJournals === 'function' ? getManualJournals() : [];
+  const payrollRecords = typeof getPayrollRecords === 'function' ? getPayrollRecords() : [];
   const data = months.map(m => {
-    const p = calculateProfitAndLoss(invoices, expenses, m, manualJournals);
+    const p = calculateProfitAndLoss(invoices, expenses, m, manualJournals, payrollRecords);
     const [yy, mm] = m.split('-');
     const label = isMultiYear ? `${yy.slice(2)}/${Number(mm)}月` : `${Number(mm)}月`;
+    const costOfSales = p.totalCostOfGoodsSold || 0;
+    const sga = p.totalOperatingExpenses || 0;
+    const totalCosts = costOfSales + sga;
     return {
+      month: m,
       label,
-      sales: p.totalSales,
-      expenses: p.totalOperatingExpenses,
-      profit: p.operatingProfit
+      sales: p.totalSales || 0,
+      costOfSales,
+      sga,
+      totalCosts,
+      expenses: totalCosts, // 売上 − (売上原価 ＋ 販管費) = 純利益 が視覚的にも一致
+      profit: p.operatingProfit || 0
     };
   });
+  console.log('【財務ダッシュボード】月別推移グラフ算出完了（税抜・売上原価反映）', data);
 
   // Retina対応の高解像度スケーリング
   const dpr = window.devicePixelRatio || 1;
@@ -14562,7 +14596,8 @@ function renderMonthlyBarChart(periodFilter = currentAccGlobalPeriod) {
   let maxVal = 500000;
   data.forEach(d => {
     if (d.sales > maxVal) maxVal = d.sales;
-    if (d.expenses > maxVal) maxVal = d.expenses;
+    if (d.totalCosts > maxVal) maxVal = d.totalCosts;
+    if (Math.abs(d.profit) > maxVal) maxVal = Math.abs(d.profit);
   });
   maxVal = Math.ceil((maxVal * 1.15) / 100000) * 100000;
 
@@ -14594,12 +14629,12 @@ function renderMonthlyBarChart(periodFilter = currentAccGlobalPeriod) {
   }
 
   // 棒の安全な描画関数（roundRect非対応ブラウザ対策）
-  function drawBar(x, y, w, h, fillStyle) {
+  function drawBar(x, y, w, h, fillStyle, radii = [3, 3, 0, 0]) {
     if (h <= 0) return;
     ctx.fillStyle = fillStyle;
     ctx.beginPath();
     if (typeof ctx.roundRect === 'function') {
-      ctx.roundRect(x, y, w, h, [3, 3, 0, 0]);
+      ctx.roundRect(x, y, w, h, radii);
       ctx.fill();
     } else {
       ctx.fillRect(x, y, w, h);
@@ -14613,17 +14648,24 @@ function renderMonthlyBarChart(periodFilter = currentAccGlobalPeriod) {
   data.forEach((d, idx) => {
     const groupX = paddingLeft + idx * groupWidth + (groupWidth - (barWidth * 3 + 6)) / 2;
 
-    // 売上バー（インディゴ #6366f1）
+    // 1. 売上高（税抜）バー（インディゴ #6366f1）
     const salesH = Math.max(0, (d.sales / maxVal) * chartHeight);
     const salesY = paddingTop + chartHeight - salesH;
     drawBar(groupX, salesY, barWidth, salesH, '#6366f1');
 
-    // 経費バー（アンバー #f59e0b）
-    const expH = Math.max(0, (d.expenses / maxVal) * chartHeight);
-    const expY = paddingTop + chartHeight - expH;
-    drawBar(groupX + barWidth + 3, expY, barWidth, expH, '#f59e0b');
+    // 2. 総コスト（売上原価＋販管費）積み上げバー（下段: 売上原価 #ea580c / 上段: 販管費 #f59e0b）
+    const cogsH = Math.max(0, (d.costOfSales / maxVal) * chartHeight);
+    const sgaH = Math.max(0, (d.sga / maxVal) * chartHeight);
+    const cogsY = paddingTop + chartHeight - cogsH;
+    const sgaY = cogsY - sgaH;
+    if (cogsH > 0) {
+      drawBar(groupX + barWidth + 3, cogsY, barWidth, cogsH, '#ea580c', sgaH > 0 ? [0, 0, 0, 0] : [3, 3, 0, 0]);
+    }
+    if (sgaH > 0) {
+      drawBar(groupX + barWidth + 3, sgaY, barWidth, sgaH, '#f59e0b', [3, 3, 0, 0]);
+    }
 
-    // 営業利益バー（エメラルド #10b981 / ローズ #f43f5e）
+    // 3. 純利益（営業利益 = 売上 - 売上原価 - 販管費）バー（エメラルド #10b981 / ローズ #f43f5e）
     const profitH = Math.abs((d.profit / maxVal) * chartHeight);
     const profitY = d.profit >= 0 ? paddingTop + chartHeight - profitH : paddingTop + chartHeight;
     drawBar(groupX + (barWidth + 3) * 2, profitY, barWidth, profitH, d.profit >= 0 ? '#10b981' : '#f43f5e');

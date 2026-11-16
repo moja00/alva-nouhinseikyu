@@ -343,7 +343,7 @@
           style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
           <span
-            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.16-payroll-autofill-fix</span>
+            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.16-chart-cogs-backfill-fix</span>
         </div>
       </div>
 
@@ -3928,16 +3928,20 @@
           <!-- 月別収支推移バーグラフコンテナ -->
           <div
             style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-              <span style="font-size: 0.875rem; font-weight: 700; color: #1e293b;">📈 月別収支推移（売上・経費・利益）</span>
-              <div style="display: flex; gap: 14px; font-size: 0.75rem; font-weight: 600; color: #475569;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+              <span style="font-size: 0.875rem; font-weight: 700; color: #1e293b;">📈 月別収支推移（売上・原価＋経費・純利益 / 税抜基準）</span>
+              <div style="display: flex; gap: 14px; font-size: 0.75rem; font-weight: 600; color: #475569; flex-wrap: wrap;">
                 <span style="display: inline-flex; align-items: center; gap: 5px;">
                   <span
                     style="width: 12px; height: 12px; background: #6366f1; border-radius: 3px; display: inline-block;"></span>売上
                 </span>
                 <span style="display: inline-flex; align-items: center; gap: 5px;">
                   <span
-                    style="width: 12px; height: 12px; background: #f59e0b; border-radius: 3px; display: inline-block;"></span>経費
+                    style="width: 12px; height: 12px; background: #ea580c; border-radius: 3px; display: inline-block;"></span>売上原価
+                </span>
+                <span style="display: inline-flex; align-items: center; gap: 5px;">
+                  <span
+                    style="width: 12px; height: 12px; background: #f59e0b; border-radius: 3px; display: inline-block;"></span>経費(販管費)
                 </span>
                 <span style="display: inline-flex; align-items: center; gap: 5px;">
                   <span
@@ -5103,7 +5107,7 @@
         <div>
           <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             <h2 class="view-screen-title" style="margin: 0;">勤怠管理・退勤タイムカード</h2>
-            <span style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.16-payroll-autofill-fix</span>
+            <span style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.16-chart-cogs-backfill-fix</span>
           </div>
           <span class="view-screen-subtitle">休憩1時間自動控除・ワンタップ出退勤打刻・月次出勤簿・打刻漏れ修正</span>
         </div>
@@ -7468,7 +7472,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261116_payroll_autofill_fix"></script>
+  <script src="js/app.bundle.js?v=20261116_chart_cogs_backfill_fix"></script>
 </body>
 
 </html>
