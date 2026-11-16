@@ -1132,9 +1132,20 @@ function buildUnifiedJournals(arg1 = {}, arg2 = [], arg3 = [], arg4 = [], arg5 =
     });
   });
 
-  // 3. 手動・複合仕訳（振替伝票・消込差額・給与複合仕訳）
+  // 3. 手動・複合仕訳（振替伝票・消込差額・給与複合仕訳・ロット仕入仕訳）
+  const seenLotJournalIds = new Set();
+  const seenLotEntryNumbers = new Set();
   (manualJournals || []).forEach(jnl => {
     if (!jnl) return;
+    if (jnl.sourceType === 'inventory_lot') {
+      const sId = String(jnl.sourceId || '').trim();
+      const eNo = String(jnl.entryNumber || '').trim();
+      if ((sId && seenLotJournalIds.has(sId)) || (eNo && seenLotEntryNumbers.has(eNo))) {
+        return; // 同一ロットに対する重複仕訳の二重計上を防止
+      }
+      if (sId) seenLotJournalIds.add(sId);
+      if (eNo) seenLotEntryNumbers.add(eNo);
+    }
     const date = jnl.date || '';
     if (!isDateInPeriod(date, periodFilter)) return;
 
@@ -1295,7 +1306,9 @@ function calculateProfitAndLoss(invoices = [], expenses = [], periodFilter = 'al
   const ordinaryProfit = operatingProfit + totalNonOperatingRevenue - totalNonOperatingExpense; // 経常利益
   const netIncome = ordinaryProfit; // 当期純利益（税引前・税引後同額計算）
 
-  // 売掛金回収状況の集計
+  // 売掛金回収状況および正確な税抜・税込売上集計
+  let totalSalesEx = 0;
+  let totalSalesTaxExact = 0;
   let totalSalesInc = 0;
   let paidSalesInc = 0;
   let unpaidSalesInc = 0;
@@ -1306,7 +1319,9 @@ function calculateProfitAndLoss(invoices = [], expenses = [], periodFilter = 'al
     if (!inv.isIssued || inv.isCancelled) return;
     if (!isDateInPeriod(inv.issueDate, periodFilter)) return;
 
-    totalSalesInc += inv.grandTotal;
+    totalSalesEx += Number(inv.subtotal) || 0;
+    totalSalesTaxExact += Number(inv.taxTotal) || 0;
+    totalSalesInc += Number(inv.grandTotal) || 0;
     if (inv.isPaid) {
       paidSalesInc += inv.grandTotal;
     } else {
@@ -1314,10 +1329,15 @@ function calculateProfitAndLoss(invoices = [], expenses = [], periodFilter = 'al
     }
   });
 
+  // 伝票外の手動売上仕訳差分がある場合は税抜換算で調整
+  const manualSalesDiff = totalSales - totalSalesInc;
+  const finalSalesEx = totalSalesEx + (manualSalesDiff !== 0 ? Math.round(manualSalesDiff / 1.1) : 0);
+
   return {
     periodFilter,
     totalSales,
-    totalSalesTax: Math.round(totalSales * 0.10), // 目安
+    totalSalesEx: finalSalesEx,
+    totalSalesTax: totalSalesTaxExact,
     totalSalesInc: totalSalesInc || totalSales,
     paidSalesInc,
     unpaidSalesInc,
@@ -9230,7 +9250,46 @@ function getManualJournals() {
   try {
     const raw = localStorage.getItem(KEYS.MANUAL_JOURNALS);
     const list = raw ? JSON.parse(raw) : [];
-    return Array.isArray(list) ? list : [];
+    if (!Array.isArray(list)) return [];
+
+    // 削除済みロットの孤立仕訳および同一ロット重複仕訳を自動クリーンアップ（ゾンビ復活・二重計上防止）
+    const lotRaw = localStorage.getItem(KEYS.INVENTORY_LOTS);
+    const lotList = lotRaw ? JSON.parse(lotRaw) : [];
+    if (Array.isArray(lotList) && lotList.length > 0) {
+      const validLotIds = new Set(lotList.map(l => l && l.id ? String(l.id).trim() : '').filter(Boolean));
+      const seenLotIds = new Set();
+      const removedIds = [];
+      const cleaned = list.filter(j => {
+        if (!j) return false;
+        if (j.sourceType === 'inventory_lot') {
+          const sId = String(j.sourceId || '').trim();
+          // 実在しないロットIDの孤立仕訳を除外
+          if (sId && !validLotIds.has(sId)) {
+            if (j.id) removedIds.push(j.id);
+            return false;
+          }
+          // 同一ロットIDに対する重複仕訳を除外
+          if (sId && seenLotIds.has(sId)) {
+            if (j.id) removedIds.push(j.id);
+            return false;
+          }
+          if (sId) seenLotIds.add(sId);
+        }
+        return true;
+      });
+      if (cleaned.length !== list.length) {
+        try {
+          localStorage.setItem(KEYS.MANUAL_JOURNALS, JSON.stringify(cleaned));
+          removedIds.forEach(rid => {
+            deleteServerEntity('manual_journals', rid).catch(() => { });
+          });
+          console.log('【仕訳整合】削除済み/重複ロットの孤立仕訳を自動除外しました:', removedIds);
+        } catch (cleanErr) { }
+        return cleaned;
+      }
+    }
+
+    return list;
   } catch (e) {
     console.warn('Failed to load manual journals:', e);
     return [];
@@ -26601,9 +26660,12 @@ function renderAccountingDashboard(periodFilter = currentAccGlobalPeriod) {
   const manualJournals = (typeof getManualJournals === 'function') ? getManualJournals() : [];
   const pnl = calculateProfitAndLoss(invoices, expenses, periodFilter || 'all', manualJournals);
 
-  // KPI表示更新
-  if (DOM.kpiTotalSales) DOM.kpiTotalSales.textContent = formatCurrency(pnl.totalSales);
-  if (DOM.kpiTotalSalesInc) DOM.kpiTotalSalesInc.textContent = `(税込 ${formatCurrency(pnl.totalSalesInc)})`;
+  // KPI表示更新（当月売上高: 上段=税抜 / 下段=税込）
+  const salesEx = pnl.totalSalesEx !== undefined ? pnl.totalSalesEx : pnl.totalSales;
+  const salesInc = pnl.totalSalesInc !== undefined ? pnl.totalSalesInc : pnl.totalSales;
+  console.log('【財務ダッシュボード】KPI売上反映', { salesEx, salesInc, totalSalesTax: pnl.totalSalesTax });
+  if (DOM.kpiTotalSales) DOM.kpiTotalSales.textContent = formatCurrency(salesEx);
+  if (DOM.kpiTotalSalesInc) DOM.kpiTotalSalesInc.textContent = `(税込 ${formatCurrency(salesInc)})`;
   if (DOM.kpiGrossProfit) DOM.kpiGrossProfit.textContent = formatCurrency(pnl.grossProfit);
   if (DOM.kpiGrossMargin) DOM.kpiGrossMargin.textContent = `粗利率: ${(pnl.grossProfitMargin || 0).toFixed(1)}%`;
   if (DOM.kpiTotalExpenses) DOM.kpiTotalExpenses.textContent = formatCurrency(pnl.totalOperatingExpenses || 0);

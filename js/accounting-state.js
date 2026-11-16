@@ -538,9 +538,20 @@ export function buildUnifiedJournals(arg1 = {}, arg2 = [], arg3 = [], arg4 = [],
     });
   });
 
-  // 3. 手動・複合仕訳（振替伝票・消込差額・給与複合仕訳）
+  // 3. 手動・複合仕訳（振替伝票・消込差額・給与複合仕訳・ロット仕入仕訳）
+  const seenLotJournalIds = new Set();
+  const seenLotEntryNumbers = new Set();
   (manualJournals || []).forEach(jnl => {
     if (!jnl) return;
+    if (jnl.sourceType === 'inventory_lot') {
+      const sId = String(jnl.sourceId || '').trim();
+      const eNo = String(jnl.entryNumber || '').trim();
+      if ((sId && seenLotJournalIds.has(sId)) || (eNo && seenLotEntryNumbers.has(eNo))) {
+        return; // 同一ロットに対する重複仕訳の二重計上を防止
+      }
+      if (sId) seenLotJournalIds.add(sId);
+      if (eNo) seenLotEntryNumbers.add(eNo);
+    }
     const date = jnl.date || '';
     if (!isDateInPeriod(date, periodFilter)) return;
 
@@ -702,7 +713,9 @@ export function calculateProfitAndLoss(invoices = [], expenses = [], periodFilte
   const ordinaryProfit = operatingProfit + totalNonOperatingRevenue - totalNonOperatingExpense; // 経常利益
   const netIncome = ordinaryProfit; // 当期純利益（税引前・税引後同額計算）
 
-  // 売掛金回収状況の集計
+  // 売掛金回収状況および正確な税抜・税込売上集計
+  let totalSalesEx = 0;
+  let totalSalesTaxExact = 0;
   let totalSalesInc = 0;
   let paidSalesInc = 0;
   let unpaidSalesInc = 0;
@@ -713,7 +726,9 @@ export function calculateProfitAndLoss(invoices = [], expenses = [], periodFilte
     if (!inv.isIssued || inv.isCancelled) return;
     if (!isDateInPeriod(inv.issueDate, periodFilter)) return;
 
-    totalSalesInc += inv.grandTotal;
+    totalSalesEx += Number(inv.subtotal) || 0;
+    totalSalesTaxExact += Number(inv.taxTotal) || 0;
+    totalSalesInc += Number(inv.grandTotal) || 0;
     if (inv.isPaid) {
       paidSalesInc += inv.grandTotal;
     } else {
@@ -721,10 +736,15 @@ export function calculateProfitAndLoss(invoices = [], expenses = [], periodFilte
     }
   });
 
+  // 伝票外の手動売上仕訳差分がある場合は税抜換算で調整
+  const manualSalesDiff = totalSales - totalSalesInc;
+  const finalSalesEx = totalSalesEx + (manualSalesDiff !== 0 ? Math.round(manualSalesDiff / 1.1) : 0);
+
   return {
     periodFilter,
     totalSales,
-    totalSalesTax: Math.round(totalSales * 0.10), // 目安
+    totalSalesEx: finalSalesEx,
+    totalSalesTax: totalSalesTaxExact,
     totalSalesInc: totalSalesInc || totalSales,
     paidSalesInc,
     unpaidSalesInc,

@@ -14161,9 +14161,12 @@ function renderAccountingDashboard(periodFilter = currentAccGlobalPeriod) {
   const manualJournals = (typeof getManualJournals === 'function') ? getManualJournals() : [];
   const pnl = calculateProfitAndLoss(invoices, expenses, periodFilter || 'all', manualJournals);
 
-  // KPI表示更新
-  if (DOM.kpiTotalSales) DOM.kpiTotalSales.textContent = formatCurrency(pnl.totalSales);
-  if (DOM.kpiTotalSalesInc) DOM.kpiTotalSalesInc.textContent = `(税込 ${formatCurrency(pnl.totalSalesInc)})`;
+  // KPI表示更新（当月売上高: 上段=税抜 / 下段=税込）
+  const salesEx = pnl.totalSalesEx !== undefined ? pnl.totalSalesEx : pnl.totalSales;
+  const salesInc = pnl.totalSalesInc !== undefined ? pnl.totalSalesInc : pnl.totalSales;
+  console.log('【財務ダッシュボード】KPI売上反映', { salesEx, salesInc, totalSalesTax: pnl.totalSalesTax });
+  if (DOM.kpiTotalSales) DOM.kpiTotalSales.textContent = formatCurrency(salesEx);
+  if (DOM.kpiTotalSalesInc) DOM.kpiTotalSalesInc.textContent = `(税込 ${formatCurrency(salesInc)})`;
   if (DOM.kpiGrossProfit) DOM.kpiGrossProfit.textContent = formatCurrency(pnl.grossProfit);
   if (DOM.kpiGrossMargin) DOM.kpiGrossMargin.textContent = `粗利率: ${(pnl.grossProfitMargin || 0).toFixed(1)}%`;
   if (DOM.kpiTotalExpenses) DOM.kpiTotalExpenses.textContent = formatCurrency(pnl.totalOperatingExpenses || 0);

@@ -5921,7 +5921,46 @@ export function getManualJournals() {
   try {
     const raw = localStorage.getItem(KEYS.MANUAL_JOURNALS);
     const list = raw ? JSON.parse(raw) : [];
-    return Array.isArray(list) ? list : [];
+    if (!Array.isArray(list)) return [];
+
+    // 削除済みロットの孤立仕訳および同一ロット重複仕訳を自動クリーンアップ（ゾンビ復活・二重計上防止）
+    const lotRaw = localStorage.getItem(KEYS.INVENTORY_LOTS);
+    const lotList = lotRaw ? JSON.parse(lotRaw) : [];
+    if (Array.isArray(lotList) && lotList.length > 0) {
+      const validLotIds = new Set(lotList.map(l => l && l.id ? String(l.id).trim() : '').filter(Boolean));
+      const seenLotIds = new Set();
+      const removedIds = [];
+      const cleaned = list.filter(j => {
+        if (!j) return false;
+        if (j.sourceType === 'inventory_lot') {
+          const sId = String(j.sourceId || '').trim();
+          // 実在しないロットIDの孤立仕訳を除外
+          if (sId && !validLotIds.has(sId)) {
+            if (j.id) removedIds.push(j.id);
+            return false;
+          }
+          // 同一ロットIDに対する重複仕訳を除外
+          if (sId && seenLotIds.has(sId)) {
+            if (j.id) removedIds.push(j.id);
+            return false;
+          }
+          if (sId) seenLotIds.add(sId);
+        }
+        return true;
+      });
+      if (cleaned.length !== list.length) {
+        try {
+          localStorage.setItem(KEYS.MANUAL_JOURNALS, JSON.stringify(cleaned));
+          removedIds.forEach(rid => {
+            deleteServerEntity('manual_journals', rid).catch(() => { });
+          });
+          console.log('【仕訳整合】削除済み/重複ロットの孤立仕訳を自動除外しました:', removedIds);
+        } catch (cleanErr) { }
+        return cleaned;
+      }
+    }
+
+    return list;
   } catch (e) {
     console.warn('Failed to load manual journals:', e);
     return [];
