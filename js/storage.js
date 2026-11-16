@@ -6897,6 +6897,37 @@ export function deleteInventoryLot(lotId) {
 /**
  * シリアル台帳（Inventory Serials）の在庫中件数を在庫マスタ（Inventory Master）へ完全連動同期
  */
+/**
+ * バッテリーシリアル・レコードの品目バリエーション（'sk' / 'cs'）をマスタ主導で判定する
+ * 台帳自身が持つ itemId / inventoryId / sku / itemName を最優先し、未設定の旧データのみ番号帯でフォールバックする
+ * @param {Object} rec
+ * @returns {'sk'|'cs'|null}
+ */
+export function classifyBatteryVariant(rec) {
+  if (!rec) return null;
+  const sId = String(rec.itemId || rec.inventoryId || '').trim();
+  const prodId = String(rec.productId || '').trim();
+  const sku = String(rec.sku || '').trim().toUpperCase();
+  const nameUpper = String(rec.itemName || rec.name || '').toUpperCase();
+  const snUpper = String(rec.serialNumber || '').trim().toUpperCase();
+
+  const isChg = sId === 'inv_dp5000_chg' || rec.itemType === 'charger' || nameUpper.includes('充電器') || (rec.targetSku && String(rec.targetSku).toUpperCase().includes('CHG'));
+  if (isChg) return null;
+
+  // 1. 明示的なマスタID・SKU・品名を最優先
+  if (sId === 'inv_prod_1794209994433_ij47' || prodId === 'prod_1794209994433_ij47' || sku === 'DP-BT-SK' || nameUpper.includes('DP-BT-SK') || nameUpper.includes('BT-SK')) {
+    return 'sk';
+  }
+  if (sId === 'inv_prod_1794209910003_eqxd' || prodId === 'prod_1794209910003_eqxd' || sku === 'DP-BT-CS' || nameUpper.includes('DP-BT-CS') || nameUpper.includes('BT-CS')) {
+    return 'cs';
+  }
+
+  // 2. 旧データのフォールバック推論
+  if (snUpper.startsWith('0031077') || snUpper.startsWith('BAT-2603')) return 'sk';
+  if (snUpper.startsWith('BAT-') || snUpper.startsWith('N485')) return 'cs';
+  return null;
+}
+
 export function syncInventoryStockFromSerials() {
   try {
     const serials = getInventorySerialList();
@@ -6920,15 +6951,15 @@ export function syncInventoryStockFromSerials() {
       if (s.isBundled) return;
 
       const itemName = String(s.itemName || '').toUpperCase();
-      const sSn = String(s.serialNumber || '').toUpperCase();
-      if (s.inventoryId === 'inv_dp5000_body' || (itemName.includes('DP-5000') && !itemName.includes('MS'))) {
-        inStockCounts['inv_dp5000_body']++;
-      } else if (s.inventoryId === 'inv_2' || itemName.includes('DP-MS')) {
-        inStockCounts['inv_2']++;
-      } else if (s.inventoryId === 'inv_prod_1794209910003_eqxd' || itemName.includes('DP-BT-CS') || s.sku === 'DP-BT-CS' || sSn.startsWith('BAT-') || sSn.startsWith('N485')) {
+      const batVariant = classifyBatteryVariant(s);
+      if (batVariant === 'cs') {
         inStockCounts['inv_prod_1794209910003_eqxd']++;
-      } else if (s.inventoryId === 'inv_prod_1794209994433_ij47' || itemName.includes('DP-BT-SK') || s.sku === 'DP-BT-SK' || sSn.startsWith('0031077')) {
+      } else if (batVariant === 'sk') {
         inStockCounts['inv_prod_1794209994433_ij47']++;
+      } else if (s.inventoryId === 'inv_2' || s.itemId === 'inv_2' || itemName.includes('DP-MS')) {
+        inStockCounts['inv_2']++;
+      } else if (s.inventoryId === 'inv_dp5000_body' || s.itemId === 'inv_dp5000_body' || (itemName.includes('DP-5000') && !itemName.includes('MS') && !itemName.includes('バッテリー') && !itemName.includes('充電器'))) {
+        inStockCounts['inv_dp5000_body']++;
       }
     });
 
@@ -7196,8 +7227,8 @@ export function syncInventoryStockFromIssuedDocs() {
             const itIsBundle = it.itemId === 'inv_1' || itNorm.includes('ベーシックセット') || (itNorm.includes('dp5000') && itNorm.includes('セット'));
             const isBasicSet = itIsBundle;
             const itIsChg = it.itemId === 'inv_dp5000_chg' || itNorm.includes('急速充電器') || itNorm.includes('充電器');
-            const itIsBatSK = !itIsChg && (it.itemId === 'inv_prod_1794209994433_ij47' || itNorm.includes('dpbtsk') || (itNorm.includes('バッテリー') && (lotNum.includes('20261105') || rawNorm.includes('sk') || rawLotNorm.includes('sk'))));
-            const itIsBatCS = !itIsChg && (it.itemId === 'inv_prod_1794209910003_eqxd' || itNorm.includes('dpbtcs') || (itNorm.includes('バッテリー') && (lotNum.includes('20260324') || rawNorm.includes('cs') || rawLotNorm.includes('cs'))));
+            const itIsBatSK = !itIsChg && (it.itemId === 'inv_prod_1794209994433_ij47' || itNorm.includes('dpbtsk') || (itNorm.includes('バッテリー') && (lotNum.includes('20261105') || lotNum.includes('20260324') || rawNorm.includes('sk') || rawLotNorm.includes('sk'))));
+            const itIsBatCS = !itIsChg && !itIsBatSK && (it.itemId === 'inv_prod_1794209910003_eqxd' || itNorm.includes('dpbtcs') || (itNorm.includes('バッテリー') && (rawNorm.includes('cs') || rawLotNorm.includes('cs'))));
             const itIsBat = !itIsChg && (itIsBatSK || itIsBatCS || it.itemId === 'inv_dp5000_bat' || (itNorm.includes('バッテリー') && !itIsBundle));
             const itIsBody = it.itemId === 'inv_dp5000_body' || (itNorm.includes('dp5000') && !itIsBundle && !itIsBat && !itIsChg && !itNorm.includes('スプレッダー') && !itNorm.includes('アクセサリー') && !itNorm.includes('3点引き'));
 
@@ -7239,8 +7270,8 @@ export function syncInventoryStockFromIssuedDocs() {
           const itIsBundle = lot.itemId === 'inv_1' || itNorm.includes('ベーシックセット') || (itNorm.includes('dp5000') && itNorm.includes('セット'));
           const isBasicSet = itIsBundle;
           const itIsChg = lot.itemId === 'inv_dp5000_chg' || itNorm.includes('急速充電器') || itNorm.includes('充電器');
-          const itIsBatSK = !itIsChg && (lot.itemId === 'inv_prod_1794209994433_ij47' || itNorm.includes('dpbtsk') || (itNorm.includes('バッテリー') && (lotNum.includes('20261105') || rawLotNorm.includes('sk'))));
-          const itIsBatCS = !itIsChg && (lot.itemId === 'inv_prod_1794209910003_eqxd' || itNorm.includes('dpbtcs') || (itNorm.includes('バッテリー') && (lotNum.includes('20260324') || rawLotNorm.includes('cs'))));
+          const itIsBatSK = !itIsChg && (lot.itemId === 'inv_prod_1794209994433_ij47' || itNorm.includes('dpbtsk') || (itNorm.includes('バッテリー') && (lotNum.includes('20261105') || lotNum.includes('20260324') || rawLotNorm.includes('sk'))));
+          const itIsBatCS = !itIsChg && !itIsBatSK && (lot.itemId === 'inv_prod_1794209910003_eqxd' || itNorm.includes('dpbtcs') || (itNorm.includes('バッテリー') && rawLotNorm.includes('cs')));
           const itIsBat = !itIsChg && (itIsBatSK || itIsBatCS || lot.itemId === 'inv_dp5000_bat' || (itNorm.includes('バッテリー') && !itIsBundle));
           const itIsBody = lot.itemId === 'inv_dp5000_body' || (itNorm.includes('dp5000') && !itIsBundle && !itIsBat && !itIsChg && !itNorm.includes('スプレッダー') && !itNorm.includes('アクセサリー') && !itNorm.includes('3点引き'));
 
@@ -8378,8 +8409,9 @@ export function getAvailableSerialsByItem(inventoryIdOrName, options = {}) {
     const snUpper = String(s.serialNumber || '').trim().toUpperCase();
 
     const isThisChg = (sId === 'inv_dp5000_chg' || s.itemType === 'charger' || sNameUpper.includes('充電器') || (s.targetSku && s.targetSku.includes('CHG')));
-    const isThisBtCs = !isThisChg && (sId === 'inv_prod_1794209910003_eqxd' || s.productId === 'prod_1794209910003_eqxd' || s.sku === 'DP-BT-CS' || sNameUpper.includes('DP-BT-CS') || sNameUpper.includes('BT-CS') || snUpper.startsWith('BAT-') || snUpper.startsWith('N485'));
-    const isThisBtSk = !isThisChg && (sId === 'inv_prod_1794209994433_ij47' || s.productId === 'prod_1794209994433_ij47' || s.sku === 'DP-BT-SK' || sNameUpper.includes('DP-BT-SK') || sNameUpper.includes('BT-SK') || snUpper.startsWith('0031077'));
+    const batVariant = classifyBatteryVariant(s);
+    const isThisBtCs = !isThisChg && batVariant === 'cs';
+    const isThisBtSk = !isThisChg && batVariant === 'sk';
     const isThisBat = isThisBtCs || isThisBtSk || (sId === 'inv_dp5000_bat' || s.itemType === 'battery' || sNameUpper.includes('バッテリー') || s.isCompanyOnly);
     const isThisMs = !isThisChg && !isThisBat && (sId === 'inv_2' || sNameUpper.includes('DP-MS') || sNameUpper.includes('スプレッダー'));
     const isThisDp5kBody = !isThisChg && !isThisBat && !isThisMs && (sId === 'inv_dp5000_body' || sNameUpper.includes('DP-5000') || /^N\s*\d{4,12}$/i.test(snUpper));
@@ -9138,8 +9170,8 @@ export function getInventoryHistoryWithShipments(item) {
           if (!it) return;
           const itNorm = getMasterKey(it.itemName || '');
           const itIsBundle = it.itemId === 'inv_1' || itNorm.includes('ベーシックセット');
-          const itIsBatSK = it.itemId === 'inv_prod_1794209994433_ij47' || itNorm.includes('dp-bt-sk') || (itNorm.includes('バッテリー') && (lNum.includes('20261105') || itNorm.includes('sk')));
-          const itIsBatCS = it.itemId === 'inv_prod_1794209910003_eqxd' || itNorm.includes('dp-bt-cs') || (itNorm.includes('バッテリー') && (lNum.includes('20260324') || itNorm.includes('cs')));
+          const itIsBatSK = it.itemId === 'inv_prod_1794209994433_ij47' || itNorm.includes('dp-bt-sk') || (itNorm.includes('バッテリー') && (lNum.includes('20261105') || lNum.includes('20260324') || itNorm.includes('sk')));
+          const itIsBatCS = !itIsBatSK && (it.itemId === 'inv_prod_1794209910003_eqxd' || itNorm.includes('dp-bt-cs') || (itNorm.includes('バッテリー') && itNorm.includes('cs')));
           const itIsBat = itIsBatSK || itIsBatCS || it.itemId === 'inv_dp5000_bat' || (itNorm.includes('バッテリー') && !itIsBundle);
           const itIsChg = it.itemId === 'inv_dp5000_chg' || itNorm.includes('急速充電器');
           const itIsBody = it.itemId === 'inv_dp5000_body' || (itNorm.includes('dp-5000') && !itIsBundle && !itIsBat && !itIsChg && !itNorm.includes('スプレッダー') && !itNorm.includes('アクセサリー') && !itNorm.includes('3点引き'));
@@ -9286,14 +9318,14 @@ export function getInventoryHistoryWithShipments(item) {
               if (isMatch) matchedBatsCount++;
             } else {
               // 台帳未登録シリアルの場合の安全フォールバック（旧ロット救済）
-              if (isBatSK && (dateStr.includes('2026-11') || cleanSn.startsWith('0031077'))) matchedBatsCount++;
-              else if (isBatCS && (dateStr.includes('2026-03') || cleanSn.startsWith('BAT-') || cleanSn.startsWith('N485'))) matchedBatsCount++;
+              if (isBatSK && (dateStr.includes('2026-11') || dateStr.includes('2026-03') || cleanSn.startsWith('0031077') || cleanSn.startsWith('BAT-2603'))) matchedBatsCount++;
+              else if (isBatCS && (cleanSn.startsWith('BAT-') && !cleanSn.startsWith('BAT-2603') || cleanSn.startsWith('N485'))) matchedBatsCount++;
             }
           });
         });
 
         if (matchedBatsCount > 0) {
-          const batBundleDate = (isBatCS && dateStr.includes('2026-03')) ? '2026-03-24' : dateStr;
+          const batBundleDate = ((isBatSK || isBatCS) && dateStr.includes('2026-03')) ? '2026-03-24' : dateStr;
           combined.push({
             id: `bundle_summary_out_bat_${item.id || groupKey}_${batBundleDate}_${matchedBatsCount}`,
             date: batBundleDate,
@@ -9560,6 +9592,7 @@ if (typeof window !== 'undefined') {
   window.saveIssuerProfile = saveIssuerProfile;
   window.sanitizeDocSerialsConsistency = sanitizeDocSerialsConsistency;
   window.resolveInventoryMasterCostForLine = resolveInventoryMasterCostForLine;
+  window.classifyBatteryVariant = classifyBatteryVariant;
   window.resolveSerialUnitCostFromLots = resolveSerialUnitCostFromLots;
   window.expandBundleSerialAssignment = expandBundleSerialAssignment;
   window.recalculateDocCostTotals = recalculateDocCostTotals;
