@@ -17237,23 +17237,30 @@ function renderGeneralLedger(periodFilter = currentAccGlobalPeriod) {
   }
 
   const selectedAccount = select.value || '普通預金';
+  console.log('【総勘定元帳】描画開始', { selectedAccount, periodFilter });
   const gl = calculateGeneralLedger(selectedAccount, invoices, expenses, fiscalSettings, accountMaster, manualJournals, periodFilter);
+
+  const formatGlYen = (val) => {
+    const num = Math.round(Number(val) || 0);
+    return num < 0 ? `-¥${Math.abs(num).toLocaleString('ja-JP')}` : `¥${num.toLocaleString('ja-JP')}`;
+  };
 
   // サマリー表示
   const obElem = document.getElementById('glOpeningBalance');
-  if (obElem) obElem.textContent = formatCurrency(gl.openingBalance);
+  if (obElem) obElem.textContent = formatGlYen(gl.openingBalance);
   const debElem = document.getElementById('glPeriodDebit');
-  if (debElem) debElem.textContent = formatCurrency(gl.periodDebit);
+  if (debElem) debElem.textContent = formatGlYen(gl.periodDebit);
   const credElem = document.getElementById('glPeriodCredit');
-  if (credElem) credElem.textContent = formatCurrency(gl.periodCredit);
+  if (credElem) credElem.textContent = formatGlYen(gl.periodCredit);
   const cbElem = document.getElementById('glClosingBalance');
-  if (cbElem) cbElem.textContent = formatCurrency(gl.closingBalance);
+  if (cbElem) cbElem.textContent = formatGlYen(gl.closingBalance);
 
   // 取引明細テーブル
   const tbody = document.getElementById('glTableBody');
   if (tbody) {
     if (gl.entries.length === 0) {
       tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--slate-400); padding: 32px;">この科目の取引データはありません</td></tr>`;
+      console.log('【総勘定元帳】描画完了（明細0件）', { selectedAccount });
       return;
     }
 
@@ -17264,25 +17271,35 @@ function renderGeneralLedger(periodFilter = currentAccGlobalPeriod) {
         ? `<strong style="color: #6366f1; background: #eef2ff; padding: 1px 6px; border-radius: 4px;">諸口</strong>`
         : `<span style="font-weight: 600; color: #334155;">${escapeHtml(e.counterAccount)}</span>`;
 
+      const debitVal = Number(e.debitAmount ?? e.debit ?? 0);
+      const creditVal = Number(e.creditAmount ?? e.credit ?? 0);
+
       html += `
         <tr style="border-bottom: 1px solid #f1f5f9;">
-          <td style="color: #64748b; font-size: 11px;">${escapeHtml(e.date)}</td>
-          <td>${counterAccountText}</td>
-          <td style="color: #475569; font-size: 12px;">${escapeHtml(e.description || '')}</td>
-          <td style="text-align: right; font-family: monospace; font-weight: 700; color: #2563eb;">
-            ${e.debit > 0 ? formatCurrency(e.debit) : '-'}
+          <td style="padding: 8px 10px; color: #64748b; font-size: 11px;">${escapeHtml(e.date)}</td>
+          <td style="padding: 8px 10px;">${counterAccountText}</td>
+          <td style="padding: 8px 10px; color: #475569; font-size: 12px;">${escapeHtml(e.description || '')}</td>
+          <td style="padding: 8px 10px; text-align: right; font-family: monospace; font-weight: 700; color: #2563eb;">
+            ${debitVal > 0 ? formatGlYen(debitVal) : '-'}
           </td>
-          <td style="text-align: right; font-family: monospace; font-weight: 700; color: #16a34a;">
-            ${e.credit > 0 ? formatCurrency(e.credit) : '-'}
+          <td style="padding: 8px 10px; text-align: right; font-family: monospace; font-weight: 700; color: #16a34a;">
+            ${creditVal > 0 ? formatGlYen(creditVal) : '-'}
           </td>
-          <td style="text-align: right; font-family: monospace; font-weight: 700; color: #1e293b; background: #f8fafc;">
-            ${formatCurrency(e.balance)}
+          <td style="padding: 8px 10px; text-align: right; font-family: monospace; font-weight: 700; color: #1e293b; background: #f8fafc;">
+            ${formatGlYen(e.balance)}
           </td>
         </tr>
       `;
     });
     tbody.innerHTML = html;
   }
+  console.log('【総勘定元帳】描画完了', {
+    selectedAccount,
+    entryCount: gl.entries.length,
+    periodDebit: gl.periodDebit,
+    periodCredit: gl.periodCredit,
+    closingBalance: gl.closingBalance
+  });
 }
 
 // ==========================================================================

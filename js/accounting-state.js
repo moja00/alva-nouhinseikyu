@@ -991,6 +991,8 @@ export function calculateGeneralLedger(targetAccountCodeOrName, arg2 = {}, arg3 
         counterpart,
         counterAccount: counterpart, // 互換性
         description: jnl.description,
+        debit: amt,
+        credit: 0,
         debitAmount: amt,
         creditAmount: 0,
         balance: currentBalance,
@@ -1026,6 +1028,8 @@ export function calculateGeneralLedger(targetAccountCodeOrName, arg2 = {}, arg3 
         counterpart,
         counterAccount: counterpart, // 互換性
         description: jnl.description,
+        debit: 0,
+        credit: amt,
         debitAmount: 0,
         creditAmount: amt,
         balance: currentBalance,
@@ -1422,6 +1426,7 @@ if (typeof window !== 'undefined') {
   window.normalizeInvoiceDoc = normalizeInvoiceDoc;
   window.isDateInPeriod = isDateInPeriod;
   window.calculateProfitAndLoss = calculateProfitAndLoss;
+  window.calculateGeneralLedger = calculateGeneralLedger;
   window.calculateBalanceSheet = calculateBalanceSheet;
   window.calculateTrialBalance = calculateTrialBalance;
   window.exportJournalsToCSV = exportJournalsToCSV;
