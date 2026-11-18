@@ -967,10 +967,10 @@ function initApp() {
     if (!currentDoc.issuer.stampDataUrl) currentDoc.issuer.stampDataUrl = generateCompanyStamp(currentDoc.issuer.name);
   }
 
-  // UIへ反映
+  // UIへ反映（起動直後の描画ではサーバーへ重複/空データ上書き送信しない）
   populateFormFromDoc();
   updateThemeColor(currentDoc.themeColor || 'indigo');
-  renderAll();
+  renderAll({ skipSave: true });
 
   // イベントリスナーを接続
   setupEventListeners();
@@ -996,7 +996,7 @@ function initApp() {
         currentDoc.issuer.bankInfo = syncedProfile.bankInfo;
       }
       populateFormFromDoc();
-      renderAll();
+      renderAll({ skipSave: true });
       updatePortalInfo();
     }
 
@@ -1014,7 +1014,7 @@ function initApp() {
           currentDoc.isCancelled = syncedActiveDoc.isCancelled;
           currentDoc.issuedAt = syncedActiveDoc.issuedAt;
           populateFormFromDoc();
-          renderAll();
+          renderAll({ skipSave: true });
           console.log("【初期化同期】編集中伝票をサーバー同期後のステータスに更新しました");
         }
       }
@@ -1037,8 +1037,15 @@ function initApp() {
     console.warn('Init inventory persistence warning:', e);
   });
 
-  // 起動時はポータルMENUを表示（初回起動時）
-  switchAppView('portal');
+  // 起動時の表示画面決定（?view=attendance 等の直リンク時は最初から対象画面を開く）
+  let initialView = 'portal';
+  try {
+    const reqView = new URLSearchParams(window.location.search).get('view');
+    if (reqView && reqView !== 'portal') {
+      initialView = reqView;
+    }
+  } catch (e) { }
+  switchAppView(initialView);
   updatePortalInfo();
 
   // ユーザー操作イベント駆動型のクラウド最新同期ハンドラ（定期タイマーは廃止）
@@ -1118,10 +1125,10 @@ function initApp() {
   try {
     const searchParams = new URLSearchParams(window.location.search);
     const requestedView = searchParams.get('view');
-    if (requestedView && requestedView !== 'portal') {
+    if (requestedView && requestedView !== 'portal' && currentAppView !== requestedView) {
       console.log(`【URLルーティング】パラメータ指定画面へ直接遷移: ${requestedView}`);
       setTimeout(() => {
-        if (typeof switchAppView === 'function') {
+        if (typeof switchAppView === 'function' && currentAppView !== requestedView) {
           switchAppView(requestedView);
         }
       }, 100);
@@ -1462,10 +1469,10 @@ async function triggerGlobalManualSync() {
   try {
     showToast('☁️ クラウドから全データを同期しています...', 'info');
     if (typeof pullAllServerDataToLocal === 'function') {
-      await pullAllServerDataToLocal();
+      await pullAllServerDataToLocal(true);
     }
     if (typeof syncAttendanceWithServer === 'function') {
-      await syncAttendanceWithServer();
+      await syncAttendanceWithServer(true);
     }
     if (typeof refreshCurrentViewUI === 'function') {
       refreshCurrentViewUI();
@@ -1926,7 +1933,7 @@ function renderDeliveryAndReceiptSubSheets(totals, displayUsers, endUserNamePart
   container.innerHTML = deliveryPageHtml + receiptPageHtml;
 }
 
-function renderAll() {
+function renderAll(options = {}) {
   const isEstimate = (currentDoc.docType === 'estimate');
   const meta = isEstimate ? DOC_TYPES.estimate : DOC_TYPES.invoice;
 
@@ -2188,8 +2195,10 @@ function renderAll() {
   // 納品請求書モード時は、納品書（Page 2）および領収証（Page 3）を動的レンダリング
   renderDeliveryAndReceiptSubSheets(totals, displayUsers, endUserNamePart);
 
-  // LocalStorageに常時保存
-  saveActiveDoc(currentDoc);
+  // LocalStorageに常時保存（起動時・同期反映の再描画ではサーバー送信をスキップ）
+  if (!options || !options.skipSave) {
+    saveActiveDoc(currentDoc);
+  }
 }
 
 /**
@@ -17543,8 +17552,8 @@ function syncReceiptStorageWithExpenses() {
 function renderAccountingExpenses(periodFilter = currentAccGlobalPeriod) {
   if (!DOM.expenseTableBody) return;
 
-  // 初回表示時にサーバー上の孤立写真を自動クリーンアップして1対1整合性を確保
-  if (!isReceiptStorageSynced) {
+  // 経費画面または会計画面の表示時のみ、サーバー上の孤立写真をクリーンアップ
+  if (!isReceiptStorageSynced && (currentAppView === 'expenses' || currentAppView === 'accounting')) {
     isReceiptStorageSynced = true;
     syncReceiptStorageWithExpenses();
   }

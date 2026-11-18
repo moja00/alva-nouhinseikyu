@@ -416,13 +416,17 @@ export async function restoreDocFromTrash(id) {
   }
 }
 
-let syncTimeout = null;
-function localStorageSetItemAndSync(key, value) {
+function localStorageSetItemOnly(key, value) {
   try {
     localStorage.setItem(key, value);
   } catch (e) {
     console.warn('[LocalStorage] setItem error:', e);
   }
+}
+
+let syncTimeout = null;
+function localStorageSetItemAndSync(key, value) {
+  localStorageSetItemOnly(key, value);
   if (syncTimeout) clearTimeout(syncTimeout);
   syncTimeout = setTimeout(async () => {
     if (typeof window !== 'undefined' && window.pushAllLocalDataToServer) {
@@ -991,6 +995,8 @@ export const DEFAULT_INVENTORY_SERIALS = [
   { id: "sn_N36707", serialNumber: "N36707", inventoryId: "inv_2", itemName: "DP-MS", itemType: "spreader", status: "shipped", clientName: "R・Cペイント販売株式会社", endUserName: "", shipDate: "2026-07-06", docNumber: "INV-20260706-01", docId: "doc_20260706_01", note: "DP-5000(N10419)同時出荷", inDate: "2026-03-16", lotNumber: "LOT-20260316", unitCost: 27786, updatedAt: new Date().toISOString() },
   { id: "sn_N36709", serialNumber: "N36709", inventoryId: "inv_2", itemName: "DP-MS", itemType: "spreader", status: "shipped", clientName: "株式会社宮田自動車商会 苫小牧営業所", endUserName: "", shipDate: "2026-10-01", docNumber: "INV-20261001-02", docId: "doc_20261001_02", note: "DP-5000(N10938)同時出荷", inDate: "2026-03-16", lotNumber: "LOT-20260316", unitCost: 27786, updatedAt: new Date().toISOString() }
 ];
+// 初期シードの updatedAt を固定過去日時に揃え、新規端末からサーバー最新データへの逆上書きを防止
+DEFAULT_INVENTORY_SERIALS.forEach(d => { d.updatedAt = '2026-01-01T00:00:00.000Z'; });
 
 export const DEFAULT_INVENTORY_LOTS = [];
 
@@ -1131,7 +1137,12 @@ export function deduplicateClientMasterList(list) {
  */
 export function saveActiveDoc(doc) {
   try {
-    localStorageSetItemAndSync(KEYS.ACTIVE_DOC, JSON.stringify(doc));
+    const serialized = JSON.stringify(doc);
+    // 描画のみ・再レンダリングで内容が一切変わっていない場合は重複保存および不要な同期POSTをスキップ
+    try {
+      if (localStorage.getItem(KEYS.ACTIVE_DOC) === serialized) return;
+    } catch (_) { }
+    localStorageSetItemAndSync(KEYS.ACTIVE_DOC, serialized);
     // サーバーファイル（data/invoices/active_doc.json）にも即時保存
     saveServerActiveDoc(doc).catch(e => {
       console.warn('Server active doc save failed:', e);
@@ -1228,24 +1239,26 @@ export function loadIssuerProfile() {
       modified = true;
     }
 
-    // 印影画像がローカルにない場合、サーバーから非同期フェッチして復元
-    if (!profile.stampDataUrl || profile.stampDataUrl.trim() === '') {
+    // 印影画像がローカルにない場合、サーバーから非同期フェッチして復元（重複・逆同期なし）
+    const justPulled = typeof _lastPullAllOnlineAt === 'number' && (Date.now() - _lastPullAllOnlineAt) < 15000;
+    const hasToken = !!_memoryCachedToken || !!localStorage.getItem(CACHED_TOKEN_KEY);
+    if ((!profile.stampDataUrl || profile.stampDataUrl.trim() === '') && hasToken && !justPulled) {
       fetchServerIssuerProfile().then(srv => {
         if (srv && srv.stampDataUrl && srv.stampDataUrl.trim() !== '') {
           profile.stampDataUrl = srv.stampDataUrl;
           if (srv.showStamp !== undefined) profile.showStamp = srv.showStamp;
-          localStorageSetItemAndSync(KEYS.ISSUER_PROFILE, JSON.stringify(profile));
-          console.log('[自社印復元] サーバーから印鑑画像を自動復元・同期しました');
+          localStorageSetItemOnly(KEYS.ISSUER_PROFILE, JSON.stringify(profile));
+          console.log('[自社印復元] サーバーから印鑑画像を自動復元しました');
           if (typeof window !== 'undefined' && typeof window.renderAll === 'function') {
-            window.renderAll();
+            window.renderAll({ skipSave: true });
           }
         }
       }).catch(() => { });
     }
 
     if (modified) {
-      localStorageSetItemAndSync(KEYS.ISSUER_PROFILE, JSON.stringify(profile));
-      saveServerIssuerProfile(profile).catch(() => { });
+      // 表示用フォールバックのローカル反映のみに留め、読取り時のサーバー上書き・全件pushを防止
+      localStorageSetItemOnly(KEYS.ISSUER_PROFILE, JSON.stringify(profile));
     }
 
     return profile;
@@ -1577,7 +1590,7 @@ export function getHistoryList(includeSuperseded = false) {
 
     if (anyUpdated) {
       try {
-        localStorage.setItem(KEYS.HISTORY, JSON.stringify(list));
+        localStorageSetItemOnly(KEYS.HISTORY, JSON.stringify(list));
       } catch (e) {
         console.warn('Failed to update synced history to localStorage:', e);
       }
@@ -2391,9 +2404,19 @@ export async function saveServerAttendance(attendanceList) {
  * ・ローカルで打刻した退勤時刻がサーバーの未退勤データで消去される事故を完全防止
  * ・どちらか一方に入力済みの出勤・退勤・備考を空文字で破壊しない空上書き保護
  */
-export async function syncAttendanceWithServer() {
-  try {
-    const serverAttendance = await fetchServerAttendance();
+let _attendanceSyncInFlight = null;
+
+export async function syncAttendanceWithServer(force = false) {
+  // 直近10秒以内に pullAllServerDataToLocal() で勤怠同期済みの場合は重複 GET をスキップ
+  if (!force && typeof _lastPullAllOnlineAt === 'number' && (Date.now() - _lastPullAllOnlineAt) < 10000) {
+    if (localStorage.getItem(KEYS.ATTENDANCE)) {
+      return getAttendanceList();
+    }
+  }
+  if (_attendanceSyncInFlight) return _attendanceSyncInFlight;
+  const runSync = async () => {
+    try {
+      const serverAttendance = await fetchServerAttendance();
     const localAttendance = getAttendanceList();
 
     if (serverAttendance && Array.isArray(serverAttendance)) {
@@ -2468,8 +2491,8 @@ export async function syncAttendanceWithServer() {
       const mergedList = Array.from(attMap.values());
       mergedList.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 
-      // ローカルストレージを最新マージデータで更新
-      localStorageSetItemAndSync(KEYS.ATTENDANCE, JSON.stringify(mergedList));
+      // ローカルストレージを最新マージデータで更新（サーバーからのPull時はpush-all逆流を起こさない）
+      localStorageSetItemOnly(KEYS.ATTENDANCE, JSON.stringify(mergedList));
 
       // サーバー側に未反映の最新打刻があれば即座にサーバー保存
       if (hasLocalChanges) {
@@ -2484,6 +2507,11 @@ export async function syncAttendanceWithServer() {
     console.warn('syncAttendanceWithServer error:', err);
   }
   return getAttendanceList();
+  };
+  _attendanceSyncInFlight = runSync().finally(() => {
+    _attendanceSyncInFlight = null;
+  });
+  return _attendanceSyncInFlight;
 }
 
 export async function fetchServerAttendanceEmployee() {
@@ -2575,6 +2603,8 @@ export async function syncInvoicesHistoryWithServer() {
     const deletedSet = getDeletedDocIds();
 
     const invoiceMap = new Map();
+    const serverValidIds = new Set();
+    let hasLocalChanges = false;
 
     // 1. サーバーから取得したデータから削除マーカー(_deleted: true)を検知してローカル削除セットへ反映
     if (Array.isArray(serverInvoices)) {
@@ -2610,11 +2640,15 @@ export async function syncInvoicesHistoryWithServer() {
         if (sinv && sinv.id) {
           const cleanId = String(sinv.id).trim();
           if (sinv._deleted || deletedSet.has(cleanId)) {
+            if (!sinv._deleted && deletedSet.has(cleanId)) {
+              hasLocalChanges = true; // ローカル側の削除をサーバーへ伝える必要あり
+            }
             // サーバー側またはローカルで削除済みの場合は確実にマップから除去
             invoiceMap.delete(cleanId);
             return;
           }
 
+          serverValidIds.add(cleanId);
           const existing = invoiceMap.get(cleanId);
           if (!existing) {
             invoiceMap.set(cleanId, sinv);
@@ -2623,8 +2657,6 @@ export async function syncInvoicesHistoryWithServer() {
             const localDate = new Date(existing.updatedAt || existing.cancelledAt || existing.issuedAt || existing.issueDate || 0).getTime();
 
             // 原則として更新日時（updatedAt）が新しい方を正として採用する
-            // ※ 以前は serverIsDraft && localIsIssued で無条件にサーバーを優先していたため、
-            //   同一端末で下書き/取消→再発行した際に古いサーバー状態で最新の確定発行が巻き戻されるバグがあった
             if (serverDate > localDate) {
               invoiceMap.set(cleanId, sinv);
             } else if (serverDate === localDate && sinv.isCancelled === true && !existing.isCancelled) {
@@ -2632,16 +2664,26 @@ export async function syncInvoicesHistoryWithServer() {
               invoiceMap.set(cleanId, sinv);
             } else if (localDate > serverDate) {
               console.log(`【書類履歴同期】ローカルの最新状態を保持（サーバーより新しい更新）: ${cleanId}`);
+              hasLocalChanges = true;
             }
           }
         }
       });
+    } else if (invoiceMap.size > 0) {
+      hasLocalChanges = true;
     }
+
+    // ローカルにのみ存在する未送信伝票があるか確認
+    invoiceMap.forEach((_, id) => {
+      if (!serverValidIds.has(id)) {
+        hasLocalChanges = true;
+      }
+    });
 
     // 4. 発行日降順にソート & 全伝票シリアル整合性のスマートサニタイズ
     invoiceMap.forEach(sinv => {
-      sanitizeDocSerialsConsistency(sinv);
-      if (sinv.fullDoc) sanitizeDocSerialsConsistency(sinv.fullDoc);
+      if (sanitizeDocSerialsConsistency(sinv)) hasLocalChanges = true;
+      if (sinv.fullDoc && sanitizeDocSerialsConsistency(sinv.fullDoc)) hasLocalChanges = true;
     });
 
     const mergedList = Array.from(invoiceMap.values()).sort((a, b) => {
@@ -2650,12 +2692,8 @@ export async function syncInvoicesHistoryWithServer() {
       return dateB.localeCompare(dateA);
     });
 
-    // 5. ローカルストレージに保存（マージ結果をローカルへ反映し、既存データ同期ループでの古いキャッシュ逆プッシュを防ぐ）
-    try {
-      localStorage.setItem(KEYS.HISTORY, JSON.stringify(mergedList));
-    } catch (e) {
-      console.warn('Failed to save merged history to localStorage:', e);
-    }
+    // 5. ローカルストレージに保存（サーバーからのPull時はpush-all逆流を起こさない）
+    localStorageSetItemOnly(KEYS.HISTORY, JSON.stringify(mergedList));
 
     // 6. 編集中アクティブ伝票(activeDoc)のゾンビ引きずりチェック
     const activeDoc = loadActiveDoc();
@@ -2692,9 +2730,11 @@ export async function syncInvoicesHistoryWithServer() {
       }
     }
 
-    // 7. サーバーへもマージ後全件と削除済みIDを送信
-    await saveServerInvoicesHistory(mergedList, Array.from(deletedSet));
-    console.log(`【書類履歴同期】マージ完了: 有効 ${mergedList.length} 件 (削除済み除外: ${deletedSet.size}件)`);
+    // 7. ローカル未送信・変更がある場合のみサーバーへ送信（通常閲覧時の2MB逆流アップロード防止）
+    if (hasLocalChanges) {
+      await saveServerInvoicesHistory(mergedList, Array.from(deletedSet));
+    }
+    console.log(`【書類履歴同期】マージ完了: 有効 ${mergedList.length} 件 (削除済み除外: ${deletedSet.size}件, サーバー書込: ${hasLocalChanges})`);
 
     return mergedList;
   } catch (e) {
@@ -2867,8 +2907,8 @@ export async function syncExpensesWithServer() {
       return (b.date || '').localeCompare(a.date || '') || (b.updatedAt || '').localeCompare(a.updatedAt || '');
     });
 
-    // ローカルストレージに最新一覧を保存
-    localStorageSetItemAndSync(KEYS.EXPENSES, JSON.stringify(mergedList));
+    // ローカルストレージに最新一覧を保存（Pull時はpush-all逆流を起こさない）
+    localStorageSetItemOnly(KEYS.EXPENSES, JSON.stringify(mergedList));
 
     // サーバーに未反映のデータまたは削除IDがある場合は同期
     if (hasLocalChanges || deletedSet.size > 0 || (Array.isArray(serverList) && mergedList.length !== serverList.length)) {
@@ -2893,7 +2933,7 @@ export function getItemMasterList(sortByFrequency = true) {
     const raw = localStorage.getItem(KEYS.ITEM_MASTER);
     let list = [];
     if (!raw) {
-      saveItemMasterList(DEFAULT_ITEMS_MASTER);
+      localStorageSetItemOnly(KEYS.ITEM_MASTER, JSON.stringify(DEFAULT_ITEMS_MASTER));
       list = [...DEFAULT_ITEMS_MASTER];
     } else {
       list = JSON.parse(raw);
@@ -2914,8 +2954,7 @@ export function getItemMasterList(sortByFrequency = true) {
       });
 
       if (cleanList.length !== list.length || anyAdded) {
-        localStorageSetItemAndSync(KEYS.ITEM_MASTER, JSON.stringify(cleanList));
-        saveServerMasterItems(cleanList).catch(() => { });
+        localStorageSetItemOnly(KEYS.ITEM_MASTER, JSON.stringify(cleanList));
         list = cleanList;
       } else {
         list = cleanList;
@@ -3064,18 +3103,18 @@ export function getItemCategoryList() {
   try {
     const raw = localStorage.getItem(KEYS.ITEM_CATEGORIES);
     if (!raw) {
-      saveItemCategoryList(DEFAULT_ITEM_CATEGORIES);
+      localStorageSetItemOnly(KEYS.ITEM_CATEGORIES, JSON.stringify(DEFAULT_ITEM_CATEGORIES));
       return [...DEFAULT_ITEM_CATEGORIES];
     }
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed) || parsed.length === 0) {
-      saveItemCategoryList(DEFAULT_ITEM_CATEGORIES);
+      localStorageSetItemOnly(KEYS.ITEM_CATEGORIES, JSON.stringify(DEFAULT_ITEM_CATEGORIES));
       return [...DEFAULT_ITEM_CATEGORIES];
     }
     // 「修理・工賃」が未登録なら自動補完
     if (!parsed.includes('修理・工賃')) {
       parsed.push('修理・工賃');
-      saveItemCategoryList(parsed);
+      localStorageSetItemOnly(KEYS.ITEM_CATEGORIES, JSON.stringify(parsed));
     }
     return parsed;
   } catch (e) {
@@ -3346,7 +3385,7 @@ export function getClientMasterList(sortByFrequency = true) {
     const raw = localStorage.getItem(KEYS.CLIENT_MASTER);
     let list = [];
     if (!raw) {
-      saveClientMasterList(DEFAULT_CLIENT_MASTER);
+      localStorageSetItemOnly(KEYS.CLIENT_MASTER, JSON.stringify(DEFAULT_CLIENT_MASTER));
       list = [...DEFAULT_CLIENT_MASTER];
     } else {
       list = JSON.parse(raw);
@@ -3356,8 +3395,7 @@ export function getClientMasterList(sortByFrequency = true) {
     if (Array.isArray(list)) {
       const cleanList = deduplicateClientMasterList(list);
       if (cleanList.length !== list.length) {
-        localStorageSetItemAndSync(KEYS.CLIENT_MASTER, JSON.stringify(cleanList));
-        saveServerMasterClients(cleanList).catch(() => { });
+        localStorageSetItemOnly(KEYS.CLIENT_MASTER, JSON.stringify(cleanList));
         list = cleanList;
       } else {
         list = cleanList;
@@ -3574,8 +3612,15 @@ export function rescueMastersFromHistory() {
 /**
  * サーバーファイル（data/items_master.json, data/clients_master.json）とローカルマスタを双方向同期
  */
-export async function syncMastersWithServer() {
+export async function syncMastersWithServer(force = false) {
   try {
+    // 直近15秒以内に pullAllServerDataToLocal() が成功している場合、
+    // 取得済みの大容量データ（伝票・商品・取引先・経費・在庫）の二重ダウンロードをスキップし、補助設定のみ同期する
+    if (!force && typeof _lastPullAllOnlineAt === 'number' && (Date.now() - _lastPullAllOnlineAt) < 15000) {
+      await syncAuxiliaryMastersWithServer();
+      return true;
+    }
+
     // 1. 商品マスタの同期（スマートマージ: サーバー・ローカル双方の最新データを保護）
     const serverItems = await fetchServerMasterItems();
     const localItems = getItemMasterList(false);
@@ -3603,7 +3648,7 @@ export async function syncMastersWithServer() {
       });
       const validItems = Array.from(mergedMap.values()).filter(i => !SAMPLE_ITEM_KEYS.has(getMasterKey(i.name)));
       const mergedItems = deduplicateItemMasterList(validItems);
-      localStorageSetItemAndSync(KEYS.ITEM_MASTER, JSON.stringify(mergedItems));
+      localStorageSetItemOnly(KEYS.ITEM_MASTER, JSON.stringify(mergedItems));
       if (hasLocalChanges) {
         saveServerMasterItems(mergedItems).catch(() => { });
       }
@@ -3639,7 +3684,7 @@ export async function syncMastersWithServer() {
       });
       const validClients = Array.from(mergedMap.values()).filter(c => !SAMPLE_CLIENT_KEYS.has(getMasterKey(c.name)));
       const finalClients = deduplicateClientMasterList(validClients);
-      localStorageSetItemAndSync(KEYS.CLIENT_MASTER, JSON.stringify(finalClients));
+      localStorageSetItemOnly(KEYS.CLIENT_MASTER, JSON.stringify(finalClients));
       if (hasLocalChanges) {
         saveServerMasterClients(finalClients).catch(() => { });
       }
@@ -3663,7 +3708,7 @@ export async function syncMastersWithServer() {
         const mergedSet = new Set(serverCats.itemCategories);
         localItemCats.forEach(c => mergedSet.add(c));
         finalItemCats = Array.from(mergedSet);
-        localStorageSetItemAndSync(KEYS.ITEM_CATEGORIES, JSON.stringify(finalItemCats));
+        localStorageSetItemOnly(KEYS.ITEM_CATEGORIES, JSON.stringify(finalItemCats));
         if (finalItemCats.length !== serverCats.itemCategories.length) {
           hasCatChanges = true;
         }
@@ -3675,7 +3720,7 @@ export async function syncMastersWithServer() {
         const mergedNonStock = new Set(serverCats.nonStockCategories);
         localNonStockCats.forEach(c => mergedNonStock.add(c));
         finalNonStockCats = Array.from(mergedNonStock);
-        localStorageSetItemAndSync(KEYS.NON_STOCK_CATEGORIES, JSON.stringify(finalNonStockCats));
+        localStorageSetItemOnly(KEYS.NON_STOCK_CATEGORIES, JSON.stringify(finalNonStockCats));
         if (finalNonStockCats.length !== serverCats.nonStockCategories.length) {
           hasCatChanges = true;
         }
@@ -3744,8 +3789,13 @@ export async function syncMastersWithServer() {
         mergedIssuer.showStamp = localIssuer.showStamp;
       }
 
-      localStorageSetItemAndSync(KEYS.ISSUER_PROFILE, JSON.stringify(mergedIssuer));
-      await saveServerIssuerProfile(mergedIssuer);
+      localStorageSetItemOnly(KEYS.ISSUER_PROFILE, JSON.stringify(mergedIssuer));
+      const needsIssuerPush = !serverIssuer || !serverIssuer.name ||
+        (finalBankInfo && (!serverIssuer.bankInfo || serverIssuer.bankInfo.trim() === '')) ||
+        (finalStampDataUrl && (!serverIssuer.stampDataUrl || serverIssuer.stampDataUrl.trim() === ''));
+      if (needsIssuerPush) {
+        await saveServerIssuerProfile(mergedIssuer);
+      }
       console.log(`[マスタ同期完了] 自社プロファイル（振込先・判子印影含む）をサーバー・ローカルで完全同期しました`);
     } catch (issuerErr) {
       console.warn('Sync issuer profile error:', issuerErr);
@@ -3769,7 +3819,7 @@ export async function syncMastersWithServer() {
           updatedAt: new Date().toISOString()
         };
 
-        localStorageSetItemAndSync(KEYS.FISCAL_SETTINGS, JSON.stringify(mergedFiscal));
+        localStorageSetItemOnly(KEYS.FISCAL_SETTINGS, JSON.stringify(mergedFiscal));
         if (Object.keys(sOb).length === 0 && Object.keys(lOb).length > 0) {
           await saveServerFiscalSettings(mergedFiscal);
         }
@@ -3788,69 +3838,7 @@ export async function syncMastersWithServer() {
       console.warn('Sync attendance error:', attErr);
     }
 
-    // 5. 勤怠社員情報（data/attendance_employee.json）の双方向同期
-    try {
-      const serverEmp = await fetchServerAttendanceEmployee();
-      const localEmp = getAttendanceEmployee();
-
-      let finalEmp = { empNo: '2', empName: '宮崎真輔' };
-      if (serverEmp && serverEmp.empName && serverEmp.empName !== '山田 一郎') {
-        finalEmp = { ...serverEmp };
-      } else if (localEmp && localEmp.empName && localEmp.empName !== '山田 一郎') {
-        finalEmp = { ...localEmp };
-      }
-      if (!finalEmp.empNo || finalEmp.empNo === '1111') {
-        finalEmp.empNo = '2';
-      }
-
-      localStorageSetItemAndSync(KEYS.ATTENDANCE_EMPLOYEE, JSON.stringify(finalEmp));
-      await saveServerAttendanceEmployee(finalEmp);
-      console.log(`[勤怠同期完了] 勤怠社員情報（氏名: ${finalEmp.empName}）をサーバー・ローカルで同期しました`);
-    } catch (empErr) {
-      console.warn('Sync attendance employee error:', empErr);
-    }
-
-    // 6. 給与明細レコード（data/payroll/payroll_records.json）の双方向同期
-    try {
-      const serverPayRecords = await fetchServerPayrollRecords();
-      const localPayRecords = getPayrollRecords();
-
-      if (serverPayRecords && serverPayRecords.length > 0) {
-        localStorageSetItemAndSync(KEYS.PAYROLL_RECORDS, JSON.stringify(serverPayRecords));
-      } else if (localPayRecords.length > 0) {
-        await saveServerPayrollRecords(localPayRecords);
-      }
-    } catch (payErr) {
-      console.warn('Sync payroll records error:', payErr);
-    }
-
-    // 7. 給与計算設定（data/payroll/payroll_settings.json）の双方向同期
-    try {
-      const serverPaySettings = await fetchServerPayrollSettings();
-      const localPaySettings = getPayrollSettings();
-
-      if (serverPaySettings && serverPaySettings.empNo) {
-        localStorageSetItemAndSync(KEYS.PAYROLL_SETTINGS, JSON.stringify(serverPaySettings));
-      } else if (localPaySettings && localPaySettings.empNo) {
-        await saveServerPayrollSettings(localPaySettings);
-      }
-    } catch (setErr) {
-      console.warn('Sync payroll settings error:', setErr);
-    }
-
-    // 7-2. 前年所得・明細データ（data/payroll/previous_year_income.json）の双方向同期
-    try {
-      const serverPrevIncome = await fetchServerPreviousYearIncome();
-      const localPrevIncome = getPreviousYearIncome();
-
-      if (serverPrevIncome && serverPrevIncome.targetYear) {
-        localStorageSetItemAndSync(KEYS.PREVIOUS_YEAR_INCOME, JSON.stringify(serverPrevIncome));
-      } else if (localPrevIncome && localPrevIncome.targetYear) {
-        await saveServerPreviousYearIncome(localPrevIncome);
-      }
-    } catch (prevErr) {
-      console.warn('Sync previous year income error:', prevErr);
-    }
+    await syncAuxiliaryMastersWithServer();
 
     // 8. 請求書履歴（data/invoices/invoices_history.json）の同期
     try {
@@ -3858,20 +3846,6 @@ export async function syncMastersWithServer() {
       console.log(`[請求書同期完了] 請求書履歴: 全 ${syncedHistory.length} 件をサーバー・ローカル間で双方向同期しました`);
     } catch (invErr) {
       console.warn('Sync invoices history error:', invErr);
-    }
-
-    // 9. アクティブ伝票（data/invoices/active_doc.json）の同期
-    try {
-      const serverActiveDoc = await fetchServerActiveDoc();
-      const localActiveDoc = loadActiveDoc();
-
-      if (serverActiveDoc) {
-        localStorageSetItemAndSync(KEYS.ACTIVE_DOC, JSON.stringify(serverActiveDoc));
-      } else if (localActiveDoc) {
-        await saveServerActiveDoc(localActiveDoc);
-      }
-    } catch (actErr) {
-      console.warn('Sync active doc error:', actErr);
     }
 
     // 10. 経費データ（data/expenses/expenses.json）の同期
@@ -3889,8 +3863,8 @@ export async function syncMastersWithServer() {
         syncInventorySerialsWithServer(),
         fetchServerInventory()
       ]);
-      if (typeof syncInventorySerialsFromIssuedDocs === 'function') syncInventorySerialsFromIssuedDocs();
-      if (typeof syncInventoryStockFromIssuedDocs === 'function') syncInventoryStockFromIssuedDocs();
+      if (typeof syncInventorySerialsFromIssuedDocs === 'function') syncInventorySerialsFromIssuedDocs(false);
+      if (typeof syncInventoryStockFromIssuedDocs === 'function') syncInventoryStockFromIssuedDocs(false);
       if (typeof syncInventoryStockFromSerials === 'function') syncInventoryStockFromSerials();
     } catch (invSyncErr) {
       console.warn('Sync inventory masters error:', invSyncErr);
@@ -3900,6 +3874,96 @@ export async function syncMastersWithServer() {
   } catch (e) {
     console.warn('Sync masters with server failed (offline mode):', e);
     return false;
+  }
+}
+
+/**
+ * pull-all に含まれない補助マスタ・給与設定・編集中の下書き伝票のみを同期
+ */
+async function syncAuxiliaryMastersWithServer() {
+  // 5. 勤怠社員情報（data/attendance_employee.json）の双方向同期
+  try {
+    const hadLocalEmp = !!localStorage.getItem(KEYS.ATTENDANCE_EMPLOYEE);
+    const serverEmp = await fetchServerAttendanceEmployee();
+    const localEmp = getAttendanceEmployee();
+
+    let finalEmp = { empNo: '2', empName: '宮崎真輔' };
+    if (serverEmp && serverEmp.empName && serverEmp.empName !== '山田 一郎') {
+      finalEmp = { ...serverEmp };
+    } else if (localEmp && localEmp.empName && localEmp.empName !== '山田 一郎') {
+      finalEmp = { ...localEmp };
+    }
+    if (!finalEmp.empNo || finalEmp.empNo === '1111') {
+      finalEmp.empNo = '2';
+    }
+
+    localStorageSetItemOnly(KEYS.ATTENDANCE_EMPLOYEE, JSON.stringify(finalEmp));
+    if (hadLocalEmp && (!serverEmp || !serverEmp.empName || serverEmp.empName === '山田 一郎' || !serverEmp.empNo || serverEmp.empNo === '1111')) {
+      await saveServerAttendanceEmployee(finalEmp);
+    }
+    console.log(`[勤怠同期完了] 勤怠社員情報（氏名: ${finalEmp.empName}）をサーバー・ローカルで同期しました`);
+  } catch (empErr) {
+    console.warn('Sync attendance employee error:', empErr);
+  }
+
+  // 6. 給与明細レコード（data/payroll/payroll_records.json）の双方向同期
+  try {
+    const hadLocalPayRecords = !!localStorage.getItem(KEYS.PAYROLL_RECORDS);
+    const serverPayRecords = await fetchServerPayrollRecords();
+    const localPayRecords = getPayrollRecords();
+
+    if (serverPayRecords && serverPayRecords.length > 0) {
+      localStorageSetItemOnly(KEYS.PAYROLL_RECORDS, JSON.stringify(serverPayRecords));
+    } else if (hadLocalPayRecords && localPayRecords.length > 0) {
+      await saveServerPayrollRecords(localPayRecords);
+    }
+  } catch (payErr) {
+    console.warn('Sync payroll records error:', payErr);
+  }
+
+  // 7. 給与計算設定（data/payroll/payroll_settings.json）の双方向同期
+  try {
+    const hadLocalPaySettings = !!localStorage.getItem(KEYS.PAYROLL_SETTINGS);
+    const serverPaySettings = await fetchServerPayrollSettings();
+    const localPaySettings = getPayrollSettings();
+
+    if (serverPaySettings && serverPaySettings.empNo) {
+      localStorageSetItemOnly(KEYS.PAYROLL_SETTINGS, JSON.stringify(serverPaySettings));
+    } else if (hadLocalPaySettings && localPaySettings && localPaySettings.empNo) {
+      await saveServerPayrollSettings(localPaySettings);
+    }
+  } catch (setErr) {
+    console.warn('Sync payroll settings error:', setErr);
+  }
+
+  // 7-2. 前年所得・明細データ（data/payroll/previous_year_income.json）の双方向同期
+  try {
+    const hadLocalPrevIncome = !!localStorage.getItem(KEYS.PREVIOUS_YEAR_INCOME);
+    const serverPrevIncome = await fetchServerPreviousYearIncome();
+    const localPrevIncome = getPreviousYearIncome();
+
+    if (serverPrevIncome && serverPrevIncome.targetYear) {
+      localStorageSetItemOnly(KEYS.PREVIOUS_YEAR_INCOME, JSON.stringify(serverPrevIncome));
+    } else if (hadLocalPrevIncome && localPrevIncome && localPrevIncome.targetYear) {
+      await saveServerPreviousYearIncome(localPrevIncome);
+    }
+  } catch (prevErr) {
+    console.warn('Sync previous year income error:', prevErr);
+  }
+
+  // 9. アクティブ伝票（data/invoices/active_doc.json）の同期
+  try {
+    const hadLocalActiveDoc = !!localStorage.getItem(KEYS.ACTIVE_DOC);
+    const serverActiveDoc = await fetchServerActiveDoc();
+    const localActiveDoc = loadActiveDoc();
+
+    if (serverActiveDoc) {
+      localStorageSetItemOnly(KEYS.ACTIVE_DOC, JSON.stringify(serverActiveDoc));
+    } else if (hadLocalActiveDoc && localActiveDoc) {
+      await saveServerActiveDoc(localActiveDoc);
+    }
+  } catch (actErr) {
+    console.warn('Sync active doc error:', actErr);
   }
 }
 
@@ -4750,18 +4814,17 @@ export function getAttendanceEmployee() {
     let data = raw ? JSON.parse(raw) : null;
     if (!data) {
       data = { empNo: '2', empName: '宮崎真輔' };
-      localStorageSetItemAndSync(KEYS.ATTENDANCE_EMPLOYEE, JSON.stringify(data));
       return data;
     }
     // 旧デフォルト「山田 一郎」または未設定の場合は「宮崎真輔」に自動更新
     if (!data.empName || data.empName === '山田 一郎') {
       data.empName = '宮崎真輔';
-      localStorageSetItemAndSync(KEYS.ATTENDANCE_EMPLOYEE, JSON.stringify(data));
+      localStorageSetItemOnly(KEYS.ATTENDANCE_EMPLOYEE, JSON.stringify(data));
     }
     // 社員番号未設定または旧番号「1111」の場合は「2」に自動更新
     if (!data.empNo || data.empNo === '1111') {
       data.empNo = '2';
-      localStorageSetItemAndSync(KEYS.ATTENDANCE_EMPLOYEE, JSON.stringify(data));
+      localStorageSetItemOnly(KEYS.ATTENDANCE_EMPLOYEE, JSON.stringify(data));
     }
     return data;
   } catch (e) {
@@ -4995,7 +5058,7 @@ export async function fetchServerInventory() {
 
         // サーバー（Firestore）の現在庫数・確定原価を100%維持しながら、未同期の手動出庫ログのみ安全にマージ
         const merged = mergeInventoryServerAndLocal(data, localList);
-        localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(merged));
+        localStorageSetItemOnly(KEYS.INVENTORY, JSON.stringify(merged));
         console.log(`[在庫マスタ同期完了] 全 ${merged.length} 品目をクラウド（Firestore）から完全同期しました`);
         return merged;
       }
@@ -5030,7 +5093,7 @@ export async function fetchServerPurchaseMappings() {
     if (res.ok) {
       const data = await res.json();
       if (data && typeof data === 'object') {
-        localStorageSetItemAndSync(KEYS.PURCHASE_MAPPINGS, JSON.stringify(data));
+        localStorageSetItemOnly(KEYS.PURCHASE_MAPPINGS, JSON.stringify(data));
         return data;
       }
     }
@@ -5058,7 +5121,14 @@ export async function saveServerPurchaseMappings(mappings) {
 /**
  * 起動時にサーバーと在庫データ（マスタ・仕入マッピング・入荷ロット・シリアル台帳）を完全同期
  */
-export async function initInventoryFromServer() {
+export async function initInventoryFromServer(force = false) {
+  // 直近15秒以内に pullAllServerDataToLocal() が在庫系を同期済みなら二重取得をスキップ
+  if (!force && typeof _lastPullAllOnlineAt === 'number' && (Date.now() - _lastPullAllOnlineAt) < 15000) {
+    if (!localStorage.getItem(KEYS.PURCHASE_MAPPINGS)) {
+      await fetchServerPurchaseMappings();
+    }
+    return;
+  }
   await Promise.all([
     fetchServerInventory(),
     fetchServerPurchaseMappings(),
@@ -5067,10 +5137,10 @@ export async function initInventoryFromServer() {
   ]);
   // シリアル台帳・発行済伝票から実在庫およびシリアル出荷ステータスを自動引落・完全同期
   if (typeof syncInventorySerialsFromIssuedDocs === 'function') {
-    syncInventorySerialsFromIssuedDocs();
+    syncInventorySerialsFromIssuedDocs(false);
   }
   if (typeof syncInventoryStockFromIssuedDocs === 'function') {
-    syncInventoryStockFromIssuedDocs();
+    syncInventoryStockFromIssuedDocs(false);
   }
   if (typeof syncInventoryStockFromSerials === 'function') {
     syncInventoryStockFromSerials();
@@ -5308,7 +5378,7 @@ export function getInventoryList() {
     });
 
     if (modified) {
-      localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(list));
+      localStorageSetItemOnly(KEYS.INVENTORY, JSON.stringify(list));
     }
 
     // デフォルト構成品（本体・バッテリー・充電器）が未登録の場合は補完
@@ -5688,8 +5758,7 @@ export function getPurchaseMappings() {
   try {
     const raw = localStorage.getItem(KEYS.PURCHASE_MAPPINGS);
     if (!raw) {
-      localStorageSetItemAndSync(KEYS.PURCHASE_MAPPINGS, JSON.stringify(DEFAULT_PURCHASE_MAPPINGS));
-      saveServerPurchaseMappings(DEFAULT_PURCHASE_MAPPINGS).catch(() => { });
+      localStorageSetItemOnly(KEYS.PURCHASE_MAPPINGS, JSON.stringify(DEFAULT_PURCHASE_MAPPINGS));
       return { ...DEFAULT_PURCHASE_MAPPINGS };
     }
     const parsed = JSON.parse(raw);
@@ -5880,7 +5949,6 @@ export function getPreviousYearIncome() {
         monthlyRecords: [],
         notes: '前年の給与明細・源泉徴収票データ（受取後に詳細登録可能）'
       };
-      localStorageSetItemAndSync(KEYS.PREVIOUS_YEAR_INCOME, JSON.stringify(data));
     }
     return data;
   } catch (e) {
@@ -5953,7 +6021,6 @@ export function getPayrollSettings() {
         birthDate: '1981-11-12',
         prefecture: '群馬県'
       };
-      localStorageSetItemAndSync(KEYS.PAYROLL_SETTINGS, JSON.stringify(data));
     }
     return data;
   } catch (e) {
@@ -6412,87 +6479,171 @@ export async function pushAllLocalDataToServer() {
   }
 }
 
+let _pullAllInFlightPromise = null;
+let _lastPullAllOnlineAt = 0;
+let _lastPullAllOnlineResult = null;
+
 /**
  * サーバーから全データを一括取得してローカルストレージへ即時反映
+ * @param {boolean} [force=false] true の場合は直近キャッシュを無視して強制再取得
  */
-export async function pullAllServerDataToLocal() {
-  const token = (typeof getFirebaseAuthToken === 'function') ? await getFirebaseAuthToken(false) : null;
-  if (!token) {
-    return { success: true, offline: true, message: '未ログインのためローカルデータを使用します' };
+export async function pullAllServerDataToLocal(force = false) {
+  if (!force && _pullAllInFlightPromise) {
+    return _pullAllInFlightPromise;
+  }
+  if (!force && _lastPullAllOnlineResult && (Date.now() - _lastPullAllOnlineAt < 8000)) {
+    return _lastPullAllOnlineResult;
   }
 
-  const fetchFn = (typeof window !== 'undefined' && window.apiFetch) ? window.apiFetch : fetch;
-  try {
-    const res = await fetchFn('sync/pull-all', { cache: 'no-store' });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    if (!data || data.offline) return { success: true, offline: true, message: 'ローカルデータを優先して使用します' };
+  const runPull = async () => {
+    const token = (typeof getFirebaseAuthToken === 'function') ? await getFirebaseAuthToken(false) : null;
+    if (!token) {
+      return { success: true, offline: true, message: '未ログインのためローカルデータを使用します' };
+    }
 
-    if (data.masterItems && Array.isArray(data.masterItems) && data.masterItems.length > 0) {
-      saveItemMasterList(data.masterItems);
-    }
-    if (data.masterClients && Array.isArray(data.masterClients) && data.masterClients.length > 0) {
-      saveClientMasterList(data.masterClients);
-    }
-    if (data.issuerProfile && typeof data.issuerProfile === 'object') {
-      saveIssuerProfile(data.issuerProfile);
-    }
-    if (data.expenses && Array.isArray(data.expenses)) {
-      const deletedSet = getDeletedExpenseIds();
-      if (Array.isArray(data.deletedExpenseIds)) {
-        data.deletedExpenseIds.forEach(id => {
-          if (id) {
-            const cleanId = String(id).trim();
-            recordDeletedExpenseId(cleanId);
-            deletedSet.add(cleanId);
+    const fetchFn = (typeof window !== 'undefined' && window.apiFetch) ? window.apiFetch : fetch;
+    try {
+      const res = await fetchFn('sync/pull-all', { cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (!data || data.offline) return { success: true, offline: true, message: 'ローカルデータを優先して使用します' };
+
+      if (data.masterItems && Array.isArray(data.masterItems) && data.masterItems.length > 0) {
+        const cleanItems = deduplicateItemMasterList(data.masterItems);
+        localStorageSetItemOnly(KEYS.ITEM_MASTER, JSON.stringify(cleanItems));
+      }
+      if (data.masterClients && Array.isArray(data.masterClients) && data.masterClients.length > 0) {
+        const cleanClients = deduplicateClientMasterList(data.masterClients);
+        localStorageSetItemOnly(KEYS.CLIENT_MASTER, JSON.stringify(cleanClients));
+      }
+      if (data.issuerProfile && typeof data.issuerProfile === 'object') {
+        let existingIssuer = {};
+        try {
+          const rawIssuer = localStorage.getItem(KEYS.ISSUER_PROFILE);
+          if (rawIssuer) existingIssuer = JSON.parse(rawIssuer) || {};
+        } catch (_) { }
+        const mergedIssuer = { ...existingIssuer, ...data.issuerProfile };
+        if ((!data.issuerProfile.stampDataUrl || !String(data.issuerProfile.stampDataUrl).trim()) && existingIssuer.stampDataUrl) {
+          mergedIssuer.stampDataUrl = existingIssuer.stampDataUrl;
+        }
+        if (data.issuerProfile.showStamp === undefined && existingIssuer.showStamp !== undefined) {
+          mergedIssuer.showStamp = existingIssuer.showStamp;
+        }
+        if ((!data.issuerProfile.bankInfo || !String(data.issuerProfile.bankInfo).trim()) && existingIssuer.bankInfo) {
+          mergedIssuer.bankInfo = existingIssuer.bankInfo;
+        }
+        localStorageSetItemOnly(KEYS.ISSUER_PROFILE, JSON.stringify(mergedIssuer));
+      }
+      if (data.expenses && Array.isArray(data.expenses)) {
+        const deletedSet = getDeletedExpenseIds();
+        if (Array.isArray(data.deletedExpenseIds)) {
+          data.deletedExpenseIds.forEach(id => {
+            if (id) {
+              const cleanId = String(id).trim();
+              recordDeletedExpenseId(cleanId);
+              deletedSet.add(cleanId);
+            }
+          });
+        }
+        const cleanExpenses = data.expenses.filter(e => e && e.id && !deletedSet.has(String(e.id).trim()) && !e.isDeleted && !e._deleted);
+        localStorageSetItemOnly(KEYS.EXPENSES, JSON.stringify(cleanExpenses));
+      }
+      if (data.invoicesHistory && Array.isArray(data.invoicesHistory)) {
+        const deletedInvoicesSet = typeof getDeletedInvoiceIds === 'function' ? getDeletedInvoiceIds() : (typeof getDeletedDocIds === 'function' ? getDeletedDocIds() : new Set());
+        const cleanInvoices = data.invoicesHistory.filter(inv => inv && inv.id && !deletedInvoicesSet.has(String(inv.id).trim()) && !inv.isDeleted && !inv._deleted);
+        localStorageSetItemOnly(KEYS.HISTORY, JSON.stringify(cleanInvoices));
+      }
+      if (data.attendance && Array.isArray(data.attendance)) {
+        try {
+          const localAtt = getAttendanceList();
+          const attMap = new Map();
+          if (Array.isArray(localAtt)) {
+            localAtt.forEach(r => { if (r && r.date) attMap.set(r.date, r); });
           }
-        });
+          let hasLocalAttNewer = false;
+          const srvDates = new Set(data.attendance.map(srv => srv && srv.date).filter(Boolean));
+          if (Array.isArray(localAtt) && localAtt.some(r => r && r.date && !srvDates.has(r.date))) {
+            hasLocalAttNewer = true;
+          }
+          data.attendance.forEach(srv => {
+            if (!srv || !srv.date) return;
+            const loc = attMap.get(srv.date);
+            if (!loc) {
+              attMap.set(srv.date, srv);
+            } else {
+              const sTime = new Date(srv.updatedAt || 0).getTime();
+              const lTime = new Date(loc.updatedAt || 0).getTime();
+              const clockIn = srv.clockIn || loc.clockIn || '';
+              const clockOut = srv.clockOut || loc.clockOut || '';
+              const note = srv.note || loc.note || '';
+              if ((!srv.clockIn && loc.clockIn) || (!srv.clockOut && loc.clockOut) || lTime > sTime) {
+                hasLocalAttNewer = true;
+              }
+              attMap.set(srv.date, {
+                id: srv.id || loc.id || ('att_' + srv.date),
+                date: srv.date,
+                clockIn: (lTime > sTime && loc.clockIn) ? loc.clockIn : clockIn,
+                clockOut: (lTime > sTime && loc.clockOut) ? loc.clockOut : clockOut,
+                note: (lTime > sTime && loc.note) ? loc.note : note,
+                updatedAt: (lTime > sTime ? loc.updatedAt : srv.updatedAt) || new Date().toISOString()
+              });
+            }
+          });
+          const mergedAtt = Array.from(attMap.values()).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+          localStorageSetItemOnly(KEYS.ATTENDANCE, JSON.stringify(mergedAtt));
+          if (hasLocalAttNewer) {
+            await saveServerAttendance(mergedAtt).catch(() => { });
+          }
+        } catch (attSyncErr) {
+          console.warn('pullAllServerDataToLocal attendance sync warning:', attSyncErr);
+        }
       }
-      const cleanExpenses = data.expenses.filter(e => e && e.id && !deletedSet.has(String(e.id).trim()) && !e.isDeleted && !e._deleted);
-      localStorageSetItemAndSync(KEYS.EXPENSES, JSON.stringify(cleanExpenses));
-    }
-    if (data.invoicesHistory && Array.isArray(data.invoicesHistory)) {
-      const deletedInvoicesSet = typeof getDeletedInvoiceIds === 'function' ? getDeletedInvoiceIds() : (typeof getDeletedDocIds === 'function' ? getDeletedDocIds() : new Set());
-      const cleanInvoices = data.invoicesHistory.filter(inv => inv && inv.id && !deletedInvoicesSet.has(String(inv.id).trim()) && !inv.isDeleted && !inv._deleted);
-      localStorageSetItemAndSync(KEYS.HISTORY, JSON.stringify(cleanInvoices));
-    }
-    if (data.attendance && Array.isArray(data.attendance)) {
-      try {
-        await syncAttendanceWithServer();
-      } catch (attSyncErr) {
-        console.warn('pullAllServerDataToLocal attendance sync warning:', attSyncErr);
+      if (data.accountMaster && Array.isArray(data.accountMaster) && data.accountMaster.length > 0) {
+        localStorageSetItemOnly(KEYS.ACCOUNT_MASTER, JSON.stringify(data.accountMaster));
       }
+      if (data.manualJournals && Array.isArray(data.manualJournals)) {
+        localStorageSetItemOnly(KEYS.MANUAL_JOURNALS, JSON.stringify(data.manualJournals));
+      }
+      if (data.fiscalSettings && typeof data.fiscalSettings === 'object') {
+        localStorageSetItemOnly(KEYS.FISCAL_SETTINGS, JSON.stringify(data.fiscalSettings));
+      }
+      if (data.lockedMonths && Array.isArray(data.lockedMonths)) {
+        const uniqueMonths = Array.from(new Set(data.lockedMonths.filter(Boolean))).sort().reverse();
+        localStorageSetItemOnly(KEYS.LOCKED_MONTHS, JSON.stringify(uniqueMonths));
+      }
+      if (data.itemCategories && Array.isArray(data.itemCategories) && data.itemCategories.length > 0) {
+        const cleanCats = Array.from(new Set(data.itemCategories.map(c => String(c || '').trim()).filter(Boolean)));
+        localStorageSetItemOnly(KEYS.ITEM_CATEGORIES, JSON.stringify(cleanCats));
+      }
+      if (data.nonStockCategories && Array.isArray(data.nonStockCategories) && data.nonStockCategories.length > 0) {
+        const cleanNonStock = Array.from(new Set(data.nonStockCategories.map(c => String(c || '').trim()).filter(Boolean)));
+        localStorageSetItemOnly(KEYS.NON_STOCK_CATEGORIES, JSON.stringify(cleanNonStock));
+      }
+      await Promise.all([
+        syncInventoryLotsWithServer(),
+        syncInventorySerialsWithServer(),
+        fetchServerInventory()
+      ]);
+      if (typeof syncInventoryStockFromIssuedDocs === 'function') syncInventoryStockFromIssuedDocs(false);
+      if (typeof syncInventoryStockFromSerials === 'function') syncInventoryStockFromSerials();
+
+      const result = { success: true, message: 'サーバーから最新データを同期しました！' };
+      _lastPullAllOnlineAt = Date.now();
+      _lastPullAllOnlineResult = result;
+      return result;
+    } catch (err) {
+      console.error('Failed to pull all data from server:', err);
+      return { success: false, error: err.message || err };
     }
-    if (data.accountMaster && Array.isArray(data.accountMaster) && data.accountMaster.length > 0) {
-      localStorageSetItemAndSync(KEYS.ACCOUNT_MASTER, JSON.stringify(data.accountMaster));
+  };
+
+  const p = runPull().finally(() => {
+    if (_pullAllInFlightPromise === p) {
+      _pullAllInFlightPromise = null;
     }
-    if (data.manualJournals && Array.isArray(data.manualJournals)) {
-      localStorageSetItemAndSync(KEYS.MANUAL_JOURNALS, JSON.stringify(data.manualJournals));
-    }
-    if (data.fiscalSettings && typeof data.fiscalSettings === 'object') {
-      localStorageSetItemAndSync(KEYS.FISCAL_SETTINGS, JSON.stringify(data.fiscalSettings));
-    }
-    if (data.lockedMonths && Array.isArray(data.lockedMonths)) {
-      saveLockedMonths(data.lockedMonths);
-    }
-    if (data.itemCategories && Array.isArray(data.itemCategories) && data.itemCategories.length > 0) {
-      saveItemCategoryList(data.itemCategories);
-    }
-    if (data.nonStockCategories && Array.isArray(data.nonStockCategories) && data.nonStockCategories.length > 0) {
-      saveNonStockCategories(data.nonStockCategories);
-    }
-    await Promise.all([
-      syncInventoryLotsWithServer(),
-      syncInventorySerialsWithServer(),
-      fetchServerInventory()
-    ]);
-    if (typeof syncInventoryStockFromIssuedDocs === 'function') syncInventoryStockFromIssuedDocs();
-    if (typeof syncInventoryStockFromSerials === 'function') syncInventoryStockFromSerials();
-    return { success: true, message: 'サーバーから最新データを同期しました！' };
-  } catch (err) {
-    console.error('Failed to pull all data from server:', err);
-    return { success: false, error: err.message || err };
-  }
+  });
+  _pullAllInFlightPromise = p;
+  return p;
 }
 
 /**
@@ -6654,8 +6805,7 @@ export function getInventoryLotList() {
 
     if (modified && raw) {
       try {
-        localStorageSetItemAndSync(KEYS.INVENTORY_LOTS, JSON.stringify(list));
-        saveServerInventoryLots(list).catch(() => { });
+        localStorageSetItemOnly(KEYS.INVENTORY_LOTS, JSON.stringify(list));
       } catch (_) { }
     }
 
@@ -6748,7 +6898,7 @@ export async function syncInventoryLotsWithServer() {
         return dateB.localeCompare(dateA);
       });
 
-      localStorageSetItemAndSync(KEYS.INVENTORY_LOTS, JSON.stringify(mergedLots));
+      localStorageSetItemOnly(KEYS.INVENTORY_LOTS, JSON.stringify(mergedLots));
       if (hasLocalOnly) {
         saveServerInventoryLots(mergedLots).catch(() => { });
       }
@@ -6969,7 +7119,7 @@ export function syncInventoryStockFromSerials() {
  * 発行済伝票（確定された納品書・請求書）から出荷数量を集計し、
  * 非シリアル商品および単品在庫を自動引き落とし・同期する
  */
-export function syncInventoryStockFromIssuedDocs() {
+export function syncInventoryStockFromIssuedDocs(syncToServer = true) {
   try {
     // 伝票履歴（書類履歴）を全件取得
     const docs = getHistoryList();
@@ -7002,8 +7152,12 @@ export function syncInventoryStockFromIssuedDocs() {
         if (Array.isArray(items)) {
           const cleanItems = items.filter(it => !it.name || (!it.name.includes('てすと') && !it.name.toLowerCase().includes('test') && !/値引|割引|相殺|調整/i.test(it.name)));
           if (cleanItems.length !== items.length) {
-            localStorageSetItemAndSync(KEYS.ITEMS, JSON.stringify(cleanItems));
-            saveServerItemMaster(cleanItems).catch(() => { });
+            if (syncToServer) {
+              localStorageSetItemAndSync(KEYS.ITEMS, JSON.stringify(cleanItems));
+              saveServerItemMaster(cleanItems).catch(() => { });
+            } else {
+              localStorageSetItemOnly(KEYS.ITEMS, JSON.stringify(cleanItems));
+            }
           }
         }
       }
@@ -7409,8 +7563,12 @@ export function syncInventoryStockFromIssuedDocs() {
     });
 
     if (modified) {
-      localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(invList));
-      saveServerInventory(invList).catch(() => { });
+      if (syncToServer) {
+        localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(invList));
+        saveServerInventory(invList).catch(() => { });
+      } else {
+        localStorageSetItemOnly(KEYS.INVENTORY, JSON.stringify(invList));
+      }
       console.log('【伝票在庫連動】発行済伝票から実在庫を自動引落・同期しました:', summary);
     }
 
@@ -7427,13 +7585,13 @@ export function getInventorySerialList() {
     const raw = localStorage.getItem(KEYS.INVENTORY_SERIALS);
     if (!raw) {
       const filteredDefaults = DEFAULT_INVENTORY_SERIALS.filter(s => !deletedSerials.has(String(s.serialNumber).trim().toUpperCase()));
-      localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(filteredDefaults));
+      localStorageSetItemOnly(KEYS.INVENTORY_SERIALS, JSON.stringify(filteredDefaults));
       return [...filteredDefaults];
     }
     let parsed = JSON.parse(raw);
     if (!Array.isArray(parsed) || parsed.length === 0) {
       const filteredDefaults = DEFAULT_INVENTORY_SERIALS.filter(s => !deletedSerials.has(String(s.serialNumber).trim().toUpperCase()));
-      localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(filteredDefaults));
+      localStorageSetItemOnly(KEYS.INVENTORY_SERIALS, JSON.stringify(filteredDefaults));
       return [...filteredDefaults];
     }
 
@@ -7446,7 +7604,7 @@ export function getInventorySerialList() {
     const hasNSerial = parsed.some(s => s && s.serialNumber && /^N\s*\d{4,5}$/i.test(String(s.serialNumber).trim()));
     if (!hasNSerial) {
       const filteredDefaults = DEFAULT_INVENTORY_SERIALS.filter(s => !deletedSerials.has(String(s.serialNumber).trim().toUpperCase()));
-      localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(filteredDefaults));
+      localStorageSetItemOnly(KEYS.INVENTORY_SERIALS, JSON.stringify(filteredDefaults));
       return [...filteredDefaults];
     }
 
@@ -7500,7 +7658,7 @@ export function getInventorySerialList() {
     }
     const bundleChanged = syncBundledBatteriesWithParents(parsed);
     if (updated || bundleChanged) {
-      localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(parsed));
+      localStorageSetItemOnly(KEYS.INVENTORY_SERIALS, JSON.stringify(parsed));
     }
     return parsed;
   } catch (e) {
@@ -7952,7 +8110,7 @@ export function updateSerialDetails(serialNumber, updates = {}) {
  * 伝票記載のシリアル番号を出荷済（shipped）へ自動引き落とし・伝票完全紐付け
  * 先行出荷されたシリアルが後からロット入庫された場合でも確実に自動連動
  */
-export function syncInventorySerialsFromIssuedDocs() {
+export function syncInventorySerialsFromIssuedDocs(syncToServer = true) {
   try {
     const docs = getHistoryList();
     const list = getInventorySerialList();
@@ -8296,8 +8454,12 @@ export function syncInventorySerialsFromIssuedDocs() {
     // 3. デモ機ステータス整合性保護（既に demo として伝票紐付済みのレコードは汎用的に保護）
 
     if (modified) {
-      localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(list));
-      saveServerInventorySerials(list).catch(() => { });
+      if (syncToServer) {
+        localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(list));
+        saveServerInventorySerials(list).catch(() => { });
+      } else {
+        localStorageSetItemOnly(KEYS.INVENTORY_SERIALS, JSON.stringify(list));
+      }
       console.log(`【シリアル伝票出荷引落】全 ${updatedSerials.length} 件のシリアルを発行伝票から出荷済みに引き落としました:`, updatedSerials);
       // 在庫マスタ連動
       syncInventoryStockFromSerials();
@@ -9041,7 +9203,6 @@ export async function fetchServerInventorySerials() {
 export async function syncInventorySerialsWithServer() {
   try {
     const serverSerials = await fetchServerInventorySerials();
-    const localSerials = getInventorySerialList();
 
     if (serverSerials && Array.isArray(serverSerials)) {
       const deletedSerials = getDeletedSerialNumbers();
@@ -9054,14 +9215,35 @@ export async function syncInventorySerialsWithServer() {
         serialMap.set(sn, s);
       });
 
+      // 未読込みの初期デフォルト補完が「ローカル未同期変更」としてサーバーへ逆流するのを防止
+      const rawLocal = localStorage.getItem(KEYS.INVENTORY_SERIALS);
+      let localSerials = [];
+      if (rawLocal) {
+        try {
+          const parsedLocal = JSON.parse(rawLocal);
+          if (Array.isArray(parsedLocal)) localSerials = parsedLocal;
+        } catch (_) { }
+      }
+      const defaultSnMap = new Map(
+        DEFAULT_INVENTORY_SERIALS.map(d => [String(d.serialNumber || '').trim().toUpperCase(), d])
+      );
+
       let hasLocalOnly = false;
       localSerials.forEach(s => {
         if (!s || !s.serialNumber) return;
         const sn = String(s.serialNumber).trim().toUpperCase();
         if (deletedSerials.has(sn)) return;
         if (!serialMap.has(sn)) {
-          serialMap.set(sn, s);
-          hasLocalOnly = true;
+          const defRec = defaultSnMap.get(sn);
+          const isUnmodifiedDefault = defRec &&
+            (s.status || '') === (defRec.status || '') &&
+            (s.docNumber || '') === (defRec.docNumber || '') &&
+            (s.clientName || '') === (defRec.clientName || '') &&
+            !!s.isBundled === !!defRec.isBundled;
+          if (!isUnmodifiedDefault || serverSerials.length === 0) {
+            serialMap.set(sn, s);
+            hasLocalOnly = true;
+          }
         } else {
           const sItem = serialMap.get(sn);
           // サーバー側に確定伝票番号(docNumber)がある場合、ローカルの空文字・未設定による破損・巻き戻しを防止
@@ -9087,7 +9269,7 @@ export async function syncInventorySerialsWithServer() {
       mergedSerials.forEach(s => {
         if (s && s.note) s.note = sanitizeSerialNote(s.note);
       });
-      localStorageSetItemAndSync(KEYS.INVENTORY_SERIALS, JSON.stringify(mergedSerials));
+      localStorageSetItemOnly(KEYS.INVENTORY_SERIALS, JSON.stringify(mergedSerials));
       if (hasLocalOnly) {
         saveServerInventorySerials(mergedSerials).catch(() => { });
       }
