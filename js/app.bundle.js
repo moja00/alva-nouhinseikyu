@@ -3580,6 +3580,8 @@ const KEYS = {
   LOCKED_MONTHS: 'billcraft_locked_months',
   DELETED_DOC_IDS: 'quickdoc_deleted_doc_ids',
   DELETED_EXPENSE_IDS: 'billcraft_deleted_expense_ids',
+  DELETED_ITEM_IDS: 'billcraft_deleted_item_ids',
+  DELETED_INVENTORY_IDS: 'billcraft_deleted_inventory_ids',
   TRASH_HISTORY: 'quickdoc_trash_history',
   DELETED_SERIALS: 'billcraft_deleted_serials'
 };
@@ -3654,6 +3656,41 @@ function removeDeletedSerial(sn) {
     set.delete(String(sn).trim().toUpperCase());
     localStorageSetItemAndSync(KEYS.DELETED_SERIALS, JSON.stringify(Array.from(set)));
   } catch (e) { }
+}
+
+function getDeletedIdSetFromKey(storageKey, builtInIds = []) {
+  try {
+    const raw = localStorage.getItem(storageKey);
+    const set = new Set(raw ? JSON.parse(raw) : []);
+    builtInIds.forEach(id => { if (id) set.add(id); });
+    return set;
+  } catch (e) {
+    return new Set(builtInIds);
+  }
+}
+
+function appendDeletedIdToKey(storageKey, id, builtInIds = []) {
+  if (!id) return;
+  try {
+    const set = getDeletedIdSetFromKey(storageKey, builtInIds);
+    set.add(String(id).trim());
+    localStorage.setItem(storageKey, JSON.stringify(Array.from(set).slice(-500)));
+  } catch (e) { }
+}
+
+const PURGED_ITEM_IDS = ['prod_1794963615636_usf7'];
+const PURGED_INVENTORY_IDS = ['inv_prod_1794963615636_usf7'];
+function getDeletedItemIds() {
+  return getDeletedIdSetFromKey(KEYS.DELETED_ITEM_IDS, PURGED_ITEM_IDS);
+}
+function recordDeletedItemId(id) {
+  appendDeletedIdToKey(KEYS.DELETED_ITEM_IDS, id, PURGED_ITEM_IDS);
+}
+function getDeletedInventoryIds() {
+  return getDeletedIdSetFromKey(KEYS.DELETED_INVENTORY_IDS, PURGED_INVENTORY_IDS);
+}
+function recordDeletedInventoryId(id) {
+  appendDeletedIdToKey(KEYS.DELETED_INVENTORY_IDS, id, PURGED_INVENTORY_IDS);
 }
 function recordDeletedExpenseId(id) {
   if (!id) return;
@@ -4553,10 +4590,12 @@ const DEFAULT_PURCHASE_MAPPINGS = {
  */
 function deduplicateItemMasterList(list) {
   if (!Array.isArray(list)) return [];
+  const deletedItemIds = getDeletedItemIds();
   const map = new Map();
 
   for (const item of list) {
     if (!item || !item.name) continue;
+    if (item.id && deletedItemIds.has(String(item.id).trim())) continue;
     const cleanName = (item.name || '').trim();
     if (!cleanName) continue;
     let key = getMasterKey(cleanName);
@@ -5837,12 +5876,15 @@ async function fetchServerMasterItems() {
   }
   return null;
 }
-async function saveServerMasterItems(items) {
+async function saveServerMasterItems(items, deletedIds = null) {
   try {
+    const payload = (Array.isArray(deletedIds) && deletedIds.length > 0)
+      ? { items, deletedIds }
+      : items;
     const res = await apiFetch('master/items', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(items)
+      body: JSON.stringify(payload)
     });
     return res.ok;
   } catch (e) {
@@ -6838,11 +6880,18 @@ function findItemMasterByName(name) {
  */
 function deleteItemFromMaster(id) {
   try {
+    const cleanId = id ? String(id).trim() : '';
+    if (cleanId) {
+      recordDeletedItemId(cleanId);
+      recordDeletedInventoryId(cleanId);
+      recordDeletedInventoryId('inv_' + cleanId);
+    }
     const list = getItemMasterList(false);
     const targetItem = list.find(i => i.id === id);
     const filtered = list.filter(i => i.id !== id);
     saveItemMasterList(filtered);
-    // サーバーのFirestoreから個別削除
+    // サーバーのFirestoreから個別削除 ＋ 削除済みID永続化
+    saveServerMasterItems(filtered, cleanId ? [cleanId] : null).catch(() => { });
     deleteServerEntity('items', id).catch(e => {
       console.warn('Server item delete failed:', e);
     });
@@ -6850,11 +6899,21 @@ function deleteItemFromMaster(id) {
     // 在庫品目マスタ（KEYS.INVENTORY）からも連動して削除
     const invList = getInventoryList();
     const targetName = targetItem ? targetItem.name : '';
-    const newInvList = invList.filter(inv => inv.id !== id && inv.name !== targetName);
+    const deletedInvIds = [];
+    const newInvList = invList.filter(inv => {
+      const shouldDrop = inv.id === id || inv.name === targetName || inv.itemId === id;
+      if (shouldDrop && inv.id) {
+        recordDeletedInventoryId(inv.id);
+        deletedInvIds.push(inv.id);
+      }
+      return !shouldDrop;
+    });
     if (newInvList.length !== invList.length) {
       localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(newInvList));
       saveServerInventory(newInvList).catch(() => { });
-      deleteServerEntity('inventory', id).catch(() => { });
+      deletedInvIds.forEach(dInvId => {
+        deleteServerEntity('inventory', dInvId).catch(() => { });
+      });
     }
 
     return true;
@@ -7141,17 +7200,21 @@ async function syncMastersWithServer(force = false) {
     }
 
     // 1. 商品マスタの同期（スマートマージ: サーバー・ローカル双方の最新データを保護）
+    const deletedItemIds = getDeletedItemIds();
     const serverItems = await fetchServerMasterItems();
     const localItems = getItemMasterList(false);
     if (serverItems && Array.isArray(serverItems)) {
       const mergedMap = new Map();
       serverItems.forEach(i => {
-        if (i && (i.id || i.name)) mergedMap.set(i.id || i.name, i);
+        if (i && (i.id || i.name) && !(i.id && deletedItemIds.has(String(i.id).trim()))) {
+          mergedMap.set(i.id || i.name, i);
+        }
       });
       let hasLocalChanges = false;
       localItems.forEach(i => {
         const key = i.id || i.name;
         if (!key) return;
+        if (i.id && deletedItemIds.has(String(i.id).trim())) return;
         if (!mergedMap.has(key)) {
           mergedMap.set(key, i);
           hasLocalChanges = true;
@@ -8671,10 +8734,13 @@ async function initInventoryFromServer(force = false) {
  */
 function deduplicateInventoryList(rawList) {
   if (!Array.isArray(rawList)) return [];
+  const deletedInvIds = getDeletedInventoryIds();
   const map = new Map();
 
   for (const inv of rawList) {
     if (!inv || !inv.name) continue;
+    if (inv.id && deletedInvIds.has(String(inv.id).trim())) continue;
+    if (inv.itemId && getDeletedItemIds().has(String(inv.itemId).trim())) continue;
     // 1. サンプル品目の完全排除
     if (isSampleItem(inv)) continue;
 
@@ -9063,6 +9129,7 @@ function saveInventoryList(list) {
  */
 function deleteInventoryItem(id) {
   try {
+    if (id) recordDeletedInventoryId(id);
     const list = getInventoryList();
     const filtered = list.filter(i => i.id !== id);
     localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(filtered));
@@ -10015,6 +10082,12 @@ async function pullAllServerDataToLocal(force = false) {
       const data = await res.json();
       if (!data || data.offline) return { success: true, offline: true, message: 'ローカルデータを優先して使用します' };
 
+      if (Array.isArray(data.deletedItemIds)) {
+        data.deletedItemIds.forEach(id => { if (id) recordDeletedItemId(id); });
+      }
+      if (Array.isArray(data.deletedInventoryIds)) {
+        data.deletedInventoryIds.forEach(id => { if (id) recordDeletedInventoryId(id); });
+      }
       if (data.masterItems && Array.isArray(data.masterItems) && data.masterItems.length > 0) {
         const cleanItems = deduplicateItemMasterList(data.masterItems);
         localStorageSetItemOnly(KEYS.ITEM_MASTER, JSON.stringify(cleanItems));
@@ -14777,15 +14850,20 @@ function renderDeliveryAndReceiptSubSheets(totals, displayUsers, endUserNamePart
   if (!container) return;
 
   const pageInd1 = document.getElementById('sheetPageIndicator1Text');
+  const mobileTabs = document.getElementById('mobileSheetTabs');
+  const previewWrapper = document.getElementById('previewWrapper');
 
   // 見積書の場合は納品書・領収書は生成せず、単票表示にする
   if (currentDoc.docType === 'estimate') {
     container.innerHTML = '';
     if (pageInd1) pageInd1.textContent = 'ページ 1 / 1 【御見積書】';
+    if (mobileTabs) mobileTabs.style.display = 'none';
+    if (previewWrapper) previewWrapper.setAttribute('data-mobile-sheet', '1');
     return;
   }
 
   if (pageInd1) pageInd1.textContent = 'ページ 1 / 3 【御請求書】';
+  if (mobileTabs) mobileTabs.style.display = '';
 
   // 共通データ
   const docNo = escapeHtml(currentDoc.docNumber || '');
@@ -14871,10 +14949,10 @@ function renderDeliveryAndReceiptSubSheets(totals, displayUsers, endUserNamePart
   // ページ2: 御納品書
   // -------------------------------------------------------------
   const deliveryPageHtml = `
-    <div class="sheet-page-indicator no-print" style="margin-top: 32px; margin-bottom: 8px;">
+    <div class="sheet-page-indicator no-print" data-sheet-page="2" style="margin-top: 32px; margin-bottom: 8px;">
       <span>📄</span> ページ 2 / 3 【御納品書】
     </div>
-    <article class="invoice-sheet invoice-sheet-page" id="deliverySheet">
+    <article class="invoice-sheet invoice-sheet-page" id="deliverySheet" data-sheet-page="2">
       <header class="sheet-header">
         <div class="sheet-title-box">
           <h2 class="sheet-title">御 納 品 書</h2>
@@ -14990,10 +15068,10 @@ function renderDeliveryAndReceiptSubSheets(totals, displayUsers, endUserNamePart
   // -------------------------------------------------------------
   const subjectName = (currentDoc.title || '商品代').trim();
   const receiptPageHtml = `
-    <div class="sheet-page-indicator no-print" style="margin-top: 32px; margin-bottom: 8px;">
+    <div class="sheet-page-indicator no-print" data-sheet-page="3" style="margin-top: 32px; margin-bottom: 8px;">
       <span>📄</span> ページ 3 / 3 【領収証】
     </div>
-    <article class="invoice-sheet invoice-sheet-page" id="receiptSheet">
+    <article class="invoice-sheet invoice-sheet-page" id="receiptSheet" data-sheet-page="3">
       <header class="sheet-header">
         <div class="sheet-title-box">
           <h2 class="sheet-title">領 収 証</h2>
@@ -18705,6 +18783,18 @@ function setupEventListeners() {
       triggerGlobalManualSync();
       return;
     }
+    const mobileSheetTabBtn = e.target.closest('.mobile-sheet-tab-btn');
+    if (mobileSheetTabBtn) {
+      e.preventDefault();
+      const page = mobileSheetTabBtn.getAttribute('data-sheet-page') || '1';
+      console.log('【モバイルシート切替】表示ページ変更:', page);
+      const wrapper = document.getElementById('previewWrapper');
+      if (wrapper) wrapper.setAttribute('data-mobile-sheet', page);
+      document.querySelectorAll('.mobile-sheet-tab-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-sheet-page') === page);
+      });
+      return;
+    }
   });
 
   // モバイル端末等の画面復帰時（スリープ解除や他アプリから復帰時）の勤怠自動同期
@@ -18852,8 +18942,18 @@ function setupPullToRefresh() {
   const PULL_THRESHOLD = 110; // しっかり下に引き下げるゆとりのあるしきい値 (px)
   const PULL_DEADZONE = 25;   // 誤操作防止のデッドゾーン (px)
 
+  // ピンチズーム（2本指以上）および拡大表示中はプル更新を無効化し、WebKitの固定レイヤー誤作動を防止
+  const isZoomOrMultiTouch = (e) => {
+    const vvScale = (window.visualViewport && window.visualViewport.scale) ? window.visualViewport.scale : 1;
+    const touchCount = (e && e.touches) ? e.touches.length : 0;
+    return touchCount > 1 || vvScale > 1.05;
+  };
+
   window.addEventListener('touchstart', (e) => {
-    if (isRefreshing || !e.touches || !e.touches[0]) return;
+    if (isRefreshing || !e.touches || e.touches.length !== 1 || isZoomOrMultiTouch(e)) {
+      isPulling = false;
+      return;
+    }
     // 画面最上部にいる時のみプル開始を許可
     const scrollY = window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
     if (scrollY <= 2) {
@@ -18869,6 +18969,11 @@ function setupPullToRefresh() {
 
   window.addEventListener('touchmove', (e) => {
     if (!isPulling || isRefreshing || !e.touches || !e.touches[0]) return;
+    if (isZoomOrMultiTouch(e)) {
+      isPulling = false;
+      ptr.style.transform = 'translateY(0)';
+      return;
+    }
     currentX = e.touches[0].pageX;
     currentY = e.touches[0].pageY;
     const diffX = currentX - startX;

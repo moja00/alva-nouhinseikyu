@@ -1598,15 +1598,20 @@ function renderDeliveryAndReceiptSubSheets(totals, displayUsers, endUserNamePart
   if (!container) return;
 
   const pageInd1 = document.getElementById('sheetPageIndicator1Text');
+  const mobileTabs = document.getElementById('mobileSheetTabs');
+  const previewWrapper = document.getElementById('previewWrapper');
 
   // 見積書の場合は納品書・領収書は生成せず、単票表示にする
   if (currentDoc.docType === 'estimate') {
     container.innerHTML = '';
     if (pageInd1) pageInd1.textContent = 'ページ 1 / 1 【御見積書】';
+    if (mobileTabs) mobileTabs.style.display = 'none';
+    if (previewWrapper) previewWrapper.setAttribute('data-mobile-sheet', '1');
     return;
   }
 
   if (pageInd1) pageInd1.textContent = 'ページ 1 / 3 【御請求書】';
+  if (mobileTabs) mobileTabs.style.display = '';
 
   // 共通データ
   const docNo = escapeHtml(currentDoc.docNumber || '');
@@ -1692,10 +1697,10 @@ function renderDeliveryAndReceiptSubSheets(totals, displayUsers, endUserNamePart
   // ページ2: 御納品書
   // -------------------------------------------------------------
   const deliveryPageHtml = `
-    <div class="sheet-page-indicator no-print" style="margin-top: 32px; margin-bottom: 8px;">
+    <div class="sheet-page-indicator no-print" data-sheet-page="2" style="margin-top: 32px; margin-bottom: 8px;">
       <span>📄</span> ページ 2 / 3 【御納品書】
     </div>
-    <article class="invoice-sheet invoice-sheet-page" id="deliverySheet">
+    <article class="invoice-sheet invoice-sheet-page" id="deliverySheet" data-sheet-page="2">
       <header class="sheet-header">
         <div class="sheet-title-box">
           <h2 class="sheet-title">御 納 品 書</h2>
@@ -1811,10 +1816,10 @@ function renderDeliveryAndReceiptSubSheets(totals, displayUsers, endUserNamePart
   // -------------------------------------------------------------
   const subjectName = (currentDoc.title || '商品代').trim();
   const receiptPageHtml = `
-    <div class="sheet-page-indicator no-print" style="margin-top: 32px; margin-bottom: 8px;">
+    <div class="sheet-page-indicator no-print" data-sheet-page="3" style="margin-top: 32px; margin-bottom: 8px;">
       <span>📄</span> ページ 3 / 3 【領収証】
     </div>
-    <article class="invoice-sheet invoice-sheet-page" id="receiptSheet">
+    <article class="invoice-sheet invoice-sheet-page" id="receiptSheet" data-sheet-page="3">
       <header class="sheet-header">
         <div class="sheet-title-box">
           <h2 class="sheet-title">領 収 証</h2>
@@ -5526,6 +5531,18 @@ function setupEventListeners() {
       triggerGlobalManualSync();
       return;
     }
+    const mobileSheetTabBtn = e.target.closest('.mobile-sheet-tab-btn');
+    if (mobileSheetTabBtn) {
+      e.preventDefault();
+      const page = mobileSheetTabBtn.getAttribute('data-sheet-page') || '1';
+      console.log('【モバイルシート切替】表示ページ変更:', page);
+      const wrapper = document.getElementById('previewWrapper');
+      if (wrapper) wrapper.setAttribute('data-mobile-sheet', page);
+      document.querySelectorAll('.mobile-sheet-tab-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-sheet-page') === page);
+      });
+      return;
+    }
   });
 
   // モバイル端末等の画面復帰時（スリープ解除や他アプリから復帰時）の勤怠自動同期
@@ -5673,8 +5690,18 @@ function setupPullToRefresh() {
   const PULL_THRESHOLD = 110; // しっかり下に引き下げるゆとりのあるしきい値 (px)
   const PULL_DEADZONE = 25;   // 誤操作防止のデッドゾーン (px)
 
+  // ピンチズーム（2本指以上）および拡大表示中はプル更新を無効化し、WebKitの固定レイヤー誤作動を防止
+  const isZoomOrMultiTouch = (e) => {
+    const vvScale = (window.visualViewport && window.visualViewport.scale) ? window.visualViewport.scale : 1;
+    const touchCount = (e && e.touches) ? e.touches.length : 0;
+    return touchCount > 1 || vvScale > 1.05;
+  };
+
   window.addEventListener('touchstart', (e) => {
-    if (isRefreshing || !e.touches || !e.touches[0]) return;
+    if (isRefreshing || !e.touches || e.touches.length !== 1 || isZoomOrMultiTouch(e)) {
+      isPulling = false;
+      return;
+    }
     // 画面最上部にいる時のみプル開始を許可
     const scrollY = window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
     if (scrollY <= 2) {
@@ -5690,6 +5717,11 @@ function setupPullToRefresh() {
 
   window.addEventListener('touchmove', (e) => {
     if (!isPulling || isRefreshing || !e.touches || !e.touches[0]) return;
+    if (isZoomOrMultiTouch(e)) {
+      isPulling = false;
+      ptr.style.transform = 'translateY(0)';
+      return;
+    }
     currentX = e.touches[0].pageX;
     currentY = e.touches[0].pageY;
     const diffX = currentX - startX;

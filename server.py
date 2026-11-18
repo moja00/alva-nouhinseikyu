@@ -963,6 +963,40 @@ def _parse_iso_epoch(val):
         return None
 
 
+DELETED_SETTINGS_MAP = {
+    'invoices': 'deleted_invoices',
+    'expenses': 'deleted_expenses',
+    'items': 'deleted_items',
+    'inventory': 'deleted_inventory',
+}
+
+def get_deleted_fs_ids(col_name):
+    doc_name = DELETED_SETTINGS_MAP.get(col_name)
+    if not doc_name or not db:
+        return set()
+    try:
+        snap = db.collection('settings').document(doc_name).get()
+        if snap.exists:
+            return set(str(x).strip() for x in (snap.to_dict() or {}).get('ids', []) if x)
+    except Exception as e_del:
+        print(f"[Firestore {doc_name} 読込エラー]: {e_del}")
+    return set()
+
+def record_deleted_fs_ids(col_name, ids_to_add):
+    doc_name = DELETED_SETTINGS_MAP.get(col_name)
+    if not doc_name or not db or not ids_to_add:
+        return
+    try:
+        existing = get_deleted_fs_ids(col_name)
+        updated = set(existing)
+        for d_id in ids_to_add:
+            if d_id:
+                updated.add(str(d_id).strip())
+        if updated != existing:
+            db.collection('settings').document(doc_name).set({'ids': list(updated)[-500:]})
+    except Exception as e_save_del:
+        print(f"[Firestore {doc_name} 永続化エラー]: {e_save_del}")
+
 def save_fs_collection(col_name, data_list, id_field='id', deleted_ids=None):
     """
     コレクション内のデータをUpsert（追加・更新）する。
@@ -992,45 +1026,27 @@ def save_fs_collection(col_name, data_list, id_field='id', deleted_ids=None):
             except Exception as e_att:
                 print(f"[Firestore {col_name} 既存取得警告]: {e_att}")
 
-        # 書類・経費の場合、永続化された削除済みIDリストを考慮してゾンビ復活を完全防止
-        persistent_deleted_ids = set()
-        settings_doc_name = None
-        if col_name == 'invoices':
-            settings_doc_name = 'deleted_invoices'
-        elif col_name == 'expenses':
-            settings_doc_name = 'deleted_expenses'
-
-        if settings_doc_name:
-            try:
-                del_snap = db.collection('settings').document(settings_doc_name).get()
-                if del_snap.exists:
-                    persistent_deleted_ids = set(del_snap.to_dict().get('ids', []))
-            except Exception as e_del:
-                print(f"[Firestore {settings_doc_name} 読込エラー]: {e_del}")
+        # 書類・経費・商品・在庫マスタの永続化された削除済みIDリストを考慮してゾンビ復活を完全防止
+        persistent_deleted_ids = get_deleted_fs_ids(col_name)
+        settings_doc_name = DELETED_SETTINGS_MAP.get(col_name)
 
         # 明示的に削除指定されたIDがあれば削除＆永続削除リストへ登録
         if deleted_ids:
-            new_deleted_set = set(persistent_deleted_ids)
-            for d_id in deleted_ids:
-                if d_id:
-                    clean_did = str(d_id).strip()
-                    new_deleted_set.add(clean_did)
-                    del_doc_ref = db.collection(col_name).document(clean_did)
-                    if col_name == 'invoices':
-                        batch.set(del_doc_ref, {'_deleted': True, 'deletedAt': datetime.now(timezone.utc).isoformat()}, merge=True)
-                    else:
-                        batch.delete(del_doc_ref)
-                    count += 1
-                    if count >= 450:
-                        batch.commit()
-                        batch = db.batch()
-                        count = 0
-            if settings_doc_name and new_deleted_set != persistent_deleted_ids:
-                try:
-                    db.collection('settings').document(settings_doc_name).set({'ids': list(new_deleted_set)[-500:]})
-                    persistent_deleted_ids = new_deleted_set
-                except Exception as e_save_del:
-                    print(f"[Firestore {settings_doc_name} 永続化エラー]: {e_save_del}")
+            cleaned_del_ids = [str(d_id).strip() for d_id in deleted_ids if d_id]
+            for clean_did in cleaned_del_ids:
+                del_doc_ref = db.collection(col_name).document(clean_did)
+                if col_name == 'invoices':
+                    batch.set(del_doc_ref, {'_deleted': True, 'deletedAt': datetime.now(timezone.utc).isoformat()}, merge=True)
+                else:
+                    batch.delete(del_doc_ref)
+                count += 1
+                if count >= 450:
+                    batch.commit()
+                    batch = db.batch()
+                    count = 0
+            if settings_doc_name and cleaned_del_ids:
+                record_deleted_fs_ids(col_name, cleaned_del_ids)
+                persistent_deleted_ids.update(cleaned_del_ids)
 
         # 送信されたアイテムのUpsert（追加・更新）のみ実行
         for item in data_list:
@@ -1098,17 +1114,12 @@ def delete_fs_item(col_name, item_id):
         if not clean_id:
             return False, "IDが空です"
 
-        # 経費の場合、削除IDを永続化し、関連レシート画像もクリーンアップ
-        if col_name == 'expenses':
-            try:
-                del_snap = db.collection('settings').document('deleted_expenses').get()
-                existing_ids = del_snap.to_dict().get('ids', []) if del_snap.exists else []
-                if clean_id not in existing_ids:
-                    existing_ids.append(clean_id)
-                    db.collection('settings').document('deleted_expenses').set({'ids': existing_ids[-500:]})
-            except Exception as e_del:
-                print(f"[Firestore 経費削除ID永続化エラー (継続)]: {e_del}")
+        # 永続削除リスト対応コレクション（書類・経費・商品・在庫）は削除IDを記録し他端末からの復活を防止
+        if col_name in DELETED_SETTINGS_MAP:
+            record_deleted_fs_ids(col_name, [clean_id])
 
+        # 経費の場合、関連レシート画像もクリーンアップ
+        if col_name == 'expenses':
             try:
                 doc_snap = db.collection('expenses').document(clean_id).get()
                 if doc_snap.exists:
@@ -1124,15 +1135,9 @@ def delete_fs_item(col_name, item_id):
             except Exception as e_rec:
                 print(f"[GCS 経費レシート削除警告 (無視して継続)]: {e_rec}")
 
-        # 書類の場合、削除IDを永続化し、編集中伝票とも連動クリア
+        # 書類の場合、編集中伝票のクリア＆論理削除保持
         if col_name == 'invoices':
             try:
-                del_snap = db.collection('settings').document('deleted_invoices').get()
-                existing_ids = del_snap.to_dict().get('ids', []) if del_snap.exists else []
-                if clean_id not in existing_ids:
-                    existing_ids.append(clean_id)
-                    db.collection('settings').document('deleted_invoices').set({'ids': existing_ids[-500:]})
-
                 # 編集中伝票が同一書類であればアクティブ伝票もクリア
                 act_snap = db.collection('settings').document('active_doc').get()
                 if act_snap.exists:
@@ -1541,12 +1546,15 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
 
         # 一括同期 (Pull)
         if self.path == '/api/sync/pull-all':
-            del_expenses_snap = db.collection('settings').document('deleted_expenses').get() if db else None
-            del_expense_ids = del_expenses_snap.to_dict().get('ids', []) if (del_expenses_snap and del_expenses_snap.exists) else []
+            del_expense_ids = list(get_deleted_fs_ids('expenses'))
+            del_item_ids = list(get_deleted_fs_ids('items'))
+            del_inventory_ids = list(get_deleted_fs_ids('inventory'))
             cat_doc = get_fs_document('settings', 'item_categories', {})
 
             data = {
                 'masterItems': get_fs_collection('items', []),
+                'deletedItemIds': del_item_ids,
+                'deletedInventoryIds': del_inventory_ids,
                 'masterClients': get_fs_collection('clients', []),
                 'issuerProfile': get_fs_document('settings', 'issuer', {}),
                 'expenses': get_fs_collection('expenses', []),
@@ -1621,7 +1629,7 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
                 payload = json.loads(post_data)
                 
                 if 'masterItems' in payload:
-                    save_fs_collection('items', payload['masterItems'])
+                    save_fs_collection('items', payload['masterItems'], deleted_ids=payload.get('deletedItemIds'))
                 if 'masterClients' in payload:
                     save_fs_collection('clients', payload['masterClients'])
                 if 'issuerProfile' in payload:

@@ -501,6 +501,11 @@ label.form-label {
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.4);
 }
 
+/* スマホ用ページ切替タブ（PC・印刷時は非表示） */
+.mobile-sheet-tabs {
+  display: none;
+}
+
 /* ==========================================================================
    A4用紙シートプレビュー（印刷対象）
    210mm × 297mm (794px × 1123px at 96dpi)
@@ -2807,23 +2812,74 @@ label.form-label {
     height: auto !important;
     overflow-x: auto !important;
     overflow-y: visible !important;
-    padding: 16px 8px !important;
+    padding: 12px 8px 24px !important;
     background: #475569 !important;
-    -webkit-overflow-scrolling: touch;
-    display: flex;
-    justify-content: flex-start;
+    -webkit-overflow-scrolling: auto !important;
+    display: block !important;
   }
 
-  /* プレビューツールバーを横スクロール可能に */
+  /* スマホ用1枚表示切替タブ（3枚同時描画によるWebKitズームクラッシュ防止） */
+  .mobile-sheet-tabs {
+    display: flex;
+    gap: 6px;
+    width: 100%;
+    margin: 10px 0 8px;
+    box-sizing: border-box;
+  }
+
+  .mobile-sheet-tab-btn {
+    flex: 1;
+    padding: 8px 6px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #e2e8f0;
+    background: #334155;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    cursor: pointer;
+    touch-action: manipulation;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  .mobile-sheet-tab-btn.active {
+    background: #2563eb;
+    color: #ffffff;
+    border-color: #60a5fa;
+  }
+
+  .preview-wrapper {
+    max-width: 100% !important;
+    margin-bottom: 12px !important;
+    transition: none !important;
+  }
+
+  /* 選択中以外のページはDOMからレイアウト・ラスタライズ除外（WebKitタイル負荷1/3化） */
+  #previewWrapper[data-mobile-sheet="1"] [data-sheet-page="2"],
+  #previewWrapper[data-mobile-sheet="1"] [data-sheet-page="3"],
+  #previewWrapper[data-mobile-sheet="2"] [data-sheet-page="1"],
+  #previewWrapper[data-mobile-sheet="2"] [data-sheet-page="3"],
+  #previewWrapper[data-mobile-sheet="3"] [data-sheet-page="1"],
+  #previewWrapper[data-mobile-sheet="3"] [data-sheet-page="2"] {
+    display: none !important;
+  }
+
+  /* プレビューツールバーを横スクロール可能に（モバイル時はstickyとblurを解除しGPU再合成負荷を削減） */
   .preview-toolbar {
+    position: static !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: rgba(30, 41, 59, 0.96) !important;
+    box-shadow: none !important;
     width: 100% !important;
     overflow-x: auto !important;
     white-space: nowrap !important;
-    -webkit-overflow-scrolling: touch !important;
+    -webkit-overflow-scrolling: auto !important;
     box-sizing: border-box !important;
     justify-content: flex-start !important;
     padding: 10px 8px !important;
     border-radius: 8px !important;
+    margin-bottom: 8px !important;
   }
 
   .preview-toolbar::-webkit-scrollbar {
@@ -2837,15 +2893,25 @@ label.form-label {
 
   .invoice-sheet {
     transform-origin: top left;
-    /* max-widthを解除して本来のA4比率を維持し、はみ出た部分はスクロールさせるか縮小表示させる */
+    /* A4比率をそのまま維持し、重いbox-shadowを外してタイル負荷を最小化 */
     max-width: none !important;
     width: 794px !important;
-    /* A4サイズの基準幅 */
     transform: scale(0.46) !important;
-    /* スマホ画面幅(約375px)に合わせて縮小 */
-    margin-bottom: -500px !important;
-    /* 縮小によって生じる下部の余白を相殺 */
+    margin-bottom: -580px !important;
+    box-shadow: none !important;
+    border: 1px solid #cbd5e1 !important;
     box-sizing: border-box !important;
+  }
+
+  /* スマホ時はブラー系GPU負荷を全面解除（ズーム時のクラッシュ防止） */
+  .modal-overlay,
+  .ptr-content {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  .ptr-content {
+    box-shadow: none !important;
   }
 
   /* 2. ヘッダーのごちゃごちゃ解消 */

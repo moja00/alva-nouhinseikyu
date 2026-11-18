@@ -31,6 +31,8 @@ const KEYS = {
   LOCKED_MONTHS: 'billcraft_locked_months',
   DELETED_DOC_IDS: 'quickdoc_deleted_doc_ids',
   DELETED_EXPENSE_IDS: 'billcraft_deleted_expense_ids',
+  DELETED_ITEM_IDS: 'billcraft_deleted_item_ids',
+  DELETED_INVENTORY_IDS: 'billcraft_deleted_inventory_ids',
   TRASH_HISTORY: 'quickdoc_trash_history',
   DELETED_SERIALS: 'billcraft_deleted_serials'
 };
@@ -105,6 +107,45 @@ export function removeDeletedSerial(sn) {
     set.delete(String(sn).trim().toUpperCase());
     localStorageSetItemAndSync(KEYS.DELETED_SERIALS, JSON.stringify(Array.from(set)));
   } catch (e) { }
+}
+
+function getDeletedIdSetFromKey(storageKey, builtInIds = []) {
+  try {
+    const raw = localStorage.getItem(storageKey);
+    const set = new Set(raw ? JSON.parse(raw) : []);
+    builtInIds.forEach(id => { if (id) set.add(id); });
+    return set;
+  } catch (e) {
+    return new Set(builtInIds);
+  }
+}
+
+function appendDeletedIdToKey(storageKey, id, builtInIds = []) {
+  if (!id) return;
+  try {
+    const set = getDeletedIdSetFromKey(storageKey, builtInIds);
+    set.add(String(id).trim());
+    localStorage.setItem(storageKey, JSON.stringify(Array.from(set).slice(-500)));
+  } catch (e) { }
+}
+
+const PURGED_ITEM_IDS = ['prod_1794963615636_usf7'];
+const PURGED_INVENTORY_IDS = ['inv_prod_1794963615636_usf7'];
+
+export function getDeletedItemIds() {
+  return getDeletedIdSetFromKey(KEYS.DELETED_ITEM_IDS, PURGED_ITEM_IDS);
+}
+
+export function recordDeletedItemId(id) {
+  appendDeletedIdToKey(KEYS.DELETED_ITEM_IDS, id, PURGED_ITEM_IDS);
+}
+
+export function getDeletedInventoryIds() {
+  return getDeletedIdSetFromKey(KEYS.DELETED_INVENTORY_IDS, PURGED_INVENTORY_IDS);
+}
+
+export function recordDeletedInventoryId(id) {
+  appendDeletedIdToKey(KEYS.DELETED_INVENTORY_IDS, id, PURGED_INVENTORY_IDS);
 }
 
 export function recordDeletedExpenseId(id) {
@@ -1012,10 +1053,12 @@ export const DEFAULT_PURCHASE_MAPPINGS = {
  */
 export function deduplicateItemMasterList(list) {
   if (!Array.isArray(list)) return [];
+  const deletedItemIds = getDeletedItemIds();
   const map = new Map();
 
   for (const item of list) {
     if (!item || !item.name) continue;
+    if (item.id && deletedItemIds.has(String(item.id).trim())) continue;
     const cleanName = (item.name || '').trim();
     if (!cleanName) continue;
     let key = getMasterKey(cleanName);
@@ -2301,12 +2344,15 @@ export async function fetchServerMasterItems() {
   return null;
 }
 
-export async function saveServerMasterItems(items) {
+export async function saveServerMasterItems(items, deletedIds = null) {
   try {
+    const payload = (Array.isArray(deletedIds) && deletedIds.length > 0)
+      ? { items, deletedIds }
+      : items;
     const res = await apiFetch('master/items', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(items)
+      body: JSON.stringify(payload)
     });
     return res.ok;
   } catch (e) {
@@ -3319,11 +3365,18 @@ export function findItemMasterByName(name) {
  */
 export function deleteItemFromMaster(id) {
   try {
+    const cleanId = id ? String(id).trim() : '';
+    if (cleanId) {
+      recordDeletedItemId(cleanId);
+      recordDeletedInventoryId(cleanId);
+      recordDeletedInventoryId('inv_' + cleanId);
+    }
     const list = getItemMasterList(false);
     const targetItem = list.find(i => i.id === id);
     const filtered = list.filter(i => i.id !== id);
     saveItemMasterList(filtered);
-    // サーバーのFirestoreから個別削除
+    // サーバーのFirestoreから個別削除 ＋ 削除済みID永続化
+    saveServerMasterItems(filtered, cleanId ? [cleanId] : null).catch(() => { });
     deleteServerEntity('items', id).catch(e => {
       console.warn('Server item delete failed:', e);
     });
@@ -3331,11 +3384,21 @@ export function deleteItemFromMaster(id) {
     // 在庫品目マスタ（KEYS.INVENTORY）からも連動して削除
     const invList = getInventoryList();
     const targetName = targetItem ? targetItem.name : '';
-    const newInvList = invList.filter(inv => inv.id !== id && inv.name !== targetName);
+    const deletedInvIds = [];
+    const newInvList = invList.filter(inv => {
+      const shouldDrop = inv.id === id || inv.name === targetName || inv.itemId === id;
+      if (shouldDrop && inv.id) {
+        recordDeletedInventoryId(inv.id);
+        deletedInvIds.push(inv.id);
+      }
+      return !shouldDrop;
+    });
     if (newInvList.length !== invList.length) {
       localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(newInvList));
       saveServerInventory(newInvList).catch(() => { });
-      deleteServerEntity('inventory', id).catch(() => { });
+      deletedInvIds.forEach(dInvId => {
+        deleteServerEntity('inventory', dInvId).catch(() => { });
+      });
     }
 
     return true;
@@ -3622,17 +3685,21 @@ export async function syncMastersWithServer(force = false) {
     }
 
     // 1. 商品マスタの同期（スマートマージ: サーバー・ローカル双方の最新データを保護）
+    const deletedItemIds = getDeletedItemIds();
     const serverItems = await fetchServerMasterItems();
     const localItems = getItemMasterList(false);
     if (serverItems && Array.isArray(serverItems)) {
       const mergedMap = new Map();
       serverItems.forEach(i => {
-        if (i && (i.id || i.name)) mergedMap.set(i.id || i.name, i);
+        if (i && (i.id || i.name) && !(i.id && deletedItemIds.has(String(i.id).trim()))) {
+          mergedMap.set(i.id || i.name, i);
+        }
       });
       let hasLocalChanges = false;
       localItems.forEach(i => {
         const key = i.id || i.name;
         if (!key) return;
+        if (i.id && deletedItemIds.has(String(i.id).trim())) return;
         if (!mergedMap.has(key)) {
           mergedMap.set(key, i);
           hasLocalChanges = true;
@@ -5152,10 +5219,13 @@ export async function initInventoryFromServer(force = false) {
  */
 export function deduplicateInventoryList(rawList) {
   if (!Array.isArray(rawList)) return [];
+  const deletedInvIds = getDeletedInventoryIds();
   const map = new Map();
 
   for (const inv of rawList) {
     if (!inv || !inv.name) continue;
+    if (inv.id && deletedInvIds.has(String(inv.id).trim())) continue;
+    if (inv.itemId && getDeletedItemIds().has(String(inv.itemId).trim())) continue;
     // 1. サンプル品目の完全排除
     if (isSampleItem(inv)) continue;
 
@@ -5544,6 +5614,7 @@ export function saveInventoryList(list) {
  */
 export function deleteInventoryItem(id) {
   try {
+    if (id) recordDeletedInventoryId(id);
     const list = getInventoryList();
     const filtered = list.filter(i => i.id !== id);
     localStorageSetItemAndSync(KEYS.INVENTORY, JSON.stringify(filtered));
@@ -6508,6 +6579,12 @@ export async function pullAllServerDataToLocal(force = false) {
       const data = await res.json();
       if (!data || data.offline) return { success: true, offline: true, message: 'ローカルデータを優先して使用します' };
 
+      if (Array.isArray(data.deletedItemIds)) {
+        data.deletedItemIds.forEach(id => { if (id) recordDeletedItemId(id); });
+      }
+      if (Array.isArray(data.deletedInventoryIds)) {
+        data.deletedInventoryIds.forEach(id => { if (id) recordDeletedInventoryId(id); });
+      }
       if (data.masterItems && Array.isArray(data.masterItems) && data.masterItems.length > 0) {
         const cleanItems = deduplicateItemMasterList(data.masterItems);
         localStorageSetItemOnly(KEYS.ITEM_MASTER, JSON.stringify(cleanItems));
