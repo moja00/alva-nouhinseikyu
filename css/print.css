@@ -13,8 +13,14 @@
 }
 
 @media print {
-  /* 全体リセット */
+  /* 全体リセット（html/bodyのheight:100%・overflow-x:hiddenが残るとChrome印刷で1ページ目以降が切れて改ページが無効になるため明示解除） */
   html, body {
+    height: auto !important;
+    min-height: auto !important;
+    max-width: none !important;
+    overflow: visible !important;
+    overflow-x: visible !important;
+    overflow-y: visible !important;
     background: #ffffff !important;
     color: #0f172a !important;
     margin: 0 !important;
@@ -24,7 +30,11 @@
     print-color-adjust: exact !important;
   }
 
-  /* 非表示対象（ヘッダー、ナビ、サイドバー、操作ボタン、トースト等） */
+  /* 非表示対象（ヘッダー、ナビ、サイドバー、操作ボタン、固定UI、トースト等） */
+  #pullToRefreshIndicator,
+  .pull-to-refresh-container,
+  #loginOverlay,
+  .toast-container,
   header.app-header,
   nav.app-switcher-nav,
   .editor-sidebar,
@@ -135,16 +145,26 @@
     background: #ffffff !important;
   }
 
-  /* 複数ページ（請求書・納品書・領収書）印刷時の強制改ページ制御 */
+  /* 複数ページ（請求書・納品書・領収書）印刷時の強制改ページ制御
+     1枚目(#invoiceSheet)の後ではなく、後続シート(#subSheetsContainer内の納品書・領収証)の直前で改ページすることで、
+     見積書など単票時(#subSheetsContainerが空)の余分な空白2ページ目発生も防止する */
   .invoice-sheet-page {
-    page-break-after: always !important;
-    break-after: page !important;
+    display: block !important;
+    page-break-after: auto !important;
+    break-after: auto !important;
+  }
+
+  #subSheetsContainer {
     display: block !important;
   }
 
-  .invoice-sheet-page:last-child {
-    page-break-after: auto !important;
-    break-after: auto !important;
+  #subSheetsContainer:empty {
+    display: none !important;
+  }
+
+  #subSheetsContainer .invoice-sheet-page {
+    page-break-before: always !important;
+    break-before: page !important;
   }
 
   .sheet-page-indicator {
