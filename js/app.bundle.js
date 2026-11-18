@@ -28346,7 +28346,7 @@ function renderMonthlyBarChart(periodFilter = currentAccGlobalPeriod) {
   const dpr = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
   const width = rect.width || 600;
-  const height = 220;
+  const height = Math.max(200, Math.round(rect.height || 224));
 
   canvas.width = width * dpr;
   canvas.height = height * dpr;
@@ -28354,45 +28354,111 @@ function renderMonthlyBarChart(periodFilter = currentAccGlobalPeriod) {
 
   ctx.clearRect(0, 0, width, height);
 
-  // 最大値を計算
-  let maxVal = 500000;
-  data.forEach(d => {
-    if (d.sales > maxVal) maxVal = d.sales;
-    if (d.totalCosts > maxVal) maxVal = d.totalCosts;
-    if (Math.abs(d.profit) > maxVal) maxVal = Math.abs(d.profit);
-  });
-  maxVal = Math.ceil((maxVal * 1.15) / 100000) * 100000;
+  const isNarrow = width < 480;
+  const fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
 
-  const paddingLeft = 55;
-  const paddingRight = 20;
-  const paddingTop = 25;
-  const paddingBottom = 35;
-  const chartWidth = width - paddingLeft - paddingRight;
-  const chartHeight = height - paddingTop - paddingBottom;
+  // 正・負の最大値を別々に算出し、赤字バーがX軸ラベルに重ならないよう0ラインを自動配置
+  let rawMaxPos = 500000;
+  let rawMaxNeg = 0;
+  data.forEach(d => {
+    if (d.sales > rawMaxPos) rawMaxPos = d.sales;
+    if (d.totalCosts > rawMaxPos) rawMaxPos = d.totalCosts;
+    if (d.profit > rawMaxPos) rawMaxPos = d.profit;
+    if (d.profit < 0 && Math.abs(d.profit) > rawMaxNeg) rawMaxNeg = Math.abs(d.profit);
+  });
+  const maxPos = Math.ceil((rawMaxPos * 1.12) / 100000) * 100000;
+  const maxNeg = rawMaxNeg > 0 ? Math.ceil((rawMaxNeg * 1.12) / 100000) * 100000 : 0;
+  const valueRange = maxPos + maxNeg;
+
+  // Y軸ラベル文字列から必要な左余白を自動算出（狭い画面で余分な空白を削る）
+  const yFontSize = isNarrow ? 9 : 10;
+  ctx.font = `${yFontSize}px ${fontFamily}`;
+  const formatYLabel = (val) => {
+    const abs = Math.abs(val);
+    const sign = val < 0 ? '-' : '';
+    return abs >= 10000 ? `${sign}${(abs / 10000).toFixed(0)}万` : `${val}`;
+  };
+  let maxYLabelW = 0;
+  const gridCount = 4;
+  for (let i = 0; i <= gridCount; i++) {
+    const val = (maxPos / gridCount) * i;
+    maxYLabelW = Math.max(maxYLabelW, ctx.measureText(formatYLabel(val)).width);
+  }
+  if (maxNeg > 0) {
+    maxYLabelW = Math.max(maxYLabelW, ctx.measureText(formatYLabel(-maxNeg)).width);
+  }
+
+  const paddingLeft = Math.ceil(maxYLabelW) + (isNarrow ? 10 : 14);
+  const paddingRight = isNarrow ? 8 : 16;
+  const paddingTop = 18;
+  const chartWidth = Math.max(60, width - paddingLeft - paddingRight);
+  const groupWidth = chartWidth / Math.max(1, data.length);
+
+  // X軸ラベルの短縮・回転・最小限間引き判定（文字同士が絶対に被らない範囲で極力密に）
+  const displayLabels = data.map((d, idx) => {
+    if (groupWidth >= 46 || !isMultiYear) return d.label;
+    const [yy, mm] = d.month.split('-');
+    // 狭い幅の複数年表示は、先頭月と1月のみ年号を表示し、他月は「8月」形式に短縮
+    return (idx === 0 || Number(mm) === 1) ? `${yy.slice(2)}/${Number(mm)}月` : `${Number(mm)}月`;
+  });
+
+  const horizFontSize = isNarrow ? 10 : 11;
+  ctx.font = `${horizFontSize}px ${fontFamily}`;
+  let maxXLabelW = 0;
+  displayLabels.forEach(lbl => {
+    maxXLabelW = Math.max(maxXLabelW, ctx.measureText(lbl).width);
+  });
+
+  const useRotatedLabels = (maxXLabelW + 6) > groupWidth;
+  const rotFontSize = isNarrow ? 9.5 : 10.5;
+  const rotAngle = -Math.PI / 4.5; // 約-40度
+  let rotMaxW = maxXLabelW;
+  if (useRotatedLabels) {
+    ctx.font = `${rotFontSize}px ${fontFamily}`;
+    rotMaxW = 0;
+    displayLabels.forEach(lbl => {
+      rotMaxW = Math.max(rotMaxW, ctx.measureText(lbl).width);
+    });
+  }
+
+  const paddingBottom = useRotatedLabels
+    ? Math.min(54, Math.max(36, Math.ceil(rotMaxW * Math.sin(Math.abs(rotAngle)) + 16)))
+    : 28;
+  const chartHeight = Math.max(80, height - paddingTop - paddingBottom);
+  const zeroY = paddingTop + (maxPos / valueRange) * chartHeight;
 
   // グリッド線とY軸ラベル
   ctx.strokeStyle = '#e2e8f0';
   ctx.lineWidth = 1;
   ctx.fillStyle = '#64748b';
-  ctx.font = '10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.font = `${yFontSize}px ${fontFamily}`;
   ctx.textAlign = 'right';
 
-  const gridCount = 4;
   for (let i = 0; i <= gridCount; i++) {
-    const val = (maxVal / gridCount) * i;
-    const y = paddingTop + chartHeight - (val / maxVal) * chartHeight;
+    const val = (maxPos / gridCount) * i;
+    const y = zeroY - (val / valueRange) * chartHeight;
     ctx.beginPath();
+    ctx.strokeStyle = i === 0 && maxNeg > 0 ? '#cbd5e1' : '#e2e8f0';
     ctx.moveTo(paddingLeft, y);
     ctx.lineTo(width - paddingRight, y);
     ctx.stroke();
 
-    const label = val >= 10000 ? `${(val / 10000).toFixed(0)}万` : `${val}`;
-    ctx.fillText(label, paddingLeft - 8, y + 3);
+    ctx.fillText(formatYLabel(val), paddingLeft - 6, y + 3);
+  }
+  if (maxNeg > 0) {
+    const negBottomY = paddingTop + chartHeight;
+    ctx.beginPath();
+    ctx.strokeStyle = '#fecdd3';
+    ctx.moveTo(paddingLeft, negBottomY);
+    ctx.lineTo(width - paddingRight, negBottomY);
+    ctx.stroke();
+    ctx.fillStyle = '#e11d48';
+    ctx.fillText(formatYLabel(-maxNeg), paddingLeft - 6, negBottomY + 3);
   }
 
   // 棒の安全な描画関数（roundRect非対応ブラウザ対策）
   function drawBar(x, y, w, h, fillStyle, radii = [3, 3, 0, 0]) {
-    if (h <= 0) return;
+    if (h <= 0 || w <= 0) return;
     ctx.fillStyle = fillStyle;
     ctx.beginPath();
     if (typeof ctx.roundRect === 'function') {
@@ -28403,42 +28469,86 @@ function renderMonthlyBarChart(periodFilter = currentAccGlobalPeriod) {
     }
   }
 
-  // 棒グラフの描画（月数に応じた最適なバー幅を動的算出）
-  const groupWidth = chartWidth / data.length;
-  const barWidth = Math.min(22, Math.max(6, (groupWidth - 10) / 3.5));
+  // 棒グラフの描画（グループ幅を絶対に超えないバー幅・間隔を厳密算出）
+  const groupPad = groupWidth >= 24 ? Math.min(10, groupWidth * 0.2) : Math.max(1.5, groupWidth * 0.14);
+  const availGroupW = Math.max(3, groupWidth - groupPad);
+  const barGap = availGroupW >= 24 ? 3 : (availGroupW >= 12 ? 1.5 : 0.8);
+  const barWidth = Math.min(22, Math.max(1.2, (availGroupW - barGap * 2) / 3));
+  const totalBarsW = barWidth * 3 + barGap * 2;
+  const barRadius = barWidth >= 4 ? 3 : 1.5;
+
+  // X軸ラベルの重なり防止（回転時でもグループ幅が極端に狭い時は最小限の間引き）
+  const minLabelStepPx = useRotatedLabels ? (isNarrow ? 14 : 16) : (maxXLabelW + 6);
+  const labelStep = Math.max(1, Math.ceil(minLabelStepPx / groupWidth));
 
   data.forEach((d, idx) => {
-    const groupX = paddingLeft + idx * groupWidth + (groupWidth - (barWidth * 3 + 6)) / 2;
+    const groupCenterX = paddingLeft + idx * groupWidth + groupWidth / 2;
+    const groupX = paddingLeft + idx * groupWidth + (groupWidth - totalBarsW) / 2;
 
     // 1. 売上高（税抜）バー（インディゴ #6366f1）
-    const salesH = Math.max(0, (d.sales / maxVal) * chartHeight);
-    const salesY = paddingTop + chartHeight - salesH;
-    drawBar(groupX, salesY, barWidth, salesH, '#6366f1');
+    const salesH = Math.max(0, (d.sales / valueRange) * chartHeight);
+    const salesY = zeroY - salesH;
+    drawBar(groupX, salesY, barWidth, salesH, '#6366f1', [barRadius, barRadius, 0, 0]);
 
     // 2. 総コスト（売上原価＋販管費）積み上げバー（下段: 売上原価 #ea580c / 上段: 販管費 #f59e0b）
-    const cogsH = Math.max(0, (d.costOfSales / maxVal) * chartHeight);
-    const sgaH = Math.max(0, (d.sga / maxVal) * chartHeight);
-    const cogsY = paddingTop + chartHeight - cogsH;
+    const cogsH = Math.max(0, (d.costOfSales / valueRange) * chartHeight);
+    const sgaH = Math.max(0, (d.sga / valueRange) * chartHeight);
+    const cogsY = zeroY - cogsH;
     const sgaY = cogsY - sgaH;
     if (cogsH > 0) {
-      drawBar(groupX + barWidth + 3, cogsY, barWidth, cogsH, '#ea580c', sgaH > 0 ? [0, 0, 0, 0] : [3, 3, 0, 0]);
+      drawBar(groupX + barWidth + barGap, cogsY, barWidth, cogsH, '#ea580c', sgaH > 0 ? [0, 0, 0, 0] : [barRadius, barRadius, 0, 0]);
     }
     if (sgaH > 0) {
-      drawBar(groupX + barWidth + 3, sgaY, barWidth, sgaH, '#f59e0b', [3, 3, 0, 0]);
+      drawBar(groupX + barWidth + barGap, sgaY, barWidth, sgaH, '#f59e0b', [barRadius, barRadius, 0, 0]);
     }
 
     // 3. 純利益（営業利益 = 売上 - 売上原価 - 販管費）バー（エメラルド #10b981 / ローズ #f43f5e）
-    const profitH = Math.abs((d.profit / maxVal) * chartHeight);
-    const profitY = d.profit >= 0 ? paddingTop + chartHeight - profitH : paddingTop + chartHeight;
-    drawBar(groupX + (barWidth + 3) * 2, profitY, barWidth, profitH, d.profit >= 0 ? '#10b981' : '#f43f5e');
+    const profitH = Math.abs((d.profit / valueRange) * chartHeight);
+    const profitY = d.profit >= 0 ? zeroY - profitH : zeroY;
+    drawBar(
+      groupX + (barWidth + barGap) * 2,
+      profitY,
+      barWidth,
+      profitH,
+      d.profit >= 0 ? '#10b981' : '#f43f5e',
+      d.profit >= 0 ? [barRadius, barRadius, 0, 0] : [0, 0, barRadius, barRadius]
+    );
 
-    // X軸ラベル
-    ctx.fillStyle = '#475569';
-    ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(d.label, paddingLeft + idx * groupWidth + groupWidth / 2, height - 12);
+    // X軸ラベル（間引きステップ判定＆水平/斜め描画）
+    if (idx % labelStep === 0) {
+      const labelText = displayLabels[idx];
+      ctx.fillStyle = '#475569';
+      if (useRotatedLabels) {
+        ctx.save();
+        ctx.font = `${rotFontSize}px ${fontFamily}`;
+        ctx.translate(groupCenterX + 2, paddingTop + chartHeight + 8);
+        ctx.rotate(rotAngle);
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(labelText, 0, 0);
+        ctx.restore();
+      } else {
+        ctx.font = `${horizFontSize}px ${fontFamily}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'alphabetic';
+        ctx.fillText(labelText, groupCenterX, paddingTop + chartHeight + 18);
+      }
+    }
   });
 }
+
+// 画面幅変更・端末回転時にグラフ幅を再計測して再描画
+let _accChartResizeTimer = null;
+window.addEventListener('resize', () => {
+  const accView = document.getElementById('accountingViewScreen');
+  if (!accView || !accView.classList.contains('active')) return;
+  clearTimeout(_accChartResizeTimer);
+  _accChartResizeTimer = setTimeout(() => {
+    if (typeof renderMonthlyBarChart === 'function') {
+      renderMonthlyBarChart();
+    }
+  }, 150);
+});
 
 // ==========================================================================
 // 消費税集計サマリーパネル（インボイス制度対応）
