@@ -13631,6 +13631,9 @@ const DOM = {
   badgeAccActivePeriod: document.getElementById('badgeAccActivePeriod'),
   dispAccActivePeriodText: document.getElementById('dispAccActivePeriodText'),
   accDateRangeModal: document.getElementById('accDateRangeModal'),
+  modalAccMonthStart: document.getElementById('modalAccMonthStart'),
+  modalAccMonthEnd: document.getElementById('modalAccMonthEnd'),
+  modalAccQuickMonth: document.getElementById('modalAccQuickMonth'),
   modalAccDateStart: document.getElementById('modalAccDateStart'),
   modalAccDateEnd: document.getElementById('modalAccDateEnd'),
   modalAccDateRangePreview: document.getElementById('modalAccDateRangePreview'),
@@ -18109,9 +18112,15 @@ function setupEventListeners() {
       openAccDateRangeModal();
     });
   }
+  const handleModalDateChange = () => {
+    if (typeof syncAccModalMonthSelectsFromDates === 'function') {
+      syncAccModalMonthSelectsFromDates();
+    }
+    updateAccDateRangeModalPreview();
+  };
   if (DOM.modalAccDateStart) {
-    DOM.modalAccDateStart.addEventListener('input', updateAccDateRangeModalPreview);
-    DOM.modalAccDateStart.addEventListener('change', updateAccDateRangeModalPreview);
+    DOM.modalAccDateStart.addEventListener('input', handleModalDateChange);
+    DOM.modalAccDateStart.addEventListener('change', handleModalDateChange);
     DOM.modalAccDateStart.addEventListener('click', () => {
       if (typeof DOM.modalAccDateStart.showPicker === 'function') {
         try { DOM.modalAccDateStart.showPicker(); } catch (err) { }
@@ -18119,11 +18128,33 @@ function setupEventListeners() {
     });
   }
   if (DOM.modalAccDateEnd) {
-    DOM.modalAccDateEnd.addEventListener('input', updateAccDateRangeModalPreview);
-    DOM.modalAccDateEnd.addEventListener('change', updateAccDateRangeModalPreview);
+    DOM.modalAccDateEnd.addEventListener('input', handleModalDateChange);
+    DOM.modalAccDateEnd.addEventListener('change', handleModalDateChange);
     DOM.modalAccDateEnd.addEventListener('click', () => {
       if (typeof DOM.modalAccDateEnd.showPicker === 'function') {
         try { DOM.modalAccDateEnd.showPicker(); } catch (err) { }
+      }
+    });
+  }
+  if (DOM.modalAccMonthStart) {
+    DOM.modalAccMonthStart.addEventListener('change', () => {
+      if (typeof handleAccModalMonthChange === 'function') {
+        handleAccModalMonthChange('start');
+      }
+    });
+  }
+  if (DOM.modalAccMonthEnd) {
+    DOM.modalAccMonthEnd.addEventListener('change', () => {
+      if (typeof handleAccModalMonthChange === 'function') {
+        handleAccModalMonthChange('end');
+      }
+    });
+  }
+  if (DOM.modalAccQuickMonth) {
+    DOM.modalAccQuickMonth.addEventListener('change', (e) => {
+      const ym = e.target.value;
+      if (ym) {
+        setAccDateRangeModalPreset(`month:${ym}`);
       }
     });
   }
@@ -27050,8 +27081,45 @@ let currentExpenseGlobalPeriod = {
 };
 
 /**
+ * YYYY-MM 文字列からその月の1日・末日（YYYY-MM-DD）を算出
+ */
+function getMonthDateBounds(ym) {
+  const match = String(ym || '').trim().match(/^(\d{4})-(\d{2})$/);
+  if (!match) return { start: '', end: '' };
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const lastDay = new Date(year, month, 0).getDate();
+  return {
+    start: `${match[1]}-${match[2]}-01`,
+    end: `${match[1]}-${match[2]}-${String(lastDay).padStart(2, '0')}`
+  };
+}
+
+/**
+ * 過去 monthsBack ヶ月前までの年月リスト（当月〜monthsBack ヶ月前）を降順生成
+ */
+function buildRecentMonthsList(monthsBack = 12) {
+  const today = new Date();
+  const baseY = today.getFullYear();
+  const baseM = today.getMonth();
+  const list = [];
+  for (let i = 0; i <= monthsBack; i++) {
+    const d = new Date(baseY, baseM - i, 1);
+    const y = d.getFullYear();
+    const m = d.getMonth() + 1;
+    const ym = `${y}-${String(m).padStart(2, '0')}`;
+    let suffix = '';
+    if (i === 0) suffix = '（今月）';
+    else if (i === 1) suffix = '（先月）';
+    else if (i === 12) suffix = '（1年前）';
+    list.push({ ym, label: `${y}年${m}月${suffix}` });
+  }
+  return list;
+}
+
+/**
  * プリセット名から開始日・終了日（YYYY-MM-DD）を算出
- * @param {string} preset 'all' | 'thisMonth' | 'lastMonth' | 'last3Months' | 'thisYear' | 'lastYear' | 'custom'
+ * @param {string} preset 'all' | 'thisMonth' | 'lastMonth' | 'last3Months' | 'last6Months' | 'last12Months' | 'thisYear' | 'lastYear' | 'month:YYYY-MM' | 'custom'
  * @returns {{start: string, end: string}}
  */
 function getPresetPeriodRange(preset) {
@@ -27059,30 +27127,35 @@ function getPresetPeriodRange(preset) {
   const y = today.getFullYear();
   const m = today.getMonth(); // 0-indexed (0=1月, 8=9月)
 
+  if (typeof preset === 'string' && preset.startsWith('month:')) {
+    return getMonthDateBounds(preset.slice(6));
+  }
+
+  const formatYmStart = (year, month0) => {
+    const d = new Date(year, month0, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+  };
+  const currentMonthEnd = (() => {
+    const lastDay = new Date(y, m + 1, 0).getDate();
+    return `${y}-${String(m + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+  })();
+
   if (preset === 'all') {
     return { start: '', end: '' };
   } else if (preset === 'thisMonth' || preset === 'current_month') {
-    const start = `${y}-${String(m + 1).padStart(2, '0')}-01`;
-    const lastDay = new Date(y, m + 1, 0).getDate();
-    const end = `${y}-${String(m + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
-    return { start, end };
+    return { start: formatYmStart(y, m), end: currentMonthEnd };
   } else if (preset === 'lastMonth' || preset === 'prev_month') {
     const prevDate = new Date(y, m - 1, 1);
-    const py = prevDate.getFullYear();
-    const pm = prevDate.getMonth();
-    const start = `${py}-${String(pm + 1).padStart(2, '0')}-01`;
-    const lastDay = new Date(py, pm + 1, 0).getDate();
-    const end = `${py}-${String(pm + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
-    return { start, end };
+    return getMonthDateBounds(`${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`);
   } else if (preset === 'last3Months') {
     // 直近3ヶ月（2ヶ月前の1日〜当月末）
-    const startDate = new Date(y, m - 2, 1);
-    const sy = startDate.getFullYear();
-    const sm = startDate.getMonth();
-    const start = `${sy}-${String(sm + 1).padStart(2, '0')}-01`;
-    const lastDay = new Date(y, m + 1, 0).getDate();
-    const end = `${y}-${String(m + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
-    return { start, end };
+    return { start: formatYmStart(y, m - 2), end: currentMonthEnd };
+  } else if (preset === 'last6Months') {
+    // 直近6ヶ月（5ヶ月前の1日〜当月末）
+    return { start: formatYmStart(y, m - 5), end: currentMonthEnd };
+  } else if (preset === 'last12Months') {
+    // 直近1年（11ヶ月前の1日〜当月末）
+    return { start: formatYmStart(y, m - 11), end: currentMonthEnd };
   } else if (preset === 'thisYear' || preset === 'thisFiscalYear') {
     // 自社情報で設定された会計年度（期首月〜期末月）
     const fiscal = (typeof getFiscalSettings === 'function') ? getFiscalSettings() : {};
@@ -27116,7 +27189,7 @@ function getPresetPeriodRange(preset) {
 }
 
 /**
- * 会計年度設定に応じて「今期」「前期」のプルダウン選択肢ラベルを動的に更新
+ * 会計年度設定および1年前までの各月クイック選択オプションを動的更新
  */
 function updateAccPeriodPresetLabels() {
   const sel = DOM.accGlobalPeriodPreset || document.getElementById('accGlobalPeriodPreset');
@@ -27135,6 +27208,140 @@ function updateAccPeriodPresetLabels() {
   if (lastYearOpt) {
     lastYearOpt.innerText = `前期 (${fy - 1}年度)`;
   }
+
+  // 各月クイック（当月〜1年前まで13ヶ月分）を構築
+  const optGroup = document.getElementById('accMonthQuickOptGroup');
+  if (optGroup) {
+    const recentMonths = buildRecentMonthsList(12);
+    optGroup.innerHTML = recentMonths
+      .map(item => `<option value="month:${item.ym}">${item.label}</option>`)
+      .join('');
+  }
+
+  // 選択肢再構築後に現在のアクティブプリセット値を維持
+  const activePreset = (typeof currentAccGlobalPeriod !== 'undefined' && currentAccGlobalPeriod.preset) ? currentAccGlobalPeriod.preset : 'all';
+  if (Array.from(sel.options).some(o => o.value === activePreset)) {
+    sel.value = activePreset;
+  } else if (typeof activePreset === 'string' && activePreset.startsWith('month:')) {
+    sel.value = 'custom';
+  }
+}
+
+/**
+ * 期間モーダル内の「単月クイック（1年前まで）」および「始める月・終わる月」の選択肢を構築
+ */
+function populateAccModalMonthSelectors() {
+  const recent12 = buildRecentMonthsList(12);
+  const quickMonthSel = DOM.modalAccQuickMonth || document.getElementById('modalAccQuickMonth');
+  if (quickMonthSel) {
+    quickMonthSel.innerHTML = '<option value="">月を選んで1日〜末日セット...</option>' +
+      recent12.map(item => `<option value="${item.ym}">${item.label}</option>`).join('');
+  }
+
+  // 始める月・終わる月は過去36ヶ月分＋伝票・経費履歴にある年月をすべて網羅
+  const ymSet = new Set(buildRecentMonthsList(36).map(item => item.ym));
+  try {
+    (getHistoryList() || []).forEach(doc => {
+      if (doc && doc.issueDate && doc.issueDate.length >= 7) ymSet.add(doc.issueDate.slice(0, 7));
+    });
+    (getExpenseList() || []).forEach(exp => {
+      if (exp && exp.date && exp.date.length >= 7) ymSet.add(exp.date.slice(0, 7));
+    });
+  } catch (e) { }
+
+  if (currentAccGlobalPeriod?.start && currentAccGlobalPeriod.start.length >= 7) {
+    ymSet.add(currentAccGlobalPeriod.start.slice(0, 7));
+  }
+  if (currentAccGlobalPeriod?.end && currentAccGlobalPeriod.end.length >= 7) {
+    ymSet.add(currentAccGlobalPeriod.end.slice(0, 7));
+  }
+
+  const sortedYms = Array.from(ymSet).filter(ym => /^\d{4}-\d{2}$/.test(ym)).sort().reverse();
+  const optionsHtml = '<option value="">（指定なし）</option>' + sortedYms.map(ym => {
+    const [yy, mm] = ym.split('-');
+    return `<option value="${ym}">${yy}年${Number(mm)}月</option>`;
+  }).join('');
+
+  const mStart = DOM.modalAccMonthStart || document.getElementById('modalAccMonthStart');
+  const mEnd = DOM.modalAccMonthEnd || document.getElementById('modalAccMonthEnd');
+  if (mStart) mStart.innerHTML = optionsHtml;
+  if (mEnd) mEnd.innerHTML = optionsHtml;
+}
+
+/**
+ * 詳細日付入力欄の値に合わせて「始める月・終わる月」セレクト表示を同期
+ */
+function syncAccModalMonthSelectsFromDates() {
+  const startInput = DOM.modalAccDateStart || document.getElementById('modalAccDateStart');
+  const endInput = DOM.modalAccDateEnd || document.getElementById('modalAccDateEnd');
+  const mStart = DOM.modalAccMonthStart || document.getElementById('modalAccMonthStart');
+  const mEnd = DOM.modalAccMonthEnd || document.getElementById('modalAccMonthEnd');
+  const quickMonthSel = DOM.modalAccQuickMonth || document.getElementById('modalAccQuickMonth');
+
+  const syncSel = (sel, dateStr) => {
+    if (!sel) return;
+    const ym = (dateStr && dateStr.length >= 7) ? dateStr.slice(0, 7) : '';
+    if (ym && !Array.from(sel.options).some(o => o.value === ym)) {
+      const [yy, mm] = ym.split('-');
+      const opt = document.createElement('option');
+      opt.value = ym;
+      opt.textContent = `${yy}年${Number(mm)}月`;
+      sel.appendChild(opt);
+    }
+    sel.value = ym;
+  };
+
+  syncSel(mStart, startInput ? startInput.value : '');
+  syncSel(mEnd, endInput ? endInput.value : '');
+
+  if (quickMonthSel) {
+    const s = startInput ? startInput.value : '';
+    const e = endInput ? endInput.value : '';
+    const sYm = s.slice(0, 7);
+    const bounds = getMonthDateBounds(sYm);
+    const isExactSingleMonth = !!(sYm && s === bounds.start && e === bounds.end);
+    quickMonthSel.value = (isExactSingleMonth && Array.from(quickMonthSel.options).some(o => o.value === sYm)) ? sYm : '';
+  }
+}
+
+/**
+ * モーダル内で「始める月」「終わる月」を選んだ際、自動で 1日 / 末日 を詳しい日付欄へ反映
+ * @param {'start'|'end'} target
+ */
+function handleAccModalMonthChange(target) {
+  const mStart = DOM.modalAccMonthStart || document.getElementById('modalAccMonthStart');
+  const mEnd = DOM.modalAccMonthEnd || document.getElementById('modalAccMonthEnd');
+  const startInput = DOM.modalAccDateStart || document.getElementById('modalAccDateStart');
+  const endInput = DOM.modalAccDateEnd || document.getElementById('modalAccDateEnd');
+
+  if (target === 'start' && mStart && startInput) {
+    const ym = mStart.value;
+    if (!ym) {
+      startInput.value = '';
+    } else {
+      const bounds = getMonthDateBounds(ym);
+      startInput.value = bounds.start; // 始める月はデフォルトで1日
+      if (endInput && (!endInput.value || endInput.value < bounds.start)) {
+        endInput.value = bounds.end;
+        if (mEnd) mEnd.value = ym;
+      }
+    }
+  } else if (target === 'end' && mEnd && endInput) {
+    const ym = mEnd.value;
+    if (!ym) {
+      endInput.value = '';
+    } else {
+      const bounds = getMonthDateBounds(ym);
+      endInput.value = bounds.end; // 終わる月はデフォルトで末日
+      if (startInput && (!startInput.value || startInput.value > bounds.end)) {
+        startInput.value = bounds.start;
+        if (mStart) mStart.value = ym;
+      }
+    }
+  }
+
+  syncAccModalMonthSelectsFromDates();
+  updateAccDateRangeModalPreview();
 }
 
 /**
@@ -27143,6 +27350,8 @@ function updateAccPeriodPresetLabels() {
 function openAccDateRangeModal() {
   const modal = DOM.accDateRangeModal || document.getElementById('accDateRangeModal');
   if (!modal) return;
+
+  populateAccModalMonthSelectors();
 
   const startInput = DOM.modalAccDateStart || document.getElementById('modalAccDateStart');
   const endInput = DOM.modalAccDateEnd || document.getElementById('modalAccDateEnd');
@@ -27154,6 +27363,7 @@ function openAccDateRangeModal() {
     endInput.value = currentAccGlobalPeriod.end || '';
   }
 
+  syncAccModalMonthSelectsFromDates();
   updateAccDateRangeModalPreview();
 
   // モーダルを確実にアクティブ化（.active クラス ＋ 各種表示プロパティ）
@@ -27162,13 +27372,6 @@ function openAccDateRangeModal() {
   modal.style.opacity = '1';
   modal.style.pointerEvents = 'auto';
   modal.style.visibility = 'visible';
-
-  // 開始日入力欄にフォーカス
-  setTimeout(() => {
-    if (startInput) {
-      startInput.focus();
-    }
-  }, 100);
 }
 
 /**
@@ -27196,6 +27399,7 @@ function setAccDateRangeModalPreset(preset) {
   if (startInput) startInput.value = range.start || '';
   if (endInput) endInput.value = range.end || '';
 
+  syncAccModalMonthSelectsFromDates();
   updateAccDateRangeModalPreview();
 }
 
@@ -27221,12 +27425,15 @@ function updateAccDateRangeModalPreview() {
     const eText = e ? e.replace(/-/g, '/') : '現在まで';
     let daysDiffText = '';
     if (s && e) {
-      const d1 = new Date(s);
-      const d2 = new Date(e);
-      const diffTime = d2.getTime() - d1.getTime();
-      const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24)) + 1;
+      const [y1, m1, d1] = s.split('-').map(Number);
+      const [y2, m2, d2] = e.split('-').map(Number);
+      const dt1 = new Date(y1, m1 - 1, d1);
+      const dt2 = new Date(y2, m2 - 1, d2);
+      const diffDays = Math.round((dt2.getTime() - dt1.getTime()) / (1000 * 60 * 60 * 24)) + 1;
       if (diffDays > 0) {
         daysDiffText = ` (${diffDays}日間)`;
+      } else if (diffDays <= 0) {
+        daysDiffText = ' ※開始日と終了日が逆転しています（確定時に自動整列）';
       }
     }
     preview.textContent = `選択中: ${sText} 〜 ${eText}${daysDiffText}`;
@@ -27242,8 +27449,12 @@ function updateAccDateRangeModalPreview() {
 function confirmAccDateRangeFromModal() {
   const startInput = DOM.modalAccDateStart || document.getElementById('modalAccDateStart');
   const endInput = DOM.modalAccDateEnd || document.getElementById('modalAccDateEnd');
-  const s = startInput ? startInput.value.trim() : '';
-  const e = endInput ? endInput.value.trim() : '';
+  let s = startInput ? startInput.value.trim() : '';
+  let e = endInput ? endInput.value.trim() : '';
+
+  if (s && e && s > e) {
+    [s, e] = [e, s];
+  }
 
   closeAccDateRangeModal();
 
@@ -27255,7 +27466,7 @@ function confirmAccDateRangeFromModal() {
 }
 
 /**
- * 財務会計の集計対象期間を適用し、下の全4画面（損益、売上消込、経費、仕訳）を一括再描画
+ * 財務会計の集計対象期間を適用し、下の全ペインを一括再描画
  * @param {string} preset 
  * @param {string|null} customStart 
  * @param {string|null} customEnd 
@@ -27272,10 +27483,23 @@ function applyAccGlobalPeriod(preset = 'thisMonth', customStart = null, customEn
     currentAccGlobalPeriod.end = range.end;
   }
 
+  if (typeof updateAccPeriodPresetLabels === 'function') {
+    updateAccPeriodPresetLabels();
+  }
+
   // 入力フォームの同期
   if (DOM.accGlobalPeriodPreset) {
-    DOM.accGlobalPeriodPreset.value = preset;
+    const hasOption = Array.from(DOM.accGlobalPeriodPreset.options).some(o => o.value === preset);
+    DOM.accGlobalPeriodPreset.value = hasOption ? preset : 'custom';
   }
+
+  // ワンクリック期間ボタン群のアクティブハイライト同期
+  document.querySelectorAll('#accQuickRangeButtons .acc-quick-range-btn').forEach(btn => {
+    const isActive = (btn.dataset.preset === preset);
+    btn.style.background = isActive ? '#2563eb' : '#f8fafc';
+    btn.style.color = isActive ? '#ffffff' : '#334155';
+    btn.style.borderColor = isActive ? '#1d4ed8' : '#cbd5e1';
+  });
 
   // アクティブ期間バッジ表示（#dispAccActivePeriodText / #badgeAccActivePeriod）の更新
   const dispText = DOM.dispAccActivePeriodText || document.getElementById('dispAccActivePeriodText');
@@ -27298,10 +27522,11 @@ function applyAccGlobalPeriod(preset = 'thisMonth', customStart = null, customEn
       const eFormatted = e ? e.replace(/-/g, '/') : '現在';
       let daysCount = '';
       if (s && e) {
-        const d1 = new Date(s);
-        const d2 = new Date(e);
-        const diffTime = d2.getTime() - d1.getTime();
-        const diff = Math.round(diffTime / (1000 * 60 * 60 * 24)) + 1;
+        const [y1, m1, d1] = s.split('-').map(Number);
+        const [y2, m2, d2] = e.split('-').map(Number);
+        const dt1 = new Date(y1, m1 - 1, d1);
+        const dt2 = new Date(y2, m2 - 1, d2);
+        const diff = Math.round((dt2.getTime() - dt1.getTime()) / (1000 * 60 * 60 * 24)) + 1;
         if (diff > 0) {
           daysCount = ` (${diff}日間)`;
         }
@@ -27338,6 +27563,8 @@ window.setAccDateRangeModalPreset = setAccDateRangeModalPreset;
 window.updateAccDateRangeModalPreview = updateAccDateRangeModalPreview;
 window.confirmAccDateRangeFromModal = confirmAccDateRangeFromModal;
 window.applyAccGlobalPeriod = applyAccGlobalPeriod;
+window.handleAccModalMonthChange = handleAccModalMonthChange;
+window.syncAccModalMonthSelectsFromDates = syncAccModalMonthSelectsFromDates;
 
 window.applyExpenseGlobalPeriod = function (preset = 'all') {
   currentExpenseGlobalPeriod.preset = preset;

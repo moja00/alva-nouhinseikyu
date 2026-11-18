@@ -343,7 +343,7 @@
           style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
           <span
-            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.18-est-to-inv</span>
+            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.18-acc-period</span>
         </div>
       </div>
 
@@ -3790,29 +3790,55 @@
       <div class="view-screen-header-actions">
         <!-- 全サブ機能連動 集計対象期間コントロール -->
         <div class="acc-global-period-control"
-          style="display: inline-flex; align-items: center; gap: 8px; background: #ffffff; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 4px 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); width: 100%; box-sizing: border-box; flex-wrap: wrap;">
+          style="display: inline-flex; align-items: center; gap: 6px; background: #ffffff; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 4px 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); width: 100%; box-sizing: border-box; flex-wrap: wrap;">
           <span
             style="font-size: 0.8rem; font-weight: 700; color: #334155; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;">
-            📅 集計対象期間:
+            📅 期間:
           </span>
           <select id="accGlobalPeriodPreset" class="form-select"
-            style="padding: 4px 10px; font-size: 0.825rem; font-weight: 700; width: auto; border: 1px solid #94a3b8; border-radius: 6px; background: #f8fafc; color: #1e293b; cursor: pointer;">
-            <option value="thisMonth">今月 (当月)</option>
-            <option value="lastMonth">先月</option>
-            <option value="last3Months">直近3ヶ月</option>
-            <option value="thisYear">今期 (会計年度通期)</option>
-            <option value="lastYear">前期 (前会計年度)</option>
-            <option value="all">全期間 (すべて)</option>
-            <option value="custom">📅 任意期間カレンダー指定...</option>
+            style="padding: 4px 8px; font-size: 0.8rem; font-weight: 700; width: auto; border: 1px solid #94a3b8; border-radius: 6px; background: #f8fafc; color: #1e293b; cursor: pointer;">
+            <optgroup label="📌 クイック期間・年度">
+              <option value="thisMonth">今月 (当月)</option>
+              <option value="lastMonth">先月</option>
+              <option value="last3Months">直近3ヶ月</option>
+              <option value="last6Months">直近6ヶ月</option>
+              <option value="last12Months">直近1年</option>
+              <option value="thisYear">今期 (会計年度通期)</option>
+              <option value="lastYear">前期 (前会計年度)</option>
+              <option value="all">全期間 (すべて)</option>
+              <option value="custom">📅 開始月・終了月で指定...</option>
+            </optgroup>
+            <optgroup label="📆 各月クイック（1年前まで）" id="accMonthQuickOptGroup">
+            </optgroup>
           </select>
 
-          <!-- アクティブ期間ラベルバッジ（クリックでいつでもカレンダー指定が開く！） -->
+          <!-- ワンクリック期間ボタン（直近3ヶ月・6ヶ月・1年・今期・全期間） -->
+          <div id="accQuickRangeButtons"
+            style="display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;">
+            <button type="button" class="acc-quick-range-btn" data-preset="last3Months"
+              onclick="window.applyAccGlobalPeriod &amp;&amp; window.applyAccGlobalPeriod('last3Months')"
+              style="padding: 3px 8px; font-size: 0.74rem; font-weight: 700; border-radius: 5px; border: 1px solid #cbd5e1; background: #f8fafc; color: #334155; cursor: pointer; white-space: nowrap;">直近3ヶ月</button>
+            <button type="button" class="acc-quick-range-btn" data-preset="last6Months"
+              onclick="window.applyAccGlobalPeriod &amp;&amp; window.applyAccGlobalPeriod('last6Months')"
+              style="padding: 3px 8px; font-size: 0.74rem; font-weight: 700; border-radius: 5px; border: 1px solid #cbd5e1; background: #f8fafc; color: #334155; cursor: pointer; white-space: nowrap;">6ヶ月</button>
+            <button type="button" class="acc-quick-range-btn" data-preset="last12Months"
+              onclick="window.applyAccGlobalPeriod &amp;&amp; window.applyAccGlobalPeriod('last12Months')"
+              style="padding: 3px 8px; font-size: 0.74rem; font-weight: 700; border-radius: 5px; border: 1px solid #cbd5e1; background: #f8fafc; color: #334155; cursor: pointer; white-space: nowrap;">1年</button>
+            <button type="button" class="acc-quick-range-btn" data-preset="thisYear"
+              onclick="window.applyAccGlobalPeriod &amp;&amp; window.applyAccGlobalPeriod('thisYear')"
+              style="padding: 3px 8px; font-size: 0.74rem; font-weight: 700; border-radius: 5px; border: 1px solid #cbd5e1; background: #f8fafc; color: #334155; cursor: pointer; white-space: nowrap;">今期</button>
+            <button type="button" class="acc-quick-range-btn" data-preset="all"
+              onclick="window.applyAccGlobalPeriod &amp;&amp; window.applyAccGlobalPeriod('all')"
+              style="padding: 3px 8px; font-size: 0.74rem; font-weight: 700; border-radius: 5px; border: 1px solid #cbd5e1; background: #f8fafc; color: #334155; cursor: pointer; white-space: nowrap;">全期間</button>
+          </div>
+
+          <!-- アクティブ期間ラベルバッジ（クリックでいつでも開始月・終了月指定が開く！） -->
           <button type="button" id="badgeAccActivePeriod"
             onclick="window.openAccDateRangeModal &amp;&amp; window.openAccDateRangeModal()"
-            title="クリックしてカレンダーから開始日・終了日を直接指定"
-            style="font-size: 0.8rem; font-weight: 800; padding: 4px 12px; border-radius: 6px; background: #e0f2fe; color: #0369a1; border: 1px solid #7dd3fc; white-space: nowrap; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: all 0.2s;">
+            title="クリックして開始月・終了月や詳しい日付を指定"
+            style="font-size: 0.775rem; font-weight: 800; padding: 4px 10px; border-radius: 6px; background: #e0f2fe; color: #0369a1; border: 1px solid #7dd3fc; white-space: nowrap; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; transition: all 0.2s;">
             <span id="dispAccActivePeriodText">全期間</span>
-            <span style="font-size: 12px; opacity: 0.85;">📅✏️</span>
+            <span style="font-size: 11px; opacity: 0.85;">📅✏️</span>
           </button>
         </div>
 
@@ -5134,7 +5160,7 @@
         <div>
           <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             <h2 class="view-screen-title" style="margin: 0;">勤怠管理・退勤タイムカード</h2>
-            <span style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.18-est-to-inv</span>
+            <span style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.18-acc-period</span>
           </div>
           <span class="view-screen-subtitle">休憩1時間自動控除・ワンタップ出退勤打刻・月次出勤簿・打刻漏れ修正</span>
         </div>
@@ -6451,46 +6477,71 @@
       <div class="modal-body" style="padding: 20px 22px;">
 
         <!-- ワンタッチプリセットボタン -->
-        <div style="margin-bottom: 16px;">
+        <div style="margin-bottom: 14px;">
           <span style="font-size: 0.775rem; font-weight: 700; color: #475569; display: block; margin-bottom: 6px;">
-            クイック期間選択:
+            クイック期間選択（ワンクリック）:
           </span>
           <div style="display: flex; flex-wrap: wrap; gap: 6px;" id="accModalPresetBtns">
             <button type="button" class="btn btn-secondary btn-xs"
-              onclick="window.setAccDateRangeModalPreset && window.setAccDateRangeModalPreset('thisMonth')">今月</button>
+              onclick="window.setAccDateRangeModalPreset &amp;&amp; window.setAccDateRangeModalPreset('thisMonth')">今月</button>
             <button type="button" class="btn btn-secondary btn-xs"
-              onclick="window.setAccDateRangeModalPreset && window.setAccDateRangeModalPreset('lastMonth')">先月</button>
+              onclick="window.setAccDateRangeModalPreset &amp;&amp; window.setAccDateRangeModalPreset('lastMonth')">先月</button>
             <button type="button" class="btn btn-secondary btn-xs"
-              onclick="window.setAccDateRangeModalPreset && window.setAccDateRangeModalPreset('last3Months')">直近3ヶ月</button>
+              onclick="window.setAccDateRangeModalPreset &amp;&amp; window.setAccDateRangeModalPreset('last3Months')">直近3ヶ月</button>
             <button type="button" class="btn btn-secondary btn-xs"
-              onclick="window.setAccDateRangeModalPreset && window.setAccDateRangeModalPreset('thisYear')">今年度</button>
+              onclick="window.setAccDateRangeModalPreset &amp;&amp; window.setAccDateRangeModalPreset('last6Months')">直近6ヶ月</button>
             <button type="button" class="btn btn-secondary btn-xs"
-              onclick="window.setAccDateRangeModalPreset && window.setAccDateRangeModalPreset('lastYear')">前年度</button>
+              onclick="window.setAccDateRangeModalPreset &amp;&amp; window.setAccDateRangeModalPreset('last12Months')">直近1年</button>
             <button type="button" class="btn btn-secondary btn-xs"
-              onclick="window.setAccDateRangeModalPreset && window.setAccDateRangeModalPreset('all')">全期間</button>
+              onclick="window.setAccDateRangeModalPreset &amp;&amp; window.setAccDateRangeModalPreset('thisYear')">今期</button>
+            <button type="button" class="btn btn-secondary btn-xs"
+              onclick="window.setAccDateRangeModalPreset &amp;&amp; window.setAccDateRangeModalPreset('lastYear')">前期</button>
+            <button type="button" class="btn btn-secondary btn-xs"
+              onclick="window.setAccDateRangeModalPreset &amp;&amp; window.setAccDateRangeModalPreset('all')">全期間</button>
+          </div>
+          <div style="margin-top: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <label for="modalAccQuickMonth" style="font-size: 0.75rem; font-weight: 700; color: #475569; white-space: nowrap;">
+              単月クイック（1年前まで）:
+            </label>
+            <select id="modalAccQuickMonth" class="form-select"
+              style="width: auto; min-width: 170px; padding: 4px 8px; font-size: 0.8rem; font-weight: 700; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px;">
+              <option value="">月を選んで1日〜末日セット...</option>
+            </select>
           </div>
         </div>
 
-        <!-- カレンダー開始日・終了日 -->
+        <!-- 始める月・終わる月 ＆ 詳しい日付指定 -->
         <div
-          style="background: #f1f5f9; border-radius: 8px; padding: 16px; border: 1px solid #e2e8f0; margin-bottom: 16px;">
-          <div style="display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px; align-items: center;">
+          style="background: #f1f5f9; border-radius: 8px; padding: 14px 16px; border: 1px solid #e2e8f0; margin-bottom: 14px;">
+          <div style="display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px; align-items: start;">
             <div>
-              <label style="display: block; font-size: 0.775rem; font-weight: 700; color: #334155; margin-bottom: 4px;">
-                集計 開始日
+              <label for="modalAccMonthStart" style="display: block; font-size: 0.775rem; font-weight: 700; color: #334155; margin-bottom: 4px;">
+                始める月（デフォルト: 1日）
+              </label>
+              <select id="modalAccMonthStart" class="form-select"
+                style="width: 100%; padding: 7px 10px; font-size: 0.875rem; font-weight: 700; background: #fff; border: 1.5px solid #94a3b8; border-radius: 6px; box-sizing: border-box; cursor: pointer; margin-bottom: 8px;">
+              </select>
+              <label for="modalAccDateStart" style="display: block; font-size: 0.725rem; font-weight: 600; color: #64748b; margin-bottom: 3px;">
+                詳しい開始日（必要あれば変更）
               </label>
               <input type="date" id="modalAccDateStart" class="form-input"
-                style="width: 100%; padding: 8px 10px; font-size: 0.9rem; font-weight: 700; background: #fff; border: 1.5px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; cursor: pointer;">
+                style="width: 100%; padding: 7px 10px; font-size: 0.875rem; font-weight: 700; background: #fff; border: 1.5px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; cursor: pointer;">
             </div>
-            <div style="font-size: 1.2rem; font-weight: 700; color: #64748b; padding-top: 18px;">
+            <div style="font-size: 1.2rem; font-weight: 700; color: #64748b; padding-top: 26px;">
               〜
             </div>
             <div>
-              <label style="display: block; font-size: 0.775rem; font-weight: 700; color: #334155; margin-bottom: 4px;">
-                集計 終了日
+              <label for="modalAccMonthEnd" style="display: block; font-size: 0.775rem; font-weight: 700; color: #334155; margin-bottom: 4px;">
+                終わる月（デフォルト: 末日）
+              </label>
+              <select id="modalAccMonthEnd" class="form-select"
+                style="width: 100%; padding: 7px 10px; font-size: 0.875rem; font-weight: 700; background: #fff; border: 1.5px solid #94a3b8; border-radius: 6px; box-sizing: border-box; cursor: pointer; margin-bottom: 8px;">
+              </select>
+              <label for="modalAccDateEnd" style="display: block; font-size: 0.725rem; font-weight: 600; color: #64748b; margin-bottom: 3px;">
+                詳しい終了日（必要あれば変更）
               </label>
               <input type="date" id="modalAccDateEnd" class="form-input"
-                style="width: 100%; padding: 8px 10px; font-size: 0.9rem; font-weight: 700; background: #fff; border: 1.5px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; cursor: pointer;">
+                style="width: 100%; padding: 7px 10px; font-size: 0.875rem; font-weight: 700; background: #fff; border: 1.5px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; cursor: pointer;">
             </div>
           </div>
 
@@ -7499,7 +7550,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261118_est_to_inv"></script>
+  <script src="js/app.bundle.js?v=20261118_acc_period"></script>
 </body>
 
 </html>
