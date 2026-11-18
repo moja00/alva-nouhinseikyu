@@ -3258,19 +3258,53 @@ function renderItemInputCards() {
     const btnSaveMaster = card.querySelector('.btn-save-to-master');
     if (btnSaveMaster) {
       btnSaveMaster.addEventListener('click', () => {
-        if (!item.name || !item.name.trim()) {
+        const cleanName = (item.name || '').trim();
+        if (!cleanName) {
           showToast('品名を入力してください', 'info');
           return;
         }
-        saveItemToMaster({
-          name: item.name.trim(),
+        const newUnitPrice = Math.abs(Number(item.unitPrice) || 0);
+        const currentMasterList = (typeof getItemMasterList === 'function') ? getItemMasterList(false) : [];
+        const normKey = (typeof getMasterKey === 'function') ? getMasterKey(cleanName) : cleanName.toLowerCase();
+        const existingMaster = currentMasterList.find(m => m && (
+          (typeof getMasterKey === 'function' ? getMasterKey(m.name || '') : String(m.name || '').trim().toLowerCase()) === normKey
+        ));
+
+        console.log('【伝票明細→マスタ登録】実行開始', { cleanName, newUnitPrice, existingMasterId: existingMaster ? existingMaster.id : null });
+
+        if (existingMaster) {
+          const curPriceStr = (Number(existingMaster.unitPrice) || 0).toLocaleString();
+          const newPriceStr = newUnitPrice.toLocaleString();
+          const ok = confirm(
+            `商品マスタに同名の商品「${existingMaster.name}」がすでに登録されています。\n\n` +
+            `現在のマスタ単価: ¥${curPriceStr}\n` +
+            `今回の伝票単価: ¥${newPriceStr}\n\n` +
+            `既存マスタの内容（単価・単位・税率など）を上書き更新してもよろしいですか？`
+          );
+          if (!ok) {
+            console.log('【伝票明細→マスタ登録】同名商品の上書き確認をキャンセルしました');
+            return;
+          }
+        }
+
+        const saved = saveItemToMaster({
+          id: existingMaster ? existingMaster.id : undefined,
+          name: cleanName,
           unit: item.unit || '式',
-          unitPrice: Math.abs(Number(item.unitPrice) || 0),
+          unitPrice: newUnitPrice,
           userPrice: Number(item.userPrice) || 0,
           taxRate: item.taxRate !== undefined ? Number(item.taxRate) : 10,
           note: item.note || ''
-        });
-        showToast(`「${item.name}」を商品マスタに保存しました`, 'success');
+        }, true);
+        if (saved && saved.id) {
+          item.itemId = saved.id;
+          item.productId = saved.id;
+        }
+        if (typeof renderItemMasterList === 'function') renderItemMasterList();
+        if (typeof renderInventoryTable === 'function') renderInventoryTable();
+        if (typeof populateSerialMgmtItemSelects === 'function') populateSerialMgmtItemSelects();
+        console.log('【伝票明細→マスタ登録】完了', saved);
+        showToast(existingMaster ? `「${cleanName}」の商品マスタを上書き更新しました` : `「${cleanName}」を商品マスタに登録しました`, 'success');
       });
     }
 

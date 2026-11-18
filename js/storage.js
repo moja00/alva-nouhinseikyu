@@ -3925,33 +3925,8 @@ export function autoRegisterMastersFromDoc(doc) {
       });
     }
 
-    // 商品明細の自動マスタ登録（サンプル商品・修理項目は除外）
-    // 【最重要ルール】伝票保存時に既存商品マスタの価格を絶対に上書きしない！
-    // 納品請求書で価格を変更して発行しても、商品マスタの価格は固定で維持されます。
-    if (Array.isArray(doc.items)) {
-      const currentList = getItemMasterList(false);
-      doc.items.forEach(it => {
-        const name = (it.name || '').trim();
-        if (!name || SAMPLE_ITEM_KEYS.has(getMasterKey(name))) return;
-
-        const key = getMasterKey(name);
-        const exists = currentList.some(m => getMasterKey(m.name) === key);
-        if (!exists) {
-          // 未登録の完全新規品目のみマスタに追加（isExplicitEdit: false で価格を保護）
-          const autoCat = it.category || (isRepairItem(it) ? '修理・工賃' : '');
-          saveItemToMaster({
-            name: name,
-            category: autoCat,
-            unitPrice: Number(it.unitPrice) || 0,
-            userPrice: Number(it.userPrice !== undefined ? it.userPrice : it.unitPrice) || 0,
-            unit: it.unit || '式',
-            taxRate: it.taxRate !== undefined ? Number(it.taxRate) : 10,
-            note: it.note || ''
-          }, false);
-          currentList.push({ name });
-        }
-      });
-    }
+    // ※ 商品明細の自動マスタ登録は停止（伝票保存・確定時に「メンテ内容」等の単発項目が
+    //   自動で商品マスタ・在庫マスタへ混入するのを防ぐため、伝票上の「マスタ登録」ボタン押下時のみ登録する）
   } catch (e) {
     console.error('Failed to auto register masters from doc:', e);
   }
