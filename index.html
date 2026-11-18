@@ -343,7 +343,7 @@
           style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
           <span
-            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.18-acc-period</span>
+            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.18-acc-inline-period</span>
         </div>
       </div>
 
@@ -3779,7 +3779,7 @@
   <section class="app-view-screen" id="accountingViewScreen">
 
     <!-- 専用画面トップバー -->
-    <div class="view-screen-header">
+    <div class="view-screen-header" style="flex-wrap: wrap; gap: 10px;">
       <div class="view-screen-header-left">
         <div class="view-screen-icon-badge" style="background: #e0e7ff; color: var(--primary);">📊</div>
         <div>
@@ -3787,59 +3787,81 @@
           <span class="view-screen-subtitle">請求書連動の売上・入金消込・損益計算書（P/L）・自動仕訳帳</span>
         </div>
       </div>
-      <div class="view-screen-header-actions">
-        <!-- 全サブ機能連動 集計対象期間コントロール -->
+      <div class="view-screen-header-actions" style="flex-wrap: wrap; gap: 8px;">
+        <!-- 全サブ機能連動 集計対象期間コントロール（ポップアップ不要・インライン完結） -->
         <div class="acc-global-period-control"
-          style="display: inline-flex; align-items: center; gap: 6px; background: #ffffff; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 4px 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); width: 100%; box-sizing: border-box; flex-wrap: wrap;">
-          <span
-            style="font-size: 0.8rem; font-weight: 700; color: #334155; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;">
-            📅 期間:
-          </span>
-          <select id="accGlobalPeriodPreset" class="form-select"
-            style="padding: 4px 8px; font-size: 0.8rem; font-weight: 700; width: auto; border: 1px solid #94a3b8; border-radius: 6px; background: #f8fafc; color: #1e293b; cursor: pointer;">
-            <optgroup label="📌 クイック期間・年度">
-              <option value="thisMonth">今月 (当月)</option>
-              <option value="lastMonth">先月</option>
-              <option value="last3Months">直近3ヶ月</option>
-              <option value="last6Months">直近6ヶ月</option>
-              <option value="last12Months">直近1年</option>
-              <option value="thisYear">今期 (会計年度通期)</option>
-              <option value="lastYear">前期 (前会計年度)</option>
-              <option value="all">全期間 (すべて)</option>
-              <option value="custom">📅 開始月・終了月で指定...</option>
-            </optgroup>
-            <optgroup label="📆 各月クイック（1年前まで）" id="accMonthQuickOptGroup">
-            </optgroup>
-          </select>
+          style="display: flex; flex-direction: column; gap: 5px; background: #ffffff; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 6px 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); box-sizing: border-box;">
+          <!-- 1段目：各月クイック（1年前まで）＆ ワンクリック期間ボタン -->
+          <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+            <span
+              style="font-size: 0.78rem; font-weight: 700; color: #334155; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;">
+              📅 期間:
+            </span>
+            <select id="accGlobalPeriodPreset" class="form-select"
+              style="padding: 3px 8px; font-size: 0.78rem; font-weight: 700; width: auto; border: 1px solid #94a3b8; border-radius: 6px; background: #f8fafc; color: #1e293b; cursor: pointer;">
+              <optgroup label="📌 クイック期間・年度">
+                <option value="thisMonth">今月 (当月)</option>
+                <option value="lastMonth">先月</option>
+                <option value="last3Months">直近3ヶ月</option>
+                <option value="last6Months">直近6ヶ月</option>
+                <option value="last12Months">直近1年</option>
+                <option value="thisYear">今期 (会計年度通期)</option>
+                <option value="lastYear">前期 (前会計年度)</option>
+                <option value="all">全期間 (すべて)</option>
+                <option value="custom">📅 下の開始月・終了月で指定中</option>
+              </optgroup>
+              <optgroup label="📆 各月クイック（1年前まで）" id="accMonthQuickOptGroup">
+              </optgroup>
+            </select>
 
-          <!-- ワンクリック期間ボタン（直近3ヶ月・6ヶ月・1年・今期・全期間） -->
-          <div id="accQuickRangeButtons"
-            style="display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;">
-            <button type="button" class="acc-quick-range-btn" data-preset="last3Months"
-              onclick="window.applyAccGlobalPeriod &amp;&amp; window.applyAccGlobalPeriod('last3Months')"
-              style="padding: 3px 8px; font-size: 0.74rem; font-weight: 700; border-radius: 5px; border: 1px solid #cbd5e1; background: #f8fafc; color: #334155; cursor: pointer; white-space: nowrap;">直近3ヶ月</button>
-            <button type="button" class="acc-quick-range-btn" data-preset="last6Months"
-              onclick="window.applyAccGlobalPeriod &amp;&amp; window.applyAccGlobalPeriod('last6Months')"
-              style="padding: 3px 8px; font-size: 0.74rem; font-weight: 700; border-radius: 5px; border: 1px solid #cbd5e1; background: #f8fafc; color: #334155; cursor: pointer; white-space: nowrap;">6ヶ月</button>
-            <button type="button" class="acc-quick-range-btn" data-preset="last12Months"
-              onclick="window.applyAccGlobalPeriod &amp;&amp; window.applyAccGlobalPeriod('last12Months')"
-              style="padding: 3px 8px; font-size: 0.74rem; font-weight: 700; border-radius: 5px; border: 1px solid #cbd5e1; background: #f8fafc; color: #334155; cursor: pointer; white-space: nowrap;">1年</button>
-            <button type="button" class="acc-quick-range-btn" data-preset="thisYear"
-              onclick="window.applyAccGlobalPeriod &amp;&amp; window.applyAccGlobalPeriod('thisYear')"
-              style="padding: 3px 8px; font-size: 0.74rem; font-weight: 700; border-radius: 5px; border: 1px solid #cbd5e1; background: #f8fafc; color: #334155; cursor: pointer; white-space: nowrap;">今期</button>
-            <button type="button" class="acc-quick-range-btn" data-preset="all"
-              onclick="window.applyAccGlobalPeriod &amp;&amp; window.applyAccGlobalPeriod('all')"
-              style="padding: 3px 8px; font-size: 0.74rem; font-weight: 700; border-radius: 5px; border: 1px solid #cbd5e1; background: #f8fafc; color: #334155; cursor: pointer; white-space: nowrap;">全期間</button>
+            <!-- ワンクリック期間ボタン（直近3ヶ月・6ヶ月・1年・今期・全期間） -->
+            <div id="accQuickRangeButtons"
+              style="display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;">
+              <button type="button" class="acc-quick-range-btn" data-preset="last3Months"
+                onclick="window.applyAccGlobalPeriod &amp;&amp; window.applyAccGlobalPeriod('last3Months')"
+                style="padding: 3px 8px; font-size: 0.73rem; font-weight: 700; border-radius: 5px; border: 1px solid #cbd5e1; background: #f8fafc; color: #334155; cursor: pointer; white-space: nowrap;">直近3ヶ月</button>
+              <button type="button" class="acc-quick-range-btn" data-preset="last6Months"
+                onclick="window.applyAccGlobalPeriod &amp;&amp; window.applyAccGlobalPeriod('last6Months')"
+                style="padding: 3px 8px; font-size: 0.73rem; font-weight: 700; border-radius: 5px; border: 1px solid #cbd5e1; background: #f8fafc; color: #334155; cursor: pointer; white-space: nowrap;">6ヶ月</button>
+              <button type="button" class="acc-quick-range-btn" data-preset="last12Months"
+                onclick="window.applyAccGlobalPeriod &amp;&amp; window.applyAccGlobalPeriod('last12Months')"
+                style="padding: 3px 8px; font-size: 0.73rem; font-weight: 700; border-radius: 5px; border: 1px solid #cbd5e1; background: #f8fafc; color: #334155; cursor: pointer; white-space: nowrap;">1年</button>
+              <button type="button" class="acc-quick-range-btn" data-preset="thisYear"
+                onclick="window.applyAccGlobalPeriod &amp;&amp; window.applyAccGlobalPeriod('thisYear')"
+                style="padding: 3px 8px; font-size: 0.73rem; font-weight: 700; border-radius: 5px; border: 1px solid #cbd5e1; background: #f8fafc; color: #334155; cursor: pointer; white-space: nowrap;">今期</button>
+              <button type="button" class="acc-quick-range-btn" data-preset="all"
+                onclick="window.applyAccGlobalPeriod &amp;&amp; window.applyAccGlobalPeriod('all')"
+                style="padding: 3px 8px; font-size: 0.73rem; font-weight: 700; border-radius: 5px; border: 1px solid #cbd5e1; background: #f8fafc; color: #334155; cursor: pointer; white-space: nowrap;">全期間</button>
+            </div>
           </div>
 
-          <!-- アクティブ期間ラベルバッジ（クリックでいつでも開始月・終了月指定が開く！） -->
-          <button type="button" id="badgeAccActivePeriod"
-            onclick="window.openAccDateRangeModal &amp;&amp; window.openAccDateRangeModal()"
-            title="クリックして開始月・終了月や詳しい日付を指定"
-            style="font-size: 0.775rem; font-weight: 800; padding: 4px 10px; border-radius: 6px; background: #e0f2fe; color: #0369a1; border: 1px solid #7dd3fc; white-space: nowrap; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; transition: all 0.2s;">
-            <span id="dispAccActivePeriodText">全期間</span>
-            <span style="font-size: 11px; opacity: 0.85;">📅✏️</span>
-          </button>
+          <!-- 2段目：始める月（デフォルト1日）〜 終わる月（デフォルト末日）＆ 詳しい日付 -->
+          <div id="accInlineMonthRangeBar"
+            style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 6px; padding: 4px 8px;">
+            <div style="display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;">
+              <label for="accInlineMonthStart"
+                style="font-size: 0.72rem; font-weight: 700; color: #0369a1; white-space: nowrap;">始める月:</label>
+              <select id="accInlineMonthStart" class="form-select"
+                title="始める月を選択（詳しい日付は自動で1日になります）"
+                style="padding: 2px 6px; font-size: 0.78rem; font-weight: 700; width: auto; min-width: 112px; border: 1px solid #94a3b8; border-radius: 5px; background: #ffffff; color: #0f172a; cursor: pointer;"></select>
+              <input type="date" id="accInlineDateStart" class="form-input"
+                title="詳しい開始日（始める月を選ぶと自動で1日になり、必要あれば変更できます）"
+                style="padding: 2px 6px; font-size: 0.78rem; font-weight: 700; width: auto; border: 1px solid #cbd5e1; border-radius: 5px; background: #ffffff; color: #0f172a; cursor: pointer;">
+            </div>
+            <span style="font-weight: 800; color: #64748b;">〜</span>
+            <div style="display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;">
+              <label for="accInlineMonthEnd"
+                style="font-size: 0.72rem; font-weight: 700; color: #0369a1; white-space: nowrap;">終わる月:</label>
+              <select id="accInlineMonthEnd" class="form-select"
+                title="終わる月を選択（詳しい日付は自動で末日になります）"
+                style="padding: 2px 6px; font-size: 0.78rem; font-weight: 700; width: auto; min-width: 112px; border: 1px solid #94a3b8; border-radius: 5px; background: #ffffff; color: #0f172a; cursor: pointer;"></select>
+              <input type="date" id="accInlineDateEnd" class="form-input"
+                title="詳しい終了日（終わる月を選ぶと自動で末日になり、必要あれば変更できます）"
+                style="padding: 2px 6px; font-size: 0.78rem; font-weight: 700; width: auto; border: 1px solid #cbd5e1; border-radius: 5px; background: #ffffff; color: #0f172a; cursor: pointer;">
+            </div>
+            <span id="dispAccActivePeriodText"
+              style="font-size: 0.73rem; font-weight: 800; color: #0369a1; background: #e0f2fe; border: 1px solid #7dd3fc; padding: 2px 8px; border-radius: 9999px; white-space: nowrap;">全期間（累計）</span>
+          </div>
         </div>
 
         <button type="button" class="btn-back-to-portal" id="btnCloseAccountingModal"
@@ -5160,7 +5182,7 @@
         <div>
           <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             <h2 class="view-screen-title" style="margin: 0;">勤怠管理・退勤タイムカード</h2>
-            <span style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.18-acc-period</span>
+            <span style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.18-acc-inline-period</span>
           </div>
           <span class="view-screen-subtitle">休憩1時間自動控除・ワンタップ出退勤打刻・月次出勤簿・打刻漏れ修正</span>
         </div>
@@ -7550,7 +7572,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261118_acc_period"></script>
+  <script src="js/app.bundle.js?v=20261118_acc_inline_period"></script>
 </body>
 
 </html>
