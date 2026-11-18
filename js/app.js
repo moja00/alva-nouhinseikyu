@@ -3078,8 +3078,8 @@ function renderItemInputCards() {
           <input type="text" class="form-input item-input-name" placeholder="品名・項目名（例: DP-5000 ベーシックセット など）" value="${escapeHtml(item.name || '')}" style="font-weight: 600; font-size: 0.95rem;">
         </div>
         <div style="position: relative;">
-          <input type="text" class="form-input item-input-description" placeholder="📝 摘要（例: 出精値引き、特別割引き、仕様・対象期間 等 ※品名欄に一緒に印字されます）" value="${escapeHtml(item.description || item.discountReason || '')}" style="font-size: 0.825rem; background: #f8fafc; border-color: #cbd5e1; color: #334155; padding-left: 28px;">
-          <span style="position: absolute; left: 8px; top: 50%; transform: translateY(-50%); font-size: 13px; opacity: 0.65; pointer-events: none;">📝</span>
+          <textarea class="form-input item-input-description" rows="2" placeholder="📝 摘要（Enterで改行可／例: 仕様・内訳・値引き理由 等 ※品名欄に一緒に印字されます）" style="font-size: 0.825rem; background: #f8fafc; border-color: #cbd5e1; color: #334155; padding-left: 28px; line-height: 1.45; resize: vertical; min-height: 52px; max-height: 240px; overflow-y: auto;">${escapeHtml(item.description || item.discountReason || '')}</textarea>
+          <span style="position: absolute; left: 8px; top: 9px; font-size: 13px; opacity: 0.65; pointer-events: none;">📝</span>
         </div>
         <div style="position: relative;">
           <input type="text" class="form-input item-input-end-user" placeholder="👤 ユーザー名（納品先・エンドユーザー名 ※商品ごとに異なる場合に入力）" value="${escapeHtml(item.endUserName || '')}" style="font-size: 0.825rem; background: #f0fdf4; border-color: #bbf7d0; color: #166534; padding-left: 28px;">
@@ -3452,7 +3452,19 @@ function renderItemInputCards() {
       }
     });
 
-    if (inputDescription) inputDescription.addEventListener('input', handleItemChange);
+    if (inputDescription) {
+      const autoResizeDescription = () => {
+        inputDescription.style.height = 'auto';
+        if (inputDescription.scrollHeight > 0) {
+          inputDescription.style.height = `${Math.min(240, Math.max(52, inputDescription.scrollHeight))}px`;
+        }
+      };
+      autoResizeDescription();
+      inputDescription.addEventListener('input', () => {
+        autoResizeDescription();
+        handleItemChange();
+      });
+    }
     inputQty.addEventListener('input', () => {
       item.quantity = Number(inputQty.value) || 0;
       if (isSerialTargetItem(item)) {
