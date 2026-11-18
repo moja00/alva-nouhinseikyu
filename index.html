@@ -343,7 +343,7 @@
           style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
           <span
-            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.18-acc-inline-period</span>
+            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.18-new-serial</span>
         </div>
       </div>
 
@@ -1559,6 +1559,19 @@
                 <!-- JSで動的生成 -->
               </select>
               <div id="itemCategoryStockStatusHint" style="font-size: 0.725rem; margin-top: 4px; display: none;"></div>
+            </div>
+          </div>
+
+          <div class="form-row" style="margin-bottom: 14px; display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end;">
+            <div class="form-group" style="flex: 1; min-width: 180px;">
+              <label class="form-label" for="itemMasterInputSku" style="font-size: 0.825rem; font-weight: 700;">SKU・型番（任意）</label>
+              <input type="text" id="itemMasterInputSku" class="form-input" placeholder="例: DP-NEW-01">
+            </div>
+            <div class="form-group" style="flex: 2; min-width: 240px; padding-bottom: 4px;">
+              <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.825rem; font-weight: 700; color: #0f766e; background: #f0fdfa; border: 1px solid #99f6e4; border-radius: 8px; padding: 7px 12px;">
+                <input type="checkbox" id="itemMasterHasSerial" style="width: 16px; height: 16px; accent-color: #0d9488; cursor: pointer;">
+                <span>🔢 個別シリアル番号を追跡・管理する（S/N管理対象）</span>
+              </label>
             </div>
           </div>
 
@@ -5182,7 +5195,7 @@
         <div>
           <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             <h2 class="view-screen-title" style="margin: 0;">勤怠管理・退勤タイムカード</h2>
-            <span style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.18-acc-inline-period</span>
+            <span style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.18-new-serial</span>
           </div>
           <span class="view-screen-subtitle">休憩1時間自動控除・ワンタップ出退勤打刻・月次出勤簿・打刻漏れ修正</span>
         </div>
@@ -7572,7 +7585,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261118_acc_inline_period"></script>
+  <script src="js/app.bundle.js?v=20261118_new_serial"></script>
 </body>
 
 </html>

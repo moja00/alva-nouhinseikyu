@@ -3024,6 +3024,7 @@ export function saveItemToMaster(item, isExplicitEdit = true) {
           : currentUserPrice,
         unit: item.unit || list[existingIndex].unit || '式',
         taxRate: item.taxRate !== undefined ? Number(item.taxRate) : (list[existingIndex].taxRate ?? 10),
+        hasSerial: item.hasSerial !== undefined ? !!item.hasSerial : !!list[existingIndex].hasSerial,
         note: item.note !== undefined ? item.note : (list[existingIndex].note || ''),
         updatedAt: now
       };
@@ -3038,6 +3039,7 @@ export function saveItemToMaster(item, isExplicitEdit = true) {
         userPrice: Number(item.userPrice !== undefined ? item.userPrice : item.unitPrice) || 0,
         unit: item.unit || '式',
         taxRate: item.taxRate !== undefined ? Number(item.taxRate) : 10,
+        hasSerial: !!item.hasSerial,
         note: item.note || '',
         usageCount: Number(item.usageCount) || 0,
         createdAt: now,
@@ -5283,14 +5285,25 @@ export function getInventoryList() {
           existing.name = prod.name;
           modified = true;
         }
+        if (prod.sku && existing.sku !== prod.sku) {
+          existing.sku = prod.sku;
+          modified = true;
+        }
         const isTracked = (prod.name.includes('DP-5000') || prod.name.includes('バッテリー') || prod.name.includes('DP-MS') || prod.name.includes('メカニカルスプレッダー') || prod.name.includes('スプレッダー'));
-        if (isTracked && !existing.hasSerial) {
+        if (prod.hasSerial !== undefined) {
+          if (Boolean(existing.hasSerial) !== Boolean(prod.hasSerial)) {
+            existing.hasSerial = Boolean(prod.hasSerial);
+            modified = true;
+          }
+        } else if (isTracked && !existing.hasSerial) {
           existing.hasSerial = true;
           modified = true;
         }
       } else {
         // 商品マスタにあるが在庫リストにない商品を自動追加（初期在庫0）
-        const isTracked = (prod.name.includes('DP-5000') || prod.name.includes('バッテリー') || prod.name.includes('DP-MS') || prod.name.includes('メカニカルスプレッダー') || prod.name.includes('スプレッダー'));
+        const isTracked = (prod.hasSerial !== undefined)
+          ? Boolean(prod.hasSerial)
+          : (prod.name.includes('DP-5000') || prod.name.includes('バッテリー') || prod.name.includes('DP-MS') || prod.name.includes('メカニカルスプレッダー') || prod.name.includes('スプレッダー'));
         list.push({
           id: `inv_${prod.id}`,
           itemId: prod.id,
@@ -5421,6 +5434,10 @@ export function saveInventoryItem(item) {
       itemId: item.itemId || (existingIndex >= 0 ? list[existingIndex].itemId : ''),
       name: (item.name || '').trim(),
       sku: (item.sku || '').trim(),
+      type: item.type || (existingIndex >= 0 ? (list[existingIndex].type || 'single') : 'single'),
+      hasSerial: item.hasSerial !== undefined ? !!item.hasSerial : (existingIndex >= 0 ? !!list[existingIndex].hasSerial : false),
+      bom: item.bom !== undefined ? item.bom : (existingIndex >= 0 ? list[existingIndex].bom : undefined),
+      bundleItems: Array.isArray(item.bundleItems) ? item.bundleItems : (existingIndex >= 0 ? list[existingIndex].bundleItems : undefined),
       currentStock: Number(item.currentStock) || 0,
       safetyStock: Number(item.safetyStock) >= 0 ? Number(item.safetyStock) : 0,
       unit: (item.unit || '個').trim(),
@@ -5666,7 +5683,7 @@ export function syncInventoryWithItemsMaster() {
         lastInDate: '',
         note: `商品マスタ連携品目: ${item.note || ''}`,
         type: 'single',
-        hasSerial: false,
+        hasSerial: !!item.hasSerial,
         bundleItems: [],
         history: [{
           id: `log_init_${Date.now()}`,
@@ -8385,6 +8402,7 @@ export function saveBatchInventorySerials(serialsArray = []) {
 
 export function getAvailableSerialsByItem(inventoryIdOrName, options = {}) {
   const list = getInventorySerialList();
+  const invList = getInventoryList();
   const targetKey = String(inventoryIdOrName || '').trim();
   const targetUpper = targetKey.toUpperCase();
 
@@ -8398,6 +8416,32 @@ export function getAvailableSerialsByItem(inventoryIdOrName, options = {}) {
   const isTargetBat = !isTargetChg && (isTargetBtCs || isTargetBtSk || targetKey === 'inv_dp5000_bat' || targetUpper.includes('バッテリー') || targetUpper.includes('BAT'));
 
   const isTargetMs = targetKey === 'inv_2' || targetUpper.includes('DP-MS') || targetUpper.includes('スプレッダー');
+
+  // 汎用・新商品のための在庫ID / 商品ID / SKU / 正規化名の解決
+  const normTargetName = targetKey ? getMasterKey(targetKey) : '';
+  const targetInv = invList.find(inv => inv && (
+    inv.id === targetKey ||
+    inv.itemId === targetKey ||
+    (inv.sku && inv.sku.toUpperCase() === targetUpper) ||
+    (normTargetName && getMasterKey(inv.name || '') === normTargetName)
+  ));
+  const targetIds = new Set();
+  const addIdVariant = (rawId) => {
+    if (!rawId) return;
+    const str = String(rawId).trim();
+    if (!str) return;
+    targetIds.add(str);
+    const bare = str.replace(/^inv_/, '');
+    targetIds.add(bare);
+    targetIds.add('inv_' + bare);
+  };
+  addIdVariant(targetKey);
+  if (targetInv) {
+    addIdVariant(targetInv.id);
+    addIdVariant(targetInv.itemId);
+  }
+  const targetSkuUpper = String(targetInv?.sku || '').trim().toUpperCase();
+  const resolvedNormName = (targetInv && targetInv.name) ? getMasterKey(targetInv.name) : normTargetName;
 
   return list.filter(s => {
     if (!s) return false;
@@ -8455,8 +8499,20 @@ export function getAvailableSerialsByItem(inventoryIdOrName, options = {}) {
       return isThisMs;
     }
 
-    // 5. 完全一致またはフォールバック
-    if (sId === targetKey || sName === targetKey) {
+    // 5. 完全一致または汎用・新商品フォールバック（ID/SKU/正規化名）
+    const sItemId = String(s.itemId || '').trim();
+    const sInvId = String(s.inventoryId || '').trim();
+    const sSkuUpper = String(s.sku || '').trim().toUpperCase();
+    if ((sItemId && targetIds.has(sItemId)) ||
+      (sInvId && targetIds.has(sInvId)) ||
+      (targetSkuUpper && sSkuUpper === targetSkuUpper)) {
+      return true;
+    }
+    const isThisLegacyKnown = isThisChg || isThisBat || isThisMs || isThisDp5kBody;
+    if (!isThisLegacyKnown && (
+      (targetKey && (sId === targetKey || sName === targetKey)) ||
+      (resolvedNormName && sName && getMasterKey(sName) === resolvedNormName)
+    )) {
       return true;
     }
 
