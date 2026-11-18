@@ -343,7 +343,7 @@
           style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
           <span
-            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.18-acc-prev-fiscal</span>
+            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.18-remove-back-btn</span>
         </div>
       </div>
 
@@ -361,11 +361,6 @@
         <div
           style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
           <div style="display: flex; align-items: center; gap: 8px;">
-            <button type="button" class="btn-back-to-portal" id="btnCloseInvoiceView"
-              onclick="window.switchAppView && window.switchAppView('portal')" title="メインポータルMENUへ戻る"
-              style="padding: 4px 10px; font-size: 0.775rem;">
-              <span>🏠</span> 業務MENUへ
-            </button>
             <label class="form-label"
               style="margin-bottom: 0; font-size: 0.85rem; font-weight: 700; color: #334155;">帳票の種類</label>
           </div>
@@ -1490,10 +1485,6 @@
           </svg>
           新規商品を登録
         </button>
-        <button type="button" class="btn-back-to-portal" id="btnCloseItemMasterModal"
-          onclick="window.switchAppView && window.switchAppView('portal')" title="メインポータルMENUへ戻る">
-          <span>🏠</span> 業務MENUへ戻る
-        </button>
       </div>
     </div>
 
@@ -1780,10 +1771,6 @@
         <button type="button" id="btnToggleNewInventoryForm" class="btn btn-primary btn-sm"
           style="display: inline-flex; align-items: center; gap: 6px; font-weight: 700;">
           ➕ 新規品目追加
-        </button>
-        <button type="button" class="btn-back-to-portal" id="btnCloseInventoryMasterModal"
-          onclick="window.switchAppView && window.switchAppView('portal')" title="メインポータルMENUへ戻る">
-          <span>🏠</span> 業務MENUへ戻る
         </button>
       </div>
     </div>
@@ -3367,10 +3354,6 @@
           </svg>
           新規取引先を登録
         </button>
-        <button type="button" class="btn-back-to-portal" id="btnCloseClientMasterModal"
-          onclick="window.switchAppView && window.switchAppView('portal')" title="メインポータルMENUへ戻る">
-          <span>🏠</span> 業務MENUへ戻る
-        </button>
       </div>
     </div>
 
@@ -3879,11 +3862,6 @@
               style="font-size: 0.73rem; font-weight: 800; color: #0369a1; background: #e0f2fe; border: 1px solid #7dd3fc; padding: 2px 8px; border-radius: 9999px; white-space: nowrap;">全期間（累計）</span>
           </div>
         </div>
-
-        <button type="button" class="btn-back-to-portal" id="btnCloseAccountingModal"
-          onclick="window.switchAppView &amp;&amp; window.switchAppView('portal')" title="メインポータルMENUへ戻る">
-          <span>🏠</span> 業務MENUへ戻る
-        </button>
       </div>
     </div>
 
@@ -4825,10 +4803,6 @@
           style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; background: #f0fdf4; border-color: #86efac; color: #166534; font-weight: 700; cursor: pointer;">
           <span>🖨️</span> 経費精算書 発行
         </button>
-        <button type="button" class="btn-back-to-portal" id="btnCloseExpensesScreen"
-          onclick="window.switchAppView &amp;&amp; window.switchAppView('portal')" title="メインポータルMENUへ戻る">
-          <span>🏠</span> 業務MENUへ戻る
-        </button>
       </div>
     </div>
 
@@ -5198,7 +5172,7 @@
         <div>
           <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             <h2 class="view-screen-title" style="margin: 0;">勤怠管理・退勤タイムカード</h2>
-            <span style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.18-acc-prev-fiscal</span>
+            <span style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.18-remove-back-btn</span>
           </div>
           <span class="view-screen-subtitle">休憩1時間自動控除・ワンタップ出退勤打刻・月次出勤簿・打刻漏れ修正</span>
         </div>
@@ -5213,10 +5187,6 @@
             <rect x="6" y="14" width="12" height="8" />
           </svg>
           出勤簿を出力・印刷
-        </button>
-        <button type="button" class="btn-back-to-portal" id="btnCloseAttendanceModal"
-          onclick="window.switchAppView &amp;&amp; window.switchAppView('portal')" title="メインポータルMENUへ戻る">
-          <span>🏠</span> 業務MENUへ戻る
         </button>
       </div>
     </div>
@@ -5512,12 +5482,6 @@
           style="display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem;"
           title="当月の給与・社会保険料を財務会計の自動仕訳に反映します">
           📋 会計反映
-        </button>
-
-        <!-- 業務MENUへ戻るボタン -->
-        <button type="button" class="btn-back-to-portal" id="btnClosePayrollModal"
-          onclick="window.switchAppView &amp;&amp; window.switchAppView('portal')" title="メインポータルMENUへ戻る">
-          <span>🏠</span> 業務MENUへ戻る
         </button>
       </div>
     </div>
@@ -7588,7 +7552,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261118_acc_prev_fiscal"></script>
+  <script src="js/app.bundle.js?v=20261118_remove_back_btn"></script>
 </body>
 
 </html>
