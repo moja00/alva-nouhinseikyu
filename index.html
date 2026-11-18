@@ -343,7 +343,7 @@
           style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
           <span
-            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.18-desc-newline</span>
+            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.18-est-to-inv</span>
         </div>
       </div>
 
@@ -438,6 +438,33 @@
               <polyline points="3 3 3 8 8 8" />
             </svg>
             確定取消（下書きへ）
+          </button>
+        </div>
+
+        <!-- 元見積書リンクバナー（見積書から納品請求書を作成した場合に表示） -->
+        <div id="sidebarSourceEstimateBanner"
+          style="display: none; margin-top: 8px; margin-bottom: 4px; padding: 7px 12px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; align-items: center; justify-content: space-between; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 6px; font-size: 0.775rem; color: #92400e; font-weight: 700;">
+            <span>📋</span>
+            <span>元見積: <span id="sidebarSourceEstimateNumber" style="font-family: monospace;"></span> から作成</span>
+          </div>
+          <button type="button" id="btnViewSourceEstimate" class="btn btn-xs"
+            style="padding: 3px 9px; font-size: 0.725rem; font-weight: 700; background: #ffffff; color: #b45309; border: 1px solid #fcd34d; border-radius: 5px; cursor: pointer;"
+            title="作成元の見積書の内容を確認します">
+            元見積を確認
+          </button>
+        </div>
+
+        <!-- 見積書編集中：ワンクリック複製・納品請求書作成バー -->
+        <div id="sidebarConvertEstimateBanner"
+          style="display: none; margin-top: 8px; margin-bottom: 4px; padding: 7px 12px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; align-items: center; justify-content: space-between; gap: 8px;">
+          <div style="font-size: 0.74rem; color: #1e40af; font-weight: 600; line-height: 1.35;">
+            販売決まり次第、元の見積書を残して下書き作成できます
+          </div>
+          <button type="button" id="btnConvertEstimateToInvoice" class="btn btn-sm"
+            style="padding: 4px 10px; font-size: 0.75rem; font-weight: 700; background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #ffffff; border: none; border-radius: 6px; box-shadow: 0 1px 3px rgba(37,99,235,0.28); white-space: nowrap; cursor: pointer;"
+            title="この見積書を複製して種別を「納品請求書（下書き）」に切り替えます（確定は手動）">
+            📑 納品請求書へ複製切替
           </button>
         </div>
       </div>
@@ -5107,7 +5134,7 @@
         <div>
           <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             <h2 class="view-screen-title" style="margin: 0;">勤怠管理・退勤タイムカード</h2>
-            <span style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.18-desc-newline</span>
+            <span style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.18-est-to-inv</span>
           </div>
           <span class="view-screen-subtitle">休憩1時間自動控除・ワンタップ出退勤打刻・月次出勤簿・打刻漏れ修正</span>
         </div>
@@ -7472,7 +7499,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261118_desc_newline"></script>
+  <script src="js/app.bundle.js?v=20261118_est_to_inv"></script>
 </body>
 
 </html>

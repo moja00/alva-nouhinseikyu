@@ -273,6 +273,11 @@ const DOM = {
   btnCancelIssueDoc: document.getElementById('btnCancelIssueDoc'),
   sidebarIssuedBanner: document.getElementById('sidebarIssuedBanner'),
   btnSidebarCancelIssue: document.getElementById('btnSidebarCancelIssue'),
+  sidebarSourceEstimateBanner: document.getElementById('sidebarSourceEstimateBanner'),
+  sidebarSourceEstimateNumber: document.getElementById('sidebarSourceEstimateNumber'),
+  btnViewSourceEstimate: document.getElementById('btnViewSourceEstimate'),
+  sidebarConvertEstimateBanner: document.getElementById('sidebarConvertEstimateBanner'),
+  btnConvertEstimateToInvoice: document.getElementById('btnConvertEstimateToInvoice'),
   badgeAccountingSyncStatus: document.getElementById('badgeAccountingSyncStatus'),
   btnPrint: document.getElementById('btnPrint'),
   btnSaveHistory: document.getElementById('btnSaveHistory'),
@@ -2130,6 +2135,16 @@ function renderAll() {
   if (DOM.sidebarIssuedBanner) {
     DOM.sidebarIssuedBanner.style.display = isDocIssued ? 'flex' : 'none';
   }
+  const sourceEstNo = (!isEstimate && currentDoc.sourceEstimateNumber) ? String(currentDoc.sourceEstimateNumber).trim() : '';
+  if (DOM.sidebarSourceEstimateBanner) {
+    DOM.sidebarSourceEstimateBanner.style.display = sourceEstNo ? 'flex' : 'none';
+  }
+  if (DOM.sidebarSourceEstimateNumber && sourceEstNo) {
+    DOM.sidebarSourceEstimateNumber.textContent = sourceEstNo;
+  }
+  if (DOM.sidebarConvertEstimateBanner) {
+    DOM.sidebarConvertEstimateBanner.style.display = isEstimate ? 'flex' : 'none';
+  }
 
   if (DOM.btnIssueDoc) {
     if (isDocIssued) {
@@ -3781,6 +3796,18 @@ function setupEventListeners() {
   if (DOM.btnSidebarCancelIssue) {
     DOM.btnSidebarCancelIssue.addEventListener('click', () => {
       cancelCurrentDocIssue();
+    });
+  }
+  if (DOM.btnViewSourceEstimate) {
+    DOM.btnViewSourceEstimate.addEventListener('click', () => {
+      if (currentDoc?.sourceEstimateNumber) {
+        viewSupersededDoc(currentDoc.sourceEstimateNumber, { mode: 'sourceEstimate' });
+      }
+    });
+  }
+  if (DOM.btnConvertEstimateToInvoice) {
+    DOM.btnConvertEstimateToInvoice.addEventListener('click', () => {
+      convertCurrentEstimateToInvoice();
     });
   }
 
@@ -5986,10 +6013,28 @@ function filterAndRenderHistoryList() {
 
   // フィルタリング実行
   const replacedNumbersInList = new Set();
+  const convertedByEstNum = new Map();
+  const convertedByEstId = new Map();
   list.forEach(item => {
     const doc = item.fullDoc || item;
     const rep = (item.replacesDocNumber || doc.replacesDocNumber || '').trim();
     if (rep) replacedNumbersInList.add(rep);
+
+    const srcEstNum = String(item.sourceEstimateNumber || doc.sourceEstimateNumber || '').trim();
+    const srcEstId = String(item.sourceEstimateId || doc.sourceEstimateId || '').trim();
+    const docNo = String(item.docNumber || doc.docNumber || '').trim();
+    const docId = String(item.id || doc.id || '').trim();
+    if (srcEstNum && docNo) {
+      if (!convertedByEstNum.has(srcEstNum)) convertedByEstNum.set(srcEstNum, []);
+      convertedByEstNum.get(srcEstNum).push(docNo);
+    }
+    if (srcEstId && docNo) {
+      if (!convertedByEstId.has(srcEstId)) convertedByEstId.set(srcEstId, []);
+      convertedByEstId.get(srcEstId).push(docNo);
+    } else if (srcEstId && docId) {
+      if (!convertedByEstId.has(srcEstId)) convertedByEstId.set(srcEstId, []);
+      convertedByEstId.get(srcEstId).push(docId);
+    }
   });
 
   let filtered = list.filter(item => {
@@ -6138,6 +6183,25 @@ function filterAndRenderHistoryList() {
       ? `<span style="background: #fffbeb; color: #b45309; border: 1px solid #fde68a; font-weight: 800; font-size: 0.775rem; padding: 2px 8px; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 1px 2px rgba(245, 158, 11, 0.1);">📋 見積書</span>`
       : `<span style="background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; font-weight: 800; font-size: 0.775rem; padding: 2px 8px; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 1px 2px rgba(37, 99, 235, 0.1);">📑 納品請求書</span>`;
 
+    const srcEstNum = String(item.sourceEstimateNumber || item.fullDoc?.sourceEstimateNumber || '').trim();
+    const sourceEstimateBadgeHtml = (!isEstimate && srcEstNum)
+      ? `<button type="button" class="btn btn-xs btn-view-source-est" data-est-num="${escapeHtml(srcEstNum)}" style="background: #fffbeb; color: #b45309; border: 1px solid #fde68a; font-size: 0.7rem; font-weight: 700; padding: 1px 6px; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px; cursor: pointer;" title="作成元の見積書を確認">📋 元見積: ${escapeHtml(srcEstNum)}</button>`
+      : '';
+
+    const itemDocNo = String(item.docNumber || item.fullDoc?.docNumber || '').trim();
+    const itemDocId = String(item.id || item.fullDoc?.id || '').trim();
+    const convertedNos = Array.from(new Set([
+      ...(itemDocNo ? (convertedByEstNum.get(itemDocNo) || []) : []),
+      ...(itemDocId ? (convertedByEstId.get(itemDocId) || []) : [])
+    ]));
+    const convertedBadgeHtml = (isEstimate && convertedNos.length > 0)
+      ? `<span style="background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; font-size: 0.7rem; font-weight: 700; padding: 1px 6px; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px;" title="この見積書から作成された納品請求書">➡️ 請求化: ${escapeHtml(convertedNos.join(', '))}</span>`
+      : '';
+
+    const convertToInvoiceBtnHtml = isEstimate
+      ? `<button type="button" class="btn btn-primary btn-sm btn-convert-to-invoice" style="font-size: 0.75rem; padding: 4px 10px; font-weight: 700; background: linear-gradient(135deg, #2563eb, #1d4ed8); border: none; display: inline-flex; align-items: center; gap: 4px;" title="この見積書を複製して種別を納品請求書（下書き）に切り替えます（確定発行は手動）"><span>📑</span> 納品請求書を作成</button>`
+      : '';
+
     card.innerHTML = `
       <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap;">
         
@@ -6149,6 +6213,8 @@ function filterAndRenderHistoryList() {
             ${endUserBadge}
             <span style="font-weight: 800; font-size: 0.95rem; color: #0f172a;">${escapeHtml(item.clientName || item.client?.name || '名称未設定')}</span>
             <span style="font-size: 0.8rem; color: #64748b; font-family: monospace; background: #f1f5f9; padding: 1px 6px; border-radius: 4px;">${escapeHtml(item.docNumber || '-')}</span>
+            ${sourceEstimateBadgeHtml}
+            ${convertedBadgeHtml}
             ${(item.replacesDocNumber || item.fullDoc?.replacesDocNumber) ? `
               <button type="button" class="btn btn-xs" onclick="event.stopPropagation(); window.viewSupersededDoc('${escapeHtml(item.replacesDocNumber || item.fullDoc.replacesDocNumber)}')" style="background: #fef3c7; color: #92400e; border: 1px solid #fde68a; font-size: 0.7rem; font-weight: 700; padding: 1px 6px; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px; cursor: pointer;" title="訂正前の元伝票を確認">
                 <span>📄</span> 訂正前: ${escapeHtml(item.replacesDocNumber || item.fullDoc.replacesDocNumber)} を確認
@@ -6174,6 +6240,7 @@ function filterAndRenderHistoryList() {
           </div>
 
           <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end;">
+            ${convertToInvoiceBtnHtml}
             ${cancelIssueBtnHtml}
             <button type="button" class="btn btn-warning btn-sm btn-correct-doc" onclick="event.stopPropagation(); window.startDocCorrection && window.startDocCorrection('${escapeHtml(item.docNumber || item.fullDoc?.docNumber || '')}')" style="font-size: 0.75rem; padding: 4px 10px; font-weight: 700; background: #fef3c7; color: #92400e; border: 1px solid #fde68a; display: inline-flex; align-items: center; gap: 4px; cursor: pointer;" title="この伝票を改訂・訂正する（元伝票は履歴として保管され、新伝票を作成）">
               <span>✏️</span> 訂正伝票
@@ -6235,7 +6302,21 @@ function filterAndRenderHistoryList() {
       }
     });
 
-    // 3. 「複製して新規作成」ボタンのイベント
+    // 3. 「複製して新規作成」＆「見積書から納品請求書を作成」＆「元見積確認」ボタンのイベント
+    const btnViewSrcEst = card.querySelector('.btn-view-source-est');
+    if (btnViewSrcEst) {
+      btnViewSrcEst.addEventListener('click', (e) => {
+        e.stopPropagation();
+        viewSupersededDoc(btnViewSrcEst.dataset.estNum, { mode: 'sourceEstimate' });
+      });
+    }
+    const btnConvertToInv = card.querySelector('.btn-convert-to-invoice');
+    if (btnConvertToInv) {
+      btnConvertToInv.addEventListener('click', (e) => {
+        e.stopPropagation();
+        duplicateDocFromHistory(item.id, { targetDocType: 'invoice' });
+      });
+    }
     card.querySelector('.btn-duplicate-doc').addEventListener('click', () => {
       duplicateDocFromHistory(item.id);
     });
@@ -6276,17 +6357,21 @@ function filterAndRenderHistoryList() {
 }
 
 /**
- * 過去の履歴書類から明細・取引先を引き継いで新規書類を作成（複製）
+ * 元伝票データから内容を引き継いだ新規下書きを生成してエディタへ反映する共通ヘルパー
  */
-function duplicateDocFromHistory(id) {
-  const orig = getDocFromHistory(id);
-  if (!orig) return;
-  console.log('【書類複製新規作成】実行開始', { origId: orig.id, origDocNumber: orig.docNumber });
+function cloneDocAsDraft(orig, options = {}) {
+  if (!orig) return null;
+  const { targetDocType = null } = options;
+  const nextDocType = targetDocType || orig.docType || 'invoice';
+  const isEstimateToInvoice = (orig.docType === 'estimate' && nextDocType !== 'estimate');
+
+  console.log('【書類複製新規作成】実行開始', { origId: orig.id, origDocNumber: orig.docNumber, nextDocType });
 
   const nowIso = new Date().toISOString();
   const newDoc = JSON.parse(JSON.stringify(orig));
   newDoc.id = `doc_${Date.now()}`;
-  newDoc.docNumber = generateDocNumber(newDoc.docType || 'invoice');
+  newDoc.docType = nextDocType;
+  newDoc.docNumber = generateDocNumber(nextDocType);
 
   // 発行日を当日にセット
   const today = new Date();
@@ -6297,7 +6382,7 @@ function duplicateDocFromHistory(id) {
   const nextMonthLast = new Date(today.getFullYear(), today.getMonth() + 2, 0);
   newDoc.dueDate = `${nextMonthLast.getFullYear()}-${String(nextMonthLast.getMonth() + 1).padStart(2, '0')}-${String(nextMonthLast.getDate()).padStart(2, '0')}`;
 
-  // 確定発行フラグ・更新日時・訂正メタを初期化（新規下書き）
+  // 確定発行フラグ・更新日時・訂正メタを初期化（新規下書き：確定発行はユーザー手動）
   newDoc.isIssued = false;
   newDoc.isCancelled = false;
   newDoc.status = 'draft';
@@ -6314,6 +6399,17 @@ function duplicateDocFromHistory(id) {
   newDoc.supersededReason = '';
   newDoc.replacesDocNumber = '';
   newDoc.replacesDocId = '';
+
+  // 見積書 → 納品請求書の変換時は作成元見積書の参照情報を記録
+  if (isEstimateToInvoice) {
+    newDoc.sourceEstimateId = orig.id || '';
+    newDoc.sourceEstimateNumber = orig.docNumber || '';
+    newDoc.sourceEstimateIssueDate = orig.issueDate || '';
+  } else {
+    delete newDoc.sourceEstimateId;
+    delete newDoc.sourceEstimateNumber;
+    delete newDoc.sourceEstimateIssueDate;
+  }
 
   // 複製時は別出荷のため、元伝票の引当済みシリアル番号を引き継がない（他伝票シリアル誤解除・二重出荷防止）
   if (Array.isArray(newDoc.items)) {
@@ -6334,10 +6430,37 @@ function duplicateDocFromHistory(id) {
   updateThemeColor(currentDoc.themeColor || 'indigo');
   renderAll();
   closeHistoryModal();
-  console.log('【書類複製新規作成】完了', { newId: newDoc.id, newDocNumber: newDoc.docNumber });
-  showToast(`「${orig.clientName || '取引先'}」の明細構成を引き継いで新規作成しました（シリアル番号は未割当にリセット済みです）`, 'success');
+  console.log('【書類複製新規作成】完了', { newId: newDoc.id, newDocNumber: newDoc.docNumber, sourceEstimateNumber: newDoc.sourceEstimateNumber || '' });
+  if (isEstimateToInvoice) {
+    showToast(`📋 見積書「${orig.docNumber || ''}」から納品請求書（下書き）を作成しました。内容を編集のうえ確定発行してください`, 'success');
+  } else {
+    showToast(`「${orig.clientName || orig.client?.name || '取引先'}」の明細構成を引き継いで新規作成しました（シリアル番号は未割当にリセット済みです）`, 'success');
+  }
+  return newDoc;
+}
+
+/**
+ * 過去の履歴書類から明細・取引先を引き継いで新規書類を作成（複製／見積→納品請求書変換）
+ */
+function duplicateDocFromHistory(id, options = {}) {
+  const orig = getDocFromHistory(id);
+  if (!orig) return;
+  return cloneDocAsDraft(orig, options);
 }
 window.duplicateDocFromHistory = duplicateDocFromHistory;
+
+/**
+ * 現在エディタで開いている見積書を履歴へ保全したうえで、納品請求書（下書き）へ複製変換する
+ */
+function convertCurrentEstimateToInvoice() {
+  if (!currentDoc || currentDoc.docType !== 'estimate') return;
+  const existing = currentDoc.id ? getDocFromHistory(currentDoc.id) : null;
+  if (!existing && typeof saveDocToHistory === 'function') {
+    saveDocToHistory(currentDoc);
+  }
+  return cloneDocAsDraft(currentDoc, { targetDocType: 'invoice' });
+}
+window.convertCurrentEstimateToInvoice = convertCurrentEstimateToInvoice;
 
 function openBackupModal() {
   DOM.backupModal.classList.add('active');
@@ -21132,11 +21255,13 @@ window.syncInventoryStockFromSerials = syncInventoryStockFromSerials;
 window.isRepairItem = isRepairItem;
 
 /**
- * 訂正前の元伝票プレビューモーダルを開く
+ * 訂正前または作成元見積書のプレビューモーダルを開く
  * @param {string} targetDocNumber - 参照したい元伝票番号
+ * @param {object} [options] - { mode: 'superseded' | 'sourceEstimate' }
  */
-async function viewSupersededDoc(targetDocNumber) {
+async function viewSupersededDoc(targetDocNumber, options = {}) {
   if (!targetDocNumber) return;
+  const isSourceEstimate = options.mode === 'sourceEstimate';
   const cleanTarget = String(targetDocNumber).trim();
   const modal = document.getElementById('modalSupersededViewer');
   const body = document.getElementById('supersededModalBody');
@@ -21144,7 +21269,9 @@ async function viewSupersededDoc(targetDocNumber) {
   if (!modal || !body) return;
 
   if (title) {
-    title.textContent = `訂正前の元伝票: ${cleanTarget}（履歴保管データ）`;
+    title.textContent = isSourceEstimate
+      ? `作成元の見積書: ${cleanTarget}（履歴保管データ）`
+      : `訂正前の元伝票: ${cleanTarget}（履歴保管データ）`;
   }
   body.innerHTML = '<div style="text-align: center; padding: 30px; color: #64748b;">元伝票データを読み込み中...</div>';
   modal.style.display = 'flex';
@@ -21153,6 +21280,7 @@ async function viewSupersededDoc(targetDocNumber) {
   modal.style.pointerEvents = 'auto';
 
   let foundDoc = null;
+  let foundSummaryGrandTotal = 0;
 
   // 1. ローカル履歴から検索（全件対象）
   const allHistory = typeof getHistoryList === 'function' ? getHistoryList(true) : [];
@@ -21162,6 +21290,7 @@ async function viewSupersededDoc(targetDocNumber) {
   });
   if (foundItem) {
     foundDoc = foundItem.fullDoc || foundItem;
+    foundSummaryGrandTotal = Number(foundItem.grandTotal || 0);
   }
 
   // 2. localStorageの生伝票から検索
@@ -21190,17 +21319,29 @@ async function viewSupersededDoc(targetDocNumber) {
 
   const doc = foundDoc;
   const items = Array.isArray(doc.items) ? doc.items : [];
+  const computedTotals = (typeof calculateTotals === 'function')
+    ? calculateTotals(items, doc.taxFractionRule || 'floor')
+    : { grandTotal: 0 };
+  const displayGrandTotal = Number(doc.total || doc.grandTotal || foundSummaryGrandTotal || computedTotals.grandTotal || 0);
   let itemsHtml = items.map((it, idx) => `
     <tr style="border-bottom: 1px solid #f1f5f9;">
       <td style="padding: 8px; text-align: center; color: #64748b;">${idx + 1}</td>
-      <td style="padding: 8px; font-weight: 700; color: #1e293b;">${escapeHtml(it.name || '名称未設定')}</td>
+      <td style="padding: 8px; font-weight: 700; color: #1e293b;">${escapeHtml(it.name || '名称未設定')}${it.description ? `<div style="font-size:0.75rem; font-weight:400; color:#64748b; white-space:pre-wrap; margin-top:2px;">${escapeHtml(it.description)}</div>` : ''}</td>
       <td style="padding: 8px; text-align: right; font-family: monospace;">${Number(it.quantity || it.qty || 1)}</td>
       <td style="padding: 8px; text-align: right; font-family: monospace;">¥${Number(it.unitPrice || it.price || 0).toLocaleString()}</td>
       <td style="padding: 8px; text-align: right; font-weight: 700; font-family: monospace;">¥${Number(it.amount || ((it.quantity || 1) * (it.unitPrice || 0))).toLocaleString()}</td>
     </tr>
   `).join('');
 
-  body.innerHTML = `
+  const bannerHtml = isSourceEstimate ? `
+    <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+      <div>
+        <div style="font-weight: 800; color: #1e40af; font-size: 0.95rem;">📋 この納品請求書の作成元となった見積書です</div>
+        <div style="font-size: 0.775rem; color: #2563eb; margin-top: 2px;">見積時の取引先・明細・金額を確認できます。</div>
+      </div>
+      <span style="background: #dbeafe; color: #1e40af; font-weight: 700; font-size: 0.75rem; padding: 3px 8px; border-radius: 4px;">作成元 見積書</span>
+    </div>
+  ` : `
     <div style="background: #fffbeb; border: 1px solid #fef3c7; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
       <div>
         <div style="font-weight: 800; color: #92400e; font-size: 0.95rem;">⚠️ 価格改訂・訂正前の元伝票です</div>
@@ -21211,6 +21352,10 @@ async function viewSupersededDoc(targetDocNumber) {
       </div>
       <span style="background: #fef08a; color: #854d0e; font-weight: 700; font-size: 0.75rem; padding: 3px 8px; border-radius: 4px;">訂正前 (superseded)</span>
     </div>
+  `;
+
+  body.innerHTML = `
+    ${bannerHtml}
 
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px; font-size: 0.85rem;">
       <div style="background: #f8fafc; padding: 10px 12px; border-radius: 6px; border: 1px solid #e2e8f0;">
@@ -21223,7 +21368,7 @@ async function viewSupersededDoc(targetDocNumber) {
       </div>
       <div style="background: #f8fafc; padding: 10px 12px; border-radius: 6px; border: 1px solid #e2e8f0;">
         <span style="color: #64748b; font-size: 0.75rem; display: block;">宛名（取引先）</span>
-        <strong>${escapeHtml(doc.clientName || doc.customerName || '名称未設定')} 様</strong>
+        <strong>${escapeHtml(doc.clientName || doc.customerName || doc.client?.name || '名称未設定')} 様</strong>
       </div>
       <div style="background: #f8fafc; padding: 10px 12px; border-radius: 6px; border: 1px solid #e2e8f0;">
         <span style="color: #64748b; font-size: 0.75rem; display: block;">件名</span>
@@ -21246,8 +21391,8 @@ async function viewSupersededDoc(targetDocNumber) {
       </tbody>
       <tfoot>
         <tr style="background: #f8fafc; border-top: 2px solid #e2e8f0;">
-          <td colspan="4" style="padding: 10px; text-align: right; font-weight: 700; color: #475569;">訂正前 税込合計金額:</td>
-          <td style="padding: 10px; text-align: right; font-weight: 900; font-size: 1.1rem; color: #0f172a; font-family: monospace;">¥${Number(doc.total || doc.grandTotal || 0).toLocaleString()}</td>
+          <td colspan="4" style="padding: 10px; text-align: right; font-weight: 700; color: #475569;">${isSourceEstimate ? '見積時 税込合計金額:' : '訂正前 税込合計金額:'}</td>
+          <td style="padding: 10px; text-align: right; font-weight: 900; font-size: 1.1rem; color: #0f172a; font-family: monospace;">¥${displayGrandTotal.toLocaleString()}</td>
         </tr>
       </tfoot>
     </table>
