@@ -2818,19 +2818,30 @@ label.form-label {
     display: block !important;
   }
 
-  /* スマホ用1枚表示切替タブ（3枚同時描画によるWebKitズームクラッシュ防止） */
+  /* スマホ用1枚表示切替タブ＆原寸拡大ボタン */
   .mobile-sheet-tabs {
     display: flex;
+    align-items: center;
     gap: 6px;
     width: 100%;
     margin: 10px 0 8px;
     box-sizing: border-box;
+    position: sticky;
+    left: 0;
+    z-index: 5;
+  }
+
+  .mobile-sheet-page-group {
+    display: flex;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
   }
 
   .mobile-sheet-tab-btn {
     flex: 1;
-    padding: 8px 6px;
-    font-size: 0.78rem;
+    padding: 8px 4px;
+    font-size: 0.74rem;
     font-weight: 700;
     color: #e2e8f0;
     background: #334155;
@@ -2846,6 +2857,26 @@ label.form-label {
     background: #2563eb;
     color: #ffffff;
     border-color: #60a5fa;
+  }
+
+  .mobile-sheet-zoom-btn {
+    flex-shrink: 0;
+    padding: 8px 10px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #ffffff;
+    background: #0f766e;
+    border: 1px solid #2dd4bf;
+    border-radius: 8px;
+    cursor: pointer;
+    touch-action: manipulation;
+    white-space: nowrap;
+  }
+
+  .mobile-sheet-zoom-btn.active {
+    background: #f59e0b;
+    color: #0f172a;
+    border-color: #fcd34d;
   }
 
   .preview-wrapper {
@@ -2901,6 +2932,12 @@ label.form-label {
     box-shadow: none !important;
     border: 1px solid #cbd5e1 !important;
     box-sizing: border-box !important;
+  }
+
+  /* 拡大（原寸100%）モード時は transform を外し等倍A4をそのまま横スクロール表示 */
+  #previewWrapper.mobile-zoom-100 .invoice-sheet {
+    transform: none !important;
+    margin-bottom: 16px !important;
   }
 
   /* スマホ時はブラー系GPU負荷を全面解除（ズーム時のクラッシュ防止） */

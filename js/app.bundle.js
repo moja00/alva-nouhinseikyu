@@ -14850,20 +14850,20 @@ function renderDeliveryAndReceiptSubSheets(totals, displayUsers, endUserNamePart
   if (!container) return;
 
   const pageInd1 = document.getElementById('sheetPageIndicator1Text');
-  const mobileTabs = document.getElementById('mobileSheetTabs');
+  const mobilePageGroup = document.getElementById('mobileSheetPageGroup');
   const previewWrapper = document.getElementById('previewWrapper');
 
-  // 見積書の場合は納品書・領収書は生成せず、単票表示にする
+  // 見積書の場合は納品書・領収書は生成せず、単票表示にする（拡大ボタンは見積書でも利用可能）
   if (currentDoc.docType === 'estimate') {
     container.innerHTML = '';
     if (pageInd1) pageInd1.textContent = 'ページ 1 / 1 【御見積書】';
-    if (mobileTabs) mobileTabs.style.display = 'none';
+    if (mobilePageGroup) mobilePageGroup.style.display = 'none';
     if (previewWrapper) previewWrapper.setAttribute('data-mobile-sheet', '1');
     return;
   }
 
   if (pageInd1) pageInd1.textContent = 'ページ 1 / 3 【御請求書】';
-  if (mobileTabs) mobileTabs.style.display = '';
+  if (mobilePageGroup) mobilePageGroup.style.display = '';
 
   // 共通データ
   const docNo = escapeHtml(currentDoc.docNumber || '');
@@ -18793,6 +18793,21 @@ function setupEventListeners() {
       document.querySelectorAll('.mobile-sheet-tab-btn').forEach(btn => {
         btn.classList.toggle('active', btn.getAttribute('data-sheet-page') === page);
       });
+      return;
+    }
+    const mobileZoomBtn = e.target.closest('#btnToggleMobileSheetZoom');
+    if (mobileZoomBtn) {
+      e.preventDefault();
+      const wrapper = document.getElementById('previewWrapper');
+      const container = document.querySelector('.preview-container');
+      if (wrapper) {
+        const isZoomed = wrapper.classList.toggle('mobile-zoom-100');
+        console.log('【モバイルシート拡大切替】原寸100%モード:', isZoomed);
+        mobileZoomBtn.classList.toggle('active', isZoomed);
+        mobileZoomBtn.setAttribute('aria-pressed', isZoomed ? 'true' : 'false');
+        mobileZoomBtn.textContent = isZoomed ? '🔎 全体に戻す' : '🔍 拡大';
+        if (container) container.scrollLeft = 0;
+      }
       return;
     }
   });
