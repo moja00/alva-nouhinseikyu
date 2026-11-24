@@ -22459,17 +22459,12 @@ function populatePoSupplierDatalist(selectedSupplier = null) {
   const quickSel = document.getElementById('poSelectSupplierQuick');
   const supInput = document.getElementById('poInputSupplier');
   const names = new Set();
-  // 取引先マスタの「仕入先（vendor / both）」を最優先候補に追加
+  // 取引先マスタに登録された「仕入先（vendor / both）」のみをプルダウン候補に表示
+  // （過去ロットや手入力の略称「CMO」「埼玉精機」等は混入させない）
   (typeof getClientMasterList === 'function' ? getClientMasterList() : []).forEach(c => {
     if (c && c.name && (c.category === 'vendor' || c.category === 'both')) {
       names.add(c.name.trim());
     }
-  });
-  (typeof getPurchaseOrderList === 'function' ? getPurchaseOrderList() : []).forEach(p => {
-    if (p && p.supplier) names.add(p.supplier.trim());
-  });
-  (typeof getInventoryLotList === 'function' ? getInventoryLotList() : []).forEach(l => {
-    if (l && l.supplier) names.add(l.supplier.trim());
   });
   const sortedNames = Array.from(names).filter(Boolean);
   const currentSup = selectedSupplier !== null ? String(selectedSupplier || '').trim() : (supInput ? supInput.value.trim() : '');
@@ -23117,8 +23112,8 @@ function initPurchaseOrderEvents() {
     const clients = typeof getClientMasterList === 'function' ? getClientMasterList() : [];
     const matched = clients.find(c => c && c.name && c.name.trim() === val);
     const payEl = document.getElementById('poInputPaymentTerms');
-    if (payEl && matched && matched.paymentTerms) {
-      payEl.value = matched.paymentTerms;
+    if (payEl) {
+      payEl.value = (matched && matched.paymentTerms) ? matched.paymentTerms : '';
     }
     const isLikelyOverseas = (matched && /(EUR|USD|Italy|Germany|China|USA|T\/T)/i.test(`${matched.address || ''} ${matched.paymentTerms || ''}`)) || /^[A-Za-z0-9\s.,&\-]+$/.test(val);
     const targetRegion = isLikelyOverseas ? 'overseas' : 'domestic';
