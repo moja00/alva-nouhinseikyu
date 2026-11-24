@@ -8867,6 +8867,12 @@ function populatePoSupplierDatalist() {
   const dl = document.getElementById('poSupplierDatalist');
   if (!dl) return;
   const names = new Set();
+  // 取引先マスタの「仕入先（vendor / both）」を最優先候補に追加
+  (typeof getClientMasterList === 'function' ? getClientMasterList() : []).forEach(c => {
+    if (c && c.name && (c.category === 'vendor' || c.category === 'both')) {
+      names.add(c.name.trim());
+    }
+  });
   (typeof getPurchaseOrderList === 'function' ? getPurchaseOrderList() : []).forEach(p => {
     if (p && p.supplier) names.add(p.supplier.trim());
   });

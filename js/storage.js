@@ -758,24 +758,6 @@ const DEFAULT_ITEMS_MASTER = [
 
 const DEFAULT_CLIENT_MASTER = [
   {
-    id: "client_mst_4",
-    name: "日本郵便株式会社 高崎郵便局",
-    code: "V002",
-    honorific: "御中",
-    zip: "370-8799",
-    address: "群馬県高崎市高松町26-1",
-    contactPerson: "",
-    tel: "0570-007-889",
-    email: "",
-    invoiceNumber: "T1010001112577",
-    category: "vendor",
-    closingDay: "都度",
-    paymentTerms: "即時現金・切手",
-    note: "レターパック、書類郵送",
-    usageCount: 5,
-    createdAt: "2026-09-25T06:26:30.325Z"
-  },
-  {
     id: "client_1790317751749_imw2",
     name: "奥村塗料株式会社",
     code: "",
@@ -794,43 +776,6 @@ const DEFAULT_CLIENT_MASTER = [
     createdAt: "2026-09-25T06:29:11.749Z",
     updatedAt: "2026-09-29T05:06:55.007Z",
     lastUsedAt: "2026-09-29T05:06:55.003Z"
-  },
-  {
-    id: "client_mst_3",
-    name: "ENEOSウイング関東第1支店 EW 高崎インター東TS",
-    code: "V001",
-    honorific: "御中",
-    zip: "370-0015",
-    address: "群馬県高崎市島野町890-1",
-    contactPerson: "",
-    tel: "027-353-8181",
-    email: "",
-    invoiceNumber: "T6180001016088",
-    category: "vendor",
-    closingDay: "都度",
-    paymentTerms: "即時（法人カード）",
-    note: "社用車ガソリン給油・洗車",
-    usageCount: 5,
-    createdAt: "2026-09-25T06:26:30.325Z"
-  },
-  {
-    id: "rescued_vendor_1790319015890_aoft",
-    name: "タイムズ２４株式会社　高崎郵便局駐車場",
-    code: "V003",
-    honorific: "御中",
-    zip: "141-8924",
-    address: "東京都品川区西五反田2-27-2",
-    contactPerson: "",
-    tel: "0120-31-8924",
-    email: "",
-    invoiceNumber: "T4010001137274",
-    category: "vendor",
-    closingDay: "都度",
-    paymentTerms: "現地精算",
-    note: "コインパーキング利用（高崎郵便局駐車場）",
-    usageCount: 3,
-    createdAt: "2026-09-24",
-    updatedAt: "2026-09-25T16:50:00.000Z"
   }
 ];
 
@@ -1142,6 +1087,17 @@ export function deduplicateClientMasterList(list) {
 
     // サンプル取引先は自動パージ（完全排除）
     if (SAMPLE_CLIENT_KEYS.has(key)) continue;
+
+    // 経費読み込みから自動登録された単発支払先（ENEOS・日本郵便・タイムズ24・rescued_vendor_系）は取引先マスタから除外
+    const cid = String(client.id || '');
+    const cnote = String(client.note || '');
+    const isExpenseAutoVendor =
+      cid === 'client_mst_3' ||
+      cid === 'client_mst_4' ||
+      cid === 'rescued_vendor_1790319015890_aoft' ||
+      cid.startsWith('rescued_vendor_') ||
+      cnote.includes('過去経費より自動復元');
+    if (isExpenseAutoVendor) continue;
 
     if (!map.has(key)) {
       map.set(key, { ...client });
@@ -3653,42 +3609,8 @@ export function rescueMastersFromHistory() {
       }
     });
 
-    // 経費（支払先）からも取引先（vendor）を救済
-    try {
-      const expenses = getExpenseList();
-      expenses.forEach(exp => {
-        const payee = (exp.payee || '').trim();
-        if (!payee) return;
-        const key = getMasterKey(payee);
-        if (!key || SAMPLE_CLIENT_KEYS.has(key) || existingClientKeys.has(key)) return;
-
-        existingClientKeys.add(key);
-        const newVendor = {
-          id: 'rescued_vendor_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
-          name: payee,
-          code: '',
-          honorific: '御中',
-          zip: '',
-          address: '',
-          contactPerson: '',
-          tel: '',
-          email: '',
-          invoiceNumber: exp.invoiceNumber || '',
-          category: 'vendor',
-          closingDay: '都度',
-          paymentTerms: '即時精算',
-          note: '過去経費より自動復元',
-          usageCount: 1,
-          createdAt: exp.date || new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          rescued: true
-        };
-        clientsToAdd.push(newVendor);
-        rescuedClients++;
-      });
-    } catch (e) {
-      // 経費リスト取得エラー時はスキップ
-    }
+    // ※ 経費（支払先）からの取引先マスタ自動登録は停止
+    //   （コンビニ・ガソリンスタンド・駐車場・郵便局などの単発支払先が取引先マスタへ混入するのを防止）
 
     if (clientsToAdd.length > 0) {
       const mergedClients = deduplicateClientMasterList([...clientsToAdd, ...currentClients]);
