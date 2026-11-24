@@ -343,7 +343,7 @@
           style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
           <span
-            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.24-po-order-sku</span>
+            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.24-import-inv-to-item-master</span>
         </div>
       </div>
 
@@ -1484,6 +1484,13 @@
         </div>
       </div>
       <div class="view-screen-header-actions">
+        <button type="button" id="btnImportFromInventoryToItemMaster" class="btn btn-sm"
+          onclick="window.openImportFromInventoryModal && window.openImportFromInventoryModal()"
+          style="display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; font-weight: 700; background: #ecfdf5; border: 1.5px solid #6ee7b7; color: #047857; border-radius: 8px; cursor: pointer; transition: all 0.2s ease;"
+          title="在庫マスタにあり、まだ商品マスタに未登録の品目だけを選んで取り込みます">
+          <span style="font-size: 14px;">🏭</span>
+          在庫から取込
+        </button>
         <button type="button" id="btnOpenAddCategoryModal" class="btn btn-sm"
           style="display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; font-weight: 700; background: #eff6ff; border: 1.5px solid #93c5fd; color: #1d4ed8; border-radius: 8px; cursor: pointer; transition: all 0.2s ease;">
           <span style="font-size: 14px;">📁</span>
@@ -1717,6 +1724,52 @@
           style="margin-top: 24px; padding: 12px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 0.775rem; color: #64748b; text-align: center;">
           ※マスタの価格を変更しても、過去に作成・保存された伝票データには影響しません。
         </div>
+
+  <!-- 🏭 在庫マスタから未登録品目を取り込むモーダル -->
+  <div class="modal-overlay" id="importFromInventoryModal" style="z-index: 1090; display: none;">
+    <div class="modal-card" style="max-width: 720px; width: 94vw; max-height: 86vh; display: flex; flex-direction: column;">
+      <div class="modal-header" style="padding: 14px 18px; background: #ecfdf5; border-bottom: 1px solid #a7f3d0; border-radius: 12px 12px 0 0;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 1.2rem;">🏭</span>
+          <div>
+            <h3 class="modal-title" style="margin: 0; font-size: 1rem; color: #065f46;">在庫マスタから商品マスタへ取込</h3>
+            <span style="font-size: 0.72rem; color: #047857;">すでに商品マスタに登録済みの品目は除外し、未登録品目のみ表示します</span>
+          </div>
+        </div>
+        <button type="button" onclick="window.closeImportFromInventoryModal && window.closeImportFromInventoryModal()"
+          style="background: none; border: none; color: #065f46; font-size: 1.2rem; cursor: pointer;">✕</button>
+      </div>
+
+      <div class="modal-body" style="padding: 14px 18px; overflow-y: auto; flex: 1;">
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; background: #f8fafc; padding: 10px 12px; border-radius: 8px; border: 1px solid #e2e8f0;">
+          <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 0.82rem; font-weight: 700; color: #334155; cursor: pointer;">
+            <input type="checkbox" id="importInvSelectAll" checked style="width: 15px; height: 15px; accent-color: #059669;">
+            すべて選択 / 解除
+          </label>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <label for="importInvTargetCategory" style="font-size: 0.78rem; font-weight: 700; color: #334155;">取込先カテゴリ:</label>
+            <select id="importInvTargetCategory" class="form-select" style="font-size: 0.82rem; width: auto; min-width: 150px;">
+              <option value="">（未分類）</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="importFromInventoryListContainer">
+          <!-- JSでレンダリング -->
+        </div>
+      </div>
+
+      <div class="modal-footer" style="padding: 12px 18px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+        <button type="button" class="btn btn-secondary btn-sm"
+          onclick="window.closeImportFromInventoryModal && window.closeImportFromInventoryModal()">閉じる</button>
+        <button type="button" id="btnExecuteImportFromInventory" class="btn btn-success btn-sm"
+          onclick="window.executeImportFromInventoryToItemMaster && window.executeImportFromInventoryToItemMaster()"
+          style="background: #059669; border-color: #059669; color: #ffffff; font-weight: 700;">
+          📥 選択した品目を商品マスタへ取り込む
+        </button>
+      </div>
+    </div>
+  </div>
 
       </div>
     </div>
@@ -5483,7 +5536,7 @@
           <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             <h2 class="view-screen-title" style="margin: 0;">勤怠管理・退勤タイムカード</h2>
             <span
-              style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.24-po-order-sku</span>
+              style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.24-import-inv-to-item-master</span>
           </div>
           <span class="view-screen-subtitle">休憩1時間自動控除・ワンタップ出退勤打刻・月次出勤簿・打刻漏れ修正</span>
         </div>
@@ -7868,7 +7921,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261124_po_order_sku"></script>
+  <script src="js/app.bundle.js?v=20261124_import_inv_to_item_master"></script>
 </body>
 
 </html>

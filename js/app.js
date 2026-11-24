@@ -7378,6 +7378,179 @@ function renderItemMasterList(searchQuery = '') {
 }
 
 // ==========================================================================
+// 🏭 在庫マスタ → 商品マスタ 未登録品目のみ選択取込モーダル
+// ==========================================================================
+
+function getUnregisteredInventoryItemsForItemMaster() {
+  const invList = typeof getInventoryList === 'function' ? getInventoryList() : [];
+  const itemList = typeof getItemMasterList === 'function' ? getItemMasterList(false) : [];
+
+  const normText = (s) => String(s || '').replace(/[\u3000\s]+/g, ' ').trim().toLowerCase();
+  const normSku = (s) => String(s || '').trim().toUpperCase();
+
+  const existingIds = new Set();
+  const existingNames = new Set();
+  const existingSkus = new Set();
+
+  itemList.forEach(it => {
+    if (!it) return;
+    if (it.id) {
+      existingIds.add(String(it.id));
+      existingIds.add(`inv_${it.id}`);
+    }
+    const n1 = normText(it.name);
+    if (n1) existingNames.add(n1);
+    const n2 = normText(it.orderName);
+    if (n2) existingNames.add(n2);
+    const s1 = normSku(it.sku || it.code);
+    if (s1) existingSkus.add(s1);
+    const s2 = normSku(it.orderSku);
+    if (s2) existingSkus.add(s2);
+  });
+
+  return invList.filter(inv => {
+    if (!inv || !inv.name) return false;
+    if (inv.id && existingIds.has(String(inv.id))) return false;
+    if (inv.itemId && existingIds.has(String(inv.itemId))) return false;
+    const invNameNorm = normText(inv.name);
+    if (invNameNorm && existingNames.has(invNameNorm)) return false;
+    const invSkuNorm = normSku(inv.sku);
+    if (invSkuNorm && existingSkus.has(invSkuNorm)) return false;
+    return true;
+  });
+}
+window.getUnregisteredInventoryItemsForItemMaster = getUnregisteredInventoryItemsForItemMaster;
+
+function openImportFromInventoryModal() {
+  const modal = document.getElementById('importFromInventoryModal');
+  const listEl = document.getElementById('importFromInventoryListContainer');
+  const catSel = document.getElementById('importInvTargetCategory');
+  const selectAllChk = document.getElementById('importInvSelectAll');
+  const execBtn = document.getElementById('btnExecuteImportFromInventory');
+  if (!modal || !listEl) return;
+
+  // 取込先カテゴリ選択肢をセット
+  if (catSel) {
+    const categories = typeof getItemCategoryList === 'function' ? getItemCategoryList() : [];
+    const defaultCat = (typeof currentItemCategory !== 'undefined' && currentItemCategory && currentItemCategory !== 'all' && currentItemCategory !== '__uncategorized__')
+      ? currentItemCategory
+      : '';
+    catSel.innerHTML = '<option value="">（未分類）</option>' + categories.map(c =>
+      `<option value="${escapeHtml(c)}" ${c === defaultCat ? 'selected' : ''}>${escapeHtml(c)}</option>`
+    ).join('');
+  }
+
+  const unregistered = getUnregisteredInventoryItemsForItemMaster();
+  console.log('【在庫→商品マスタ取込】未登録品目抽出', { count: unregistered.length });
+
+  if (unregistered.length === 0) {
+    listEl.innerHTML = `
+      <div style="text-align: center; padding: 32px 16px; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px; color: #047857;">
+        <div style="font-size: 1.6rem; margin-bottom: 6px;">✅</div>
+        <div style="font-weight: 700; font-size: 0.92rem; margin-bottom: 4px;">すべての在庫品目がすでに商品マスタに登録済みです</div>
+        <div style="font-size: 0.78rem; color: #64748b;">未登録の在庫品目はありません。</div>
+      </div>
+    `;
+    if (selectAllChk) selectAllChk.checked = false;
+    if (execBtn) execBtn.disabled = true;
+  } else {
+    if (selectAllChk) selectAllChk.checked = true;
+    if (execBtn) execBtn.disabled = false;
+    listEl.innerHTML = `
+      <div style="font-size: 0.78rem; color: #475569; margin-bottom: 8px;">
+        未登録の在庫品目が <strong>${unregistered.length} 件</strong> 見つかりました。取り込みたい品目を選択してください。
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 6px;">
+        ${unregistered.map(inv => {
+          const costText = Number(inv.unitCost) > 0 ? `確定原価: ¥${Number(inv.unitCost).toLocaleString()}` : '原価: 未確定';
+          return `
+            <label style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; cursor: pointer;">
+              <input type="checkbox" class="import-inv-item-chk" value="${escapeHtml(inv.id)}" checked style="width: 16px; height: 16px; accent-color: #059669; flex-shrink: 0;">
+              <div style="flex: 1; min-width: 0;">
+                <div style="font-weight: 700; color: #0f172a; font-size: 0.86rem;">${escapeHtml(inv.name)}</div>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap; font-size: 0.72rem; color: #64748b; margin-top: 2px;">
+                  ${inv.sku ? `<span style="font-family: monospace; background: #eef2ff; color: #4338ca; padding: 0 5px; border-radius: 3px;">SKU: ${escapeHtml(inv.sku)}</span>` : ''}
+                  <span>現在庫: <strong>${Number(inv.currentStock) || 0}</strong> ${escapeHtml(inv.unit || '個')}</span>
+                  <span>${costText}</span>
+                  ${inv.hasSerial ? '<span style="color:#0f766e; font-weight:700;">🔢 S/N管理</span>' : ''}
+                </div>
+              </div>
+            </label>
+          `;
+        }).join('')}
+      </div>
+    `;
+  }
+
+  if (selectAllChk && !selectAllChk.dataset.bound) {
+    selectAllChk.dataset.bound = '1';
+    selectAllChk.addEventListener('change', () => {
+      document.querySelectorAll('.import-inv-item-chk').forEach(chk => {
+        chk.checked = selectAllChk.checked;
+      });
+    });
+  }
+
+  modal.classList.add('active');
+  modal.style.display = 'flex';
+}
+window.openImportFromInventoryModal = openImportFromInventoryModal;
+
+function closeImportFromInventoryModal() {
+  const modal = document.getElementById('importFromInventoryModal');
+  if (!modal) return;
+  modal.classList.remove('active');
+  modal.style.display = 'none';
+}
+window.closeImportFromInventoryModal = closeImportFromInventoryModal;
+
+function executeImportFromInventoryToItemMaster() {
+  const checkedIds = Array.from(document.querySelectorAll('.import-inv-item-chk:checked')).map(el => el.value);
+  if (checkedIds.length === 0) {
+    showToast('取り込む品目を1件以上選択してください', 'warning');
+    return;
+  }
+  const targetCategory = document.getElementById('importInvTargetCategory')?.value || '';
+  const invList = typeof getInventoryList === 'function' ? getInventoryList() : [];
+  let importedCount = 0;
+
+  console.log('【在庫→商品マスタ取込】実行開始', { selectedCount: checkedIds.length, targetCategory });
+  checkedIds.forEach(invId => {
+    const inv = invList.find(i => i && i.id === invId);
+    if (!inv) return;
+    const savedProd = saveItemToMaster({
+      name: inv.name,
+      category: targetCategory,
+      sku: inv.sku || '',
+      hasSerial: Boolean(inv.hasSerial),
+      unitPrice: Number(inv.unitPrice) || 0,
+      userPrice: 0,
+      orderSku: inv.sku || '',
+      orderName: '',
+      orderPrice: Number(inv.unitCost) > 0 ? Number(inv.unitCost) : 0,
+      orderCurrency: 'JPY',
+      unit: inv.unit || '個',
+      taxRate: 10,
+      note: inv.note || ''
+    }, true);
+    if (savedProd && savedProd.id && typeof saveInventoryItem === 'function') {
+      inv.itemId = savedProd.id;
+      saveInventoryItem(inv);
+    }
+    importedCount++;
+  });
+
+  console.log('【在庫→商品マスタ取込】完了', { importedCount });
+  closeImportFromInventoryModal();
+  renderItemCategoryTabs();
+  populateItemCategoryDropdown();
+  const searchInput = (DOM && DOM.inputSearchItemMaster) || document.getElementById('inputSearchItemMaster');
+  renderItemMasterList(searchInput ? searchInput.value : '');
+  showToast(`在庫マスタから ${importedCount} 件を商品マスタへ取り込みました！必要に応じて編集から単価を設定してください。`, 'success');
+}
+window.executeImportFromInventoryToItemMaster = executeImportFromInventoryToItemMaster;
+
+// ==========================================================================
 // 取引先マスタ コントローラー
 // ==========================================================================
 let currentClientFilter = 'customer';
