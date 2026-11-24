@@ -1080,21 +1080,16 @@ export function deduplicateItemMasterList(list) {
       item.category = '修理・工賃';
     }
 
-    // スプレッダーとメカニカルスプレッダーをメカニカルスプレッダーに統一（単価73,025円固定）
-    if (key === 'dp-ms スプレッダー' || key === 'スプレッダー' || key === 'dp-ms メカニカルスプレッダー' || key === 'メカニカルスプレッダー') {
-      item.name = 'DP-MS　メカニカルスプレッダー';
-      item.unitPrice = 73025;
-      item.userPrice = 98000;
-      item.unit = '個';
-      if (!item.category) {
-        item.category = 'アタッチメント';
-      }
-      key = getMasterKey(item.name);
-    }
+    // ※ ユーザーが品名からSKUを分離（例: 「メカニカルスプレッダー」+ SKU「DP-MS」）できるよう、
+    //    強制品名上書きは行わず、ユーザーの入力名称を尊重する。
 
     // デフォルトマスタに定義されたカテゴリがあれば未設定時に補完
     if (!item.category) {
-      const def = DEFAULT_ITEMS_MASTER.find(d => getMasterKey(d.name) === key);
+      const def = DEFAULT_ITEMS_MASTER.find(d =>
+        (item.id && d.id === item.id) ||
+        getMasterKey(d.name) === key ||
+        (item.sku && getMasterKey(`${item.sku} ${cleanName}`) === getMasterKey(d.name))
+      );
       if (def && def.category) {
         item.category = def.category;
       }
@@ -2048,6 +2043,16 @@ export function getItemMasterUsageMap() {
 
             // 生の商品名（トリム後）でも引けるように保存
             usageMap[rawName] = (usageMap[rawName] || 0) + 1;
+
+            // 商品IDでも引けるように保存（名称変更後も過去伝票との頻度を維持）
+            const docItemId = it.itemId || it.productId;
+            if (docItemId) {
+              const idKey = `__id__:${docItemId}`;
+              if (!seenInDoc.has(idKey)) {
+                seenInDoc.add(idKey);
+                usageMap[idKey] = (usageMap[idKey] || 0) + 1;
+              }
+            }
           });
         }
       });
@@ -2060,22 +2065,26 @@ export function getItemMasterUsageMap() {
 
 /**
  * 商品マスタアイテムに対する納品請求書への記載頻度（登場件数）を正確に取得
- * @param {Object} item 商品マスタアイテム
- * @param {Record<string, number>} [usageMap] 事前集計マップ（省略時は自動取得）
- * @returns {number} 納品請求書に記載された回数
+ * 発行済伝票は一切変更せず、ID・品名・SKU＋品名のいずれかで一致した実績を正しく返す
  */
 export function getItemDocUsage(item, usageMap) {
   if (!item) return 0;
   const map = usageMap || getItemMasterUsageMap();
   const name = (item.name || '').trim();
+  const sku = (item.sku || '').trim();
   const key = getMasterKey(name);
-  if (key && typeof map[key] === 'number') {
-    return map[key];
-  }
-  if (name && typeof map[name] === 'number') {
-    return map[name];
-  }
-  return 0;
+  const keyWithSku = (sku && name && !name.toUpperCase().includes(sku.toUpperCase()))
+    ? getMasterKey(`${sku} ${name}`)
+    : '';
+  const idKey = item.id ? `__id__:${item.id}` : '';
+
+  const counts = [
+    (idKey && typeof map[idKey] === 'number') ? map[idKey] : 0,
+    (key && typeof map[key] === 'number') ? map[key] : 0,
+    (keyWithSku && typeof map[keyWithSku] === 'number') ? map[keyWithSku] : 0,
+    (name && typeof map[name] === 'number') ? map[name] : 0
+  ];
+  return Math.max(...counts, 0);
 }
 
 // ==========================================================================
@@ -2991,21 +3000,53 @@ export function getItemMasterList(sortByFrequency = true) {
     if (Array.isArray(list)) {
       const cleanList = deduplicateItemMasterList(list);
 
-      // デフォルトマスタに定義されている正規商品（ホールドイットクランプ等）が欠落していれば自動補完
+      // SKU分離（例: 品名「アクセサリーキット」+ SKU「DP-AC」）に伴い、
+      // 旧名称（「DP-AC アクセサリーキット」）の重複レコードが残っていれば正規側へ自動統合
+      const dedupedBySkuName = [];
+      const skuSeparatedKeys = new Set();
+      cleanList.forEach(it => {
+        if (it && it.sku && it.name && !String(it.name).toUpperCase().includes(String(it.sku).trim().toUpperCase())) {
+          const combinedKey = getMasterKey(`${String(it.sku).trim()} ${String(it.name).trim()}`);
+          if (combinedKey) skuSeparatedKeys.add(combinedKey);
+        }
+      });
+      cleanList.forEach(it => {
+        if (!it) return;
+        const k = getMasterKey(it.name);
+        // 旧名称そのまま（SKU未分離）かつカテゴリ未設定またはデフォルト由来の重複レコードを除外
+        const isLegacyDup = skuSeparatedKeys.has(k) && (!it.sku || String(it.name).toUpperCase().includes(String(it.sku).trim().toUpperCase()));
+        if (isLegacyDup) return;
+        dedupedBySkuName.push(it);
+      });
+
+      // デフォルトマスタの補完は「ID / 品名 / SKU＋品名 / SKU」のいずれにも該当がない場合のみ実施
+      // （品名変更・SKU分離時に旧名称のデフォルト商品が未分類で再増殖するのを完全防止）
       let anyAdded = false;
+      const deletedIds = typeof getDeletedItemIds === 'function' ? getDeletedItemIds() : new Set();
       DEFAULT_ITEMS_MASTER.forEach(defItem => {
+        if (defItem.id && deletedIds.has(defItem.id)) return;
         const defKey = getMasterKey(defItem.name);
-        if (!cleanList.some(it => getMasterKey(it.name) === defKey)) {
-          cleanList.push({ ...defItem });
+        const defSkuUp = String(defItem.sku || '').trim().toUpperCase();
+        const existsAlready = dedupedBySkuName.some(it => {
+          if (!it) return false;
+          if (defItem.id && it.id === defItem.id) return true;
+          if (getMasterKey(it.name) === defKey) return true;
+          const itSku = String(it.sku || '').trim();
+          if (itSku && getMasterKey(`${itSku} ${it.name}`) === defKey) return true;
+          if (defSkuUp && itSku && itSku.toUpperCase() === defSkuUp) return true;
+          return false;
+        });
+        if (!existsAlready) {
+          dedupedBySkuName.push({ ...defItem });
           anyAdded = true;
         }
       });
 
-      if (cleanList.length !== list.length || anyAdded) {
-        localStorageSetItemOnly(KEYS.ITEM_MASTER, JSON.stringify(cleanList));
-        list = cleanList;
+      if (dedupedBySkuName.length !== list.length || anyAdded) {
+        localStorageSetItemOnly(KEYS.ITEM_MASTER, JSON.stringify(dedupedBySkuName));
+        list = dedupedBySkuName;
       } else {
-        list = cleanList;
+        list = dedupedBySkuName;
       }
     } else if (list && typeof list === 'object') {
       list = Object.values(list);
@@ -5250,13 +5291,7 @@ export function deduplicateInventoryList(rawList) {
     let key = getMasterKey(normName);
     if (!key) continue;
 
-    // スプレッダーとメカニカルスプレッダーの統合（重複解消）
-    if (key === 'dp-ms スプレッダー' || key === 'スプレッダー' || key === 'dp-ms メカニカルスプレッダー' || key === 'メカニカルスプレッダー') {
-      normName = 'DP-MS　メカニカルスプレッダー';
-      inv.name = 'DP-MS　メカニカルスプレッダー';
-      if (!inv.sku) inv.sku = 'DP-MS-01';
-      key = getMasterKey(normName);
-    }
+    // ※ ユーザーが品名からSKUを分離しても尊重するため、DP-MSへの強制品名書き戻しは行わない
 
     if (!map.has(key)) {
       map.set(key, {
@@ -5388,7 +5423,21 @@ export function getInventoryList() {
         return; // テスト・旧KET・値引き項目は在庫マスタに追加しない
       }
       const prodKey = getMasterKey(prod.name);
-      const existing = list.find(inv => (inv.itemId && inv.itemId === prod.id) || (getMasterKey(inv.name) === prodKey));
+      const prodSkuUp = String(prod.sku || '').trim().toUpperCase();
+      const prodKeyWithSku = (prodSkuUp && !String(prod.name).toUpperCase().includes(prodSkuUp))
+        ? getMasterKey(`${prodSkuUp} ${prod.name}`)
+        : '';
+      const existing = list.find(inv => {
+        if (!inv) return false;
+        if (inv.itemId && inv.itemId === prod.id) return true;
+        if (inv.id === `inv_${prod.id}`) return true;
+        const invKey = getMasterKey(inv.name);
+        if (invKey === prodKey) return true;
+        if (prodKeyWithSku && invKey === prodKeyWithSku) return true;
+        const invSkuUp = String(inv.sku || '').trim().toUpperCase();
+        if (prodSkuUp && invSkuUp && invSkuUp === prodSkuUp) return true;
+        return false;
+      });
       if (existing) {
         if (!existing.itemId) {
           existing.itemId = prod.id;
@@ -7723,21 +7772,32 @@ export function syncInventoryStockFromIssuedDocs(syncToServer = true) {
       }
 
       const isStandardGroup = groupKey !== norm;
+      const normWithSku = (item.sku && !String(item.name || '').toUpperCase().includes(String(item.sku).trim().toUpperCase()))
+        ? getMasterKey(`${String(item.sku).trim()} ${item.name || ''}`)
+        : '';
       const shippedById = Math.max(
         (item.itemId && shippedQtyMap[item.itemId]) || 0,
         (item.id && shippedQtyMap[item.id]) || 0
       );
+      const shippedByName = Math.max(
+        shippedQtyMap[norm] || 0,
+        (normWithSku && shippedQtyMap[normWithSku]) || 0
+      );
       const shippedQty = isStandardGroup
-        ? (shippedQtyMap[groupKey] || shippedById || shippedQtyMap[norm] || 0)
-        : Math.max(shippedById, shippedQtyMap[norm] || 0);
+        ? (shippedQtyMap[groupKey] || Math.max(shippedById, shippedByName))
+        : Math.max(shippedById, shippedByName);
 
       const lotInById = Math.max(
         (item.id && totalInQtyMap[item.id]) || 0,
         (item.itemId && totalInQtyMap[item.itemId]) || 0
       );
+      const lotInByName = Math.max(
+        totalInQtyMap[norm] || 0,
+        (normWithSku && totalInQtyMap[normWithSku]) || 0
+      );
       const lotInQty = isStandardGroup
-        ? (totalInQtyMap[groupKey] || lotInById || totalInQtyMap[norm] || 0)
-        : Math.max(lotInById, totalInQtyMap[norm] || 0);
+        ? (totalInQtyMap[groupKey] || Math.max(lotInById, lotInByName))
+        : Math.max(lotInById, lotInByName);
       const totalIn = lotInQty;
 
       // 手動出庫（デモ機・寄贈・社内使用など）および棚卸差分の取得

@@ -7196,7 +7196,17 @@ function handleSaveItemMaster(e) {
   if (typeof getInventoryList === 'function') {
     const invListAfter = getInventoryList();
     if (savedProd && savedProd.id && typeof saveInventoryItem === 'function') {
-      const linkedInv = invListAfter.find(i => i && (i.itemId === savedProd.id || i.id === `inv_${savedProd.id}`));
+      const savedSkuUp = String(savedProd.sku || '').trim().toUpperCase();
+      const savedCombined = (savedSkuUp && !String(savedProd.name || '').toUpperCase().includes(savedSkuUp))
+        ? `${savedSkuUp} ${savedProd.name}`.toLowerCase()
+        : '';
+      const linkedInv = invListAfter.find(i => {
+        if (!i) return false;
+        if (i.itemId === savedProd.id || i.id === `inv_${savedProd.id}`) return true;
+        if (savedSkuUp && i.sku && String(i.sku).trim().toUpperCase() === savedSkuUp) return true;
+        if (savedCombined && String(i.name || '').replace(/[\u3000\s]+/g, ' ').trim().toLowerCase() === savedCombined) return true;
+        return false;
+      });
       if (linkedInv) {
         linkedInv.itemId = savedProd.id;
         linkedInv.name = savedProd.name;
