@@ -343,7 +343,7 @@
           style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
           <span
-            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.24-inv-sku-badge-ui</span>
+            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.24-expense-period-bar</span>
         </div>
       </div>
 
@@ -5144,22 +5144,89 @@
           <span class="view-screen-subtitle">Gemini AIマルチモーダルOCR解析・適格請求書(インボイス)番号自動読取・経費精算</span>
         </div>
       </div>
-      <div class="view-screen-header-actions">
-        <div
-          style="display: inline-flex; align-items: center; gap: 8px; background: #ffffff; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 4px 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-          <span
-            style="font-size: 0.8rem; font-weight: 700; color: #334155; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;">📅
-            表示期間:</span>
-          <select id="expenseGlobalPeriodPreset" class="form-select"
-            onchange="window.applyExpenseGlobalPeriod && window.applyExpenseGlobalPeriod(this.value)"
-            style="padding: 4px 10px; font-size: 0.825rem; font-weight: 700; width: auto; border: 1px solid #94a3b8; border-radius: 6px; background: #f8fafc; color: #1e293b; cursor: pointer;">
-            <option value="thisMonth">今月</option>
-            <option value="lastMonth">先月</option>
-            <option value="last3Months">直近3ヶ月</option>
-            <option value="thisYear">今年度</option>
-            <option value="lastYear">前年度</option>
-            <option value="all" selected>全期間</option>
-          </select>
+      <div class="view-screen-header-actions" style="flex-wrap: wrap; gap: 8px; align-items: center;">
+        <!-- 財務会計と同一仕様の期間コントロール（プリセット＋ワンクリックボタン＋始める月/終わる月＆詳細日付） -->
+        <div class="acc-global-period-control"
+          style="display: flex; flex-direction: column; gap: 5px; background: #ffffff; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 6px 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); box-sizing: border-box;">
+          <!-- 1段目：プリセット・各月クイック ＆ ワンクリック期間ボタン -->
+          <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+            <span
+              style="font-size: 0.78rem; font-weight: 700; color: #334155; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;">
+              📅 期間:
+            </span>
+            <select id="expenseGlobalPeriodPreset" class="form-select"
+              onchange="window.applyExpenseGlobalPeriod &amp;&amp; window.applyExpenseGlobalPeriod(this.value)"
+              style="padding: 3px 8px; font-size: 0.78rem; font-weight: 700; width: auto; border: 1px solid #94a3b8; border-radius: 6px; background: #f8fafc; color: #1e293b; cursor: pointer;">
+              <optgroup label="📌 クイック期間・年度">
+                <option value="thisMonth">今月 (当月)</option>
+                <option value="lastMonth">先月</option>
+                <option value="last3Months">直近3ヶ月</option>
+                <option value="last6Months">直近6ヶ月</option>
+                <option value="last12Months">直近1年</option>
+                <option value="thisYear">今期 (会計年度通期)</option>
+                <option value="lastYear">前期 (前会計年度)</option>
+                <option value="all" selected>全期間 (すべて)</option>
+                <option value="custom">📅 下の開始月・終了月で指定中</option>
+              </optgroup>
+              <optgroup label="📆 各月クイック（1年前まで）" id="expenseMonthQuickOptGroup">
+              </optgroup>
+            </select>
+
+            <!-- ワンクリック期間ボタン -->
+            <div id="expenseQuickRangeButtons"
+              style="display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;">
+              <button type="button" class="exp-quick-range-btn" data-preset="last3Months"
+                onclick="window.applyExpenseGlobalPeriod &amp;&amp; window.applyExpenseGlobalPeriod('last3Months')"
+                style="padding: 3px 8px; font-size: 0.73rem; font-weight: 700; border-radius: 5px; border: 1px solid #cbd5e1; background: #f8fafc; color: #334155; cursor: pointer; white-space: nowrap;">直近3ヶ月</button>
+              <button type="button" class="exp-quick-range-btn" data-preset="last6Months"
+                onclick="window.applyExpenseGlobalPeriod &amp;&amp; window.applyExpenseGlobalPeriod('last6Months')"
+                style="padding: 3px 8px; font-size: 0.73rem; font-weight: 700; border-radius: 5px; border: 1px solid #cbd5e1; background: #f8fafc; color: #334155; cursor: pointer; white-space: nowrap;">6ヶ月</button>
+              <button type="button" class="exp-quick-range-btn" data-preset="last12Months"
+                onclick="window.applyExpenseGlobalPeriod &amp;&amp; window.applyExpenseGlobalPeriod('last12Months')"
+                style="padding: 3px 8px; font-size: 0.73rem; font-weight: 700; border-radius: 5px; border: 1px solid #cbd5e1; background: #f8fafc; color: #334155; cursor: pointer; white-space: nowrap;">1年</button>
+              <button type="button" class="exp-quick-range-btn" data-preset="thisYear"
+                onclick="window.applyExpenseGlobalPeriod &amp;&amp; window.applyExpenseGlobalPeriod('thisYear')"
+                style="padding: 3px 8px; font-size: 0.73rem; font-weight: 700; border-radius: 5px; border: 1px solid #cbd5e1; background: #f8fafc; color: #334155; cursor: pointer; white-space: nowrap;">今期</button>
+              <button type="button" class="exp-quick-range-btn" data-preset="lastYear"
+                onclick="window.applyExpenseGlobalPeriod &amp;&amp; window.applyExpenseGlobalPeriod('lastYear')"
+                style="padding: 3px 8px; font-size: 0.73rem; font-weight: 700; border-radius: 5px; border: 1px solid #cbd5e1; background: #f8fafc; color: #334155; cursor: pointer; white-space: nowrap;">前期</button>
+              <button type="button" class="exp-quick-range-btn" data-preset="all"
+                onclick="window.applyExpenseGlobalPeriod &amp;&amp; window.applyExpenseGlobalPeriod('all')"
+                style="padding: 3px 8px; font-size: 0.73rem; font-weight: 700; border-radius: 5px; border: 1px solid #1d4ed8; background: #2563eb; color: #ffffff; cursor: pointer; white-space: nowrap;">全期間</button>
+            </div>
+          </div>
+
+          <!-- 2段目：始める月（デフォルト1日）〜 終わる月（デフォルト末日）＆ 詳しい日付 -->
+          <div id="expenseInlineMonthRangeBar"
+            style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 6px; padding: 4px 8px;">
+            <div style="display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;">
+              <label for="expenseInlineMonthStart"
+                style="font-size: 0.72rem; font-weight: 700; color: #0369a1; white-space: nowrap;">始める月:</label>
+              <select id="expenseInlineMonthStart" class="form-select"
+                onchange="window.handleExpenseInlineMonthChange &amp;&amp; window.handleExpenseInlineMonthChange('start')"
+                title="始める月を選択（詳しい日付は自動で1日になります）"
+                style="padding: 2px 6px; font-size: 0.78rem; font-weight: 700; width: auto; min-width: 112px; border: 1px solid #94a3b8; border-radius: 5px; background: #ffffff; color: #0f172a; cursor: pointer;"></select>
+              <input type="date" id="expenseInlineDateStart" class="form-input"
+                onchange="window.handleExpenseInlineDateChange &amp;&amp; window.handleExpenseInlineDateChange()"
+                title="詳しい開始日（始める月を選ぶと自動で1日になり、必要あれば変更できます）"
+                style="padding: 2px 6px; font-size: 0.78rem; font-weight: 700; width: auto; border: 1px solid #cbd5e1; border-radius: 5px; background: #ffffff; color: #0f172a; cursor: pointer;">
+            </div>
+            <span style="font-weight: 800; color: #64748b;">〜</span>
+            <div style="display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;">
+              <label for="expenseInlineMonthEnd"
+                style="font-size: 0.72rem; font-weight: 700; color: #0369a1; white-space: nowrap;">終わる月:</label>
+              <select id="expenseInlineMonthEnd" class="form-select"
+                onchange="window.handleExpenseInlineMonthChange &amp;&amp; window.handleExpenseInlineMonthChange('end')"
+                title="終わる月を選択（詳しい日付は自動で末日になります）"
+                style="padding: 2px 6px; font-size: 0.78rem; font-weight: 700; width: auto; min-width: 112px; border: 1px solid #94a3b8; border-radius: 5px; background: #ffffff; color: #0f172a; cursor: pointer;"></select>
+              <input type="date" id="expenseInlineDateEnd" class="form-input"
+                onchange="window.handleExpenseInlineDateChange &amp;&amp; window.handleExpenseInlineDateChange()"
+                title="詳しい終了日（終わる月を選ぶと自動で末日になり、必要あれば変更できます）"
+                style="padding: 2px 6px; font-size: 0.78rem; font-weight: 700; width: auto; border: 1px solid #cbd5e1; border-radius: 5px; background: #ffffff; color: #0f172a; cursor: pointer;">
+            </div>
+            <span id="dispExpenseActivePeriodText"
+              style="font-size: 0.73rem; font-weight: 800; color: #475569; background: #f1f5f9; border: 1px solid #cbd5e1; padding: 2px 8px; border-radius: 9999px; white-space: nowrap;">全期間（累計）</span>
+          </div>
         </div>
         <button type="button" class="btn btn-secondary btn-sm" id="btnOpenExpenseSettlementModal"
           onclick="window.openExpenseSettlementModal && window.openExpenseSettlementModal()"
@@ -5536,7 +5603,7 @@
           <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             <h2 class="view-screen-title" style="margin: 0;">勤怠管理・退勤タイムカード</h2>
             <span
-              style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.24-inv-sku-badge-ui</span>
+              style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.24-expense-period-bar</span>
           </div>
           <span class="view-screen-subtitle">休憩1時間自動控除・ワンタップ出退勤打刻・月次出勤簿・打刻漏れ修正</span>
         </div>
@@ -7921,7 +7988,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261124_inv_sku_badge_ui"></script>
+  <script src="js/app.bundle.js?v=20261124_expense_period_bar"></script>
 </body>
 
 </html>

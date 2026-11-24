@@ -16697,19 +16697,118 @@ window.handleAccInlineMonthChange = handleAccInlineMonthChange;
 window.handleAccInlineDateChange = handleAccInlineDateChange;
 window.syncAccModalMonthSelectsFromDates = syncAccModalMonthSelectsFromDates;
 
-window.applyExpenseGlobalPeriod = function (preset = 'all') {
-  currentExpenseGlobalPeriod.preset = preset;
-  const range = getPresetPeriodRange(preset);
-  currentExpenseGlobalPeriod.start = range.start;
-  currentExpenseGlobalPeriod.end = range.end;
+function syncExpensePeriodControlsUI() {
+  const preset = currentExpenseGlobalPeriod.preset || 'all';
+  const optGroup = document.getElementById('expenseMonthQuickOptGroup');
+  if (optGroup && typeof buildRecentMonthsList === 'function') {
+    const recent12 = buildRecentMonthsList(12);
+    const optHtml = recent12.map(item => `<option value="month:${item.ym}">${item.label}</option>`).join('');
+    if (optGroup.innerHTML !== optHtml) {
+      optGroup.innerHTML = optHtml;
+    }
+  }
 
   const presetSelect = document.getElementById('expenseGlobalPeriodPreset');
-  if (presetSelect && presetSelect.value !== preset) {
-    presetSelect.value = preset;
+  if (presetSelect) {
+    const hasOption = Array.from(presetSelect.options).some(o => o.value === preset);
+    presetSelect.value = hasOption ? preset : 'custom';
   }
+
+  document.querySelectorAll('#expenseQuickRangeButtons .exp-quick-range-btn').forEach(btn => {
+    const isActive = (btn.dataset.preset === preset);
+    btn.style.background = isActive ? '#2563eb' : '#f8fafc';
+    btn.style.color = isActive ? '#ffffff' : '#334155';
+    btn.style.borderColor = isActive ? '#1d4ed8' : '#cbd5e1';
+  });
+
+  const mStart = document.getElementById('expenseInlineMonthStart');
+  const mEnd = document.getElementById('expenseInlineMonthEnd');
+  const dStart = document.getElementById('expenseInlineDateStart');
+  const dEnd = document.getElementById('expenseInlineDateEnd');
+  if (typeof populateMonthSelectPair === 'function') {
+    populateMonthSelectPair(mStart, mEnd, true);
+  }
+  if (dStart) dStart.value = currentExpenseGlobalPeriod.start || '';
+  if (dEnd) dEnd.value = currentExpenseGlobalPeriod.end || '';
+  if (typeof syncMonthSelectPairFromDates === 'function') {
+    syncMonthSelectPairFromDates(mStart, mEnd, currentExpenseGlobalPeriod.start || '', currentExpenseGlobalPeriod.end || '');
+  }
+
+  const dispText = document.getElementById('dispExpenseActivePeriodText');
+  if (dispText) {
+    const s = currentExpenseGlobalPeriod.start;
+    const e = currentExpenseGlobalPeriod.end;
+    if (preset === 'all' || (!s && !e)) {
+      dispText.textContent = '全期間（累計）';
+      dispText.style.background = '#f1f5f9';
+      dispText.style.color = '#475569';
+      dispText.style.borderColor = '#cbd5e1';
+    } else {
+      let daysLabel = '集計中';
+      if (s && e) {
+        const [y1, m1, d1] = s.split('-').map(Number);
+        const [y2, m2, d2] = e.split('-').map(Number);
+        const dt1 = new Date(y1, m1 - 1, d1);
+        const dt2 = new Date(y2, m2 - 1, d2);
+        const diff = Math.round((dt2.getTime() - dt1.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+        if (diff > 0) daysLabel = `${diff}日間`;
+      } else if (s) {
+        daysLabel = `${s.replace(/-/g, '/')}〜`;
+      } else if (e) {
+        daysLabel = `〜${e.replace(/-/g, '/')}`;
+      }
+      dispText.textContent = daysLabel;
+      dispText.style.background = '#e0f2fe';
+      dispText.style.color = '#0369a1';
+      dispText.style.borderColor = '#7dd3fc';
+    }
+  }
+}
+
+window.applyExpenseGlobalPeriod = function (preset = 'all', customStart = null, customEnd = null) {
+  currentExpenseGlobalPeriod.preset = preset;
+  if (preset === 'custom') {
+    currentExpenseGlobalPeriod.start = customStart !== null ? customStart : (currentExpenseGlobalPeriod.start || '');
+    currentExpenseGlobalPeriod.end = customEnd !== null ? customEnd : (currentExpenseGlobalPeriod.end || '');
+  } else {
+    const range = getPresetPeriodRange(preset);
+    currentExpenseGlobalPeriod.start = range.start;
+    currentExpenseGlobalPeriod.end = range.end;
+  }
+
+  console.log('【経費表示期間変更】適用', { ...currentExpenseGlobalPeriod });
+  syncExpensePeriodControlsUI();
 
   if (typeof renderAccountingExpenses === 'function') {
     renderAccountingExpenses();
+  }
+};
+
+window.handleExpenseInlineMonthChange = function (target) {
+  const mStart = document.getElementById('expenseInlineMonthStart');
+  const mEnd = document.getElementById('expenseInlineMonthEnd');
+  const dStart = document.getElementById('expenseInlineDateStart');
+  const dEnd = document.getElementById('expenseInlineDateEnd');
+  applyMonthChangeToPair(target, mStart, mEnd, dStart, dEnd);
+  window.handleExpenseInlineDateChange();
+};
+
+window.handleExpenseInlineDateChange = function () {
+  const dStart = document.getElementById('expenseInlineDateStart');
+  const dEnd = document.getElementById('expenseInlineDateEnd');
+  let s = dStart ? dStart.value.trim() : '';
+  let e = dEnd ? dEnd.value.trim() : '';
+
+  if (s && e && s > e) {
+    [s, e] = [e, s];
+    if (dStart) dStart.value = s;
+    if (dEnd) dEnd.value = e;
+  }
+
+  if (!s && !e) {
+    window.applyExpenseGlobalPeriod('all');
+  } else {
+    window.applyExpenseGlobalPeriod('custom', s, e);
   }
 };
 
@@ -19346,6 +19445,11 @@ function syncReceiptStorageWithExpenses() {
 
 function renderAccountingExpenses(periodFilter = currentAccGlobalPeriod) {
   if (!DOM.expenseTableBody) return;
+
+  // 経費読み込み画面の期間コントロール（月セレクト・日数バッジ等）を常に最新同期
+  if (typeof syncExpensePeriodControlsUI === 'function') {
+    syncExpensePeriodControlsUI();
+  }
 
   // 経費画面または会計画面の表示時のみ、サーバー上の孤立写真をクリーンアップ
   if (!isReceiptStorageSynced && (currentAppView === 'expenses' || currentAppView === 'accounting')) {
