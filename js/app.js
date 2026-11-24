@@ -9979,6 +9979,253 @@ window.renderInventoryLotTable = renderInventoryLotTable;
 // 👁️ 入荷ロット詳細確認モーダル（Lot Detail Inspector）
 // --------------------------------------------------------------------------
 
+/**
+ * ロット品目（特にセット品やDP-5000本体）の本体・バッテリー・充電器シリアルを
+ * ロット保存データおよびシリアル台帳の紐づけ情報（batterySerials / chargerSerial / bundledWith / note / 同一伝票）から統合解決する。
+ */
+function resolveLotBundleSerials(item, registeredList = [], lot = null, otherRowUsedSns = null) {
+  const list = Array.isArray(registeredList) ? registeredList : [];
+  const snMap = new Map();
+  list.forEach(s => {
+    if (s && s.serialNumber) {
+      snMap.set(String(s.serialNumber).trim().toUpperCase(), s);
+    }
+  });
+
+  const isChargerRec = (s) => {
+    if (!s) return false;
+    const id = String(s.itemId || s.inventoryId || '').trim();
+    const name = String(s.itemName || '');
+    const sku = String(s.sku || '').toUpperCase();
+    return s.itemType === 'charger' || id === 'inv_dp5000_chg' || name.includes('充電器') || sku.includes('CHG');
+  };
+
+  const isBatteryRec = (s) => {
+    if (!s || isChargerRec(s)) return false;
+    const id = String(s.itemId || s.inventoryId || '').trim().toLowerCase();
+    const name = String(s.itemName || '');
+    const nameUp = name.toUpperCase();
+    return id === 'inv_dp5000_bat' || id.includes('bat') || id.includes('eqxd') || id.includes('ij47') ||
+      name.includes('バッテリー') || name.includes('電池') || nameUp.includes('DP-BT') || Boolean(s.isCompanyOnly);
+  };
+
+  const classifySn = (sn) => {
+    const up = String(sn || '').trim().toUpperCase();
+    if (!up) return 'unknown';
+    const rec = snMap.get(up);
+    if (rec) {
+      if (isChargerRec(rec)) return 'charger';
+      if (isBatteryRec(rec)) return 'battery';
+      return 'body';
+    }
+    if (up.startsWith('BAT') || up.startsWith('0031')) return 'battery';
+    if (up.startsWith('CHG') || up.startsWith('P44') || up.startsWith('20260324')) return 'charger';
+    return 'body';
+  };
+
+  const bodySerials = [];
+  const rawBatSerials = [];
+  const rawChgSerials = [];
+  const seenBody = new Set();
+  const seenBat = new Set();
+  const seenChg = new Set();
+
+  const pushUnique = (arr, seenSet, val) => {
+    const v = String(val || '').trim();
+    if (!v) return;
+    const up = v.toUpperCase();
+    if (!seenSet.has(up)) {
+      seenSet.add(up);
+      arr.push(v);
+    }
+  };
+
+  // 1. 新形式の役割別保存フィールドを優先読込
+  if (Array.isArray(item && item.bodySerials)) {
+    item.bodySerials.forEach(s => pushUnique(bodySerials, seenBody, s));
+  }
+  if (Array.isArray(item && item.batSerials)) {
+    item.batSerials.forEach(s => pushUnique(rawBatSerials, seenBat, s));
+  }
+  if (Array.isArray(item && item.chgSerials)) {
+    item.chgSerials.forEach(s => pushUnique(rawChgSerials, seenChg, s));
+  }
+
+  // 2. 既存の item.serials を台帳メタデータ（未登録時はプレフィックス）で役割分類して補完
+  if (Array.isArray(item && item.serials)) {
+    item.serials.forEach(s => {
+      const role = classifySn(s);
+      if (role === 'battery') pushUnique(rawBatSerials, seenBat, s);
+      else if (role === 'charger') pushUnique(rawChgSerials, seenChg, s);
+      else if (role === 'body') pushUnique(bodySerials, seenBody, s);
+    });
+  }
+
+  const qty = Math.max(Number((item && (item.quantity || item.qty)) || 0), bodySerials.length);
+  const batSlots = new Array(qty * 2).fill('');
+  const chgSlots = new Array(qty).fill('');
+  const placedBats = new Set();
+  const placedChgs = new Set();
+
+  rawBatSerials.forEach((sn, idx) => {
+    if (idx < batSlots.length) {
+      batSlots[idx] = sn;
+      placedBats.add(sn.toUpperCase());
+    }
+  });
+  rawChgSerials.forEach((sn, idx) => {
+    if (idx < chgSlots.length) {
+      chgSlots[idx] = sn;
+      placedChgs.add(sn.toUpperCase());
+    }
+  });
+
+  // 3. シリアル台帳から各本体に紐づいたバッテリー・充電器を逆引き補完
+  const usedDocBats = new Set(placedBats);
+  const usedDocChgs = new Set(placedChgs);
+  const perBody = [];
+
+  bodySerials.forEach((bodySn, idx) => {
+    const bodyUp = String(bodySn || '').trim().toUpperCase();
+    const bodyRec = snMap.get(bodyUp);
+    const bodyDocNo = bodyRec ? String(bodyRec.docNumber || bodyRec.invoiceNumber || '').trim().toUpperCase() : '';
+
+    // 3-a. バッテリー解決（親batterySerials -> bundledWith逆引き -> note -> 同一伝票）
+    let linkedBats = [];
+    if (bodyRec && Array.isArray(bodyRec.batterySerials)) {
+      linkedBats = bodyRec.batterySerials.map(x => String(x || '').trim()).filter(Boolean);
+    }
+    if (linkedBats.length < 2) {
+      const byBundled = list.filter(s => {
+        if (!isBatteryRec(s)) return false;
+        return String(s.bundledWith || '').trim().toUpperCase() === bodyUp;
+      });
+      byBundled.forEach(b => {
+        const bSn = String(b.serialNumber || '').trim();
+        if (bSn && !linkedBats.some(x => x.toUpperCase() === bSn.toUpperCase())) {
+          linkedBats.push(bSn);
+        }
+      });
+    }
+    if (linkedBats.length < 2 && bodyRec && bodyRec.note) {
+      const m = String(bodyRec.note).match(/🔋\s*([N\dA-Z\-]+)(?:[,\s　]+([N\dA-Z\-]+))?/i);
+      if (m) {
+        [m[1], m[2]].filter(Boolean).forEach(v => {
+          const bSn = v.trim();
+          if (bSn && !linkedBats.some(x => x.toUpperCase() === bSn.toUpperCase())) {
+            linkedBats.push(bSn);
+          }
+        });
+      }
+    }
+    if (linkedBats.length === 0 && bodyDocNo) {
+      const byDoc = list.filter(s => {
+        if (!isBatteryRec(s)) return false;
+        const sDoc = String(s.docNumber || s.invoiceNumber || '').trim().toUpperCase();
+        const sUp = String(s.serialNumber || '').trim().toUpperCase();
+        return sDoc === bodyDocNo && !usedDocBats.has(sUp);
+      });
+      byDoc.slice(0, 2).forEach(b => {
+        const bSn = String(b.serialNumber || '').trim();
+        if (bSn) linkedBats.push(bSn);
+      });
+    }
+
+    // 3-b. 充電器解決（親chargerSerial -> bundledWith逆引き -> note -> 同一伝票）
+    let linkedChg = (bodyRec && bodyRec.chargerSerial) ? String(bodyRec.chargerSerial).trim() : '';
+    if (!linkedChg) {
+      const byBundledChg = list.find(s => isChargerRec(s) && String(s.bundledWith || '').trim().toUpperCase() === bodyUp);
+      if (byBundledChg && byBundledChg.serialNumber) {
+        linkedChg = String(byBundledChg.serialNumber).trim();
+      }
+    }
+    if (!linkedChg && bodyRec && bodyRec.note) {
+      const mChg = String(bodyRec.note).match(/(?:🔌|⚡)\s*([A-Z0-9][A-Z0-9\-]{3,})/i);
+      if (mChg && mChg[1]) {
+        linkedChg = mChg[1].trim();
+      }
+    }
+    if (!linkedChg && bodyDocNo) {
+      const byDocChg = list.find(s => {
+        if (!isChargerRec(s)) return false;
+        const sDoc = String(s.docNumber || s.invoiceNumber || '').trim().toUpperCase();
+        const sUp = String(s.serialNumber || '').trim().toUpperCase();
+        return sDoc === bodyDocNo && !usedDocChgs.has(sUp);
+      });
+      if (byDocChg && byDocChg.serialNumber) {
+        linkedChg = String(byDocChg.serialNumber).trim();
+      }
+    }
+
+    // 本体位置に合わせてバッテリー2枠・充電器1枠を補完
+    const slotBase = idx * 2;
+    linkedBats.slice(0, 2).forEach((bSn, bOffset) => {
+      const bUp = bSn.toUpperCase();
+      usedDocBats.add(bUp);
+      const targetSlot = slotBase + bOffset;
+      if (targetSlot < batSlots.length && !batSlots[targetSlot] && !placedBats.has(bUp)) {
+        batSlots[targetSlot] = bSn;
+        placedBats.add(bUp);
+      }
+    });
+    if (linkedChg) {
+      const cUp = linkedChg.toUpperCase();
+      usedDocChgs.add(cUp);
+      if (idx < chgSlots.length && !chgSlots[idx] && !placedChgs.has(cUp)) {
+        chgSlots[idx] = linkedChg;
+        placedChgs.add(cUp);
+      }
+    }
+
+    // perBody にはスロット上の値または台帳逆引き値を保持
+    const finalBodyBats = [batSlots[slotBase], batSlots[slotBase + 1]].filter(Boolean);
+    const finalBodyChg = chgSlots[idx] || linkedChg || '';
+    perBody.push({
+      bodySn,
+      batterySerials: finalBodyBats.length > 0 ? finalBodyBats : linkedBats,
+      chargerSerial: finalBodyChg
+    });
+  });
+
+  // 4. セット品行の場合、同一ロット番号で登録された未割当のバッテリー・充電器が台帳にあれば空き枠に補完
+  if (lot && isBundleLotRow(item)) {
+    const lotNo = String(lot.lotNumber || '').trim();
+    const lotIdVal = String(lot.id || '').trim();
+    const otherUsed = otherRowUsedSns || new Set();
+    const lotMatch = (s) => (lotNo && s.lotNumber === lotNo) || (lotIdVal && s.lotId === lotIdVal);
+
+    list.forEach(s => {
+      if (!s || !s.serialNumber || !lotMatch(s)) return;
+      const sn = String(s.serialNumber).trim();
+      const snUp = sn.toUpperCase();
+      if (otherUsed.has(snUp)) return;
+      if (isBatteryRec(s) && !placedBats.has(snUp)) {
+        const emptyIdx = batSlots.findIndex(v => !v);
+        if (emptyIdx !== -1) {
+          batSlots[emptyIdx] = sn;
+          placedBats.add(snUp);
+        }
+      } else if (isChargerRec(s) && !placedChgs.has(snUp)) {
+        const emptyIdx = chgSlots.findIndex(v => !v);
+        if (emptyIdx !== -1) {
+          chgSlots[emptyIdx] = sn;
+          placedChgs.add(snUp);
+        }
+      }
+    });
+  }
+
+  return {
+    bodySerials,
+    batSerials: batSlots,
+    chgSerials: chgSlots,
+    batSerialsFilled: batSlots.filter(Boolean),
+    chgSerialsFilled: chgSlots.filter(Boolean),
+    perBody
+  };
+}
+window.resolveLotBundleSerials = resolveLotBundleSerials;
+
 function openLotDetailModal(lotId) {
   if (!DOM.lotDetailModal) return;
   const lotList = getInventoryLotList();
@@ -10031,6 +10278,22 @@ function openLotDetailModal(lotId) {
 
   let totalAllocatedSum = 0;
   let totalSubtotalSum = 0;
+  const registeredSerialsForDetail = typeof getInventorySerialList === 'function' ? getInventorySerialList() : [];
+  const nonBundleRowSerialsForDetail = new Set();
+  items.forEach(it => {
+    if (!isBundleLotRow(it) && Array.isArray(it.serials)) {
+      it.serials.forEach(sn => {
+        const u = String(sn || '').trim().toUpperCase();
+        if (u) nonBundleRowSerialsForDetail.add(u);
+      });
+    }
+  });
+
+  const renderSnBadge = (sn, styleExtra = '') => `
+    <span class="badge" style="background: #ffffff; color: #0f172a; border: 1px solid #cbd5e1; font-family: monospace; font-size: 0.725rem; font-weight: 700; padding: 1px 6px; border-radius: 4px; cursor: pointer; ${styleExtra}" title="クリックしてコピー" onclick="navigator.clipboard && navigator.clipboard.writeText('${escapeHtml(sn)}').then(() => showToast('コピーしました: ${escapeHtml(sn)}', 'info'))">
+      ${escapeHtml(sn)} 📋
+    </span>
+  `;
 
   items.forEach((item) => {
     const itemQty = Number(item.quantity || item.qty) || 0;
@@ -10041,19 +10304,48 @@ function openLotDetailModal(lotId) {
     totalSubtotalSum += itemSubtotal;
     totalAllocatedSum += itemAllocated;
 
-    const serialsList = Array.isArray(item.serials) ? item.serials : [];
+    const isBundleItem = isBundleLotRow(item);
+    const resolvedBundle = resolveLotBundleSerials(item, registeredSerialsForDetail, lot, nonBundleRowSerialsForDetail);
+    const serialsList = isBundleItem
+      ? resolvedBundle.bodySerials
+      : (Array.isArray(item.serials) ? item.serials : []);
+    const linkedBatList = resolvedBundle.batSerialsFilled;
+    const linkedChgList = resolvedBundle.chgSerialsFilled;
+    const hasLinkedAccessories = linkedBatList.length > 0 || linkedChgList.length > 0;
+
     let serialsHtml = '';
-    if (serialsList.length > 0) {
+    if (serialsList.length > 0 || (isBundleItem && hasLinkedAccessories)) {
+      let accessoryHtml = '';
+      if (hasLinkedAccessories) {
+        accessoryHtml = `
+          <div style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed #cbd5e1; display: flex; flex-direction: column; gap: 4px;">
+            ${linkedBatList.length > 0 ? `
+              <div>
+                <div style="font-size: 0.68rem; font-weight: 700; color: #047857; margin-bottom: 3px;">🔋 紐付バッテリー (${linkedBatList.length} 件):</div>
+                <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+                  ${linkedBatList.map(sn => renderSnBadge(sn, 'background: #f0fdf4; border-color: #86efac; color: #166534;')).join('')}
+                </div>
+              </div>
+            ` : ''}
+            ${linkedChgList.length > 0 ? `
+              <div>
+                <div style="font-size: 0.68rem; font-weight: 700; color: #1d4ed8; margin-bottom: 3px;">🔌 紐付専用急速充電器 (${linkedChgList.length} 件):</div>
+                <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+                  ${linkedChgList.map(sn => renderSnBadge(sn, 'background: #eff6ff; border-color: #93c5fd; color: #1e40af;')).join('')}
+                </div>
+              </div>
+            ` : ''}
+          </div>
+        `;
+      }
+
       serialsHtml = `
         <div style="margin-top: 6px; padding: 6px 8px; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 6px;">
-          <div style="font-size: 0.7rem; font-weight: 700; color: #475569; margin-bottom: 4px;">🔢 登録シリアル (${serialsList.length} 件):</div>
+          <div style="font-size: 0.7rem; font-weight: 700; color: #475569; margin-bottom: 4px;">🔢 ${isBundleItem ? '登録本体シリアル' : '登録シリアル'} (${serialsList.length} 件):</div>
           <div style="display: flex; flex-wrap: wrap; gap: 4px;">
-            ${serialsList.map(sn => `
-              <span class="badge" style="background: #ffffff; color: #0f172a; border: 1px solid #cbd5e1; font-family: monospace; font-size: 0.725rem; font-weight: 700; padding: 1px 6px; border-radius: 4px; cursor: pointer;" title="クリックしてコピー" onclick="navigator.clipboard && navigator.clipboard.writeText('${escapeHtml(sn)}').then(() => showToast('コピーしました: ${escapeHtml(sn)}', 'info'))">
-                ${escapeHtml(sn)} 📋
-              </span>
-            `).join('')}
+            ${serialsList.map(sn => renderSnBadge(sn)).join('')}
           </div>
+          ${accessoryHtml}
         </div>
       `;
     }
@@ -10493,17 +10785,54 @@ function openEditInventoryLotModal(lotId) {
 
   // 品目リストの復元
   if (Array.isArray(lot.items) && lot.items.length > 0) {
+    // 非セット品行で使用されているシリアル一覧（セット品行の未割当補完との衝突を防止）
+    const nonBundleRowUsedSns = new Set();
+    lot.items.forEach(it => {
+      const rm = resolveLotRowCurrentMaster(it);
+      const isBCheck = isBundleLotRow({ ...it, itemId: rm.itemId, itemName: rm.itemName });
+      if (!isBCheck && Array.isArray(it.serials)) {
+        it.serials.forEach(sn => {
+          const u = String(sn || '').trim().toUpperCase();
+          if (u) nonBundleRowUsedSns.add(u);
+        });
+      }
+    });
+
     nextLotRowId = 1;
     lotItemRows = lot.items.map(it => {
       const resolvedMaster = resolveLotRowCurrentMaster(it);
       const isB = isBundleLotRow({ ...it, itemId: resolvedMaster.itemId, itemName: resolvedMaster.itemName });
       const isReqSerial = isLotRowRequireSerial({ ...it, itemId: resolvedMaster.itemId, itemName: resolvedMaster.itemName });
-      // シリアル管理対象品目のみシリアル配列をセット。非対象品目（急速充電器・DP-EG・DP-AC等）には他品目のシリアルを流し込まない
+      // シリアル管理対象品目のみシリアル配列をセット。非対象品目（DP-EG・DP-AC等）には他品目のシリアルを流し込まない
       const itemSns = isReqSerial
         ? (Array.isArray(it.serials) && it.serials.length > 0 ? it.serials : combinedSerials)
         : [];
-      const bodySns = itemSns.filter(s => !String(s).toUpperCase().startsWith('BAT'));
-      const batSns = itemSns.filter(s => String(s).toUpperCase().startsWith('BAT'));
+      let bodySns = [];
+      let batSns = [];
+      let chgSns = [];
+      if (isB) {
+        const resolved = resolveLotBundleSerials(
+          { ...it, itemId: resolvedMaster.itemId, itemName: resolvedMaster.itemName, isBundle: true, serials: itemSns },
+          registeredList,
+          lot,
+          nonBundleRowUsedSns
+        );
+        bodySns = resolved.bodySerials;
+        batSns = resolved.batSerials;
+        chgSns = resolved.chgSerials;
+        console.log('【ロット編集】セット品シリアル復元', {
+          lotNumber: lot.lotNumber,
+          itemName: resolvedMaster.itemName,
+          bodyCount: bodySns.length,
+          batCount: resolved.batSerialsFilled.length,
+          chgCount: resolved.chgSerialsFilled.length,
+          bodySns,
+          batSns: resolved.batSerialsFilled,
+          chgSns: resolved.chgSerialsFilled
+        });
+      } else {
+        bodySns = itemSns;
+      }
       const fPrice = Number(it.foreignPrice) || 0;
       const fSub = Number(it.foreignSubtotal) || (lot.items.length === 1 && Number(lot.foreignAmount) > 0 ? Number(lot.foreignAmount) : 0);
       return {
@@ -10521,7 +10850,8 @@ function openEditInventoryLotModal(lotId) {
         landedUnitCost: Number(it.unitCost) || 0,
         serials: itemSns,
         bodySerials: bodySns,
-        batSerials: batSns
+        batSerials: batSns,
+        chgSerials: chgSns
       };
     });
     renderLotItemRows();
@@ -10539,12 +10869,14 @@ function openEditInventoryLotModal(lotId) {
     if (!needSerial) return;
 
     if (isBundle) {
-      // セット品の場合：本体用（r.qty個）とバッテリー用（r.qty*2個）
+      // セット品の場合：本体用（r.qty個）、バッテリー用（r.qty*2個）、急速充電器用（r.qty個）
       const bodyInputs = document.querySelectorAll(`.lot-serial-group-input[data-group-key="${r.rowId}_body"], .lot-serial-group-input[data-row-id="${r.rowId}_body"]`);
       const batInputs = document.querySelectorAll(`.lot-serial-group-input[data-group-key="${r.rowId}_bat"], .lot-serial-group-input[data-row-id="${r.rowId}_bat"]`);
+      const chgInputs = document.querySelectorAll(`.lot-serial-group-input[data-group-key="${r.rowId}_chg"], .lot-serial-group-input[data-row-id="${r.rowId}_chg"]`);
 
-      const batSerials = r.batSerials || combinedSerials.filter(s => String(s).toUpperCase().startsWith('BAT'));
-      const bodySerials = r.bodySerials || combinedSerials.filter(s => !String(s).toUpperCase().startsWith('BAT'));
+      const bodySerials = Array.isArray(r.bodySerials) ? r.bodySerials : [];
+      const batSerials = Array.isArray(r.batSerials) ? r.batSerials : [];
+      const chgSerials = Array.isArray(r.chgSerials) ? r.chgSerials : [];
 
       bodyInputs.forEach((inp, i) => {
         if (bodySerials[i]) {
@@ -10555,6 +10887,12 @@ function openEditInventoryLotModal(lotId) {
       batInputs.forEach((inp, i) => {
         if (batSerials[i]) {
           inp.value = batSerials[i];
+          inp.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      });
+      chgInputs.forEach((inp, i) => {
+        if (chgSerials[i]) {
+          inp.value = chgSerials[i];
           inp.dispatchEvent(new Event('input', { bubbles: true }));
         }
       });
@@ -11892,9 +12230,11 @@ function renderLotSerialGroups(syncSlots = false) {
       const p = cfg.parentRow;
       if (cfg.isBundlePart) {
         if (cfg.role === 'body') {
-          currentValues = p.bodySerials || (Array.isArray(p.serials) ? p.serials.filter(s => !String(s).toUpperCase().startsWith('BAT')) : []);
+          currentValues = Array.isArray(p.bodySerials) ? p.bodySerials : (Array.isArray(p.serials) ? p.serials.filter(s => !String(s).toUpperCase().startsWith('BAT')) : []);
         } else if (cfg.role === 'battery') {
-          currentValues = p.batSerials || (Array.isArray(p.serials) ? p.serials.filter(s => String(s).toUpperCase().startsWith('BAT')) : []);
+          currentValues = Array.isArray(p.batSerials) ? p.batSerials : (Array.isArray(p.serials) ? p.serials.filter(s => String(s).toUpperCase().startsWith('BAT')) : []);
+        } else if (cfg.role === 'charger') {
+          currentValues = Array.isArray(p.chgSerials) ? p.chgSerials : [];
         }
       } else if (Array.isArray(p.serials)) {
         currentValues = p.serials;
@@ -12479,10 +12819,17 @@ function submitInventoryLotStockIn() {
     lotNumber,
     items: lotItemRows.map(r => {
       let rowSerials = [];
+      let rowBodySerials;
+      let rowBatSerials;
+      let rowChgSerials;
       if (isBundleLotRow(r)) {
+        rowBodySerials = serialsByGroupKey[`${r.rowId}_body`] || [];
+        rowBatSerials = serialsByGroupKey[`${r.rowId}_bat`] || [];
+        rowChgSerials = serialsByGroupKey[`${r.rowId}_chg`] || [];
         rowSerials = [
-          ...(serialsByGroupKey[`${r.rowId}_body`] || []),
-          ...(serialsByGroupKey[`${r.rowId}_bat`] || [])
+          ...rowBodySerials,
+          ...rowBatSerials,
+          ...rowChgSerials
         ];
       } else {
         rowSerials = serialsByGroupKey[String(r.rowId)] || [];
@@ -12498,7 +12845,12 @@ function submitInventoryLotStockIn() {
         subtotal: r.subtotal,
         allocatedCost: r.allocatedCost,
         unitCost: r.landedUnitCost,
-        serials: rowSerials
+        serials: rowSerials,
+        ...(isBundleLotRow(r) ? {
+          bodySerials: rowBodySerials,
+          batSerials: rowBatSerials,
+          chgSerials: rowChgSerials
+        } : {})
       };
     }),
     // 後方互換用フィールド（先頭品目）

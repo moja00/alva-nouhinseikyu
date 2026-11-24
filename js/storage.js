@@ -4788,7 +4788,7 @@ export async function saveAttendance(attendance) {
 
     list.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     localStorageSetItemAndSync(KEYS.ATTENDANCE, JSON.stringify(list));
-    
+
     // サーバー（Firestore / data/attendance/attendance.json）へ確実に非同期保存を待機
     const serverSaved = await saveServerAttendance(list);
     if (!serverSaved) {
@@ -8590,9 +8590,12 @@ export function saveBatchInventorySerials(serialsArray = []) {
         unitCost: (item.unitCost !== undefined) ? item.unitCost : (item.costPrice !== undefined ? item.costPrice : (existing && (existing.unitCost !== undefined ? existing.unitCost : existing.costPrice)) || 0),
         arrivalDate: item.arrivalDate || item.inDate || (existing && (existing.arrivalDate || existing.inDate)) || '',
         inDate: item.inDate || item.arrivalDate || (existing && (existing.inDate || existing.arrivalDate)) || '',
-        isBundled: (item.isBundled !== undefined) ? item.isBundled : (existing && existing.isBundled),
-        batterySerials: item.batterySerials || (existing && existing.batterySerials),
-        bundledWith: item.bundledWith || (existing && existing.bundledWith),
+        isBundled: (item.isBundled === true) ? true : ((existing && existing.isBundled === true) ? true : Boolean(item.isBundled)),
+        batterySerials: (Array.isArray(item.batterySerials) && item.batterySerials.length > 0)
+          ? item.batterySerials
+          : ((existing && Array.isArray(existing.batterySerials) && existing.batterySerials.length > 0) ? existing.batterySerials : (item.batterySerials || [])),
+        chargerSerial: item.chargerSerial || (existing && existing.chargerSerial) || '',
+        bundledWith: item.bundledWith || (existing && existing.bundledWith) || '',
         note: [existing && existing.note, item.note].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(' ') || '',
         updatedAt: new Date().toISOString()
       };
@@ -9543,7 +9546,7 @@ export function getInventoryHistoryWithShipments(item) {
       const bSn = String(s.serialNumber || '').trim().toUpperCase();
       if (directBundleLotSerials.has(bSn)) return;
 
-      const isBodySn = (s.itemType === 'body' || s.inventoryId === 'inv_dp5000_body' || s.itemId === 'inv_dp5000_body');
+      const isBodySn = (s.itemType === 'body' || s.inventoryId === 'inv_dp5000_body');
       if (!isBodySn) return;
 
       const dateStr = (s.bundledAt ? s.bundledAt.split('T')[0] : (s.inDate || s.arrivalDate || bodyArrivalDate));
