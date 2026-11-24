@@ -8290,24 +8290,13 @@ function formatPoDateEN(dateStr) {
 }
 
 function getPoAlvaLogoSvg() {
-  return `
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 68" style="height: 44px; width: auto; display: block;">
-      <g fill="none" stroke="#d97706" stroke-width="1.6" stroke-linecap="round">
-        <line x1="258" y1="36" x2="258" y2="8" />
-        <line x1="258" y1="36" x2="242" y2="12" />
-        <line x1="258" y1="36" x2="274" y2="12" />
-        <line x1="258" y1="36" x2="229" y2="22" />
-        <line x1="258" y1="36" x2="287" y2="22" />
-        <line x1="258" y1="36" x2="220" y2="34" />
-        <line x1="258" y1="36" x2="296" y2="34" />
-        <path d="M 225 46 Q 248 39 272 45 T 312 43" stroke="#d97706" stroke-width="2" />
-        <path d="M 218 52 Q 245 45 270 51 T 308 49" stroke="#f59e0b" stroke-width="1.4" />
-      </g>
-      <circle cx="258" cy="40" r="8" fill="#ffffff" stroke="#d97706" stroke-width="1.5" />
-      <text x="2" y="42" font-family="'Helvetica Neue', Arial, sans-serif" font-size="27" font-weight="400" fill="#1e293b" letter-spacing="0.5">alva-works corp.</text>
-      <text x="68" y="59" font-family="'Helvetica Neue', Arial, sans-serif" font-size="11.5" font-weight="500" fill="#475569" letter-spacing="0.8">tools &amp; equipment</text>
-    </svg>
-  `;
+  let logoSrc = 'alva-logo.png';
+  try {
+    if (typeof window !== 'undefined' && window.location && window.location.href && window.location.href !== 'about:blank') {
+      logoSrc = new URL('alva-logo.png', window.location.href).href;
+    }
+  } catch (e) { }
+  return `<img src="${escapeHtml(logoSrc)}" alt="alva-works corp. tools &amp; equipment" style="height: 46px; width: auto; max-width: 240px; object-fit: contain; display: block;">`;
 }
 
 function calculatePoTotals(items, taxRate, currency = 'JPY') {

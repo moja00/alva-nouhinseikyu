@@ -343,7 +343,7 @@
           style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
           <span
-            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.24-purchase-order-module</span>
+            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.24-po-official-logo</span>
         </div>
       </div>
 
@@ -439,7 +439,8 @@
         <!-- 元見積書リンクバナー（見積書から納品請求書を作成した場合に表示） -->
         <div id="sidebarSourceEstimateBanner"
           style="display: none; margin-top: 8px; margin-bottom: 4px; padding: 7px 12px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; align-items: center; justify-content: space-between; gap: 8px;">
-          <div style="display: flex; align-items: center; gap: 6px; font-size: 0.775rem; color: #92400e; font-weight: 700;">
+          <div
+            style="display: flex; align-items: center; gap: 6px; font-size: 0.775rem; color: #92400e; font-weight: 700;">
             <span>📋</span>
             <span>元見積: <span id="sidebarSourceEstimateNumber" style="font-family: monospace;"></span> から作成</span>
           </div>
@@ -798,7 +799,8 @@
           <button type="button" class="mobile-sheet-tab-btn" data-sheet-page="2">📦 納品書</button>
           <button type="button" class="mobile-sheet-tab-btn" data-sheet-page="3">🧾 領収書</button>
         </div>
-        <button type="button" class="mobile-sheet-zoom-btn" id="btnToggleMobileSheetZoom" aria-pressed="false">🔍 拡大</button>
+        <button type="button" class="mobile-sheet-zoom-btn" id="btnToggleMobileSheetZoom" aria-pressed="false">🔍
+          拡大</button>
       </div>
 
       <!-- A4 用紙シート本体 -->
@@ -1563,14 +1565,18 @@
             </div>
           </div>
 
-          <div class="form-row" style="margin-bottom: 14px; display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end;">
+          <div class="form-row"
+            style="margin-bottom: 14px; display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end;">
             <div class="form-group" style="flex: 1; min-width: 180px;">
-              <label class="form-label" for="itemMasterInputSku" style="font-size: 0.825rem; font-weight: 700;">SKU・型番（任意）</label>
+              <label class="form-label" for="itemMasterInputSku"
+                style="font-size: 0.825rem; font-weight: 700;">SKU・型番（任意）</label>
               <input type="text" id="itemMasterInputSku" class="form-input" placeholder="例: DP-NEW-01">
             </div>
             <div class="form-group" style="flex: 2; min-width: 240px; padding-bottom: 4px;">
-              <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.825rem; font-weight: 700; color: #0f766e; background: #f0fdfa; border: 1px solid #99f6e4; border-radius: 8px; padding: 7px 12px;">
-                <input type="checkbox" id="itemMasterHasSerial" style="width: 16px; height: 16px; accent-color: #0d9488; cursor: pointer;">
+              <label
+                style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.825rem; font-weight: 700; color: #0f766e; background: #f0fdfa; border: 1px solid #99f6e4; border-radius: 8px; padding: 7px 12px;">
+                <input type="checkbox" id="itemMasterHasSerial"
+                  style="width: 16px; height: 16px; accent-color: #0d9488; cursor: pointer;">
                 <span>🔢 個別シリアル番号を追跡・管理する（S/N管理対象）</span>
               </label>
             </div>
@@ -1998,7 +2004,8 @@
               style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
               <div style="font-size: 0.75rem; color: #64748b; font-weight: 600;">📊 総管理シリアル数</div>
               <div style="font-size: 1.5rem; font-weight: 800; color: #0f172a; margin-top: 4px;" id="statSerialTotal">0
-                <span style="font-size: 0.85rem; font-weight: 500;">台</span></div>
+                <span style="font-size: 0.85rem; font-weight: 500;">台</span>
+              </div>
             </div>
             <div
               style="background: #ffffff; border: 1px solid #bbf7d0; border-radius: 8px; padding: 14px 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
@@ -2016,7 +2023,8 @@
               style="background: #ffffff; border: 1px solid #fed7aa; border-radius: 8px; padding: 14px 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
               <div style="font-size: 0.75rem; color: #c2410c; font-weight: 600;">🟠 デモ機 (社内・展示)</div>
               <div style="font-size: 1.5rem; font-weight: 800; color: #ea580c; margin-top: 4px;" id="statSerialDemo">0
-                <span style="font-size: 0.85rem; font-weight: 500;">台</span></div>
+                <span style="font-size: 0.85rem; font-weight: 500;">台</span>
+              </div>
             </div>
             <div
               style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
@@ -2094,12 +2102,14 @@
         <!-- 4. 発注管理 (注文書 / Purchase Order) タブ -->
         <div id="purchaseOrdersTabContent" style="display: none;">
           <!-- ステータスサマリーカード -->
-          <div id="poSummaryCards" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-bottom: 14px;">
+          <div id="poSummaryCards"
+            style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-bottom: 14px;">
             <!-- JSでレンダリング -->
           </div>
 
           <!-- 検索・フィルタ・新規作成バー -->
-          <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap;">
+          <div
+            style="display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap;">
             <div style="display: flex; gap: 8px; flex: 1; min-width: 240px; flex-wrap: wrap;">
               <input type="text" id="inputSearchPurchaseOrders" class="form-input"
                 placeholder="🔍 注文No・仕入先・商品名・品番で検索..." style="font-size: 0.85rem; flex: 1; min-width: 200px;">
@@ -2135,32 +2145,41 @@
 
   <!-- 📝 発注書（注文書 / Purchase Order）作成・編集＆リアルタイムA4プレビューモーダル -->
   <div class="modal-overlay" id="purchaseOrderModal" style="z-index: 1080; display: none;">
-    <div class="modal-card" style="max-width: 1320px; width: 96vw; max-height: 94vh; display: flex; flex-direction: column;">
-      <div class="modal-header" style="padding: 12px 18px; background: linear-gradient(135deg, #1e3a8a, #233b6c); color: #ffffff; border-radius: 12px 12px 0 0;">
+    <div class="modal-card"
+      style="max-width: 1320px; width: 96vw; max-height: 94vh; display: flex; flex-direction: column;">
+      <div class="modal-header"
+        style="padding: 12px 18px; background: linear-gradient(135deg, #1e3a8a, #233b6c); color: #ffffff; border-radius: 12px 12px 0 0;">
         <div style="display: flex; align-items: center; gap: 10px;">
           <span style="font-size: 1.25rem;">📋</span>
           <div>
-            <h3 class="modal-title" id="poModalTitle" style="margin: 0; font-size: 1.05rem; color: #ffffff;">新規発注書（注文書 / PO）作成</h3>
-            <span style="font-size: 0.72rem; color: #cbd5e1;">国内（日本語・JPY）および海外（English・EUR/USD等）両対応・A4印刷/PDF・入荷ロット連携</span>
+            <h3 class="modal-title" id="poModalTitle" style="margin: 0; font-size: 1.05rem; color: #ffffff;">新規発注書（注文書 /
+              PO）作成</h3>
+            <span
+              style="font-size: 0.72rem; color: #cbd5e1;">国内（日本語・JPY）および海外（English・EUR/USD等）両対応・A4印刷/PDF・入荷ロット連携</span>
           </div>
         </div>
-        <button type="button" id="btnClosePurchaseOrderModal" style="background: rgba(255,255,255,0.15); border: none; color: #ffffff; width: 32px; height: 32px; border-radius: 6px; font-size: 1.1rem; cursor: pointer;">✕</button>
+        <button type="button" id="btnClosePurchaseOrderModal"
+          style="background: rgba(255,255,255,0.15); border: none; color: #ffffff; width: 32px; height: 32px; border-radius: 6px; font-size: 1.1rem; cursor: pointer;">✕</button>
       </div>
 
       <div class="modal-body" style="padding: 14px; overflow-y: auto; flex: 1; background: #f1f5f9;">
         <input type="hidden" id="poEditId" value="">
         <datalist id="poSupplierDatalist"></datalist>
 
-        <div style="display: grid; grid-template-columns: minmax(420px, 1fr) minmax(440px, 1.08fr); gap: 14px; align-items: start;">
+        <div
+          style="display: grid; grid-template-columns: minmax(420px, 1fr) minmax(440px, 1.08fr); gap: 14px; align-items: start;">
           <!-- 左ペイン：発注書入力フォーム -->
-          <div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 12px;">
+          <div
+            style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 12px;">
             <!-- 区分切替（国内 / 海外） -->
             <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-              <label id="labelPoRegionDomestic" style="flex: 1; min-width: 170px; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 10px; border: 2px solid #233b6c; background: #eff6ff; border-radius: 8px; cursor: pointer; font-weight: 700; font-size: 0.82rem; color: #1e3a8a;">
+              <label id="labelPoRegionDomestic"
+                style="flex: 1; min-width: 170px; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 10px; border: 2px solid #233b6c; background: #eff6ff; border-radius: 8px; cursor: pointer; font-weight: 700; font-size: 0.82rem; color: #1e3a8a;">
                 <input type="radio" name="poRegionType" value="domestic" checked style="accent-color: #233b6c;">
                 🇯🇵 国内発注（日本語・JPY）
               </label>
-              <label id="labelPoRegionOverseas" style="flex: 1; min-width: 170px; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 10px; border: 1px solid #cbd5e1; background: #ffffff; border-radius: 8px; cursor: pointer; font-weight: 700; font-size: 0.82rem; color: #475569;">
+              <label id="labelPoRegionOverseas"
+                style="flex: 1; min-width: 170px; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 10px; border: 1px solid #cbd5e1; background: #ffffff; border-radius: 8px; cursor: pointer; font-weight: 700; font-size: 0.82rem; color: #475569;">
                 <input type="radio" name="poRegionType" value="overseas" style="accent-color: #0284c7;">
                 🌐 海外発注（English・外貨）
               </label>
@@ -2169,8 +2188,10 @@
             <!-- 基本情報 -->
             <div style="display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 8px;">
               <div>
-                <label class="form-label" style="font-size: 0.72rem; font-weight: 700; color: #334155;">注文No. (P.O. No.)</label>
-                <input type="text" id="poInputNumber" class="form-input" placeholder="PO-20261124-01" style="font-family: monospace; font-weight: 700; font-size: 0.82rem;">
+                <label class="form-label" style="font-size: 0.72rem; font-weight: 700; color: #334155;">注文No. (P.O.
+                  No.)</label>
+                <input type="text" id="poInputNumber" class="form-input" placeholder="PO-20261124-01"
+                  style="font-family: monospace; font-weight: 700; font-size: 0.82rem;">
               </div>
               <div>
                 <label class="form-label" style="font-size: 0.72rem; font-weight: 700; color: #334155;">発行日</label>
@@ -2191,8 +2212,10 @@
             <!-- 仕入先情報 -->
             <div style="display: grid; grid-template-columns: 1.6fr 0.7fr 0.9fr; gap: 8px;">
               <div>
-                <label class="form-label" style="font-size: 0.72rem; font-weight: 700; color: #334155;">仕入先名（発注先） <span style="color:#dc2626;">*</span></label>
-                <input type="text" id="poInputSupplier" list="poSupplierDatalist" class="form-input" placeholder="例: 埼玉精機株式会社 / Carbon GmbH" style="font-size: 0.85rem; font-weight: 600;">
+                <label class="form-label" style="font-size: 0.72rem; font-weight: 700; color: #334155;">仕入先名（発注先） <span
+                    style="color:#dc2626;">*</span></label>
+                <input type="text" id="poInputSupplier" list="poSupplierDatalist" class="form-input"
+                  placeholder="例: 埼玉精機株式会社 / Carbon GmbH" style="font-size: 0.85rem; font-weight: 600;">
               </div>
               <div>
                 <label class="form-label" style="font-size: 0.72rem; font-weight: 700; color: #334155;">敬称</label>
@@ -2209,7 +2232,8 @@
             </div>
 
             <!-- 通貨・消費税・角印設定 -->
-            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; background: #f8fafc; padding: 8px 10px; border-radius: 8px; border: 1px solid #e2e8f0;">
+            <div
+              style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; background: #f8fafc; padding: 8px 10px; border-radius: 8px; border: 1px solid #e2e8f0;">
               <div>
                 <label class="form-label" style="font-size: 0.72rem; font-weight: 700; color: #334155;">通貨</label>
                 <select id="poSelectCurrency" class="form-select" style="font-size: 0.82rem; font-weight: 700;">
@@ -2229,7 +2253,8 @@
                 </select>
               </div>
               <div style="display: flex; align-items: flex-end; padding-bottom: 4px;">
-                <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 0.78rem; font-weight: 600; color: #334155; cursor: pointer;">
+                <label
+                  style="display: inline-flex; align-items: center; gap: 6px; font-size: 0.78rem; font-weight: 600; color: #334155; cursor: pointer;">
                   <input type="checkbox" id="poCheckShowStamp" style="accent-color: #233b6c;">
                   電子角印を表示
                 </label>
@@ -2238,9 +2263,11 @@
 
             <!-- 注文品目明細 -->
             <div style="border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden;">
-              <div style="background: #f8fafc; padding: 7px 10px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+              <div
+                style="background: #f8fafc; padding: 7px 10px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
                 <span style="font-size: 0.8rem; font-weight: 700; color: #1e293b;">📦 注文品目明細（マスタから自動引用可）</span>
-                <button type="button" id="btnAddPoItemRow" class="btn btn-xs btn-primary" style="font-size: 0.72rem; padding: 3px 10px;">＋ 行を追加</button>
+                <button type="button" id="btnAddPoItemRow" class="btn btn-xs btn-primary"
+                  style="font-size: 0.72rem; padding: 3px 10px;">＋ 行を追加</button>
               </div>
               <div style="overflow-x: auto;">
                 <table style="width: 100%; border-collapse: collapse; font-size: 0.78rem;">
@@ -2259,52 +2286,70 @@
                   </tbody>
                 </table>
               </div>
-              <div style="padding: 8px 12px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; justify-content: flex-end; gap: 16px; font-size: 0.82rem;">
+              <div
+                style="padding: 8px 12px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; justify-content: flex-end; gap: 16px; font-size: 0.82rem;">
                 <div>小計: <strong id="poFormSubtotalDisplay" style="font-family: monospace;">0</strong></div>
-                <div id="poFormTaxWrap">消費税: <strong id="poFormTaxDisplay" style="font-family: monospace;">0</strong></div>
-                <div style="color: #1e3a8a; font-size: 0.92rem;">注文合計: <strong id="poFormTotalDisplay" style="font-family: monospace;">0</strong></div>
+                <div id="poFormTaxWrap">消費税: <strong id="poFormTaxDisplay" style="font-family: monospace;">0</strong>
+                </div>
+                <div style="color: #1e3a8a; font-size: 0.92rem;">注文合計: <strong id="poFormTotalDisplay"
+                    style="font-family: monospace;">0</strong></div>
               </div>
             </div>
 
             <!-- MEMO 欄 -->
             <div>
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; flex-wrap: wrap; gap: 4px;">
-                <label class="form-label" style="font-size: 0.75rem; font-weight: 700; color: #334155; margin: 0;">📝 MEMO（支払条件・納期・出荷指示など）</label>
+              <div
+                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; flex-wrap: wrap; gap: 4px;">
+                <label class="form-label" style="font-size: 0.75rem; font-weight: 700; color: #334155; margin: 0;">📝
+                  MEMO（支払条件・納期・出荷指示など）</label>
                 <div style="display: flex; gap: 4px; flex-wrap: wrap;">
-                  <button type="button" class="btn btn-xs btn-secondary po-memo-preset" data-preset="jp_50" style="font-size: 0.68rem; padding: 1px 6px;">50%前金</button>
-                  <button type="button" class="btn btn-xs btn-secondary po-memo-preset" data-preset="jp_ship" style="font-size: 0.68rem; padding: 1px 6px;">揃い次第出荷</button>
-                  <button type="button" class="btn btn-xs btn-secondary po-memo-preset" data-preset="en_tt" style="font-size: 0.68rem; padding: 1px 6px;">EN: T/T &amp; FOB</button>
+                  <button type="button" class="btn btn-xs btn-secondary po-memo-preset" data-preset="jp_50"
+                    style="font-size: 0.68rem; padding: 1px 6px;">50%前金</button>
+                  <button type="button" class="btn btn-xs btn-secondary po-memo-preset" data-preset="jp_ship"
+                    style="font-size: 0.68rem; padding: 1px 6px;">揃い次第出荷</button>
+                  <button type="button" class="btn btn-xs btn-secondary po-memo-preset" data-preset="en_tt"
+                    style="font-size: 0.68rem; padding: 1px 6px;">EN: T/T &amp; FOB</button>
                 </div>
               </div>
-              <textarea id="poInputMemo" class="form-input" rows="4" placeholder="例: お支払いは50%前金、残りは発送前に送金予定です。&#10;出荷は全数揃ったところで発送をお願いいたします。" style="font-size: 0.82rem; line-height: 1.5;"></textarea>
+              <textarea id="poInputMemo" class="form-input" rows="4"
+                placeholder="例: お支払いは50%前金、残りは発送前に送金予定です。&#10;出荷は全数揃ったところで発送をお願いいたします。"
+                style="font-size: 0.82rem; line-height: 1.5;"></textarea>
             </div>
           </div>
 
           <!-- 右ペイン：参考PDF準拠 A4リアルタイムプレビュー -->
-          <div style="background: #cbd5e1; border-radius: 10px; padding: 12px; overflow: auto; max-height: 78vh; display: flex; flex-direction: column; align-items: center;">
-            <div style="width: 100%; display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding: 0 4px;">
+          <div
+            style="background: #cbd5e1; border-radius: 10px; padding: 12px; overflow: auto; max-height: 78vh; display: flex; flex-direction: column; align-items: center;">
+            <div
+              style="width: 100%; display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding: 0 4px;">
               <span style="font-size: 0.75rem; font-weight: 700; color: #1e293b;">📄 A4 リアルタイムプレビュー（注文書様式）</span>
-              <button type="button" id="btnPrintPoPreviewTop" class="btn btn-xs" style="background: #1e3a8a; color: #ffffff; font-weight: 700; border: none; padding: 3px 10px; border-radius: 4px; cursor: pointer;">
+              <button type="button" id="btnPrintPoPreviewTop" class="btn btn-xs"
+                style="background: #1e3a8a; color: #ffffff; font-weight: 700; border: none; padding: 3px 10px; border-radius: 4px; cursor: pointer;">
                 🖨️ 印刷 / PDF保存
               </button>
             </div>
-            <div id="poA4PreviewContainer" style="width: 100%; max-width: 620px; background: #ffffff; box-shadow: 0 6px 20px rgba(15,23,42,0.18); border-radius: 2px; overflow: hidden;">
+            <div id="poA4PreviewContainer"
+              style="width: 100%; max-width: 620px; background: #ffffff; box-shadow: 0 6px 20px rgba(15,23,42,0.18); border-radius: 2px; overflow: hidden;">
               <!-- JSでリアルタイムレンダリング -->
             </div>
           </div>
         </div>
       </div>
 
-      <div class="modal-footer" style="padding: 10px 18px; border-top: 1px solid #e2e8f0; background: #ffffff; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; border-radius: 0 0 12px 12px;">
+      <div class="modal-footer"
+        style="padding: 10px 18px; border-top: 1px solid #e2e8f0; background: #ffffff; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; border-radius: 0 0 12px 12px;">
         <button type="button" class="btn btn-secondary btn-sm" id="btnCancelPurchaseOrderModal">キャンセル</button>
         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-          <button type="button" class="btn btn-secondary btn-sm" id="btnPrintPurchaseOrder" style="font-weight: 700; color: #1e3a8a; border-color: #93c5fd; background: #eff6ff;">
+          <button type="button" class="btn btn-secondary btn-sm" id="btnPrintPurchaseOrder"
+            style="font-weight: 700; color: #1e3a8a; border-color: #93c5fd; background: #eff6ff;">
             🖨️ 印刷 / PDF保存
           </button>
-          <button type="button" class="btn btn-primary btn-sm" id="btnSavePurchaseOrder" style="background: #1e3a8a; border-color: #1e3a8a; font-weight: 700;">
+          <button type="button" class="btn btn-primary btn-sm" id="btnSavePurchaseOrder"
+            style="background: #1e3a8a; border-color: #1e3a8a; font-weight: 700;">
             💾 発注書を保存
           </button>
-          <button type="button" class="btn btn-success btn-sm" id="btnSaveAndCreateLotFromPo" style="background: #059669; border-color: #059669; color: #ffffff; font-weight: 700;">
+          <button type="button" class="btn btn-success btn-sm" id="btnSaveAndCreateLotFromPo"
+            style="background: #059669; border-color: #059669; color: #ffffff; font-weight: 700;">
             📥 保存して入荷ロットを作成
           </button>
         </div>
@@ -4075,22 +4120,18 @@
             <div style="display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;">
               <label for="accInlineMonthStart"
                 style="font-size: 0.72rem; font-weight: 700; color: #0369a1; white-space: nowrap;">始める月:</label>
-              <select id="accInlineMonthStart" class="form-select"
-                title="始める月を選択（詳しい日付は自動で1日になります）"
+              <select id="accInlineMonthStart" class="form-select" title="始める月を選択（詳しい日付は自動で1日になります）"
                 style="padding: 2px 6px; font-size: 0.78rem; font-weight: 700; width: auto; min-width: 112px; border: 1px solid #94a3b8; border-radius: 5px; background: #ffffff; color: #0f172a; cursor: pointer;"></select>
-              <input type="date" id="accInlineDateStart" class="form-input"
-                title="詳しい開始日（始める月を選ぶと自動で1日になり、必要あれば変更できます）"
+              <input type="date" id="accInlineDateStart" class="form-input" title="詳しい開始日（始める月を選ぶと自動で1日になり、必要あれば変更できます）"
                 style="padding: 2px 6px; font-size: 0.78rem; font-weight: 700; width: auto; border: 1px solid #cbd5e1; border-radius: 5px; background: #ffffff; color: #0f172a; cursor: pointer;">
             </div>
             <span style="font-weight: 800; color: #64748b;">〜</span>
             <div style="display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;">
               <label for="accInlineMonthEnd"
                 style="font-size: 0.72rem; font-weight: 700; color: #0369a1; white-space: nowrap;">終わる月:</label>
-              <select id="accInlineMonthEnd" class="form-select"
-                title="終わる月を選択（詳しい日付は自動で末日になります）"
+              <select id="accInlineMonthEnd" class="form-select" title="終わる月を選択（詳しい日付は自動で末日になります）"
                 style="padding: 2px 6px; font-size: 0.78rem; font-weight: 700; width: auto; min-width: 112px; border: 1px solid #94a3b8; border-radius: 5px; background: #ffffff; color: #0f172a; cursor: pointer;"></select>
-              <input type="date" id="accInlineDateEnd" class="form-input"
-                title="詳しい終了日（終わる月を選ぶと自動で末日になり、必要あれば変更できます）"
+              <input type="date" id="accInlineDateEnd" class="form-input" title="詳しい終了日（終わる月を選ぶと自動で末日になり、必要あれば変更できます）"
                 style="padding: 2px 6px; font-size: 0.78rem; font-weight: 700; width: auto; border: 1px solid #cbd5e1; border-radius: 5px; background: #ffffff; color: #0f172a; cursor: pointer;">
             </div>
             <span id="dispAccActivePeriodText"
@@ -4232,9 +4273,11 @@
           <!-- 月別収支推移バーグラフコンテナ -->
           <div
             style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+            <div
+              style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
               <span style="font-size: 0.875rem; font-weight: 700; color: #1e293b;">📈 月別収支推移（売上・原価＋経費・純利益 / 税抜基準）</span>
-              <div style="display: flex; gap: 14px; font-size: 0.75rem; font-weight: 600; color: #475569; flex-wrap: wrap;">
+              <div
+                style="display: flex; gap: 14px; font-size: 0.75rem; font-weight: 600; color: #475569; flex-wrap: wrap;">
                 <span style="display: inline-flex; align-items: center; gap: 5px;">
                   <span
                     style="width: 12px; height: 12px; background: #6366f1; border-radius: 3px; display: inline-block;"></span>売上
@@ -5407,7 +5450,8 @@
         <div>
           <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             <h2 class="view-screen-title" style="margin: 0;">勤怠管理・退勤タイムカード</h2>
-            <span style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.24-purchase-order-module</span>
+            <span
+              style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.24-po-official-logo</span>
           </div>
           <span class="view-screen-subtitle">休憩1時間自動控除・ワンタップ出退勤打刻・月次出勤簿・打刻漏れ修正</span>
         </div>
@@ -6737,7 +6781,8 @@
               onclick="window.setAccDateRangeModalPreset &amp;&amp; window.setAccDateRangeModalPreset('all')">全期間</button>
           </div>
           <div style="margin-top: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-            <label for="modalAccQuickMonth" style="font-size: 0.75rem; font-weight: 700; color: #475569; white-space: nowrap;">
+            <label for="modalAccQuickMonth"
+              style="font-size: 0.75rem; font-weight: 700; color: #475569; white-space: nowrap;">
               単月クイック（1年前まで）:
             </label>
             <select id="modalAccQuickMonth" class="form-select"
@@ -6752,13 +6797,15 @@
           style="background: #f1f5f9; border-radius: 8px; padding: 14px 16px; border: 1px solid #e2e8f0; margin-bottom: 14px;">
           <div style="display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px; align-items: start;">
             <div>
-              <label for="modalAccMonthStart" style="display: block; font-size: 0.775rem; font-weight: 700; color: #334155; margin-bottom: 4px;">
+              <label for="modalAccMonthStart"
+                style="display: block; font-size: 0.775rem; font-weight: 700; color: #334155; margin-bottom: 4px;">
                 始める月（デフォルト: 1日）
               </label>
               <select id="modalAccMonthStart" class="form-select"
                 style="width: 100%; padding: 7px 10px; font-size: 0.875rem; font-weight: 700; background: #fff; border: 1.5px solid #94a3b8; border-radius: 6px; box-sizing: border-box; cursor: pointer; margin-bottom: 8px;">
               </select>
-              <label for="modalAccDateStart" style="display: block; font-size: 0.725rem; font-weight: 600; color: #64748b; margin-bottom: 3px;">
+              <label for="modalAccDateStart"
+                style="display: block; font-size: 0.725rem; font-weight: 600; color: #64748b; margin-bottom: 3px;">
                 詳しい開始日（必要あれば変更）
               </label>
               <input type="date" id="modalAccDateStart" class="form-input"
@@ -6768,13 +6815,15 @@
               〜
             </div>
             <div>
-              <label for="modalAccMonthEnd" style="display: block; font-size: 0.775rem; font-weight: 700; color: #334155; margin-bottom: 4px;">
+              <label for="modalAccMonthEnd"
+                style="display: block; font-size: 0.775rem; font-weight: 700; color: #334155; margin-bottom: 4px;">
                 終わる月（デフォルト: 末日）
               </label>
               <select id="modalAccMonthEnd" class="form-select"
                 style="width: 100%; padding: 7px 10px; font-size: 0.875rem; font-weight: 700; background: #fff; border: 1.5px solid #94a3b8; border-radius: 6px; box-sizing: border-box; cursor: pointer; margin-bottom: 8px;">
               </select>
-              <label for="modalAccDateEnd" style="display: block; font-size: 0.725rem; font-weight: 600; color: #64748b; margin-bottom: 3px;">
+              <label for="modalAccDateEnd"
+                style="display: block; font-size: 0.725rem; font-weight: 600; color: #64748b; margin-bottom: 3px;">
                 詳しい終了日（必要あれば変更）
               </label>
               <input type="date" id="modalAccDateEnd" class="form-input"
@@ -7787,7 +7836,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261124_purchase_order_module"></script>
+  <script src="js/app.bundle.js?v=20261124_po_official_logo"></script>
 </body>
 
 </html>
