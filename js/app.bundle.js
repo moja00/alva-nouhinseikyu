@@ -22011,6 +22011,29 @@ function updatePoFormTotalsAndPreview() {
   }
 }
 
+function normalizePoHalfWidthNumberStr(raw, allowDecimal = true) {
+  let s = String(raw ?? '')
+    .replace(/[０-９]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0))
+    .replace(/[．。]/g, '.')
+    .replace(/[，、,\s　]/g, '')
+    .replace(/[ー−―‐]/g, '-');
+  if (allowDecimal) {
+    s = s.replace(/[^0-9.]/g, '');
+    const parts = s.split('.');
+    if (parts.length > 2) s = parts[0] + '.' + parts.slice(1).join('');
+  } else {
+    s = s.replace(/[^0-9]/g, '');
+  }
+  return s;
+}
+
+function normalizePoHalfWidthCode(raw) {
+  return String(raw ?? '')
+    .replace(/[Ａ-Ｚａ-ｚ０-９]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0))
+    .replace(/[ー−―‐－]/g, '-')
+    .replace(/[　]/g, ' ');
+}
+
 function renderPoItemRows() {
   const tbody = document.getElementById('poItemRowsTbody');
   if (!tbody) return;
@@ -22031,10 +22054,10 @@ function renderPoItemRows() {
         <input type="text" class="form-input po-row-name" data-row-id="${r.rowId}" value="${escapeHtml(r.itemName || '')}" placeholder="商品名を入力..." style="font-size: 0.78rem; padding: 3px 6px; height: 28px;">
       </td>
       <td style="padding: 4px 5px; vertical-align: bottom;">
-        <input type="number" class="form-input po-row-qty" data-row-id="${r.rowId}" value="${r.qty}" min="0" step="1" style="font-size: 0.78rem; font-family: monospace; text-align: right; padding: 3px 5px; height: 28px;">
+        <input type="text" inputmode="numeric" class="form-input po-row-qty" data-row-id="${r.rowId}" value="${r.qty ? escapeHtml(String(r.qty)) : ''}" placeholder="1" onfocus="this.select()" style="font-size: 0.78rem; font-family: monospace; text-align: right; padding: 3px 5px; height: 28px;">
       </td>
       <td style="padding: 4px 5px; vertical-align: bottom;">
-        <input type="number" class="form-input po-row-price" data-row-id="${r.rowId}" value="${r.unitPrice}" min="0" step="0.01" style="font-size: 0.78rem; font-family: monospace; text-align: right; padding: 3px 5px; height: 28px;">
+        <input type="text" inputmode="decimal" class="form-input po-row-price" data-row-id="${r.rowId}" value="${r.unitPrice ? escapeHtml(String(r.unitPrice)) : ''}" placeholder="0" onfocus="this.select()" style="font-size: 0.78rem; font-family: monospace; text-align: right; padding: 3px 5px; height: 28px;">
       </td>
       <td class="po-row-amount" data-row-id="${r.rowId}" style="padding: 4px 6px; text-align: right; font-family: monospace; font-weight: 700; vertical-align: bottom; padding-bottom: 8px;">
         0
@@ -22539,18 +22562,57 @@ function initPurchaseOrderEvents() {
     }
   });
 
-  document.addEventListener('input', (e) => {
-    const tr = e.target.closest('#poItemRowsTbody tr[data-po-row-id]');
+  const handlePoRowFieldUpdate = (target, normalizeDomValue) => {
+    const tr = target && target.closest('#poItemRowsTbody tr[data-po-row-id]');
     if (!tr) return;
     const rId = Number(tr.dataset.poRowId);
     const row = currentPoItemRows.find(r => r.rowId === rId);
     if (!row) return;
-    if (e.target.classList.contains('po-row-sku')) row.sku = e.target.value;
-    if (e.target.classList.contains('po-row-name')) row.itemName = e.target.value;
-    if (e.target.classList.contains('po-row-qty')) row.qty = Number(e.target.value) || 0;
-    if (e.target.classList.contains('po-row-price')) row.unitPrice = Number(e.target.value) || 0;
+
+    if (target.classList.contains('po-row-sku')) {
+      const normSku = normalizePoHalfWidthCode(target.value);
+      if (normalizeDomValue && target.value !== normSku) target.value = normSku;
+      row.sku = normSku;
+    } else if (target.classList.contains('po-row-name')) {
+      row.itemName = target.value;
+    } else if (target.classList.contains('po-row-qty')) {
+      const normQty = normalizePoHalfWidthNumberStr(target.value, false);
+      if (normalizeDomValue && target.value !== normQty) target.value = normQty;
+      row.qty = normQty ? Number(normQty) : 0;
+    } else if (target.classList.contains('po-row-price')) {
+      const normPrice = normalizePoHalfWidthNumberStr(target.value, true);
+      if (normalizeDomValue && target.value !== normPrice) target.value = normPrice;
+      row.unitPrice = normPrice ? Number(normPrice) : 0;
+    }
     updatePoFormTotalsAndPreview();
+  };
+
+  document.addEventListener('input', (e) => {
+    if (e.target && e.target.id === 'poInputNumber' && !e.isComposing) {
+      const norm = normalizePoHalfWidthCode(e.target.value);
+      if (e.target.value !== norm) e.target.value = norm;
+      return;
+    }
+    handlePoRowFieldUpdate(e.target, !e.isComposing);
   });
+
+  document.addEventListener('compositionend', (e) => {
+    if (e.target && e.target.id === 'poInputNumber') {
+      e.target.value = normalizePoHalfWidthCode(e.target.value);
+      updatePoFormTotalsAndPreview();
+      return;
+    }
+    handlePoRowFieldUpdate(e.target, true);
+  });
+
+  document.addEventListener('blur', (e) => {
+    if (e.target && e.target.id === 'poInputNumber') {
+      e.target.value = normalizePoHalfWidthCode(e.target.value);
+      updatePoFormTotalsAndPreview();
+      return;
+    }
+    handlePoRowFieldUpdate(e.target, true);
+  }, true);
 
   document.addEventListener('click', (e) => {
     const delBtn = e.target.closest('.btn-po-remove-row');
