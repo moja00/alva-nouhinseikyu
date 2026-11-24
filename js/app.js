@@ -424,9 +424,12 @@ const DOM = {
   tabBtnInventoryItems: document.getElementById('tabBtnInventoryItems'),
   tabBtnInventorySerials: document.getElementById('tabBtnInventorySerials'),
   tabBtnInventoryLots: document.getElementById('tabBtnInventoryLots'),
+  tabBtnPurchaseOrders: document.getElementById('tabBtnPurchaseOrders'),
   inventoryItemsTabContent: document.getElementById('inventoryItemsTabContent'),
   inventorySerialsTabContent: document.getElementById('inventorySerialsTabContent'),
   inventoryLotsTabContent: document.getElementById('inventoryLotsTabContent'),
+  purchaseOrdersTabContent: document.getElementById('purchaseOrdersTabContent'),
+  btnOpenPurchaseOrderModal: document.getElementById('btnOpenPurchaseOrderModal'),
   btnOpenInventoryLotModal: document.getElementById('btnOpenInventoryLotModal'),
   invInputType: document.getElementById('invInputType'),
   invInputHasSerial: document.getElementById('invInputHasSerial'),
@@ -4840,6 +4843,15 @@ function setupEventListeners() {
   if (DOM.tabBtnInventoryLots) {
     DOM.tabBtnInventoryLots.addEventListener('click', () => switchInventoryTab('lots'));
   }
+  if (DOM.tabBtnPurchaseOrders) {
+    DOM.tabBtnPurchaseOrders.addEventListener('click', () => switchInventoryTab('pos'));
+  }
+  if (DOM.btnOpenPurchaseOrderModal) {
+    DOM.btnOpenPurchaseOrderModal.addEventListener('click', () => openPurchaseOrderModal());
+  }
+  if (typeof initPurchaseOrderEvents === 'function') {
+    initPurchaseOrderEvents();
+  }
 
   // ロット入庫 ＆ 原価按分計算モーダル イベント
   if (DOM.btnOpenInventoryLotModal) {
@@ -8146,7 +8158,8 @@ function switchInventoryTab(tabName) {
   const tabs = [
     { key: 'items', btn: DOM.tabBtnInventoryItems, content: DOM.inventoryItemsTabContent },
     { key: 'serials', btn: DOM.tabBtnInventorySerials, content: DOM.inventorySerialsTabContent },
-    { key: 'lots', btn: DOM.tabBtnInventoryLots, content: DOM.inventoryLotsTabContent }
+    { key: 'lots', btn: DOM.tabBtnInventoryLots, content: DOM.inventoryLotsTabContent },
+    { key: 'pos', btn: DOM.tabBtnPurchaseOrders, content: DOM.purchaseOrdersTabContent }
   ];
 
   tabs.forEach(t => {
@@ -8201,9 +8214,993 @@ function switchInventoryTab(tabName) {
       syncInventoryLotsWithServer().then(() => renderInventoryLotTable()).catch(() => { });
     }
   }
+  if (tabName === 'pos') {
+    if (typeof renderPurchaseOrderTable === 'function') renderPurchaseOrderTable();
+    if (typeof syncPurchaseOrdersWithServer === 'function') {
+      syncPurchaseOrdersWithServer().then(() => {
+        if (typeof renderPurchaseOrderTable === 'function') renderPurchaseOrderTable();
+      }).catch(() => { });
+    }
+  }
 }
 
 window.switchInventoryTab = switchInventoryTab;
+
+// ==========================================================================
+// 📋 発注管理（注文書 / Purchase Order）モジュール
+// 国内（日本語・JPY）＋海外（English・EUR/USD/CNY等）・参考PDF準拠A4出力・入荷ロット連携
+// ==========================================================================
+
+let currentPoItemRows = [];
+let nextPoRowId = 1;
+let currentSourcePurchaseOrderId = null;
+
+const PO_STATUS_META = {
+  draft: { label: '📝 下書き', bg: '#f1f5f9', color: '#475569', border: '#cbd5e1' },
+  ordered: { label: '📤 発注済（入荷待）', bg: '#eff6ff', color: '#1d4ed8', border: '#93c5fd' },
+  partial: { label: '📦 一部入荷', bg: '#fffbeb', color: '#b45309', border: '#fcd34d' },
+  received: { label: '✅ 入荷完了', bg: '#ecfdf5', color: '#047857', border: '#86efac' },
+  cancelled: { label: '🚫 キャンセル', bg: '#fef2f2', color: '#b91c1c', border: '#fecaca' }
+};
+
+function generateNextPoNumber(dateStr) {
+  const baseDate = dateStr || new Date().toISOString().split('T')[0];
+  const yymmdd = baseDate.replace(/-/g, '');
+  const prefix = `PO-${yymmdd}-`;
+  const existing = typeof getPurchaseOrderList === 'function' ? getPurchaseOrderList() : [];
+  let maxSeq = 0;
+  existing.forEach(p => {
+    if (p && typeof p.poNumber === 'string' && p.poNumber.startsWith(prefix)) {
+      const num = parseInt(p.poNumber.slice(prefix.length), 10);
+      if (!isNaN(num) && num > maxSeq) maxSeq = num;
+    }
+  });
+  return `${prefix}${String(maxSeq + 1).padStart(2, '0')}`;
+}
+
+function formatPoMoney(amount, currency = 'JPY', withSymbol = false) {
+  const num = Number(amount) || 0;
+  const isJpy = currency === 'JPY';
+  const formatted = isJpy
+    ? Math.round(num).toLocaleString('ja-JP')
+    : num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (!withSymbol) return formatted;
+  if (currency === 'JPY') return `¥${formatted}`;
+  if (currency === 'EUR') return `EUR ${formatted}`;
+  if (currency === 'USD') return `USD ${formatted}`;
+  if (currency === 'CNY') return `CNY ${formatted}`;
+  if (currency === 'GBP') return `GBP ${formatted}`;
+  return `${currency} ${formatted}`;
+}
+
+function formatPoDateJP(dateStr) {
+  if (!dateStr) return '';
+  const parts = String(dateStr).split('-');
+  if (parts.length !== 3) return dateStr;
+  return `${parts[0]}年${parseInt(parts[1], 10)}月${parseInt(parts[2], 10)}日`;
+}
+
+function formatPoDateEN(dateStr) {
+  if (!dateStr) return '';
+  const parts = String(dateStr).split('-');
+  if (parts.length !== 3) return dateStr;
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const mIdx = parseInt(parts[1], 10) - 1;
+  return `${months[mIdx] || parts[1]} ${parseInt(parts[2], 10)}, ${parts[0]}`;
+}
+
+function getPoAlvaLogoSvg() {
+  return `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 68" style="height: 44px; width: auto; display: block;">
+      <g fill="none" stroke="#d97706" stroke-width="1.6" stroke-linecap="round">
+        <line x1="258" y1="36" x2="258" y2="8" />
+        <line x1="258" y1="36" x2="242" y2="12" />
+        <line x1="258" y1="36" x2="274" y2="12" />
+        <line x1="258" y1="36" x2="229" y2="22" />
+        <line x1="258" y1="36" x2="287" y2="22" />
+        <line x1="258" y1="36" x2="220" y2="34" />
+        <line x1="258" y1="36" x2="296" y2="34" />
+        <path d="M 225 46 Q 248 39 272 45 T 312 43" stroke="#d97706" stroke-width="2" />
+        <path d="M 218 52 Q 245 45 270 51 T 308 49" stroke="#f59e0b" stroke-width="1.4" />
+      </g>
+      <circle cx="258" cy="40" r="8" fill="#ffffff" stroke="#d97706" stroke-width="1.5" />
+      <text x="2" y="42" font-family="'Helvetica Neue', Arial, sans-serif" font-size="27" font-weight="400" fill="#1e293b" letter-spacing="0.5">alva-works corp.</text>
+      <text x="68" y="59" font-family="'Helvetica Neue', Arial, sans-serif" font-size="11.5" font-weight="500" fill="#475569" letter-spacing="0.8">tools &amp; equipment</text>
+    </svg>
+  `;
+}
+
+function calculatePoTotals(items, taxRate, currency = 'JPY') {
+  const isJpy = currency === 'JPY';
+  let subtotal = 0;
+  (items || []).forEach(it => {
+    const qty = Number(it.qty) || 0;
+    const price = Number(it.unitPrice) || 0;
+    const amt = isJpy ? Math.round(qty * price) : Math.round(qty * price * 100) / 100;
+    subtotal += amt;
+  });
+  if (!isJpy) subtotal = Math.round(subtotal * 100) / 100;
+  const rate = Number(taxRate) || 0;
+  const tax = isJpy ? Math.floor(subtotal * rate / 100) : Math.round(subtotal * rate) / 100;
+  const total = isJpy ? (subtotal + tax) : Math.round((subtotal + tax) * 100) / 100;
+  return { subtotal, tax, total };
+}
+
+function buildPoDocumentHtml(po) {
+  const isOverseas = po.regionType === 'overseas';
+  const currency = po.currency || (isOverseas ? 'EUR' : 'JPY');
+  const isJpy = currency === 'JPY';
+  const taxRate = Number(po.taxRate) || 0;
+  const items = Array.isArray(po.items) ? po.items : [];
+  const totals = calculatePoTotals(items, taxRate, currency);
+
+  const issuer = typeof loadIssuerProfile === 'function' ? (loadIssuerProfile() || {}) : {};
+  const companyJP = issuer.companyName || '株式会社アルバワークス';
+  const addressJP = issuer.address || '群馬県前橋市下川町63-7';
+  const telJP = issuer.tel || '027-289-0367';
+  const faxJP = issuer.fax || '027-289-0368';
+
+  const companyDisplay = isOverseas ? 'ALVA WORKS CORP.' : companyJP;
+  const addressDisplay = isOverseas ? '63-7 Shimokawa-machi, Maebashi, Gunma 379-2143, Japan' : addressJP;
+  const telDisplay = isOverseas ? (telJP.startsWith('0') ? '+81-' + telJP.slice(1) : telJP) : telJP;
+  const faxDisplay = isOverseas ? (faxJP.startsWith('0') ? '+81-' + faxJP.slice(1) : faxJP) : faxJP;
+
+  const dateText = isOverseas ? formatPoDateEN(po.issueDate) : formatPoDateJP(po.issueDate);
+  const titleText = isOverseas ? 'PURCHASE ORDER' : '注　文　書';
+  const supplierName = po.supplier || (isOverseas ? 'Supplier Name' : '仕入先名未入力');
+  const honorific = isOverseas ? '' : (po.honorific !== undefined ? po.honorific : '御中');
+
+  const greetingHtml = isOverseas
+    ? `We are pleased to place the following order with your company.<br>Please confirm receipt and advise the shipping schedule.`
+    : `平素よりお世話になっております。<br>下記の商品を注文いたします。<br>よろしくお願いいたします。`;
+
+  const totalLabel = isOverseas ? 'TOTAL AMOUNT:' : '注文合計：';
+  const totalValueText = isJpy
+    ? `${formatPoMoney(totals.total, 'JPY')} <span style="font-size: 13px; font-weight: 700; margin-left: 8px;">円</span>`
+    : `${escapeHtml(currency)} ${formatPoMoney(totals.total, currency)}`;
+
+  let stampHtml = '';
+  if (po.showStamp && typeof generateCompanyStamp === 'function') {
+    try {
+      const stampUrl = generateCompanyStamp(companyJP);
+      if (stampUrl) {
+        stampHtml = `<img src="${stampUrl}" alt="社印" style="position: absolute; right: 2px; top: 6px; width: 54px; height: 54px; opacity: 0.78; pointer-events: none;">`;
+      }
+    } catch (e) { }
+  }
+
+  // 明細テーブル行構築（参考PDF通り：明細 + 空行1行 + 消費税行（課税時） + 残空行で最低11行）
+  const renderedRows = [];
+  items.forEach(it => {
+    const qty = Number(it.qty) || 0;
+    const price = Number(it.unitPrice) || 0;
+    const amt = isJpy ? Math.round(qty * price) : Math.round(qty * price * 100) / 100;
+    renderedRows.push({
+      sku: it.sku || '',
+      name: it.itemName || '',
+      qty: qty ? qty.toLocaleString() : '',
+      price: price ? formatPoMoney(price, currency) : '',
+      amount: (qty || price) ? formatPoMoney(amt, currency) : ''
+    });
+  });
+
+  if (taxRate > 0) {
+    renderedRows.push({ sku: '', name: '', qty: '', price: '', amount: '' });
+    renderedRows.push({
+      sku: '',
+      name: isOverseas ? `Tax (${taxRate}%)` : `消費税${taxRate}%`,
+      qty: '',
+      price: '',
+      amount: formatPoMoney(totals.tax, currency)
+    });
+  }
+
+  const minRows = 11;
+  while (renderedRows.length < minRows) {
+    renderedRows.push({ sku: '', name: '', qty: '', price: '', amount: '' });
+  }
+
+  const rowsHtml = renderedRows.map(r => `
+    <tr>
+      <td style="border: 1px solid #0f172a; padding: 4px 6px; text-align: center; font-family: monospace; height: 22px;">${escapeHtml(r.sku)}</td>
+      <td style="border: 1px solid #0f172a; padding: 4px 8px; text-align: left;">${escapeHtml(r.name)}</td>
+      <td style="border: 1px solid #0f172a; padding: 4px 6px; text-align: right; font-family: monospace;">${escapeHtml(r.qty)}</td>
+      <td style="border: 1px solid #0f172a; padding: 4px 6px; text-align: right; font-family: monospace;">${escapeHtml(r.price)}</td>
+      <td style="border: 1px solid #0f172a; padding: 4px 6px; text-align: right; font-family: monospace;">${escapeHtml(r.amount)}</td>
+    </tr>
+  `).join('');
+
+  // 下部3行の集計枠（参考PDF通り、左3列ブルーグレー網掛け・右2列に集計表示）
+  const summaryRowsHtml = `
+    <tr>
+      <td colspan="3" rowspan="3" style="border: 1px solid #0f172a; border-top: 2px solid #0f172a; background: #dbe3f0; padding: 6px 10px; vertical-align: middle; font-size: 10.5px; color: #334155;">
+        ${po.deliveryDate ? `<div><strong>${isOverseas ? 'Requested Delivery:' : '希望納期:'}</strong> ${escapeHtml(isOverseas ? formatPoDateEN(po.deliveryDate) : formatPoDateJP(po.deliveryDate))}</div>` : ''}
+        ${isOverseas ? `<div style="margin-top: 2px;"><strong>Currency:</strong> ${escapeHtml(currency)}</div>` : ''}
+      </td>
+      <td style="border: 1px solid #0f172a; border-top: 2px solid #0f172a; padding: 3px 6px; text-align: right; font-size: 10px; color: #475569; height: 21px;">${isOverseas ? 'Subtotal' : '小計'}</td>
+      <td style="border: 1px solid #0f172a; border-top: 2px solid #0f172a; padding: 3px 6px; text-align: right; font-family: monospace; font-size: 11px;">${formatPoMoney(totals.subtotal, currency)}</td>
+    </tr>
+    <tr>
+      <td style="border: 1px solid #0f172a; padding: 3px 6px; text-align: right; font-size: 10px; color: #475569; height: 21px;">${isOverseas ? `Tax (${taxRate}%)` : `消費税 (${taxRate}%)`}</td>
+      <td style="border: 1px solid #0f172a; padding: 3px 6px; text-align: right; font-family: monospace; font-size: 11px;">${taxRate > 0 ? formatPoMoney(totals.tax, currency) : (isOverseas ? '0.00' : '0')}</td>
+    </tr>
+    <tr>
+      <td style="border: 1px solid #0f172a; padding: 4px 6px; text-align: right; font-size: 10.5px; font-weight: 700; color: #0f172a; height: 23px;">${isOverseas ? 'TOTAL' : '合計'}</td>
+      <td style="border: 1px solid #0f172a; padding: 4px 6px; text-align: right; font-family: monospace; font-size: 12px; font-weight: 800; color: #0f172a;">${isJpy ? formatPoMoney(totals.total, 'JPY') : `${escapeHtml(currency)} ${formatPoMoney(totals.total, currency)}`}</td>
+    </tr>
+  `;
+
+  // MEMO行（点線罫線で最低5行）
+  const memoLines = String(po.memo || '').split('\n');
+  const minMemoLines = 5;
+  while (memoLines.length < minMemoLines) memoLines.push('');
+  const memoHtml = memoLines.map(line => `
+    <div style="border-bottom: 1px dashed #334155; min-height: 21px; padding: 3px 2px 2px 2px; font-size: 11px; color: #0f172a; line-height: 1.4;">
+      ${escapeHtml(line) || '&nbsp;'}
+    </div>
+  `).join('');
+
+  return `
+    <div class="po-print-sheet" style="background: #ffffff; color: #0f172a; padding: 26px 28px 24px 28px; font-family: 'Hiragino Kaku Gothic ProN', 'Yu Gothic', 'Meiryo', sans-serif; box-sizing: border-box;">
+      <!-- 上段：ロゴ ＋ 発行日・注文No -->
+      <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 10px;">
+        <div>${getPoAlvaLogoSvg()}</div>
+        <table style="border-collapse: collapse; font-size: 11px; min-width: 190px;">
+          <tr>
+            <td style="padding: 2px 8px 2px 0; color: #334155; font-weight: 600;">${isOverseas ? 'Issue Date' : '発行日'}</td>
+            <td style="padding: 2px 4px; border-bottom: 1px solid #0f172a; text-align: center; min-width: 120px; font-family: monospace;">${escapeHtml(dateText)}</td>
+          </tr>
+          <tr>
+            <td style="padding: 4px 8px 2px 0; color: #334155; font-weight: 600;">${isOverseas ? 'P.O. No.' : '注文No.'}</td>
+            <td style="padding: 4px 4px 2px 4px; border-bottom: 1px solid #0f172a; text-align: center; font-family: monospace; font-weight: 700;">${escapeHtml(po.poNumber || '')}</td>
+          </tr>
+        </table>
+      </div>
+
+      <!-- ネイビータイトル帯 -->
+      <div style="background: #233b6c; color: #ffffff; text-align: center; padding: 9px 0; font-size: 20px; font-weight: 700; letter-spacing: ${isOverseas ? '3px' : '10px'}; margin-bottom: 16px;">
+        ${titleText}
+      </div>
+
+      <!-- 宛先・挨拶・注文合計 ／ 自社情報 -->
+      <div style="display: flex; justify-content: space-between; gap: 18px; margin-bottom: 14px; align-items: flex-start;">
+        <div style="flex: 1.25;">
+          <div style="display: flex; align-items: baseline; justify-content: space-between; border-bottom: 1.5px solid #0f172a; padding: 0 4px 4px 4px; margin-bottom: 10px;">
+            <span style="font-size: 15px; font-weight: 700; text-align: center; flex: 1;">${isOverseas ? 'To: ' : ''}${escapeHtml(supplierName)}</span>
+            ${honorific ? `<span style="font-size: 12px; font-weight: 600; margin-left: 8px;">${escapeHtml(honorific)}</span>` : ''}
+          </div>
+          <div style="font-size: 11px; line-height: 1.55; color: #1e293b; margin-bottom: 12px;">
+            ${greetingHtml}
+          </div>
+          <div style="display: flex; align-items: baseline; justify-content: space-between; border-bottom: 2px solid #0f172a; padding: 2px 6px 4px 2px;">
+            <span style="font-size: 12.5px; font-weight: 700;">${totalLabel}</span>
+            <span style="font-size: 20px; font-weight: 800; font-family: monospace; letter-spacing: 0.5px;">${totalValueText}</span>
+          </div>
+        </div>
+
+        <div style="flex: 0.85; position: relative; padding-top: 8px; padding-left: 10px; font-size: 11px; line-height: 1.65; color: #0f172a;">
+          ${stampHtml}
+          <div style="font-size: 13px; font-weight: 700; margin-bottom: 4px;">${escapeHtml(companyDisplay)}</div>
+          <div>${escapeHtml(addressDisplay)}</div>
+          <div style="margin-top: 4px; font-family: monospace;">TEL： ${escapeHtml(telDisplay)}</div>
+          <div style="font-family: monospace;">FAX： ${escapeHtml(faxDisplay)}</div>
+        </div>
+      </div>
+
+      <!-- 5列明細テーブル -->
+      <table style="width: 100%; border-collapse: collapse; border: 2px solid #0f172a; font-size: 11px; margin-bottom: 16px;">
+        <thead>
+          <tr style="background: #233b6c; color: #ffffff;">
+            <th style="border: 1px solid #0f172a; padding: 6px 4px; width: 17%; font-weight: 700;">${isOverseas ? 'Item No.' : '品番'}</th>
+            <th style="border: 1px solid #0f172a; padding: 6px 6px; width: 41%; font-weight: 700;">${isOverseas ? 'Description' : '商品名'}</th>
+            <th style="border: 1px solid #0f172a; padding: 6px 4px; width: 10%; font-weight: 700;">${isOverseas ? 'Qty' : '数量'}</th>
+            <th style="border: 1px solid #0f172a; padding: 6px 4px; width: 15%; font-weight: 700;">${isOverseas ? 'Unit Price' : '単価'}</th>
+            <th style="border: 1px solid #0f172a; padding: 6px 4px; width: 17%; font-weight: 700;">${isOverseas ? 'Amount' : '金額'}</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml}
+          ${summaryRowsHtml}
+        </tbody>
+      </table>
+
+      <!-- MEMO セクション -->
+      <div style="margin-top: 10px;">
+        <div style="font-size: 11px; font-weight: 800; letter-spacing: 1px; color: #0f172a; margin-bottom: 2px;">MEMO</div>
+        <div style="border-top: 1px dashed #334155;">
+          ${memoHtml}
+        </div>
+      </div>
+    </div>
+  `;
+}
+window.buildPoDocumentHtml = buildPoDocumentHtml;
+
+function getPoMasterCatalogOptions() {
+  const invList = typeof getInventoryList === 'function' ? getInventoryList() : [];
+  const itemList = typeof getItemMasterList === 'function' ? getItemMasterList() : [];
+  const map = new Map();
+  invList.forEach(i => {
+    if (!i || !i.name) return;
+    map.set(i.id, {
+      id: i.id,
+      sku: i.sku || '',
+      name: i.name,
+      unitCost: Number(i.unitCost) || 0
+    });
+  });
+  itemList.forEach(it => {
+    if (!it || !it.name) return;
+    const key = it.id || it.name;
+    if (!Array.from(map.values()).some(v => v.name === it.name)) {
+      map.set(key, {
+        id: it.id || '',
+        sku: it.sku || it.code || '',
+        name: it.name,
+        unitCost: Number(it.costPrice || it.unitCost || it.unitPrice) || 0
+      });
+    }
+  });
+  return Array.from(map.values());
+}
+
+function populatePoSupplierDatalist() {
+  const dl = document.getElementById('poSupplierDatalist');
+  if (!dl) return;
+  const names = new Set();
+  (typeof getPurchaseOrderList === 'function' ? getPurchaseOrderList() : []).forEach(p => {
+    if (p && p.supplier) names.add(p.supplier.trim());
+  });
+  (typeof getInventoryLotList === 'function' ? getInventoryLotList() : []).forEach(l => {
+    if (l && l.supplier) names.add(l.supplier.trim());
+  });
+  dl.innerHTML = Array.from(names).filter(Boolean).map(n => `<option value="${escapeHtml(n)}"></option>`).join('');
+}
+
+function getPoFormState() {
+  const regionEl = document.querySelector('input[name="poRegionType"]:checked');
+  const regionType = regionEl ? regionEl.value : 'domestic';
+  const currency = document.getElementById('poSelectCurrency')?.value || (regionType === 'overseas' ? 'EUR' : 'JPY');
+  const taxRate = Number(document.getElementById('poSelectTaxRate')?.value ?? (regionType === 'overseas' ? 0 : 10));
+  return {
+    id: document.getElementById('poEditId')?.value || '',
+    poNumber: (document.getElementById('poInputNumber')?.value || '').trim(),
+    issueDate: document.getElementById('poInputIssueDate')?.value || new Date().toISOString().split('T')[0],
+    deliveryDate: document.getElementById('poInputDeliveryDate')?.value || '',
+    status: document.getElementById('poSelectStatus')?.value || 'ordered',
+    regionType,
+    supplier: (document.getElementById('poInputSupplier')?.value || '').trim(),
+    honorific: document.getElementById('poSelectHonorific')?.value ?? '御中',
+    currency,
+    taxRate,
+    showStamp: Boolean(document.getElementById('poCheckShowStamp')?.checked),
+    memo: document.getElementById('poInputMemo')?.value || '',
+    items: currentPoItemRows.map(r => ({
+      itemId: r.itemId || '',
+      sku: (r.sku || '').trim(),
+      itemName: (r.itemName || '').trim(),
+      qty: Number(r.qty) || 0,
+      unitPrice: Number(r.unitPrice) || 0
+    }))
+  };
+}
+
+function updatePoFormTotalsAndPreview() {
+  const po = getPoFormState();
+  const totals = calculatePoTotals(po.items, po.taxRate, po.currency);
+
+  const subEl = document.getElementById('poFormSubtotalDisplay');
+  const taxEl = document.getElementById('poFormTaxDisplay');
+  const taxWrap = document.getElementById('poFormTaxWrap');
+  const totalEl = document.getElementById('poFormTotalDisplay');
+
+  if (subEl) subEl.textContent = formatPoMoney(totals.subtotal, po.currency, true);
+  if (taxEl) taxEl.textContent = formatPoMoney(totals.tax, po.currency, true);
+  if (taxWrap) taxWrap.style.display = po.taxRate > 0 ? 'block' : 'none';
+  if (totalEl) totalEl.textContent = formatPoMoney(totals.total, po.currency, true);
+
+  // 各行の金額セルも更新
+  const isJpy = po.currency === 'JPY';
+  currentPoItemRows.forEach(r => {
+    const amtEl = document.querySelector(`.po-row-amount[data-row-id="${r.rowId}"]`);
+    if (amtEl) {
+      const amt = isJpy ? Math.round((Number(r.qty) || 0) * (Number(r.unitPrice) || 0)) : Math.round((Number(r.qty) || 0) * (Number(r.unitPrice) || 0) * 100) / 100;
+      amtEl.textContent = formatPoMoney(amt, po.currency);
+    }
+  });
+
+  const previewEl = document.getElementById('poA4PreviewContainer');
+  if (previewEl) {
+    previewEl.innerHTML = buildPoDocumentHtml(po);
+  }
+}
+
+function renderPoItemRows() {
+  const tbody = document.getElementById('poItemRowsTbody');
+  if (!tbody) return;
+  const catalog = getPoMasterCatalogOptions();
+  const optionsHtml = `<option value="">-- マスタ引用 --</option>` + catalog.map(c =>
+    `<option value="${escapeHtml(c.id)}">${escapeHtml((c.sku ? `[${c.sku}] ` : '') + c.name)}</option>`
+  ).join('');
+
+  tbody.innerHTML = currentPoItemRows.map(r => `
+    <tr data-po-row-id="${r.rowId}" style="border-bottom: 1px solid #e2e8f0;">
+      <td style="padding: 4px 5px;">
+        <select class="form-select po-row-master-select" data-row-id="${r.rowId}" style="font-size: 0.7rem; padding: 2px 4px; margin-bottom: 3px; height: 24px;">
+          ${optionsHtml}
+        </select>
+        <input type="text" class="form-input po-row-sku" data-row-id="${r.rowId}" value="${escapeHtml(r.sku || '')}" placeholder="品番 (例: PP-10)" style="font-size: 0.75rem; font-family: monospace; padding: 3px 5px; height: 26px;">
+      </td>
+      <td style="padding: 4px 5px; vertical-align: bottom;">
+        <input type="text" class="form-input po-row-name" data-row-id="${r.rowId}" value="${escapeHtml(r.itemName || '')}" placeholder="商品名を入力..." style="font-size: 0.78rem; padding: 3px 6px; height: 28px;">
+      </td>
+      <td style="padding: 4px 5px; vertical-align: bottom;">
+        <input type="number" class="form-input po-row-qty" data-row-id="${r.rowId}" value="${r.qty}" min="0" step="1" style="font-size: 0.78rem; font-family: monospace; text-align: right; padding: 3px 5px; height: 28px;">
+      </td>
+      <td style="padding: 4px 5px; vertical-align: bottom;">
+        <input type="number" class="form-input po-row-price" data-row-id="${r.rowId}" value="${r.unitPrice}" min="0" step="0.01" style="font-size: 0.78rem; font-family: monospace; text-align: right; padding: 3px 5px; height: 28px;">
+      </td>
+      <td class="po-row-amount" data-row-id="${r.rowId}" style="padding: 4px 6px; text-align: right; font-family: monospace; font-weight: 700; vertical-align: bottom; padding-bottom: 8px;">
+        0
+      </td>
+      <td style="padding: 4px 3px; text-align: center; vertical-align: bottom; padding-bottom: 5px;">
+        <button type="button" class="btn-po-remove-row" data-row-id="${r.rowId}" style="background: none; border: none; color: #ef4444; cursor: pointer; font-size: 0.9rem;" title="行を削除">✕</button>
+      </td>
+    </tr>
+  `).join('');
+
+  // 既存 itemId があればマスタ select に反映
+  currentPoItemRows.forEach(r => {
+    if (r.itemId) {
+      const sel = tbody.querySelector(`.po-row-master-select[data-row-id="${r.rowId}"]`);
+      if (sel) sel.value = r.itemId;
+    }
+  });
+
+  updatePoFormTotalsAndPreview();
+}
+
+function switchPoRegionUI(regionType, autoAdjustCurrencyTax = false) {
+  const lblDom = document.getElementById('labelPoRegionDomestic');
+  const lblOvs = document.getElementById('labelPoRegionOverseas');
+  const currSel = document.getElementById('poSelectCurrency');
+  const taxSel = document.getElementById('poSelectTaxRate');
+  const honSel = document.getElementById('poSelectHonorific');
+
+  if (regionType === 'overseas') {
+    if (lblDom) { lblDom.style.border = '1px solid #cbd5e1'; lblDom.style.background = '#ffffff'; lblDom.style.color = '#475569'; }
+    if (lblOvs) { lblOvs.style.border = '2px solid #0284c7'; lblOvs.style.background = '#f0f9ff'; lblOvs.style.color = '#0369a1'; }
+    if (autoAdjustCurrencyTax) {
+      if (currSel && currSel.value === 'JPY') currSel.value = 'EUR';
+      if (taxSel) taxSel.value = '0';
+      if (honSel) honSel.value = '';
+    }
+  } else {
+    if (lblDom) { lblDom.style.border = '2px solid #233b6c'; lblDom.style.background = '#eff6ff'; lblDom.style.color = '#1e3a8a'; }
+    if (lblOvs) { lblOvs.style.border = '1px solid #cbd5e1'; lblOvs.style.background = '#ffffff'; lblOvs.style.color = '#475569'; }
+    if (autoAdjustCurrencyTax) {
+      if (currSel) currSel.value = 'JPY';
+      if (taxSel) taxSel.value = '10';
+      if (honSel && !honSel.value) honSel.value = '御中';
+    }
+  }
+  updatePoFormTotalsAndPreview();
+}
+
+function openPurchaseOrderModal(poId = null) {
+  const modal = document.getElementById('purchaseOrderModal');
+  if (!modal) return;
+  populatePoSupplierDatalist();
+
+  const existingList = typeof getPurchaseOrderList === 'function' ? getPurchaseOrderList() : [];
+  const existing = poId ? existingList.find(p => p.id === poId) : null;
+
+  const titleEl = document.getElementById('poModalTitle');
+  const editIdEl = document.getElementById('poEditId');
+  const numEl = document.getElementById('poInputNumber');
+  const dateEl = document.getElementById('poInputIssueDate');
+  const delivEl = document.getElementById('poInputDeliveryDate');
+  const statusEl = document.getElementById('poSelectStatus');
+  const supEl = document.getElementById('poInputSupplier');
+  const honEl = document.getElementById('poSelectHonorific');
+  const currEl = document.getElementById('poSelectCurrency');
+  const taxEl = document.getElementById('poSelectTaxRate');
+  const stampEl = document.getElementById('poCheckShowStamp');
+  const memoEl = document.getElementById('poInputMemo');
+
+  const today = new Date().toISOString().split('T')[0];
+
+  if (existing) {
+    if (titleEl) titleEl.textContent = `✏️ 発注書編集 (${existing.poNumber || ''})`;
+    if (editIdEl) editIdEl.value = existing.id;
+    if (numEl) numEl.value = existing.poNumber || '';
+    if (dateEl) dateEl.value = existing.issueDate || today;
+    if (delivEl) delivEl.value = existing.deliveryDate || '';
+    if (statusEl) statusEl.value = existing.status || 'ordered';
+    if (supEl) supEl.value = existing.supplier || '';
+    if (honEl) honEl.value = existing.honorific !== undefined ? existing.honorific : (existing.regionType === 'overseas' ? '' : '御中');
+    if (currEl) currEl.value = existing.currency || (existing.regionType === 'overseas' ? 'EUR' : 'JPY');
+    if (taxEl) taxEl.value = String(existing.taxRate !== undefined ? existing.taxRate : (existing.regionType === 'overseas' ? 0 : 10));
+    if (stampEl) stampEl.checked = Boolean(existing.showStamp);
+    if (memoEl) memoEl.value = existing.memo || '';
+
+    const rRadio = document.querySelector(`input[name="poRegionType"][value="${existing.regionType || 'domestic'}"]`);
+    if (rRadio) rRadio.checked = true;
+    switchPoRegionUI(existing.regionType || 'domestic', false);
+
+    nextPoRowId = 1;
+    currentPoItemRows = (Array.isArray(existing.items) && existing.items.length > 0)
+      ? existing.items.map(it => ({
+        rowId: nextPoRowId++,
+        itemId: it.itemId || '',
+        sku: it.sku || '',
+        itemName: it.itemName || '',
+        qty: Number(it.qty) || 1,
+        unitPrice: Number(it.unitPrice) || 0
+      }))
+      : [{ rowId: nextPoRowId++, itemId: '', sku: '', itemName: '', qty: 1, unitPrice: 0 }];
+  } else {
+    if (titleEl) titleEl.textContent = '新規発注書（注文書 / PO）作成';
+    if (editIdEl) editIdEl.value = '';
+    if (dateEl) dateEl.value = today;
+    if (numEl) numEl.value = generateNextPoNumber(today);
+    if (delivEl) delivEl.value = '';
+    if (statusEl) statusEl.value = 'ordered';
+    if (supEl) supEl.value = '';
+    if (honEl) honEl.value = '御中';
+    if (currEl) currEl.value = 'JPY';
+    if (taxEl) taxEl.value = '10';
+    if (stampEl) stampEl.checked = false;
+    if (memoEl) memoEl.value = '';
+
+    const domRadio = document.querySelector('input[name="poRegionType"][value="domestic"]');
+    if (domRadio) domRadio.checked = true;
+    switchPoRegionUI('domestic', false);
+
+    nextPoRowId = 1;
+    currentPoItemRows = [{ rowId: nextPoRowId++, itemId: '', sku: '', itemName: '', qty: 1, unitPrice: 0 }];
+  }
+
+  renderPoItemRows();
+  modal.classList.add('active');
+  modal.style.display = 'flex';
+  console.log('【発注書モーダル】オープン', { mode: existing ? 'edit' : 'new', poId: poId || null });
+}
+window.openPurchaseOrderModal = openPurchaseOrderModal;
+
+function closePurchaseOrderModal() {
+  const modal = document.getElementById('purchaseOrderModal');
+  if (!modal) return;
+  modal.classList.remove('active');
+  modal.style.display = 'none';
+}
+window.closePurchaseOrderModal = closePurchaseOrderModal;
+
+function saveCurrentPurchaseOrder() {
+  const po = getPoFormState();
+  if (!po.supplier) {
+    showToast('仕入先名（発注先）を入力してください', 'warning');
+    document.getElementById('poInputSupplier')?.focus();
+    return null;
+  }
+  const validItems = po.items.filter(it => it.itemName || it.sku);
+  if (validItems.length === 0) {
+    showToast('注文品目を1件以上入力してください', 'warning');
+    return null;
+  }
+  po.items = validItems;
+  if (!po.poNumber) po.poNumber = generateNextPoNumber(po.issueDate);
+
+  const totals = calculatePoTotals(po.items, po.taxRate, po.currency);
+  po.subtotal = totals.subtotal;
+  po.taxAmount = totals.tax;
+  po.totalAmount = totals.total;
+
+  // 既存の linkedLotNumber 等を保持
+  if (po.id) {
+    const prev = (typeof getPurchaseOrderList === 'function' ? getPurchaseOrderList() : []).find(p => p.id === po.id);
+    if (prev && prev.linkedLotNumber) po.linkedLotNumber = prev.linkedLotNumber;
+    if (prev && prev.linkedLotId) po.linkedLotId = prev.linkedLotId;
+  }
+
+  console.log('【発注書保存】実行開始', { poNumber: po.poNumber, supplier: po.supplier, totalAmount: po.totalAmount, currency: po.currency });
+  const savedId = typeof savePurchaseOrder === 'function' ? savePurchaseOrder(po) : null;
+  if (savedId) {
+    const editIdEl = document.getElementById('poEditId');
+    if (editIdEl) editIdEl.value = savedId;
+    renderPurchaseOrderTable();
+    showToast(`発注書「${po.poNumber}」を保存しました`, 'success');
+    return savedId;
+  }
+  showToast('発注書の保存に失敗しました', 'danger');
+  return null;
+}
+
+function printPurchaseOrderData(po) {
+  if (!po) return;
+  const docHtml = buildPoDocumentHtml(po);
+  const safeSupplier = String(po.supplier || '仕入先').replace(/[\\/:*?"<>|]/g, '_');
+  const safePoNo = String(po.poNumber || 'PO').replace(/[\\/:*?"<>|]/g, '_');
+  const suffix = po.regionType === 'overseas' ? 'PO' : '注文書';
+  const docTitle = `${safeSupplier}_${safePoNo}_${suffix}`;
+
+  const win = window.open('', '_blank', 'width=900,height=1050');
+  if (!win) {
+    showToast('ポップアップがブロックされました。ブラウザのポップアップを許可してください', 'warning');
+    return;
+  }
+  win.document.open();
+  win.document.write(`<!DOCTYPE html>
+<html lang="${po.regionType === 'overseas' ? 'en' : 'ja'}">
+<head>
+  <meta charset="UTF-8">
+  <title>${escapeHtml(docTitle)}</title>
+  <style>
+    @page { size: A4 portrait; margin: 10mm; }
+    * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    body { margin: 0; padding: 0; background: #e2e8f0; display: flex; flex-direction: column; align-items: center; }
+    .print-toolbar { width: 100%; background: #1e293b; color: #fff; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; font-family: sans-serif; font-size: 13px; }
+    .print-toolbar button { background: #2563eb; color: #fff; border: none; padding: 6px 16px; border-radius: 6px; font-weight: 700; cursor: pointer; font-size: 13px; }
+    .sheet-wrapper { width: 210mm; min-height: 277mm; background: #ffffff; margin: 16px auto; box-shadow: 0 4px 16px rgba(0,0,0,0.18); }
+    @media print {
+      body { background: #ffffff; }
+      .print-toolbar { display: none !important; }
+      .sheet-wrapper { width: 100%; min-height: auto; margin: 0; box-shadow: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="print-toolbar">
+    <span>📄 ${escapeHtml(docTitle)}</span>
+    <div style="display:flex; gap:8px;">
+      <button onclick="window.print()">🖨️ 印刷 / PDFとして保存</button>
+      <button onclick="window.close()" style="background:#475569;">閉じる</button>
+    </div>
+  </div>
+  <div class="sheet-wrapper">${docHtml}</div>
+  <script>
+    window.addEventListener('load', function() {
+      setTimeout(function() { window.print(); }, 250);
+    });
+  </script>
+</body>
+</html>`);
+  win.document.close();
+}
+
+window.printPurchaseOrderById = function (poId) {
+  const po = (typeof getPurchaseOrderList === 'function' ? getPurchaseOrderList() : []).find(p => p.id === poId);
+  if (!po) {
+    showToast('発注書が見つかりませんでした', 'warning');
+    return;
+  }
+  printPurchaseOrderData(po);
+};
+
+window.deletePurchaseOrderFromUI = function (poId, poNumber) {
+  if (!confirm(`発注書「${poNumber}」を削除しますか？`)) return;
+  if (typeof deletePurchaseOrder === 'function' && deletePurchaseOrder(poId)) {
+    renderPurchaseOrderTable();
+    showToast(`発注書「${poNumber}」を削除しました`, 'success');
+  }
+};
+
+/**
+ * 発注書（PO）から入荷ロットモーダルをワンクリック起動・自動転記
+ */
+window.createInventoryLotFromPurchaseOrder = function (poId) {
+  const po = (typeof getPurchaseOrderList === 'function' ? getPurchaseOrderList() : []).find(p => p.id === poId);
+  if (!po) {
+    showToast('転記元の発注書が見つかりませんでした', 'warning');
+    return;
+  }
+  console.log('【発注書→入荷ロット連携】実行開始', { poId: po.id, poNumber: po.poNumber, regionType: po.regionType });
+
+  closePurchaseOrderModal();
+  openInventoryLotModal(null, true);
+  currentSourcePurchaseOrderId = po.id;
+
+  const isOverseas = po.regionType === 'overseas' || (po.currency && po.currency !== 'JPY');
+  const procType = isOverseas ? 'import' : 'domestic';
+  const procRadio = document.querySelector(`input[name="lotProcurementType"][value="${procType}"]`);
+  if (procRadio) {
+    procRadio.checked = true;
+    switchLotProcurementType(procType);
+  }
+
+  if (DOM.lotInputSupplier) DOM.lotInputSupplier.value = po.supplier || '';
+
+  if (isOverseas) {
+    if (DOM.lotForeignCurrency && po.currency) DOM.lotForeignCurrency.value = po.currency;
+    if (DOM.lotForeignAmount) DOM.lotForeignAmount.value = po.subtotal || po.totalAmount || 0;
+  }
+
+  const singleItems = typeof getSingleItemList === 'function' ? getSingleItemList() : [];
+  nextLotRowId = 1;
+  lotItemRows = (Array.isArray(po.items) && po.items.length > 0 ? po.items : []).map(it => {
+    const matched = singleItems.find(m =>
+      (it.itemId && m.id === it.itemId) ||
+      (it.sku && m.sku && String(m.sku).trim().toUpperCase() === String(it.sku).trim().toUpperCase()) ||
+      (it.itemName && m.name && m.name.trim() === it.itemName.trim())
+    );
+    const resolvedId = matched ? matched.id : (it.itemId || (singleItems[0] ? singleItems[0].id : ''));
+    const resolvedName = matched ? matched.name : (it.itemName || '');
+    const qty = Math.max(1, Number(it.qty) || 1);
+    const uPrice = Number(it.unitPrice) || 0;
+    const isB = isBundleLotRow({ itemId: resolvedId, itemName: resolvedName });
+    const isReq = isLotRowRequireSerial({ itemId: resolvedId, itemName: resolvedName, hasSerial: matched ? matched.hasSerial : false });
+
+    return {
+      rowId: nextLotRowId++,
+      itemId: resolvedId,
+      itemName: resolvedName,
+      hasSerial: isReq,
+      isBundle: isB,
+      qty,
+      foreignPrice: isOverseas ? uPrice : 0,
+      foreignSubtotal: isOverseas ? Math.round(qty * uPrice * 100) / 100 : 0,
+      unitPrice: isOverseas ? 0 : Math.round(uPrice),
+      subtotal: isOverseas ? 0 : Math.round(qty * uPrice),
+      allocatedCost: 0,
+      landedUnitCost: isOverseas ? 0 : Math.round(uPrice),
+      serials: []
+    };
+  });
+
+  if (lotItemRows.length === 0) {
+    initLotItemRows(null);
+  } else {
+    renderLotItemRows();
+    updateLandedCostCalculation(false);
+    renderLotSerialGroups(true);
+  }
+
+  showToast(`発注書「${po.poNumber}」の内容を入荷ロットへ転記しました！為替レート・諸費用・シリアルを入力して確定してください。`, 'success');
+};
+
+function renderPurchaseOrderTable() {
+  const container = document.getElementById('purchaseOrderTableContainer');
+  const summaryEl = document.getElementById('poSummaryCards');
+  if (!container) return;
+
+  const allList = typeof getPurchaseOrderList === 'function' ? getPurchaseOrderList() : [];
+  const q = (document.getElementById('inputSearchPurchaseOrders')?.value || '').trim().toLowerCase();
+  const statusFilter = document.getElementById('selectPoStatusFilter')?.value || 'all';
+  const regionFilter = document.getElementById('selectPoRegionFilter')?.value || 'all';
+
+  // サマリー集計
+  const orderedCount = allList.filter(p => p.status === 'ordered' || p.status === 'partial').length;
+  const receivedCount = allList.filter(p => p.status === 'received').length;
+  const domesticOrderedJpy = allList
+    .filter(p => p.regionType !== 'overseas' && (p.status === 'ordered' || p.status === 'partial'))
+    .reduce((s, p) => s + (Number(p.totalAmount) || 0), 0);
+  const overseasOrderedCount = allList
+    .filter(p => p.regionType === 'overseas' && (p.status === 'ordered' || p.status === 'partial')).length;
+
+  if (summaryEl) {
+    summaryEl.innerHTML = `
+      <div style="background:#ffffff; border:1px solid #cbd5e1; border-radius:8px; padding:10px 14px;">
+        <div style="font-size:0.72rem; color:#64748b; font-weight:600;">📋 発注書 総件数</div>
+        <div style="font-size:1.25rem; font-weight:800; color:#0f172a; font-family:monospace;">${allList.length} <span style="font-size:0.75rem; font-weight:600;">件</span></div>
+      </div>
+      <div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; padding:10px 14px;">
+        <div style="font-size:0.72rem; color:#1d4ed8; font-weight:700;">📤 発注済（入荷待ち）</div>
+        <div style="font-size:1.25rem; font-weight:800; color:#1e3a8a; font-family:monospace;">${orderedCount} <span style="font-size:0.75rem; font-weight:600;">件 (海外 ${overseasOrderedCount}件)</span></div>
+      </div>
+      <div style="background:#ecfdf5; border:1px solid #a7f3d0; border-radius:8px; padding:10px 14px;">
+        <div style="font-size:0.72rem; color:#047857; font-weight:700;">✅ 入荷完了済</div>
+        <div style="font-size:1.25rem; font-weight:800; color:#065f46; font-family:monospace;">${receivedCount} <span style="font-size:0.75rem; font-weight:600;">件</span></div>
+      </div>
+      <div style="background:#ffffff; border:1px solid #cbd5e1; border-radius:8px; padding:10px 14px;">
+        <div style="font-size:0.72rem; color:#64748b; font-weight:600;">🇯🇵 国内入荷待ち合計</div>
+        <div style="font-size:1.15rem; font-weight:800; color:#0f172a; font-family:monospace;">¥${Math.round(domesticOrderedJpy).toLocaleString()}</div>
+      </div>
+    `;
+  }
+
+  const filtered = allList.filter(p => {
+    if (statusFilter !== 'all' && p.status !== statusFilter) return false;
+    if (regionFilter !== 'all' && (p.regionType || 'domestic') !== regionFilter) return false;
+    if (q) {
+      const hay = [
+        p.poNumber,
+        p.supplier,
+        p.memo,
+        ...(Array.isArray(p.items) ? p.items.map(i => `${i.sku || ''} ${i.itemName || ''}`) : [])
+      ].join(' ').toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    container.innerHTML = `
+      <div style="text-align:center; padding:36px 16px; background:#ffffff; border:1px dashed #cbd5e1; border-radius:10px; color:#64748b;">
+        <div style="font-size:1.8rem; margin-bottom:6px;">📋</div>
+        <div style="font-weight:700; color:#334155; margin-bottom:4px;">発注書（注文書 / PO）がまだありません</div>
+        <div style="font-size:0.8rem; margin-bottom:12px;">「➕ 新規発注書を作成」から国内（日本語）または海外（英語・外貨）の注文書を発行できます。</div>
+        <button type="button" class="btn btn-primary btn-sm" onclick="window.openPurchaseOrderModal()" style="background:#1e3a8a; border-color:#1e3a8a; font-weight:700;">
+          ➕ 最初の発注書を作成
+        </button>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = `
+    <table class="data-table" style="width:100%; border-collapse:collapse; background:#ffffff; border-radius:8px; overflow:hidden; font-size:0.82rem;">
+      <thead>
+        <tr style="background:#f8fafc; border-bottom:2px solid #e2e8f0; color:#475569; text-align:left;">
+          <th style="padding:8px 10px;">注文No. / 発行日</th>
+          <th style="padding:8px 10px;">区分</th>
+          <th style="padding:8px 10px;">仕入先</th>
+          <th style="padding:8px 10px;">注文品目</th>
+          <th style="padding:8px 10px; text-align:right;">注文合計</th>
+          <th style="padding:8px 10px; text-align:center;">ステータス</th>
+          <th style="padding:8px 10px; text-align:right; width:260px;">操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${filtered.map(po => {
+          const st = PO_STATUS_META[po.status] || PO_STATUS_META.ordered;
+          const isOvs = po.regionType === 'overseas';
+          const itemsSummary = (Array.isArray(po.items) ? po.items : [])
+            .map(i => `${i.sku ? `[${i.sku}] ` : ''}${i.itemName} ×${i.qty}`)
+            .join('<br>');
+          const lotBadge = po.linkedLotNumber
+            ? `<div style="margin-top:3px;"><span style="font-size:0.68rem; background:#f0fdf4; color:#047857; border:1px solid #a7f3d0; padding:1px 5px; border-radius:4px; font-family:monospace;">入荷済: ${escapeHtml(po.linkedLotNumber)}</span></div>`
+            : '';
+          return `
+            <tr style="border-bottom:1px solid #e2e8f0;">
+              <td style="padding:8px 10px;">
+                <div style="font-family:monospace; font-weight:800; color:#1e3a8a;">${escapeHtml(po.poNumber || '-')}</div>
+                <div style="font-size:0.72rem; color:#64748b;">${escapeHtml(po.issueDate || '-')}${po.deliveryDate ? ` / 納期:${escapeHtml(po.deliveryDate)}` : ''}</div>
+              </td>
+              <td style="padding:8px 10px;">
+                ${isOvs
+                  ? '<span class="badge" style="background:#e0f2fe; color:#0369a1; font-weight:700; padding:2px 7px; border-radius:4px; font-size:0.72rem;">🌐 海外</span>'
+                  : '<span class="badge" style="background:#f1f5f9; color:#334155; font-weight:700; padding:2px 7px; border-radius:4px; font-size:0.72rem;">🇯🇵 国内</span>'}
+              </td>
+              <td style="padding:8px 10px; font-weight:700; color:#0f172a;">${escapeHtml(po.supplier || '-')}</td>
+              <td style="padding:8px 10px; font-size:0.76rem; color:#334155; line-height:1.45;">${itemsSummary || '-'}</td>
+              <td style="padding:8px 10px; text-align:right; font-family:monospace; font-weight:800; color:#0f172a;">
+                ${escapeHtml(formatPoMoney(po.totalAmount, po.currency || 'JPY', true))}
+              </td>
+              <td style="padding:8px 10px; text-align:center;">
+                <span class="badge" style="background:${st.bg}; color:${st.color}; border:1px solid ${st.border}; font-weight:700; padding:2px 8px; border-radius:9999px; font-size:0.72rem; display:inline-block;">
+                  ${st.label}
+                </span>
+                ${lotBadge}
+              </td>
+              <td style="padding:8px 10px; text-align:right; white-space:nowrap;">
+                <button type="button" class="btn btn-xs btn-secondary" onclick="window.printPurchaseOrderById('${escapeHtml(po.id)}')" title="A4印刷 / PDF保存" style="margin-right:3px;">🖨️ PDF</button>
+                <button type="button" class="btn btn-xs btn-secondary" onclick="window.openPurchaseOrderModal('${escapeHtml(po.id)}')" title="編集" style="margin-right:3px;">✏️</button>
+                <button type="button" class="btn btn-xs" onclick="window.createInventoryLotFromPurchaseOrder('${escapeHtml(po.id)}')" title="この発注内容から入荷ロットを作成" style="background:#059669; color:#fff; border:none; font-weight:700; padding:3px 7px; border-radius:4px; cursor:pointer; margin-right:3px;">📥 入荷ロット</button>
+                <button type="button" class="btn btn-xs btn-secondary" onclick="window.deletePurchaseOrderFromUI('${escapeHtml(po.id)}', '${escapeHtml(po.poNumber || '')}')" title="削除" style="color:#dc2626;">🗑️</button>
+              </td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+}
+window.renderPurchaseOrderTable = renderPurchaseOrderTable;
+
+function initPurchaseOrderEvents() {
+  if (window._poEventsInitialized) return;
+  window._poEventsInitialized = true;
+
+  // タブ内の検索・フィルタ・新規作成ボタン
+  document.getElementById('btnNewPurchaseOrderFromTab')?.addEventListener('click', () => openPurchaseOrderModal());
+  document.getElementById('inputSearchPurchaseOrders')?.addEventListener('input', renderPurchaseOrderTable);
+  document.getElementById('selectPoStatusFilter')?.addEventListener('change', renderPurchaseOrderTable);
+  document.getElementById('selectPoRegionFilter')?.addEventListener('change', renderPurchaseOrderTable);
+
+  // モーダル閉じる系
+  document.getElementById('btnClosePurchaseOrderModal')?.addEventListener('click', closePurchaseOrderModal);
+  document.getElementById('btnCancelPurchaseOrderModal')?.addEventListener('click', closePurchaseOrderModal);
+
+  // 国内・海外切替
+  document.querySelectorAll('input[name="poRegionType"]').forEach(radio => {
+    radio.addEventListener('change', (e) => {
+      switchPoRegionUI(e.target.value, true);
+    });
+  });
+
+  // 基本入力変更時にリアルタイムプレビュー更新
+  ['poInputNumber', 'poInputIssueDate', 'poInputDeliveryDate', 'poSelectStatus', 'poInputSupplier', 'poSelectHonorific', 'poSelectCurrency', 'poSelectTaxRate', 'poCheckShowStamp', 'poInputMemo'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('input', updatePoFormTotalsAndPreview);
+    el.addEventListener('change', updatePoFormTotalsAndPreview);
+  });
+
+  // 行追加
+  document.getElementById('btnAddPoItemRow')?.addEventListener('click', () => {
+    currentPoItemRows.push({ rowId: nextPoRowId++, itemId: '', sku: '', itemName: '', qty: 1, unitPrice: 0 });
+    renderPoItemRows();
+  });
+
+  // 明細テーブル内のイベント委譲（Event Delegation）
+  document.addEventListener('change', (e) => {
+    const sel = e.target.closest('.po-row-master-select');
+    if (sel) {
+      const rId = Number(sel.dataset.rowId);
+      const row = currentPoItemRows.find(r => r.rowId === rId);
+      const catalog = getPoMasterCatalogOptions();
+      const found = catalog.find(c => c.id === sel.value);
+      if (row && found) {
+        row.itemId = found.id;
+        row.sku = found.sku || row.sku;
+        row.itemName = found.name;
+        const curr = document.getElementById('poSelectCurrency')?.value || 'JPY';
+        if (curr === 'JPY' && found.unitCost > 0) {
+          row.unitPrice = found.unitCost;
+        }
+        renderPoItemRows();
+      }
+    }
+  });
+
+  document.addEventListener('input', (e) => {
+    const tr = e.target.closest('#poItemRowsTbody tr[data-po-row-id]');
+    if (!tr) return;
+    const rId = Number(tr.dataset.poRowId);
+    const row = currentPoItemRows.find(r => r.rowId === rId);
+    if (!row) return;
+    if (e.target.classList.contains('po-row-sku')) row.sku = e.target.value;
+    if (e.target.classList.contains('po-row-name')) row.itemName = e.target.value;
+    if (e.target.classList.contains('po-row-qty')) row.qty = Number(e.target.value) || 0;
+    if (e.target.classList.contains('po-row-price')) row.unitPrice = Number(e.target.value) || 0;
+    updatePoFormTotalsAndPreview();
+  });
+
+  document.addEventListener('click', (e) => {
+    const delBtn = e.target.closest('.btn-po-remove-row');
+    if (delBtn) {
+      const rId = Number(delBtn.dataset.rowId);
+      if (currentPoItemRows.length > 1) {
+        currentPoItemRows = currentPoItemRows.filter(r => r.rowId !== rId);
+      } else {
+        currentPoItemRows[0] = { rowId: currentPoItemRows[0].rowId, itemId: '', sku: '', itemName: '', qty: 1, unitPrice: 0 };
+      }
+      renderPoItemRows();
+      return;
+    }
+
+    const presetBtn = e.target.closest('.po-memo-preset');
+    if (presetBtn) {
+      const memoEl = document.getElementById('poInputMemo');
+      if (!memoEl) return;
+      const preset = presetBtn.dataset.preset;
+      let text = '';
+      if (preset === 'jp_50') text = 'お支払いは50%前金、残りは発送前に送金予定です。';
+      else if (preset === 'jp_ship') text = '出荷は全数揃ったところで発送をお願いいたします。';
+      else if (preset === 'en_tt') text = 'Payment Terms: 50% T/T in advance, 50% balance before shipment.\nTrade Terms: FOB / Please advise earliest ETD.';
+      memoEl.value = memoEl.value ? `${memoEl.value.trim()}\n${text}` : text;
+      updatePoFormTotalsAndPreview();
+    }
+  });
+
+  // 印刷・保存・入荷ロット作成ボタン
+  document.getElementById('btnPrintPurchaseOrder')?.addEventListener('click', () => {
+    printPurchaseOrderData(getPoFormState());
+  });
+  document.getElementById('btnPrintPoPreviewTop')?.addEventListener('click', () => {
+    printPurchaseOrderData(getPoFormState());
+  });
+  document.getElementById('btnSavePurchaseOrder')?.addEventListener('click', () => {
+    const savedId = saveCurrentPurchaseOrder();
+    if (savedId) closePurchaseOrderModal();
+  });
+  document.getElementById('btnSaveAndCreateLotFromPo')?.addEventListener('click', () => {
+    const savedId = saveCurrentPurchaseOrder();
+    if (savedId) {
+      window.createInventoryLotFromPurchaseOrder(savedId);
+    }
+  });
+}
 window.invFilterSerialByItem = function (itemId) {
   switchInventoryTab('serials');
   if (DOM.selectSerialItemFilter) {
@@ -12882,6 +13879,20 @@ function submitInventoryLotStockIn() {
   };
 
   saveInventoryLot(lotData);
+
+  // 発注書（PO）から転記作成されたロットの場合、元の発注書を「入荷完了」へ自動更新
+  if (currentSourcePurchaseOrderId && typeof getPurchaseOrderList === 'function' && typeof savePurchaseOrder === 'function') {
+    const srcPo = getPurchaseOrderList().find(p => p.id === currentSourcePurchaseOrderId);
+    if (srcPo) {
+      srcPo.status = 'received';
+      srcPo.linkedLotId = lotId;
+      srcPo.linkedLotNumber = lotNumber;
+      savePurchaseOrder(srcPo);
+      if (typeof renderPurchaseOrderTable === 'function') renderPurchaseOrderTable();
+      console.log('【発注書→入荷ロット連動完了】元発注書を入荷完了へ更新しました', { poId: srcPo.id, poNumber: srcPo.poNumber, lotNumber });
+    }
+    currentSourcePurchaseOrderId = null;
+  }
 
   // 領収書画像があればサーバーsave-receiptにも非同期アップロード
   if (typeof fetch !== 'undefined' && currentLotReceiptDataUrl && currentLotReceiptDataUrl.startsWith('data:image/')) {

@@ -343,7 +343,7 @@
           style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
           <span
-            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.24-lot-bundle-serial-fix</span>
+            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.24-purchase-order-module</span>
         </div>
       </div>
 
@@ -1773,6 +1773,11 @@
           title="これまでに発行・確定した納品書・請求書の出荷数量を集計し、実在庫を自動引き落とし・同期します">
           🚚 発行伝票から出荷引落
         </button>
+        <button type="button" id="btnOpenPurchaseOrderModal" class="btn btn-sm"
+          style="display: inline-flex; align-items: center; gap: 6px; background: #1e3a8a; border-color: #1e3a8a; color: #ffffff; font-weight: 700;"
+          title="国内（日本語）・海外（英語/外貨）対応の注文書（発注書/PO）を作成・PDF発行">
+          📝 新規発注書
+        </button>
         <button type="button" id="btnOpenInventoryLotModal" class="btn btn-success btn-sm"
           style="display: inline-flex; align-items: center; gap: 6px; background: #059669; border-color: #059669; color: #ffffff; font-weight: 700;"
           title="輸入・国内仕入ロットの入庫、諸費用按分(Landed Cost)、シリアル一括登録、財務会計仕訳連動">
@@ -1796,6 +1801,9 @@
       </button>
       <button type="button" id="tabBtnInventoryLots" class="acc-tab-btn" style="font-weight: 600;">
         📜 入荷ロット履歴
+      </button>
+      <button type="button" id="tabBtnPurchaseOrders" class="acc-tab-btn" style="font-weight: 600;">
+        📋 発注管理 (注文書/PO)
       </button>
       <div style="margin-left: auto; display: flex; align-items: center; font-size: 0.775rem; color: #64748b;"
         id="inventorySummaryStatus">
@@ -2083,9 +2091,226 @@
           </div>
         </div>
 
+        <!-- 4. 発注管理 (注文書 / Purchase Order) タブ -->
+        <div id="purchaseOrdersTabContent" style="display: none;">
+          <!-- ステータスサマリーカード -->
+          <div id="poSummaryCards" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-bottom: 14px;">
+            <!-- JSでレンダリング -->
+          </div>
+
+          <!-- 検索・フィルタ・新規作成バー -->
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap;">
+            <div style="display: flex; gap: 8px; flex: 1; min-width: 240px; flex-wrap: wrap;">
+              <input type="text" id="inputSearchPurchaseOrders" class="form-input"
+                placeholder="🔍 注文No・仕入先・商品名・品番で検索..." style="font-size: 0.85rem; flex: 1; min-width: 200px;">
+              <select id="selectPoStatusFilter" class="form-select" style="font-size: 0.85rem; width: auto;">
+                <option value="all">すべてのステータス</option>
+                <option value="draft">📝 下書き</option>
+                <option value="ordered">📤 発注済（入荷待）</option>
+                <option value="partial">📦 一部入荷</option>
+                <option value="received">✅ 入荷完了</option>
+                <option value="cancelled">🚫 キャンセル</option>
+              </select>
+              <select id="selectPoRegionFilter" class="form-select" style="font-size: 0.85rem; width: auto;">
+                <option value="all">国内・海外すべて</option>
+                <option value="domestic">🇯🇵 国内発注のみ</option>
+                <option value="overseas">🌐 海外発注のみ</option>
+              </select>
+            </div>
+            <button type="button" id="btnNewPurchaseOrderFromTab" class="btn btn-primary btn-sm"
+              style="background: #1e3a8a; border-color: #1e3a8a; font-weight: 700; display: inline-flex; align-items: center; gap: 6px;">
+              ➕ 新規発注書を作成
+            </button>
+          </div>
+
+          <!-- 発注書一覧テーブル -->
+          <div id="purchaseOrderTableContainer" style="overflow-x: auto;">
+            <!-- JSでレンダリング -->
+          </div>
+        </div>
+
       </div>
     </div>
   </section>
+
+  <!-- 📝 発注書（注文書 / Purchase Order）作成・編集＆リアルタイムA4プレビューモーダル -->
+  <div class="modal-overlay" id="purchaseOrderModal" style="z-index: 1080; display: none;">
+    <div class="modal-card" style="max-width: 1320px; width: 96vw; max-height: 94vh; display: flex; flex-direction: column;">
+      <div class="modal-header" style="padding: 12px 18px; background: linear-gradient(135deg, #1e3a8a, #233b6c); color: #ffffff; border-radius: 12px 12px 0 0;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 1.25rem;">📋</span>
+          <div>
+            <h3 class="modal-title" id="poModalTitle" style="margin: 0; font-size: 1.05rem; color: #ffffff;">新規発注書（注文書 / PO）作成</h3>
+            <span style="font-size: 0.72rem; color: #cbd5e1;">国内（日本語・JPY）および海外（English・EUR/USD等）両対応・A4印刷/PDF・入荷ロット連携</span>
+          </div>
+        </div>
+        <button type="button" id="btnClosePurchaseOrderModal" style="background: rgba(255,255,255,0.15); border: none; color: #ffffff; width: 32px; height: 32px; border-radius: 6px; font-size: 1.1rem; cursor: pointer;">✕</button>
+      </div>
+
+      <div class="modal-body" style="padding: 14px; overflow-y: auto; flex: 1; background: #f1f5f9;">
+        <input type="hidden" id="poEditId" value="">
+        <datalist id="poSupplierDatalist"></datalist>
+
+        <div style="display: grid; grid-template-columns: minmax(420px, 1fr) minmax(440px, 1.08fr); gap: 14px; align-items: start;">
+          <!-- 左ペイン：発注書入力フォーム -->
+          <div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 12px;">
+            <!-- 区分切替（国内 / 海外） -->
+            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+              <label id="labelPoRegionDomestic" style="flex: 1; min-width: 170px; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 10px; border: 2px solid #233b6c; background: #eff6ff; border-radius: 8px; cursor: pointer; font-weight: 700; font-size: 0.82rem; color: #1e3a8a;">
+                <input type="radio" name="poRegionType" value="domestic" checked style="accent-color: #233b6c;">
+                🇯🇵 国内発注（日本語・JPY）
+              </label>
+              <label id="labelPoRegionOverseas" style="flex: 1; min-width: 170px; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 10px; border: 1px solid #cbd5e1; background: #ffffff; border-radius: 8px; cursor: pointer; font-weight: 700; font-size: 0.82rem; color: #475569;">
+                <input type="radio" name="poRegionType" value="overseas" style="accent-color: #0284c7;">
+                🌐 海外発注（English・外貨）
+              </label>
+            </div>
+
+            <!-- 基本情報 -->
+            <div style="display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 8px;">
+              <div>
+                <label class="form-label" style="font-size: 0.72rem; font-weight: 700; color: #334155;">注文No. (P.O. No.)</label>
+                <input type="text" id="poInputNumber" class="form-input" placeholder="PO-20261124-01" style="font-family: monospace; font-weight: 700; font-size: 0.82rem;">
+              </div>
+              <div>
+                <label class="form-label" style="font-size: 0.72rem; font-weight: 700; color: #334155;">発行日</label>
+                <input type="date" id="poInputIssueDate" class="form-input" style="font-size: 0.82rem;">
+              </div>
+              <div>
+                <label class="form-label" style="font-size: 0.72rem; font-weight: 700; color: #334155;">ステータス</label>
+                <select id="poSelectStatus" class="form-select" style="font-size: 0.82rem; font-weight: 600;">
+                  <option value="draft">📝 下書き</option>
+                  <option value="ordered" selected>📤 発注済（入荷待）</option>
+                  <option value="partial">📦 一部入荷</option>
+                  <option value="received">✅ 入荷完了</option>
+                  <option value="cancelled">🚫 キャンセル</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- 仕入先情報 -->
+            <div style="display: grid; grid-template-columns: 1.6fr 0.7fr 0.9fr; gap: 8px;">
+              <div>
+                <label class="form-label" style="font-size: 0.72rem; font-weight: 700; color: #334155;">仕入先名（発注先） <span style="color:#dc2626;">*</span></label>
+                <input type="text" id="poInputSupplier" list="poSupplierDatalist" class="form-input" placeholder="例: 埼玉精機株式会社 / Carbon GmbH" style="font-size: 0.85rem; font-weight: 600;">
+              </div>
+              <div>
+                <label class="form-label" style="font-size: 0.72rem; font-weight: 700; color: #334155;">敬称</label>
+                <select id="poSelectHonorific" class="form-select" style="font-size: 0.82rem;">
+                  <option value="御中" selected>御中</option>
+                  <option value="様">様</option>
+                  <option value="">なし</option>
+                </select>
+              </div>
+              <div>
+                <label class="form-label" style="font-size: 0.72rem; font-weight: 700; color: #334155;">希望納期（任意）</label>
+                <input type="date" id="poInputDeliveryDate" class="form-input" style="font-size: 0.82rem;">
+              </div>
+            </div>
+
+            <!-- 通貨・消費税・角印設定 -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; background: #f8fafc; padding: 8px 10px; border-radius: 8px; border: 1px solid #e2e8f0;">
+              <div>
+                <label class="form-label" style="font-size: 0.72rem; font-weight: 700; color: #334155;">通貨</label>
+                <select id="poSelectCurrency" class="form-select" style="font-size: 0.82rem; font-weight: 700;">
+                  <option value="JPY" selected>JPY (円 ¥)</option>
+                  <option value="EUR">EUR (ユーロ €)</option>
+                  <option value="USD">USD (米ドル $)</option>
+                  <option value="CNY">CNY (人民元 ¥)</option>
+                  <option value="GBP">GBP (英ポンド £)</option>
+                </select>
+              </div>
+              <div>
+                <label class="form-label" style="font-size: 0.72rem; font-weight: 700; color: #334155;">消費税</label>
+                <select id="poSelectTaxRate" class="form-select" style="font-size: 0.82rem;">
+                  <option value="10" selected>10%（外税）</option>
+                  <option value="8">8%（軽減）</option>
+                  <option value="0">0%（非課税・輸出入免税）</option>
+                </select>
+              </div>
+              <div style="display: flex; align-items: flex-end; padding-bottom: 4px;">
+                <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 0.78rem; font-weight: 600; color: #334155; cursor: pointer;">
+                  <input type="checkbox" id="poCheckShowStamp" style="accent-color: #233b6c;">
+                  電子角印を表示
+                </label>
+              </div>
+            </div>
+
+            <!-- 注文品目明細 -->
+            <div style="border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden;">
+              <div style="background: #f8fafc; padding: 7px 10px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 0.8rem; font-weight: 700; color: #1e293b;">📦 注文品目明細（マスタから自動引用可）</span>
+                <button type="button" id="btnAddPoItemRow" class="btn btn-xs btn-primary" style="font-size: 0.72rem; padding: 3px 10px;">＋ 行を追加</button>
+              </div>
+              <div style="overflow-x: auto;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 0.78rem;">
+                  <thead>
+                    <tr style="background: #f1f5f9; color: #475569; border-bottom: 1px solid #cbd5e1;">
+                      <th style="padding: 5px 6px; text-align: left; width: 22%;">品番 / マスタ選択</th>
+                      <th style="padding: 5px 6px; text-align: left;">商品名</th>
+                      <th style="padding: 5px 6px; text-align: right; width: 13%;">数量</th>
+                      <th style="padding: 5px 6px; text-align: right; width: 18%;">単価</th>
+                      <th style="padding: 5px 6px; text-align: right; width: 18%;">金額</th>
+                      <th style="padding: 5px 4px; width: 28px;"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="poItemRowsTbody">
+                    <!-- JSでレンダリング -->
+                  </tbody>
+                </table>
+              </div>
+              <div style="padding: 8px 12px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; justify-content: flex-end; gap: 16px; font-size: 0.82rem;">
+                <div>小計: <strong id="poFormSubtotalDisplay" style="font-family: monospace;">0</strong></div>
+                <div id="poFormTaxWrap">消費税: <strong id="poFormTaxDisplay" style="font-family: monospace;">0</strong></div>
+                <div style="color: #1e3a8a; font-size: 0.92rem;">注文合計: <strong id="poFormTotalDisplay" style="font-family: monospace;">0</strong></div>
+              </div>
+            </div>
+
+            <!-- MEMO 欄 -->
+            <div>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; flex-wrap: wrap; gap: 4px;">
+                <label class="form-label" style="font-size: 0.75rem; font-weight: 700; color: #334155; margin: 0;">📝 MEMO（支払条件・納期・出荷指示など）</label>
+                <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+                  <button type="button" class="btn btn-xs btn-secondary po-memo-preset" data-preset="jp_50" style="font-size: 0.68rem; padding: 1px 6px;">50%前金</button>
+                  <button type="button" class="btn btn-xs btn-secondary po-memo-preset" data-preset="jp_ship" style="font-size: 0.68rem; padding: 1px 6px;">揃い次第出荷</button>
+                  <button type="button" class="btn btn-xs btn-secondary po-memo-preset" data-preset="en_tt" style="font-size: 0.68rem; padding: 1px 6px;">EN: T/T &amp; FOB</button>
+                </div>
+              </div>
+              <textarea id="poInputMemo" class="form-input" rows="4" placeholder="例: お支払いは50%前金、残りは発送前に送金予定です。&#10;出荷は全数揃ったところで発送をお願いいたします。" style="font-size: 0.82rem; line-height: 1.5;"></textarea>
+            </div>
+          </div>
+
+          <!-- 右ペイン：参考PDF準拠 A4リアルタイムプレビュー -->
+          <div style="background: #cbd5e1; border-radius: 10px; padding: 12px; overflow: auto; max-height: 78vh; display: flex; flex-direction: column; align-items: center;">
+            <div style="width: 100%; display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding: 0 4px;">
+              <span style="font-size: 0.75rem; font-weight: 700; color: #1e293b;">📄 A4 リアルタイムプレビュー（注文書様式）</span>
+              <button type="button" id="btnPrintPoPreviewTop" class="btn btn-xs" style="background: #1e3a8a; color: #ffffff; font-weight: 700; border: none; padding: 3px 10px; border-radius: 4px; cursor: pointer;">
+                🖨️ 印刷 / PDF保存
+              </button>
+            </div>
+            <div id="poA4PreviewContainer" style="width: 100%; max-width: 620px; background: #ffffff; box-shadow: 0 6px 20px rgba(15,23,42,0.18); border-radius: 2px; overflow: hidden;">
+              <!-- JSでリアルタイムレンダリング -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="padding: 10px 18px; border-top: 1px solid #e2e8f0; background: #ffffff; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; border-radius: 0 0 12px 12px;">
+        <button type="button" class="btn btn-secondary btn-sm" id="btnCancelPurchaseOrderModal">キャンセル</button>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button type="button" class="btn btn-secondary btn-sm" id="btnPrintPurchaseOrder" style="font-weight: 700; color: #1e3a8a; border-color: #93c5fd; background: #eff6ff;">
+            🖨️ 印刷 / PDF保存
+          </button>
+          <button type="button" class="btn btn-primary btn-sm" id="btnSavePurchaseOrder" style="background: #1e3a8a; border-color: #1e3a8a; font-weight: 700;">
+            💾 発注書を保存
+          </button>
+          <button type="button" class="btn btn-success btn-sm" id="btnSaveAndCreateLotFromPo" style="background: #059669; border-color: #059669; color: #ffffff; font-weight: 700;">
+            📥 保存して入荷ロットを作成
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- クイック入出庫調整モーダル -->
   <div class="modal-overlay" id="inventoryAdjustModal" style="z-index: 1050;">
@@ -5182,7 +5407,7 @@
         <div>
           <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             <h2 class="view-screen-title" style="margin: 0;">勤怠管理・退勤タイムカード</h2>
-            <span style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.24-lot-bundle-serial-fix</span>
+            <span style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.24-purchase-order-module</span>
           </div>
           <span class="view-screen-subtitle">休憩1時間自動控除・ワンタップ出退勤打刻・月次出勤簿・打刻漏れ修正</span>
         </div>
@@ -7562,7 +7787,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261124_lot_bundle_serial_fix"></script>
+  <script src="js/app.bundle.js?v=20261124_purchase_order_module"></script>
 </body>
 
 </html>

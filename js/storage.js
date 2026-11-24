@@ -20,6 +20,8 @@ const KEYS = {
   ATTENDANCE_EMPLOYEE: 'billcraft_attendance_employee',
   INVENTORY: 'billcraft_inventory_master',
   INVENTORY_LOTS: 'billcraft_inventory_lots',
+  PURCHASE_ORDERS: 'billcraft_purchase_orders',
+  DELETED_PO_IDS: 'billcraft_deleted_po_ids',
   INVENTORY_SERIALS: 'billcraft_inventory_serials',
   PURCHASE_MAPPINGS: 'billcraft_purchase_mappings',
   PAYROLL_RECORDS: 'billcraft_payroll_records',
@@ -7000,6 +7002,160 @@ export async function saveServerInventoryLots(lots) {
   }
 }
 
+// ==========================================================================
+// 発注書（注文書 / Purchase Order）管理・クラウド同期
+// ==========================================================================
+
+export function getDeletedPurchaseOrderIds() {
+  try {
+    const raw = localStorage.getItem(KEYS.DELETED_PO_IDS);
+    const arr = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(arr) ? arr : []);
+  } catch (e) {
+    return new Set();
+  }
+}
+
+export function addDeletedPurchaseOrderId(id) {
+  if (!id) return;
+  const set = getDeletedPurchaseOrderIds();
+  set.add(id);
+  localStorageSetItemOnly(KEYS.DELETED_PO_IDS, JSON.stringify(Array.from(set)));
+}
+
+export function getPurchaseOrderList() {
+  try {
+    const raw = localStorage.getItem(KEYS.PURCHASE_ORDERS);
+    const list = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(list)) return [];
+    const deleted = getDeletedPurchaseOrderIds();
+    return list
+      .filter(po => po && po.id && !deleted.has(po.id))
+      .sort((a, b) => {
+        const dA = a.issueDate || (a.createdAt ? a.createdAt.split('T')[0] : '') || '';
+        const dB = b.issueDate || (b.createdAt ? b.createdAt.split('T')[0] : '') || '';
+        if (dB !== dA) return dB.localeCompare(dA);
+        return String(b.poNumber || '').localeCompare(String(a.poNumber || ''));
+      });
+  } catch (e) {
+    console.error('Failed to get purchase orders:', e);
+    return [];
+  }
+}
+
+export function savePurchaseOrder(poData) {
+  try {
+    if (!poData) return false;
+    const list = getPurchaseOrderList();
+    const nowIso = new Date().toISOString();
+    const newPo = {
+      ...poData,
+      id: poData.id || `po_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      createdAt: poData.createdAt || nowIso,
+      updatedAt: nowIso
+    };
+    const idx = list.findIndex(p => p.id === newPo.id);
+    if (idx !== -1) {
+      list[idx] = { ...list[idx], ...newPo };
+    } else {
+      list.unshift(newPo);
+    }
+    localStorageSetItemAndSync(KEYS.PURCHASE_ORDERS, JSON.stringify(list));
+    saveServerPurchaseOrders(newPo).catch(() => { });
+    console.log('【発注書保存】完了', { id: newPo.id, poNumber: newPo.poNumber, status: newPo.status });
+    return newPo.id;
+  } catch (e) {
+    console.error('Failed to save purchase order:', e);
+    return false;
+  }
+}
+
+export function deletePurchaseOrder(poId) {
+  try {
+    if (!poId) return false;
+    const list = getPurchaseOrderList();
+    const filtered = list.filter(p => p.id !== poId);
+    addDeletedPurchaseOrderId(poId);
+    localStorageSetItemAndSync(KEYS.PURCHASE_ORDERS, JSON.stringify(filtered));
+    apiFetch(`purchase-orders?id=${encodeURIComponent(poId)}`, { method: 'DELETE' }).catch(e => {
+      console.warn('サーバーからの発注書削除失敗:', e);
+    });
+    console.log('【発注書削除】完了', { id: poId });
+    return true;
+  } catch (e) {
+    console.error('Failed to delete purchase order:', e);
+    return false;
+  }
+}
+
+export async function fetchServerPurchaseOrders() {
+  try {
+    const res = await apiFetch('purchase-orders', { cache: 'no-store' });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data)) return data;
+    }
+  } catch (e) {
+    console.warn('サーバーからの発注書取得失敗:', e);
+  }
+  return null;
+}
+
+export async function saveServerPurchaseOrders(poData) {
+  try {
+    await apiFetch('purchase-orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(poData)
+    });
+  } catch (e) {
+    console.warn('サーバーへの発注書保存失敗:', e);
+  }
+}
+
+export async function syncPurchaseOrdersWithServer() {
+  try {
+    const serverList = await fetchServerPurchaseOrders();
+    const localList = getPurchaseOrderList();
+    const deleted = getDeletedPurchaseOrderIds();
+
+    if (serverList && Array.isArray(serverList)) {
+      const poMap = new Map();
+      serverList.forEach(p => {
+        if (!p || !p.id || deleted.has(p.id)) return;
+        poMap.set(p.id, p);
+      });
+      let hasLocalOnly = false;
+      localList.forEach(p => {
+        if (!p || !p.id || deleted.has(p.id)) return;
+        const existing = poMap.get(p.id);
+        if (!existing) {
+          poMap.set(p.id, p);
+          hasLocalOnly = true;
+        } else if (p.updatedAt && (!existing.updatedAt || p.updatedAt > existing.updatedAt)) {
+          poMap.set(p.id, p);
+          hasLocalOnly = true;
+        }
+      });
+      const merged = Array.from(poMap.values()).sort((a, b) => {
+        const dA = a.issueDate || '';
+        const dB = b.issueDate || '';
+        if (dB !== dA) return dB.localeCompare(dA);
+        return String(b.poNumber || '').localeCompare(String(a.poNumber || ''));
+      });
+      localStorageSetItemOnly(KEYS.PURCHASE_ORDERS, JSON.stringify(merged));
+      if (hasLocalOnly) {
+        saveServerPurchaseOrders(merged).catch(() => { });
+      }
+      console.log(`[発注書同期完了] 全 ${merged.length} 件の発注書をサーバー・ローカルで同期しました`);
+      return merged;
+    }
+  } catch (err) {
+    console.warn('syncPurchaseOrdersWithServer error:', err);
+  }
+  return getPurchaseOrderList();
+}
+
 /**
  * 入荷ロットを削除（在庫マスタ・シリアル台帳・財務会計仕訳を完全連動取消）
  */
@@ -9875,6 +10031,10 @@ if (typeof window !== 'undefined') {
   window.isNonStockItem = isNonStockItem;
   window.setCategoryNonStock = setCategoryNonStock;
   window.syncInventoryLotsWithServer = syncInventoryLotsWithServer;
+  window.getPurchaseOrderList = getPurchaseOrderList;
+  window.savePurchaseOrder = savePurchaseOrder;
+  window.deletePurchaseOrder = deletePurchaseOrder;
+  window.syncPurchaseOrdersWithServer = syncPurchaseOrdersWithServer;
   window.syncInventorySerialsWithServer = syncInventorySerialsWithServer;
   window.fetchServerInventoryLots = fetchServerInventoryLots;
   window.fetchServerInventorySerials = fetchServerInventorySerials;

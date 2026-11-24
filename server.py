@@ -1407,6 +1407,15 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps(lots_data, ensure_ascii=False, default=str).encode('utf-8'))
             return
 
+        # 発注書（注文書/PO）一覧取得API
+        if self.path == '/api/purchase-orders':
+            po_data = get_fs_collection('purchase_orders', [])
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.end_headers()
+            self.wfile.write(json.dumps(po_data, ensure_ascii=False, default=str).encode('utf-8'))
+            return
+
         # シリアル番号台帳一覧取得API
         if self.path == '/api/inventory-serials':
             serials_data = get_fs_collection('inventory_serials', [])
@@ -2131,6 +2140,33 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
                 self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
             return
 
+        # 発注書（注文書/PO）保存API
+        if self.path == '/api/purchase-orders':
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length).decode('utf-8')
+            try:
+                po_data = json.loads(post_data)
+                if isinstance(po_data, list):
+                    for item in po_data:
+                        doc_id = item.get('id')
+                        if doc_id:
+                            db.collection('purchase_orders').document(doc_id).set(item)
+                elif isinstance(po_data, dict):
+                    doc_id = po_data.get('id')
+                    if doc_id:
+                        db.collection('purchase_orders').document(doc_id).set(po_data)
+
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": True}).encode('utf-8'))
+            except Exception as e:
+                self.send_response(500)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
+            return
+
         # シリアル番号台帳 保存API
         if self.path == '/api/inventory-serials':
             content_length = int(self.headers.get('Content-Length', 0))
@@ -2399,6 +2435,7 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
                 '/api/clients': 'clients',
                 '/api/inventory': 'inventory',
                 '/api/inventory-lots': 'inventory_lots',
+                '/api/purchase-orders': 'purchase_orders',
                 '/api/inventory-serials': 'inventory_serials',
                 '/api/payroll/records': 'payroll_records',
                 '/api/payroll_records': 'payroll_records'
