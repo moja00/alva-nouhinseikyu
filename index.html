@@ -343,7 +343,7 @@
           style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
           <span
-            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.24-po-supplier-select-main</span>
+            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.24-po-international-standard</span>
         </div>
       </div>
 
@@ -2351,6 +2351,53 @@
               </div>
             </div>
 
+            <!-- 支払条件 ＆ 貿易条件（Incoterms / 納期表記） -->
+            <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 9px 10px; display: flex; flex-direction: column; gap: 8px;">
+              <div>
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 4px; margin-bottom: 3px; flex-wrap: wrap;">
+                  <label class="form-label" style="font-size: 0.72rem; font-weight: 700; color: #334155; margin: 0;">💳 支払条件 (Payment Terms)</label>
+                  <div style="display: flex; gap: 3px; flex-wrap: wrap;">
+                    <button type="button" class="btn btn-xs btn-secondary po-pay-preset" data-pay="50_50" style="font-size: 0.66rem; padding: 1px 6px;">50%前金・発送前残金</button>
+                    <button type="button" class="btn btn-xs btn-secondary po-pay-preset" data-pay="100_adv" style="font-size: 0.66rem; padding: 1px 6px;">100%前金</button>
+                    <button type="button" class="btn btn-xs btn-secondary po-pay-preset" data-pay="net30" style="font-size: 0.66rem; padding: 1px 6px;">月末締め翌月末</button>
+                  </div>
+                </div>
+                <input type="text" id="poInputPaymentTerms" class="form-input"
+                  placeholder="例: 50% T/T in advance, 50% before shipment / 月末締め翌月末払い" style="font-size: 0.8rem;">
+              </div>
+
+              <!-- 海外発注時に強調表示される貿易条件（Incoterms ＆ ETD表記） -->
+              <div id="poTradeTermsRow" style="display: none; background: #f0f9ff; border: 1px solid #7dd3fc; border-radius: 6px; padding: 8px; gap: 8px; flex-direction: column;">
+                <div style="font-size: 0.72rem; font-weight: 800; color: #0369a1;">🌐 貿易条件 / 出荷納期設定（Trade Terms &amp; ETD）</div>
+                <div style="display: grid; grid-template-columns: 0.85fr 1.15fr 1.2fr; gap: 6px;">
+                  <div>
+                    <label class="form-label" style="font-size: 0.68rem; font-weight: 700; color: #0369a1;">Incoterms</label>
+                    <select id="poSelectIncoterm" class="form-select" style="font-size: 0.78rem; font-weight: 700;">
+                      <option value="EXW">EXW</option>
+                      <option value="FOB" selected>FOB</option>
+                      <option value="CIF">CIF</option>
+                      <option value="DDP">DDP</option>
+                      <option value="FCA">FCA</option>
+                      <option value="DAP">DAP</option>
+                      <option value="">（指定なし）</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="form-label" style="font-size: 0.68rem; font-weight: 700; color: #0369a1;">港・都市名 (Port / City)</label>
+                    <input type="text" id="poInputIncotermPlace" class="form-input" placeholder="例: Massa, Italy / Tokyo" style="font-size: 0.78rem;">
+                  </div>
+                  <div>
+                    <label class="form-label" style="font-size: 0.68rem; font-weight: 700; color: #0369a1;">納期表記 (ETD未指定時)</label>
+                    <select id="poSelectDeliveryFallback" class="form-select" style="font-size: 0.74rem;">
+                      <option value="To be advised (Upon completion)" selected>To be advised (Upon completion)</option>
+                      <option value="ASAP (Earliest available)">ASAP (Earliest available)</option>
+                      <option value="Single consolidated shipment">Single consolidated shipment</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <!-- 注文品目明細 -->
             <div style="border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden;">
               <div
@@ -2393,12 +2440,12 @@
                 <label class="form-label" style="font-size: 0.75rem; font-weight: 700; color: #334155; margin: 0;">📝
                   MEMO（支払条件・納期・出荷指示など）</label>
                 <div style="display: flex; gap: 4px; flex-wrap: wrap;">
-                  <button type="button" class="btn btn-xs btn-secondary po-memo-preset" data-preset="jp_50"
-                    style="font-size: 0.68rem; padding: 1px 6px;">50%前金</button>
-                  <button type="button" class="btn btn-xs btn-secondary po-memo-preset" data-preset="jp_ship"
-                    style="font-size: 0.68rem; padding: 1px 6px;">揃い次第出荷</button>
-                  <button type="button" class="btn btn-xs btn-secondary po-memo-preset" data-preset="en_tt"
-                    style="font-size: 0.68rem; padding: 1px 6px;">EN: T/T &amp; FOB</button>
+                  <button type="button" class="btn btn-xs btn-secondary po-memo-preset" data-preset="pay_50"
+                    style="font-size: 0.68rem; padding: 1px 6px;">50%前金定型</button>
+                  <button type="button" class="btn btn-xs btn-secondary po-memo-preset" data-preset="ship_all"
+                    style="font-size: 0.68rem; padding: 1px 6px;">一括出荷指示</button>
+                  <button type="button" class="btn btn-xs btn-secondary po-memo-preset" data-preset="docs"
+                    style="font-size: 0.68rem; padding: 1px 6px;">梱包・書類指示</button>
                 </div>
               </div>
               <textarea id="poInputMemo" class="form-input" rows="4"
@@ -5608,7 +5655,7 @@
           <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             <h2 class="view-screen-title" style="margin: 0;">勤怠管理・退勤タイムカード</h2>
             <span
-              style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.24-po-supplier-select-main</span>
+              style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.24-po-international-standard</span>
           </div>
           <span class="view-screen-subtitle">休憩1時間自動控除・ワンタップ出退勤打刻・月次出勤簿・打刻漏れ修正</span>
         </div>
@@ -7993,7 +8040,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261124_po_supplier_select_main"></script>
+  <script src="js/app.bundle.js?v=20261124_po_international_standard"></script>
 </body>
 
 </html>

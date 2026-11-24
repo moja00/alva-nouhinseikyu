@@ -8588,6 +8588,14 @@ function calculatePoTotals(items, taxRate, currency = 'JPY') {
   return { subtotal, tax, total };
 }
 
+function resolvePoUnitEn(unitJp, explicitUnitEn) {
+  if (explicitUnitEn && String(explicitUnitEn).trim()) return String(explicitUnitEn).trim();
+  const u = String(unitJp || '').trim();
+  if (u === 'セット' || u.toLowerCase() === 'set' || u.toLowerCase() === 'sets') return 'Sets';
+  if (u === '式' || u.toLowerCase() === 'lot') return 'Lot';
+  return 'Pcs';
+}
+
 function buildPoDocumentHtml(po) {
   const isOverseas = po.regionType === 'overseas';
   const currency = po.currency || (isOverseas ? 'EUR' : 'JPY');
@@ -8602,24 +8610,14 @@ function buildPoDocumentHtml(po) {
   const telJP = issuer.tel || '027-289-0367';
   const faxJP = issuer.fax || '027-289-0368';
 
-  const companyDisplay = isOverseas ? 'ALVA WORKS CORP.' : companyJP;
-  const addressDisplay = isOverseas ? '63-7 Shimokawa-machi, Maebashi, Gunma 379-2143, Japan' : addressJP;
-  const telDisplay = isOverseas ? (telJP.startsWith('0') ? '+81-' + telJP.slice(1) : telJP) : telJP;
-  const faxDisplay = isOverseas ? (faxJP.startsWith('0') ? '+81-' + faxJP.slice(1) : faxJP) : faxJP;
+  const companyEN = issuer.companyNameEn || 'ALVA WORKS CORP.';
+  const addressEN = issuer.addressEn || '63-7 Shimokawa-machi, Maebashi, Gunma 379-2144, Japan';
+  const telEN = telJP.startsWith('0') ? '+81-' + telJP.slice(1) : telJP;
+  const faxEN = faxJP.startsWith('0') ? '+81-' + faxJP.slice(1) : faxJP;
 
-  const dateText = isOverseas ? formatPoDateEN(po.issueDate) : formatPoDateJP(po.issueDate);
-  const titleText = isOverseas ? 'PURCHASE ORDER' : '注　文　書';
-  const supplierName = po.supplier || (isOverseas ? 'Supplier Name' : '仕入先名未入力');
-  const honorific = isOverseas ? '' : (po.honorific !== undefined ? po.honorific : '御中');
-
-  const greetingHtml = isOverseas
-    ? `We are pleased to place the following order with your company.<br>Please confirm receipt and advise the shipping schedule.`
-    : `平素よりお世話になっております。<br>下記の商品を注文いたします。<br>よろしくお願いいたします。`;
-
-  const totalLabel = isOverseas ? 'TOTAL AMOUNT:' : '注文合計：';
-  const totalValueText = isJpy
-    ? `${formatPoMoney(totals.total, 'JPY')} <span style="font-size: 13px; font-weight: 700; margin-left: 8px;">円</span>`
-    : `${escapeHtml(currency)} ${formatPoMoney(totals.total, currency)}`;
+  // 取引先マスタから仕入先の詳細（英語社名・英語住所・担当者・TEL等）を解決
+  const clients = typeof getClientMasterList === 'function' ? getClientMasterList() : [];
+  const matchedClient = clients.find(c => c && c.name && c.name.trim() === String(po.supplier || '').trim());
 
   let stampHtml = '';
   if (po.showStamp && typeof generateCompanyStamp === 'function') {
@@ -8631,7 +8629,201 @@ function buildPoDocumentHtml(po) {
     } catch (e) { }
   }
 
-  // 明細テーブル行構築（参考PDF通り：明細 + 空行1行 + 消費税行（課税時） + 残空行で最低11行）
+  // =========================================================================
+  // 🌐 海外発注モード：国際標準 PURCHASE ORDER フォーマット
+  // =========================================================================
+  if (isOverseas) {
+    const supplierNameEn = (matchedClient && matchedClient.nameEn) || po.supplier || 'Supplier Name';
+    const supplierAddrEn = (matchedClient && (matchedClient.addressEn || matchedClient.address)) || '';
+    const supplierContact = (matchedClient && matchedClient.contactPerson) || '';
+    const supplierTel = (matchedClient && matchedClient.tel) || '';
+    const dateTextEn = formatPoDateEN(po.issueDate);
+
+    const paymentTermsText = (po.paymentTerms || '').trim() || (matchedClient && matchedClient.paymentTerms) || 'T/T in advance';
+    const incotermParts = [po.incoterm || '', po.incotermPlace || ''].map(s => String(s).trim()).filter(Boolean);
+    const tradeTermsText = incotermParts.length > 0 ? incotermParts.join(' ') : 'To be agreed';
+    const etdText = po.deliveryDate
+      ? formatPoDateEN(po.deliveryDate)
+      : ((po.deliveryFallback || '').trim() || 'To be advised (Upon completion)');
+
+    // 明細行（6列：Item No. / Description / Qty / Unit / Unit Price / Amount）
+    const enRows = items.map(it => {
+      const qty = Number(it.qty) || 0;
+      const price = Number(it.unitPrice) || 0;
+      const amt = isJpy ? Math.round(qty * price) : Math.round(qty * price * 100) / 100;
+      const unitDisp = resolvePoUnitEn(it.unit, it.unitEn);
+      return `
+        <tr>
+          <td style="border: 1px solid #cbd5e1; padding: 6px 6px; text-align: center; font-family: monospace; font-size: 10.5px;">${escapeHtml(it.sku || '-')}</td>
+          <td style="border: 1px solid #cbd5e1; padding: 6px 8px; text-align: left; font-size: 11px;">${escapeHtml(it.itemName || '')}</td>
+          <td style="border: 1px solid #cbd5e1; padding: 6px 6px; text-align: right; font-family: monospace; font-size: 11px;">${qty ? qty.toLocaleString('en-US') : ''}</td>
+          <td style="border: 1px solid #cbd5e1; padding: 6px 6px; text-align: center; font-size: 10.5px; color: #475569;">${qty ? escapeHtml(unitDisp) : ''}</td>
+          <td style="border: 1px solid #cbd5e1; padding: 6px 6px; text-align: right; font-family: monospace; font-size: 11px;">${price ? formatPoMoney(price, currency) : ''}</td>
+          <td style="border: 1px solid #cbd5e1; padding: 6px 8px; text-align: right; font-family: monospace; font-weight: 700; font-size: 11px;">${(qty || price) ? formatPoMoney(amt, currency) : ''}</td>
+        </tr>
+      `;
+    });
+
+    const minEnRows = 7;
+    while (enRows.length < minEnRows) {
+      enRows.push(`
+        <tr>
+          <td style="border: 1px solid #e2e8f0; height: 24px;">&nbsp;</td>
+          <td style="border: 1px solid #e2e8f0;">&nbsp;</td>
+          <td style="border: 1px solid #e2e8f0;">&nbsp;</td>
+          <td style="border: 1px solid #e2e8f0;">&nbsp;</td>
+          <td style="border: 1px solid #e2e8f0;">&nbsp;</td>
+          <td style="border: 1px solid #e2e8f0;">&nbsp;</td>
+        </tr>
+      `);
+    }
+
+    const taxSummaryRowEn = taxRate > 0 ? `
+      <tr>
+        <td colspan="4" style="border: none;"></td>
+        <td style="border: 1px solid #cbd5e1; background: #f8fafc; padding: 5px 8px; text-align: right; font-size: 10.5px; color: #475569; font-weight: 600;">Tax (${taxRate}%)</td>
+        <td style="border: 1px solid #cbd5e1; padding: 5px 8px; text-align: right; font-family: monospace; font-size: 11px;">${formatPoMoney(totals.tax, currency)}</td>
+      </tr>
+    ` : '';
+
+    const memoLinesEn = String(po.memo || '').trim()
+      ? String(po.memo).split('\n').map(l => `<div style="margin-bottom: 3px;">${escapeHtml(l)}</div>`).join('')
+      : '<div style="color: #64748b;">Please confirm receipt of this Purchase Order by signing and returning a copy.</div>';
+
+    return `
+      <div class="po-print-sheet" style="background: #ffffff; color: #0f172a; padding: 26px 28px 22px 28px; font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', sans-serif; box-sizing: border-box;">
+        <!-- ヘッダー：左ロゴ ／ 右 PURCHASE ORDER ＋ メタ表 -->
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #233b6c; padding-bottom: 12px; margin-bottom: 14px;">
+          <div>${getPoAlvaLogoSvg()}</div>
+          <div style="text-align: right;">
+            <div style="font-size: 22px; font-weight: 800; color: #233b6c; letter-spacing: 1.5px; line-height: 1.1; margin-bottom: 8px;">PURCHASE ORDER</div>
+            <table style="border-collapse: collapse; font-size: 10.5px; margin-left: auto;">
+              <tr>
+                <td style="padding: 2px 10px 2px 0; color: #64748b; font-weight: 700; text-align: right;">P.O. No.:</td>
+                <td style="padding: 2px 0; font-family: monospace; font-weight: 800; color: #0f172a; text-align: right;">${escapeHtml(po.poNumber || '')}</td>
+              </tr>
+              <tr>
+                <td style="padding: 2px 10px 2px 0; color: #64748b; font-weight: 700; text-align: right;">Issue Date:</td>
+                <td style="padding: 2px 0; font-family: monospace; color: #0f172a; text-align: right;">${escapeHtml(dateTextEn)}</td>
+              </tr>
+              <tr>
+                <td style="padding: 2px 10px 2px 0; color: #64748b; font-weight: 700; text-align: right;">Currency:</td>
+                <td style="padding: 2px 0; font-family: monospace; font-weight: 700; color: #0369a1; text-align: right;">${escapeHtml(currency)}</td>
+              </tr>
+            </table>
+          </div>
+        </div>
+
+        <!-- 2カラム枠：VENDOR / SUPPLIER ＆ SHIP TO / BUYER -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px;">
+          <div style="border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden;">
+            <div style="background: #233b6c; color: #ffffff; font-size: 10px; font-weight: 700; letter-spacing: 0.8px; padding: 4px 10px;">VENDOR / SUPPLIER</div>
+            <div style="padding: 8px 10px; font-size: 11px; line-height: 1.55;">
+              <div style="font-size: 13px; font-weight: 800; color: #0f172a; margin-bottom: 3px;">${escapeHtml(supplierNameEn)}</div>
+              ${supplierAddrEn ? `<div style="color: #334155;">${escapeHtml(supplierAddrEn)}</div>` : ''}
+              ${supplierContact ? `<div style="color: #334155; margin-top: 2px;"><strong>Attn:</strong> ${escapeHtml(supplierContact)}</div>` : ''}
+              ${supplierTel ? `<div style="color: #475569; font-family: monospace;">TEL: ${escapeHtml(supplierTel)}</div>` : ''}
+            </div>
+          </div>
+
+          <div style="border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden; position: relative;">
+            <div style="background: #334155; color: #ffffff; font-size: 10px; font-weight: 700; letter-spacing: 0.8px; padding: 4px 10px;">SHIP TO / BUYER</div>
+            <div style="padding: 8px 10px; font-size: 11px; line-height: 1.55; position: relative;">
+              ${stampHtml}
+              <div style="font-size: 13px; font-weight: 800; color: #0f172a; margin-bottom: 3px;">${escapeHtml(companyEN)}</div>
+              <div style="color: #334155;">${escapeHtml(addressEN)}</div>
+              <div style="color: #475569; font-family: monospace; margin-top: 2px;">TEL: ${escapeHtml(telEN)}</div>
+              <div style="color: #475569; font-family: monospace;">FAX: ${escapeHtml(faxEN)}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 取引条件サマリーバー -->
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 14px; font-size: 10.5px;">
+          <thead>
+            <tr style="background: #f1f5f9; color: #334155;">
+              <th style="border: 1px solid #cbd5e1; padding: 4px 8px; text-align: left; width: 40%; font-weight: 700;">Payment Terms</th>
+              <th style="border: 1px solid #cbd5e1; padding: 4px 8px; text-align: left; width: 30%; font-weight: 700;">Trade Terms (Incoterms)</th>
+              <th style="border: 1px solid #cbd5e1; padding: 4px 8px; text-align: left; width: 30%; font-weight: 700;">Requested ETD / Delivery</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style="border: 1px solid #cbd5e1; padding: 6px 8px; font-weight: 600; color: #0f172a;">${escapeHtml(paymentTermsText)}</td>
+              <td style="border: 1px solid #cbd5e1; padding: 6px 8px; font-weight: 700; color: #0369a1;">${escapeHtml(tradeTermsText)}</td>
+              <td style="border: 1px solid #cbd5e1; padding: 6px 8px; font-weight: 600; color: #0f172a;">${escapeHtml(etdText)}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <!-- 明細テーブル（6列） -->
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 14px;">
+          <thead>
+            <tr style="background: #233b6c; color: #ffffff; font-size: 10.5px;">
+              <th style="border: 1px solid #233b6c; padding: 6px 4px; width: 15%; text-align: center;">Item No.</th>
+              <th style="border: 1px solid #233b6c; padding: 6px 8px; width: 37%; text-align: left;">Description</th>
+              <th style="border: 1px solid #233b6c; padding: 6px 6px; width: 9%; text-align: right;">Qty</th>
+              <th style="border: 1px solid #233b6c; padding: 6px 4px; width: 9%; text-align: center;">Unit</th>
+              <th style="border: 1px solid #233b6c; padding: 6px 6px; width: 14%; text-align: right;">Unit Price</th>
+              <th style="border: 1px solid #233b6c; padding: 6px 8px; width: 16%; text-align: right;">Amount (${escapeHtml(currency)})</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${enRows.join('')}
+            <tr>
+              <td colspan="4" style="border: none;"></td>
+              <td style="border: 1px solid #cbd5e1; background: #f8fafc; padding: 5px 8px; text-align: right; font-size: 10.5px; color: #475569; font-weight: 700;">Subtotal</td>
+              <td style="border: 1px solid #cbd5e1; padding: 5px 8px; text-align: right; font-family: monospace; font-size: 11px; font-weight: 700;">${formatPoMoney(totals.subtotal, currency)}</td>
+            </tr>
+            ${taxSummaryRowEn}
+            <tr>
+              <td colspan="4" style="border: none;"></td>
+              <td style="border: 1px solid #233b6c; background: #233b6c; color: #ffffff; padding: 6px 8px; text-align: right; font-size: 11px; font-weight: 800;">TOTAL (${escapeHtml(currency)})</td>
+              <td style="border: 1px solid #233b6c; background: #eff6ff; color: #1e3a8a; padding: 6px 8px; text-align: right; font-family: monospace; font-size: 13px; font-weight: 800;">${escapeHtml(currency)} ${formatPoMoney(totals.total, currency)}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <!-- REMARKS / INSTRUCTIONS -->
+        <div style="border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 10px; margin-bottom: 22px; min-height: 62px; background: #f8fafc;">
+          <div style="font-size: 10px; font-weight: 800; color: #334155; letter-spacing: 0.6px; margin-bottom: 4px;">REMARKS / SHIPPING INSTRUCTIONS</div>
+          <div style="font-size: 10.5px; line-height: 1.5; color: #0f172a;">${memoLinesEn}</div>
+        </div>
+
+        <!-- フッター署名欄（Buyer / Supplier） -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 28px; margin-top: 10px; font-size: 10.5px; color: #334155;">
+          <div>
+            <div style="font-weight: 700; color: #0f172a; margin-bottom: 26px;">Authorized By (Buyer): ${escapeHtml(companyEN)}</div>
+            <div style="border-top: 1px solid #334155; padding-top: 4px; display: flex; justify-content: space-between; font-size: 9.5px; color: #64748b;">
+              <span>Authorized Signature</span>
+              <span>Date: ${escapeHtml(dateTextEn)}</span>
+            </div>
+          </div>
+          <div>
+            <div style="font-weight: 700; color: #0f172a; margin-bottom: 26px;">Confirmed By (Supplier): ${escapeHtml(supplierNameEn)}</div>
+            <div style="border-top: 1px solid #334155; padding-top: 4px; display: flex; justify-content: space-between; font-size: 9.5px; color: #64748b;">
+              <span>Signature &amp; Company Stamp</span>
+              <span>Date: _______________</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // =========================================================================
+  // 🇯🇵 国内発注モード：参考PDF（注文書261021.pdf）準拠の日本語「注文書」
+  // =========================================================================
+  const dateText = formatPoDateJP(po.issueDate);
+  const titleText = '注　文　書';
+  const supplierName = po.supplier || '仕入先名未入力';
+  const honorific = po.honorific !== undefined ? po.honorific : '御中';
+  const greetingHtml = `平素よりお世話になっております。<br>下記の商品を注文いたします。<br>よろしくお願いいたします。`;
+  const totalLabel = '注文合計：';
+  const totalValueText = isJpy
+    ? `${formatPoMoney(totals.total, 'JPY')} <span style="font-size: 13px; font-weight: 700; margin-left: 8px;">円</span>`
+    : `${escapeHtml(currency)} ${formatPoMoney(totals.total, currency)}`;
+
   const renderedRows = [];
   items.forEach(it => {
     const qty = Number(it.qty) || 0;
@@ -8650,7 +8842,7 @@ function buildPoDocumentHtml(po) {
     renderedRows.push({ sku: '', name: '', qty: '', price: '', amount: '' });
     renderedRows.push({
       sku: '',
-      name: isOverseas ? `Tax (${taxRate}%)` : `消費税${taxRate}%`,
+      name: `消費税${taxRate}%`,
       qty: '',
       price: '',
       amount: formatPoMoney(totals.tax, currency)
@@ -8672,27 +8864,25 @@ function buildPoDocumentHtml(po) {
     </tr>
   `).join('');
 
-  // 下部3行の集計枠（参考PDF通り、左3列ブルーグレー網掛け・右2列に集計表示）
   const summaryRowsHtml = `
     <tr>
       <td colspan="3" rowspan="3" style="border: 1px solid #0f172a; border-top: 2px solid #0f172a; background: #dbe3f0; padding: 6px 10px; vertical-align: middle; font-size: 10.5px; color: #334155;">
-        ${po.deliveryDate ? `<div><strong>${isOverseas ? 'Requested Delivery:' : '希望納期:'}</strong> ${escapeHtml(isOverseas ? formatPoDateEN(po.deliveryDate) : formatPoDateJP(po.deliveryDate))}</div>` : ''}
-        ${isOverseas ? `<div style="margin-top: 2px;"><strong>Currency:</strong> ${escapeHtml(currency)}</div>` : ''}
+        ${po.paymentTerms ? `<div><strong>支払条件:</strong> ${escapeHtml(po.paymentTerms)}</div>` : ''}
+        ${po.deliveryDate ? `<div style="margin-top: 2px;"><strong>希望納期:</strong> ${escapeHtml(formatPoDateJP(po.deliveryDate))}</div>` : ''}
       </td>
-      <td style="border: 1px solid #0f172a; border-top: 2px solid #0f172a; padding: 3px 6px; text-align: right; font-size: 10px; color: #475569; height: 21px;">${isOverseas ? 'Subtotal' : '小計'}</td>
+      <td style="border: 1px solid #0f172a; border-top: 2px solid #0f172a; padding: 3px 6px; text-align: right; font-size: 10px; color: #475569; height: 21px;">小計</td>
       <td style="border: 1px solid #0f172a; border-top: 2px solid #0f172a; padding: 3px 6px; text-align: right; font-family: monospace; font-size: 11px;">${formatPoMoney(totals.subtotal, currency)}</td>
     </tr>
     <tr>
-      <td style="border: 1px solid #0f172a; padding: 3px 6px; text-align: right; font-size: 10px; color: #475569; height: 21px;">${isOverseas ? `Tax (${taxRate}%)` : `消費税 (${taxRate}%)`}</td>
-      <td style="border: 1px solid #0f172a; padding: 3px 6px; text-align: right; font-family: monospace; font-size: 11px;">${taxRate > 0 ? formatPoMoney(totals.tax, currency) : (isOverseas ? '0.00' : '0')}</td>
+      <td style="border: 1px solid #0f172a; padding: 3px 6px; text-align: right; font-size: 10px; color: #475569; height: 21px;">消費税 (${taxRate}%)</td>
+      <td style="border: 1px solid #0f172a; padding: 3px 6px; text-align: right; font-family: monospace; font-size: 11px;">${taxRate > 0 ? formatPoMoney(totals.tax, currency) : '0'}</td>
     </tr>
     <tr>
-      <td style="border: 1px solid #0f172a; padding: 4px 6px; text-align: right; font-size: 10.5px; font-weight: 700; color: #0f172a; height: 23px;">${isOverseas ? 'TOTAL' : '合計'}</td>
+      <td style="border: 1px solid #0f172a; padding: 4px 6px; text-align: right; font-size: 10.5px; font-weight: 700; color: #0f172a; height: 23px;">合計</td>
       <td style="border: 1px solid #0f172a; padding: 4px 6px; text-align: right; font-family: monospace; font-size: 12px; font-weight: 800; color: #0f172a;">${isJpy ? formatPoMoney(totals.total, 'JPY') : `${escapeHtml(currency)} ${formatPoMoney(totals.total, currency)}`}</td>
     </tr>
   `;
 
-  // MEMO行（点線罫線で最低5行）
   const memoLines = String(po.memo || '').split('\n');
   const minMemoLines = 5;
   while (memoLines.length < minMemoLines) memoLines.push('');
@@ -8704,31 +8894,28 @@ function buildPoDocumentHtml(po) {
 
   return `
     <div class="po-print-sheet" style="background: #ffffff; color: #0f172a; padding: 26px 28px 24px 28px; font-family: 'Hiragino Kaku Gothic ProN', 'Yu Gothic', 'Meiryo', sans-serif; box-sizing: border-box;">
-      <!-- 上段：ロゴ ＋ 発行日・注文No -->
       <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 10px;">
         <div>${getPoAlvaLogoSvg()}</div>
         <table style="border-collapse: collapse; font-size: 11px; min-width: 190px;">
           <tr>
-            <td style="padding: 2px 8px 2px 0; color: #334155; font-weight: 600;">${isOverseas ? 'Issue Date' : '発行日'}</td>
+            <td style="padding: 2px 8px 2px 0; color: #334155; font-weight: 600;">発行日</td>
             <td style="padding: 2px 4px; border-bottom: 1px solid #0f172a; text-align: center; min-width: 120px; font-family: monospace;">${escapeHtml(dateText)}</td>
           </tr>
           <tr>
-            <td style="padding: 4px 8px 2px 0; color: #334155; font-weight: 600;">${isOverseas ? 'P.O. No.' : '注文No.'}</td>
+            <td style="padding: 4px 8px 2px 0; color: #334155; font-weight: 600;">注文No.</td>
             <td style="padding: 4px 4px 2px 4px; border-bottom: 1px solid #0f172a; text-align: center; font-family: monospace; font-weight: 700;">${escapeHtml(po.poNumber || '')}</td>
           </tr>
         </table>
       </div>
 
-      <!-- ネイビータイトル帯 -->
-      <div style="background: #233b6c; color: #ffffff; text-align: center; padding: 9px 0; font-size: 20px; font-weight: 700; letter-spacing: ${isOverseas ? '3px' : '10px'}; margin-bottom: 16px;">
+      <div style="background: #233b6c; color: #ffffff; text-align: center; padding: 9px 0; font-size: 20px; font-weight: 700; letter-spacing: 10px; margin-bottom: 16px;">
         ${titleText}
       </div>
 
-      <!-- 宛先・挨拶・注文合計 ／ 自社情報 -->
       <div style="display: flex; justify-content: space-between; gap: 18px; margin-bottom: 14px; align-items: flex-start;">
         <div style="flex: 1.25;">
           <div style="display: flex; align-items: baseline; justify-content: space-between; border-bottom: 1.5px solid #0f172a; padding: 0 4px 4px 4px; margin-bottom: 10px;">
-            <span style="font-size: 15px; font-weight: 700; text-align: center; flex: 1;">${isOverseas ? 'To: ' : ''}${escapeHtml(supplierName)}</span>
+            <span style="font-size: 15px; font-weight: 700; text-align: center; flex: 1;">${escapeHtml(supplierName)}</span>
             ${honorific ? `<span style="font-size: 12px; font-weight: 600; margin-left: 8px;">${escapeHtml(honorific)}</span>` : ''}
           </div>
           <div style="font-size: 11px; line-height: 1.55; color: #1e293b; margin-bottom: 12px;">
@@ -8742,22 +8929,21 @@ function buildPoDocumentHtml(po) {
 
         <div style="flex: 0.85; position: relative; padding-top: 8px; padding-left: 10px; font-size: 11px; line-height: 1.65; color: #0f172a;">
           ${stampHtml}
-          <div style="font-size: 13px; font-weight: 700; margin-bottom: 4px;">${escapeHtml(companyDisplay)}</div>
-          <div>${escapeHtml(addressDisplay)}</div>
-          <div style="margin-top: 4px; font-family: monospace;">TEL： ${escapeHtml(telDisplay)}</div>
-          <div style="font-family: monospace;">FAX： ${escapeHtml(faxDisplay)}</div>
+          <div style="font-size: 13px; font-weight: 700; margin-bottom: 4px;">${escapeHtml(companyJP)}</div>
+          <div>${escapeHtml(addressJP)}</div>
+          <div style="margin-top: 4px; font-family: monospace;">TEL： ${escapeHtml(telJP)}</div>
+          <div style="font-family: monospace;">FAX： ${escapeHtml(faxJP)}</div>
         </div>
       </div>
 
-      <!-- 5列明細テーブル -->
       <table style="width: 100%; border-collapse: collapse; border: 2px solid #0f172a; font-size: 11px; margin-bottom: 16px;">
         <thead>
           <tr style="background: #233b6c; color: #ffffff;">
-            <th style="border: 1px solid #0f172a; padding: 6px 4px; width: 17%; font-weight: 700;">${isOverseas ? 'Item No.' : '品番'}</th>
-            <th style="border: 1px solid #0f172a; padding: 6px 6px; width: 41%; font-weight: 700;">${isOverseas ? 'Description' : '商品名'}</th>
-            <th style="border: 1px solid #0f172a; padding: 6px 4px; width: 10%; font-weight: 700;">${isOverseas ? 'Qty' : '数量'}</th>
-            <th style="border: 1px solid #0f172a; padding: 6px 4px; width: 15%; font-weight: 700;">${isOverseas ? 'Unit Price' : '単価'}</th>
-            <th style="border: 1px solid #0f172a; padding: 6px 4px; width: 17%; font-weight: 700;">${isOverseas ? 'Amount' : '金額'}</th>
+            <th style="border: 1px solid #0f172a; padding: 6px 4px; width: 17%; font-weight: 700;">品番</th>
+            <th style="border: 1px solid #0f172a; padding: 6px 6px; width: 41%; font-weight: 700;">商品名</th>
+            <th style="border: 1px solid #0f172a; padding: 6px 4px; width: 10%; font-weight: 700;">数量</th>
+            <th style="border: 1px solid #0f172a; padding: 6px 4px; width: 15%; font-weight: 700;">単価</th>
+            <th style="border: 1px solid #0f172a; padding: 6px 4px; width: 17%; font-weight: 700;">金額</th>
           </tr>
         </thead>
         <tbody>
@@ -8766,7 +8952,6 @@ function buildPoDocumentHtml(po) {
         </tbody>
       </table>
 
-      <!-- MEMO セクション -->
       <div style="margin-top: 10px;">
         <div style="font-size: 11px; font-weight: 800; letter-spacing: 1px; color: #0f172a; margin-bottom: 2px;">MEMO</div>
         <div style="border-top: 1px dashed #334155;">
@@ -8921,11 +9106,17 @@ function getPoFormState() {
     currency,
     taxRate,
     showStamp: Boolean(document.getElementById('poCheckShowStamp')?.checked),
+    paymentTerms: (document.getElementById('poInputPaymentTerms')?.value || '').trim(),
+    incoterm: document.getElementById('poSelectIncoterm')?.value || '',
+    incotermPlace: (document.getElementById('poInputIncotermPlace')?.value || '').trim(),
+    deliveryFallback: document.getElementById('poSelectDeliveryFallback')?.value || 'To be advised (Upon completion)',
     memo: document.getElementById('poInputMemo')?.value || '',
     items: currentPoItemRows.map(r => ({
       itemId: r.itemId || '',
       sku: (r.sku || '').trim(),
       itemName: (r.itemName || '').trim(),
+      unit: r.unit || '',
+      unitEn: r.unitEn || '',
       qty: Number(r.qty) || 0,
       unitPrice: Number(r.unitPrice) || 0
     }))
@@ -9036,10 +9227,12 @@ function switchPoRegionUI(regionType, autoAdjustCurrencyTax = false) {
   const currSel = document.getElementById('poSelectCurrency');
   const taxSel = document.getElementById('poSelectTaxRate');
   const honSel = document.getElementById('poSelectHonorific');
+  const tradeRow = document.getElementById('poTradeTermsRow');
 
   if (regionType === 'overseas') {
     if (lblDom) { lblDom.style.border = '1px solid #cbd5e1'; lblDom.style.background = '#ffffff'; lblDom.style.color = '#475569'; }
     if (lblOvs) { lblOvs.style.border = '2px solid #0284c7'; lblOvs.style.background = '#f0f9ff'; lblOvs.style.color = '#0369a1'; }
+    if (tradeRow) tradeRow.style.display = 'flex';
     if (autoAdjustCurrencyTax) {
       if (currSel && currSel.value === 'JPY') currSel.value = 'EUR';
       if (taxSel) taxSel.value = '0';
@@ -9048,6 +9241,7 @@ function switchPoRegionUI(regionType, autoAdjustCurrencyTax = false) {
   } else {
     if (lblDom) { lblDom.style.border = '2px solid #233b6c'; lblDom.style.background = '#eff6ff'; lblDom.style.color = '#1e3a8a'; }
     if (lblOvs) { lblOvs.style.border = '1px solid #cbd5e1'; lblOvs.style.background = '#ffffff'; lblOvs.style.color = '#475569'; }
+    if (tradeRow) tradeRow.style.display = 'none';
     if (autoAdjustCurrencyTax) {
       if (currSel) currSel.value = 'JPY';
       if (taxSel) taxSel.value = '10';
@@ -9076,6 +9270,10 @@ function openPurchaseOrderModal(poId = null) {
   const currEl = document.getElementById('poSelectCurrency');
   const taxEl = document.getElementById('poSelectTaxRate');
   const stampEl = document.getElementById('poCheckShowStamp');
+  const payEl = document.getElementById('poInputPaymentTerms');
+  const incotermEl = document.getElementById('poSelectIncoterm');
+  const incotermPlaceEl = document.getElementById('poInputIncotermPlace');
+  const delivFallbackEl = document.getElementById('poSelectDeliveryFallback');
   const memoEl = document.getElementById('poInputMemo');
 
   const today = new Date().toISOString().split('T')[0];
@@ -9093,6 +9291,10 @@ function openPurchaseOrderModal(poId = null) {
     if (currEl) currEl.value = existing.currency || (existing.regionType === 'overseas' ? 'EUR' : 'JPY');
     if (taxEl) taxEl.value = String(existing.taxRate !== undefined ? existing.taxRate : (existing.regionType === 'overseas' ? 0 : 10));
     if (stampEl) stampEl.checked = Boolean(existing.showStamp);
+    if (payEl) payEl.value = existing.paymentTerms || '';
+    if (incotermEl) incotermEl.value = existing.incoterm !== undefined ? existing.incoterm : 'FOB';
+    if (incotermPlaceEl) incotermPlaceEl.value = existing.incotermPlace || '';
+    if (delivFallbackEl) delivFallbackEl.value = existing.deliveryFallback || 'To be advised (Upon completion)';
     if (memoEl) memoEl.value = existing.memo || '';
 
     const rRadio = document.querySelector(`input[name="poRegionType"][value="${existing.regionType || 'domestic'}"]`);
@@ -9123,6 +9325,10 @@ function openPurchaseOrderModal(poId = null) {
     if (currEl) currEl.value = 'JPY';
     if (taxEl) taxEl.value = '10';
     if (stampEl) stampEl.checked = false;
+    if (payEl) payEl.value = '';
+    if (incotermEl) incotermEl.value = 'FOB';
+    if (incotermPlaceEl) incotermPlaceEl.value = '';
+    if (delivFallbackEl) delivFallbackEl.value = 'To be advised (Upon completion)';
     if (memoEl) memoEl.value = '';
 
     const domRadio = document.querySelector('input[name="poRegionType"][value="domestic"]');
@@ -9503,6 +9709,10 @@ function initPurchaseOrderEvents() {
     // 選んだ仕入先が海外（英字のみ、または住所/支払条件にEUR/USD/Italy等を含む）なら自動で海外発注へ切替
     const clients = typeof getClientMasterList === 'function' ? getClientMasterList() : [];
     const matched = clients.find(c => c && c.name && c.name.trim() === val);
+    const payEl = document.getElementById('poInputPaymentTerms');
+    if (payEl && matched && matched.paymentTerms) {
+      payEl.value = matched.paymentTerms;
+    }
     const isLikelyOverseas = (matched && /(EUR|USD|Italy|Germany|China|USA|T\/T)/i.test(`${matched.address || ''} ${matched.paymentTerms || ''}`)) || /^[A-Za-z0-9\s.,&\-]+$/.test(val);
     const targetRegion = isLikelyOverseas ? 'overseas' : 'domestic';
     const rRadio = document.querySelector(`input[name="poRegionType"][value="${targetRegion}"]`);
@@ -9522,7 +9732,7 @@ function initPurchaseOrderEvents() {
   });
 
   // 基本入力変更時にリアルタイムプレビュー更新
-  ['poInputNumber', 'poInputIssueDate', 'poInputDeliveryDate', 'poSelectStatus', 'poInputSupplier', 'poSelectHonorific', 'poSelectCurrency', 'poSelectTaxRate', 'poCheckShowStamp', 'poInputMemo'].forEach(id => {
+  ['poInputNumber', 'poInputIssueDate', 'poInputDeliveryDate', 'poSelectStatus', 'poInputSupplier', 'poSelectHonorific', 'poSelectCurrency', 'poSelectTaxRate', 'poCheckShowStamp', 'poInputPaymentTerms', 'poSelectIncoterm', 'poInputIncotermPlace', 'poSelectDeliveryFallback', 'poInputMemo'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     el.addEventListener('input', updatePoFormTotalsAndPreview);
@@ -9546,7 +9756,12 @@ function initPurchaseOrderEvents() {
       if (row && found) {
         row.itemId = found.id;
         row.sku = found.sku || row.sku;
-        row.itemName = found.name;
+        const isOvsMode = (document.querySelector('input[name="poRegionType"]:checked')?.value === 'overseas');
+        const allMasterItems = typeof getItemMasterList === 'function' ? getItemMasterList(false) : [];
+        const rawMaster = allMasterItems.find(m => m && (m.id === found.id || `inv_${m.id}` === found.id || (m.name && m.name.trim() === (found.salesName || found.name))));
+        row.itemName = (isOvsMode && rawMaster && rawMaster.nameEn) ? rawMaster.nameEn : found.name;
+        row.unit = (rawMaster && rawMaster.unit) || row.unit || '個';
+        row.unitEn = (rawMaster && rawMaster.unitEn) || row.unitEn || '';
         const currSel = document.getElementById('poSelectCurrency');
         const curr = currSel ? currSel.value : 'JPY';
         const itemCurr = found.orderCurrency || 'JPY';
@@ -9625,15 +9840,40 @@ function initPurchaseOrderEvents() {
       return;
     }
 
+    const payPresetBtn = e.target.closest('.po-pay-preset');
+    if (payPresetBtn) {
+      const payEl = document.getElementById('poInputPaymentTerms');
+      if (!payEl) return;
+      const isOvs = (document.querySelector('input[name="poRegionType"]:checked')?.value === 'overseas');
+      const k = payPresetBtn.dataset.pay;
+      if (k === '50_50') payEl.value = isOvs ? '50% T/T in advance, 50% balance prior to shipment' : '50%前金、残り発送前送金';
+      else if (k === '100_adv') payEl.value = isOvs ? '100% T/T in advance' : '100%前金（銀行振込）';
+      else if (k === 'net30') payEl.value = isOvs ? 'Net 30 Days from B/L date' : '月末締め翌月末払い';
+      updatePoFormTotalsAndPreview();
+      return;
+    }
+
     const presetBtn = e.target.closest('.po-memo-preset');
     if (presetBtn) {
       const memoEl = document.getElementById('poInputMemo');
       if (!memoEl) return;
+      const isOvs = (document.querySelector('input[name="poRegionType"]:checked')?.value === 'overseas');
+      const totalQty = currentPoItemRows.reduce((s, r) => s + (Number(r.qty) || 0), 0);
       const preset = presetBtn.dataset.preset;
       let text = '';
-      if (preset === 'jp_50') text = 'お支払いは50%前金、残りは発送前に送金予定です。';
-      else if (preset === 'jp_ship') text = '出荷は全数揃ったところで発送をお願いいたします。';
-      else if (preset === 'en_tt') text = 'Payment Terms: 50% T/T in advance, 50% balance before shipment.\nTrade Terms: FOB / Please advise earliest ETD.';
+      if (preset === 'pay_50') {
+        text = isOvs
+          ? 'Payment Terms: 50% deposit upon order confirmation, 50% balance prior to shipment by T/T.'
+          : 'お支払いは50%前金、残りは発送前に送金予定です。';
+      } else if (preset === 'ship_all') {
+        text = isOvs
+          ? `Shipping Instruction: Please ship all ${totalQty > 0 ? totalQty + ' ' : ''}units in a single consolidated shipment upon full completion.`
+          : `出荷は${totalQty > 0 ? totalQty + '台' : '全数'}全て揃ったところで一括出荷をお願いいたします。`;
+      } else if (preset === 'docs') {
+        text = isOvs
+          ? 'Required Documents: Commercial Invoice, Packing List, and Certificate of Origin (if applicable).'
+          : '納品書および適格請求書（インボイス）の同梱またはメール送付をお願いいたします。';
+      }
       memoEl.value = memoEl.value ? `${memoEl.value.trim()}\n${text}` : text;
       updatePoFormTotalsAndPreview();
     }
