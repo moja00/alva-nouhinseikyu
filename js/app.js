@@ -8352,15 +8352,17 @@ function renderInventoryTable() {
     const formattedCost = displayUnitCost > 0
       ? `¥${displayUnitCost.toLocaleString()}`
       : `<span style="color:#94a3b8;" title="ロット入庫後に確定原価が表示されます">-</span>`;
-    const skuDisp = item.sku ? `<span style="font-size: 0.725rem; color: #64748b; font-family: monospace;">SKU: ${escapeHtml(item.sku)}</span>` : '';
+    const skuBadge = item.sku ? `<span class="badge" title="SKU・型番" style="background: #1e293b; color: #ffffff; font-family: monospace; font-size: 0.75rem; font-weight: 800; padding: 1px 7px; border-radius: 5px; letter-spacing: 0.03em; flex-shrink: 0;">${escapeHtml(item.sku)}</span>` : '';
 
     html += `
       <tr data-id="${item.id}">
         <td>
-          <div style="font-weight: 600; color: #0f172a; margin-bottom: 2px;">${escapeHtml(item.name)}</div>
+          <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-weight: 600; color: #0f172a; margin-bottom: 4px;">
+            ${skuBadge}
+            <span>${escapeHtml(item.name)}</span>
+          </div>
           <div style="display: flex; align-items: center; gap: 4px; flex-wrap: wrap;">
             ${typeBadges}
-            ${skuDisp}
           </div>
         </td>
         <td style="text-align: right;">
