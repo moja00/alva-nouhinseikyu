@@ -20133,9 +20133,11 @@ function resetItemMasterForm() {
   DOM.itemMasterInputUnit.value = '式';
   DOM.itemMasterSelectTax.value = '10';
   DOM.itemMasterInputNote.value = '';
+  const ordSkuEl = document.getElementById('itemMasterInputOrderSku');
   const ordNameEl = document.getElementById('itemMasterInputOrderName');
   const ordPriceEl = document.getElementById('itemMasterInputOrderPrice');
   const ordCurrEl = document.getElementById('itemMasterSelectOrderCurrency');
+  if (ordSkuEl) ordSkuEl.value = '';
   if (ordNameEl) ordNameEl.value = '';
   if (ordPriceEl) ordPriceEl.value = '';
   if (ordCurrEl) ordCurrEl.value = 'JPY';
@@ -20541,6 +20543,7 @@ function handleSaveItemMaster(e) {
   const unitInput = document.getElementById('itemMasterInputUnit') || (DOM && DOM.itemMasterInputUnit);
   const taxInput = document.getElementById('itemMasterSelectTax') || (DOM && DOM.itemMasterSelectTax);
   const noteInput = document.getElementById('itemMasterInputNote') || (DOM && DOM.itemMasterInputNote);
+  const orderSkuInput = document.getElementById('itemMasterInputOrderSku');
   const orderNameInput = document.getElementById('itemMasterInputOrderName');
   const orderPriceInput = document.getElementById('itemMasterInputOrderPrice');
   const orderCurrencySelect = document.getElementById('itemMasterSelectOrderCurrency');
@@ -20555,6 +20558,7 @@ function handleSaveItemMaster(e) {
     hasSerial: !!(hasSerialChk && hasSerialChk.checked),
     unitPrice: Math.abs(Number(priceVal)),
     userPrice: Number(userPriceInput ? userPriceInput.value : 0) || 0,
+    orderSku: orderSkuInput ? normalizePoHalfWidthCode(orderSkuInput.value).trim() : '',
     orderName: orderNameInput ? orderNameInput.value.trim() : '',
     orderPrice: parsedOrderPrice > 0 ? parsedOrderPrice : 0,
     orderCurrency: orderCurrencySelect ? orderCurrencySelect.value : 'JPY',
@@ -20665,9 +20669,10 @@ function renderItemMasterList(searchQuery = '') {
           </div>
         </div>
         ${item.note ? `<div class="master-item-note">${escapeHtml(item.note)}</div>` : ''}
-        ${(item.orderName || Number(item.orderPrice) > 0) ? `
+        ${(item.orderSku || item.orderName || Number(item.orderPrice) > 0) ? `
           <div style="margin-top: 4px; font-size: 0.74rem; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; padding: 3px 8px; border-radius: 5px; display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap;">
             <strong>📋 発注用:</strong>
+            ${item.orderSku ? `<span style="font-family: monospace; background: #dbeafe; padding: 0 5px; border-radius: 3px; font-weight: 700;">${escapeHtml(item.orderSku)}</span>` : ''}
             ${item.orderName ? `<span>${escapeHtml(item.orderName)}</span>` : ''}
             ${Number(item.orderPrice) > 0 ? `<span style="font-family: monospace; font-weight: 800;">${escapeHtml(formatPoMoney(item.orderPrice, item.orderCurrency || 'JPY', true))}</span>` : ''}
           </div>
@@ -20751,9 +20756,11 @@ function renderItemMasterList(searchQuery = '') {
       DOM.itemMasterInputUnit.value = item.unit || '式';
       DOM.itemMasterSelectTax.value = String(item.taxRate !== undefined ? item.taxRate : 10);
       DOM.itemMasterInputNote.value = item.note || '';
+      const ordSkuEl = document.getElementById('itemMasterInputOrderSku');
       const ordNameEl = document.getElementById('itemMasterInputOrderName');
       const ordPriceEl = document.getElementById('itemMasterInputOrderPrice');
       const ordCurrEl = document.getElementById('itemMasterSelectOrderCurrency');
+      if (ordSkuEl) ordSkuEl.value = item.orderSku || '';
       if (ordNameEl) ordNameEl.value = item.orderName || '';
       if (ordPriceEl) ordPriceEl.value = Number(item.orderPrice) > 0 ? String(item.orderPrice) : '';
       if (ordCurrEl) ordCurrEl.value = item.orderCurrency || 'JPY';
@@ -21966,10 +21973,10 @@ function getPoMasterCatalogOptions() {
   const entries = [];
   const addedNames = new Set();
 
-  // 1. 商品マスタの「発注用 / 仕入用」カテゴリ、または発注用名称・単価が設定済みの商品を最優先
+  // 1. 商品マスタの「発注用 / 仕入用」カテゴリ、または発注用品番・名称・単価が設定済みの商品を最優先
   itemList.forEach(it => {
     if (!it || !it.name) return;
-    const hasCustomOrder = Boolean(it.orderName) || Number(it.orderPrice) > 0;
+    const hasCustomOrder = Boolean(it.orderSku) || Boolean(it.orderName) || Number(it.orderPrice) > 0;
     if (!isPurchaseCategory(it.category) && !hasCustomOrder) return;
     const nameKey = String(it.name).trim();
     if (addedNames.has(nameKey)) return;
@@ -21980,7 +21987,8 @@ function getPoMasterCatalogOptions() {
       : (isPurchaseCategory(it.category) ? (Number(it.unitPrice) || 0) : (Number(invMatch && invMatch.unitCost) || 0));
     entries.push({
       id: (invMatch && invMatch.id) || it.id || nameKey,
-      sku: it.sku || it.code || (invMatch && invMatch.sku) || '',
+      sku: (it.orderSku && it.orderSku.trim()) || it.sku || it.code || (invMatch && invMatch.sku) || '',
+      salesSku: it.sku || it.code || '',
       name: (it.orderName && it.orderName.trim()) || it.name,
       salesName: it.name,
       category: it.category || '',
