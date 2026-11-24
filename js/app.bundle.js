@@ -22272,7 +22272,7 @@ function getPoMasterCatalogOptions() {
 
 function populatePoSupplierDatalist() {
   const dl = document.getElementById('poSupplierDatalist');
-  if (!dl) return;
+  const quickSel = document.getElementById('poSelectSupplierQuick');
   const names = new Set();
   // 取引先マスタの「仕入先（vendor / both）」を最優先候補に追加
   (typeof getClientMasterList === 'function' ? getClientMasterList() : []).forEach(c => {
@@ -22286,7 +22286,16 @@ function populatePoSupplierDatalist() {
   (typeof getInventoryLotList === 'function' ? getInventoryLotList() : []).forEach(l => {
     if (l && l.supplier) names.add(l.supplier.trim());
   });
-  dl.innerHTML = Array.from(names).filter(Boolean).map(n => `<option value="${escapeHtml(n)}"></option>`).join('');
+  const sortedNames = Array.from(names).filter(Boolean);
+  if (dl) {
+    dl.innerHTML = sortedNames.map(n => `<option value="${escapeHtml(n)}"></option>`).join('');
+  }
+  if (quickSel) {
+    const currentSup = (document.getElementById('poInputSupplier')?.value || '').trim();
+    quickSel.innerHTML = '<option value="">📋 仕入先を選択...</option>' + sortedNames.map(n =>
+      `<option value="${escapeHtml(n)}" ${n === currentSup ? 'selected' : ''}>${escapeHtml(n)}</option>`
+    ).join('');
+  }
 }
 
 function getPoFormState() {
@@ -22855,6 +22864,34 @@ function initPurchaseOrderEvents() {
   // モーダル閉じる系
   document.getElementById('btnClosePurchaseOrderModal')?.addEventListener('click', closePurchaseOrderModal);
   document.getElementById('btnCancelPurchaseOrderModal')?.addEventListener('click', closePurchaseOrderModal);
+
+  // 仕入先クイック切替プルダウン ＆ クリアボタン（何度でも自由に切り替え可能）
+  document.getElementById('poSelectSupplierQuick')?.addEventListener('change', (e) => {
+    const val = e.target.value;
+    if (!val) return;
+    const supEl = document.getElementById('poInputSupplier');
+    if (supEl) supEl.value = val;
+    // 選んだ仕入先が海外（英字のみ、または支払条件にEUR/USDを含む）なら自動で海外発注へ切替案内
+    const clients = typeof getClientMasterList === 'function' ? getClientMasterList() : [];
+    const matched = clients.find(c => c && c.name && c.name.trim() === val);
+    const isLikelyOverseas = (matched && /(EUR|USD|Italy|Germany|China|USA|T\/T)/i.test(`${matched.address || ''} ${matched.paymentTerms || ''}`)) || /^[A-Za-z0-9\s.,&\-]+$/.test(val);
+    const targetRegion = isLikelyOverseas ? 'overseas' : 'domestic';
+    const rRadio = document.querySelector(`input[name="poRegionType"][value="${targetRegion}"]`);
+    if (rRadio && !rRadio.checked) {
+      rRadio.checked = true;
+      switchPoRegionUI(targetRegion, true);
+    } else {
+      updatePoFormTotalsAndPreview();
+    }
+  });
+
+  document.getElementById('btnClearPoSupplier')?.addEventListener('click', () => {
+    const supEl = document.getElementById('poInputSupplier');
+    const quickSel = document.getElementById('poSelectSupplierQuick');
+    if (supEl) { supEl.value = ''; supEl.focus(); }
+    if (quickSel) quickSel.value = '';
+    updatePoFormTotalsAndPreview();
+  });
 
   // 国内・海外切替
   document.querySelectorAll('input[name="poRegionType"]').forEach(radio => {
