@@ -7442,9 +7442,13 @@ export function syncInventoryStockFromIssuedDocs(syncToServer = true) {
 
         shippedQtyMap[groupKey] = (shippedQtyMap[groupKey] || 0) + qty;
         shippedQtyMap[norm] = (shippedQtyMap[norm] || 0) + qty;
-        if (it.itemId) {
-          shippedQtyMap[it.itemId] = (shippedQtyMap[it.itemId] || 0) + qty;
-        }
+        const docItemIds = new Set([it.itemId, it.productId, it.inventoryId].filter(Boolean));
+        docItemIds.forEach(idKey => {
+          shippedQtyMap[idKey] = (shippedQtyMap[idKey] || 0) + qty;
+          if (!String(idKey).startsWith('inv_')) {
+            shippedQtyMap[`inv_${idKey}`] = (shippedQtyMap[`inv_${idKey}`] || 0) + qty;
+          }
+        });
       });
     });
 
@@ -7718,8 +7722,22 @@ export function syncInventoryStockFromIssuedDocs(syncToServer = true) {
         modified = true;
       }
 
-      const shippedQty = shippedQtyMap[groupKey] || shippedQtyMap[norm] || (item.itemId ? shippedQtyMap[item.itemId] : 0) || 0;
-      const lotInQty = totalInQtyMap[groupKey] || totalInQtyMap[norm] || (item.itemId ? totalInQtyMap[item.itemId] : 0) || 0;
+      const isStandardGroup = groupKey !== norm;
+      const shippedById = Math.max(
+        (item.itemId && shippedQtyMap[item.itemId]) || 0,
+        (item.id && shippedQtyMap[item.id]) || 0
+      );
+      const shippedQty = isStandardGroup
+        ? (shippedQtyMap[groupKey] || shippedById || shippedQtyMap[norm] || 0)
+        : Math.max(shippedById, shippedQtyMap[norm] || 0);
+
+      const lotInById = Math.max(
+        (item.id && totalInQtyMap[item.id]) || 0,
+        (item.itemId && totalInQtyMap[item.itemId]) || 0
+      );
+      const lotInQty = isStandardGroup
+        ? (totalInQtyMap[groupKey] || lotInById || totalInQtyMap[norm] || 0)
+        : Math.max(lotInById, totalInQtyMap[norm] || 0);
       const totalIn = lotInQty;
 
       // 手動出庫（デモ機・寄贈・社内使用など）および棚卸差分の取得

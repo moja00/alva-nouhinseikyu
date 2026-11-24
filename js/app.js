@@ -7165,9 +7165,21 @@ function handleSaveItemMaster(e) {
   }
 
   console.log('【商品マスタ保存】保存ペイロード:', itemData);
-  saveItemToMaster(itemData, true);
-  // 在庫マスタも即時連動・再描画
-  if (typeof getInventoryList === 'function') getInventoryList();
+  const savedProd = saveItemToMaster(itemData, true);
+  // 在庫マスタも即時連動・サーバー同期・再描画（名称変更・SKU変更をクラウド在庫へも確実に反映）
+  if (typeof getInventoryList === 'function') {
+    const invListAfter = getInventoryList();
+    if (savedProd && savedProd.id && typeof saveInventoryItem === 'function') {
+      const linkedInv = invListAfter.find(i => i && (i.itemId === savedProd.id || i.id === `inv_${savedProd.id}`));
+      if (linkedInv) {
+        linkedInv.itemId = savedProd.id;
+        linkedInv.name = savedProd.name;
+        if (savedProd.sku !== undefined) linkedInv.sku = savedProd.sku;
+        linkedInv.hasSerial = Boolean(savedProd.hasSerial);
+        saveInventoryItem(linkedInv);
+      }
+    }
+  }
   if (typeof renderInventoryTable === 'function') renderInventoryTable();
   if (typeof populateSerialMgmtItemSelects === 'function') populateSerialMgmtItemSelects();
   resetItemMasterForm();
@@ -8132,12 +8144,19 @@ function saveInventoryItemHandler() {
   const editId = DOM.inventoryEditId ? DOM.inventoryEditId.value : '';
   const itemId = DOM.inventoryItemId ? DOM.inventoryItemId.value : '';
 
-  let resolvedItemId = itemId;
-  // 新規登録時・編集時ともに商品マスタのSKU・シリアル対象設定と双方向同期
+  const existingItem = editId ? getInventoryList().find(i => i.id === editId) : null;
+  const oldInvName = existingItem ? String(existingItem.name || '').trim() : '';
+  const oldInvSku = existingItem ? String(existingItem.sku || '').trim().toUpperCase() : '';
+
+  let resolvedItemId = itemId || (existingItem && existingItem.itemId) || '';
+  // 新規登録時・編集時ともに商品マスタの品名・SKU・シリアル対象設定と双方向同期（旧名称・旧SKUでも確実に追跡）
   const allProducts = getItemMasterList(false);
   const existingProd = allProducts.find(p =>
     (resolvedItemId && p.id === resolvedItemId) ||
-    p.name.trim() === name
+    (editId && editId === `inv_${p.id}`) ||
+    (oldInvName && p.name && p.name.trim() === oldInvName) ||
+    (p.name && p.name.trim() === name) ||
+    (oldInvSku && p.sku && String(p.sku).trim().toUpperCase() === oldInvSku)
   );
   if (!editId) {
     if (!existingProd) {
@@ -8155,13 +8174,13 @@ function saveInventoryItemHandler() {
     } else {
       resolvedItemId = existingProd.id;
       saveItemToMaster({ id: existingProd.id, name, sku, hasSerial }, false);
+      renderItemMasterList();
     }
   } else if (existingProd) {
     resolvedItemId = existingProd.id;
     saveItemToMaster({ id: existingProd.id, name, sku, hasSerial }, false);
+    renderItemMasterList();
   }
-
-  const existingItem = editId ? getInventoryList().find(i => i.id === editId) : null;
 
   const itemData = {
     id: editId || undefined,

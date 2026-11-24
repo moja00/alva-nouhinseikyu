@@ -10931,9 +10931,13 @@ function syncInventoryStockFromIssuedDocs(syncToServer = true) {
 
         shippedQtyMap[groupKey] = (shippedQtyMap[groupKey] || 0) + qty;
         shippedQtyMap[norm] = (shippedQtyMap[norm] || 0) + qty;
-        if (it.itemId) {
-          shippedQtyMap[it.itemId] = (shippedQtyMap[it.itemId] || 0) + qty;
-        }
+        const docItemIds = new Set([it.itemId, it.productId, it.inventoryId].filter(Boolean));
+        docItemIds.forEach(idKey => {
+          shippedQtyMap[idKey] = (shippedQtyMap[idKey] || 0) + qty;
+          if (!String(idKey).startsWith('inv_')) {
+            shippedQtyMap[`inv_${idKey}`] = (shippedQtyMap[`inv_${idKey}`] || 0) + qty;
+          }
+        });
       });
     });
 
@@ -11207,8 +11211,22 @@ function syncInventoryStockFromIssuedDocs(syncToServer = true) {
         modified = true;
       }
 
-      const shippedQty = shippedQtyMap[groupKey] || shippedQtyMap[norm] || (item.itemId ? shippedQtyMap[item.itemId] : 0) || 0;
-      const lotInQty = totalInQtyMap[groupKey] || totalInQtyMap[norm] || (item.itemId ? totalInQtyMap[item.itemId] : 0) || 0;
+      const isStandardGroup = groupKey !== norm;
+      const shippedById = Math.max(
+        (item.itemId && shippedQtyMap[item.itemId]) || 0,
+        (item.id && shippedQtyMap[item.id]) || 0
+      );
+      const shippedQty = isStandardGroup
+        ? (shippedQtyMap[groupKey] || shippedById || shippedQtyMap[norm] || 0)
+        : Math.max(shippedById, shippedQtyMap[norm] || 0);
+
+      const lotInById = Math.max(
+        (item.id && totalInQtyMap[item.id]) || 0,
+        (item.itemId && totalInQtyMap[item.itemId]) || 0
+      );
+      const lotInQty = isStandardGroup
+        ? (totalInQtyMap[groupKey] || lotInById || totalInQtyMap[norm] || 0)
+        : Math.max(lotInById, totalInQtyMap[norm] || 0);
       const totalIn = lotInQty;
 
       // 手動出庫（デモ機・寄贈・社内使用など）および棚卸差分の取得
@@ -20572,9 +20590,21 @@ function handleSaveItemMaster(e) {
   }
 
   console.log('【商品マスタ保存】保存ペイロード:', itemData);
-  saveItemToMaster(itemData, true);
-  // 在庫マスタも即時連動・再描画
-  if (typeof getInventoryList === 'function') getInventoryList();
+  const savedProd = saveItemToMaster(itemData, true);
+  // 在庫マスタも即時連動・サーバー同期・再描画（名称変更・SKU変更をクラウド在庫へも確実に反映）
+  if (typeof getInventoryList === 'function') {
+    const invListAfter = getInventoryList();
+    if (savedProd && savedProd.id && typeof saveInventoryItem === 'function') {
+      const linkedInv = invListAfter.find(i => i && (i.itemId === savedProd.id || i.id === `inv_${savedProd.id}`));
+      if (linkedInv) {
+        linkedInv.itemId = savedProd.id;
+        linkedInv.name = savedProd.name;
+        if (savedProd.sku !== undefined) linkedInv.sku = savedProd.sku;
+        linkedInv.hasSerial = Boolean(savedProd.hasSerial);
+        saveInventoryItem(linkedInv);
+      }
+    }
+  }
   if (typeof renderInventoryTable === 'function') renderInventoryTable();
   if (typeof populateSerialMgmtItemSelects === 'function') populateSerialMgmtItemSelects();
   resetItemMasterForm();
@@ -21539,12 +21569,19 @@ function saveInventoryItemHandler() {
   const editId = DOM.inventoryEditId ? DOM.inventoryEditId.value : '';
   const itemId = DOM.inventoryItemId ? DOM.inventoryItemId.value : '';
 
-  let resolvedItemId = itemId;
-  // 新規登録時・編集時ともに商品マスタのSKU・シリアル対象設定と双方向同期
+  const existingItem = editId ? getInventoryList().find(i => i.id === editId) : null;
+  const oldInvName = existingItem ? String(existingItem.name || '').trim() : '';
+  const oldInvSku = existingItem ? String(existingItem.sku || '').trim().toUpperCase() : '';
+
+  let resolvedItemId = itemId || (existingItem && existingItem.itemId) || '';
+  // 新規登録時・編集時ともに商品マスタの品名・SKU・シリアル対象設定と双方向同期（旧名称・旧SKUでも確実に追跡）
   const allProducts = getItemMasterList(false);
   const existingProd = allProducts.find(p =>
     (resolvedItemId && p.id === resolvedItemId) ||
-    p.name.trim() === name
+    (editId && editId === `inv_${p.id}`) ||
+    (oldInvName && p.name && p.name.trim() === oldInvName) ||
+    (p.name && p.name.trim() === name) ||
+    (oldInvSku && p.sku && String(p.sku).trim().toUpperCase() === oldInvSku)
   );
   if (!editId) {
     if (!existingProd) {
@@ -21562,13 +21599,13 @@ function saveInventoryItemHandler() {
     } else {
       resolvedItemId = existingProd.id;
       saveItemToMaster({ id: existingProd.id, name, sku, hasSerial }, false);
+      renderItemMasterList();
     }
   } else if (existingProd) {
     resolvedItemId = existingProd.id;
     saveItemToMaster({ id: existingProd.id, name, sku, hasSerial }, false);
+    renderItemMasterList();
   }
-
-  const existingItem = editId ? getInventoryList().find(i => i.id === editId) : null;
 
   const itemData = {
     id: editId || undefined,
