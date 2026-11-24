@@ -16381,6 +16381,28 @@ window.autoAssignYoungestSerialIfNeeded = autoAssignYoungestSerialIfNeeded;
 
 // プレビュー用明細テーブルのレンダリング
 // ==========================================================================
+function formatDocItemNameWithSku(item, masterList = null) {
+  const rawName = String((item && item.name) || '').trim();
+  if (!rawName) return '';
+  let sku = String((item && item.sku) || '').trim();
+  if (!sku && item) {
+    const list = Array.isArray(masterList)
+      ? masterList
+      : (typeof getItemMasterList === 'function' ? getItemMasterList(false) : []);
+    const matched = list.find(m => m && (
+      (item.itemId && m.id === item.itemId) ||
+      (item.productId && m.id === item.productId) ||
+      (m.name && String(m.name).trim() === rawName)
+    ));
+    if (matched && matched.sku) sku = String(matched.sku).trim();
+  }
+  if (!sku) return rawName;
+  // すでに品名にSKUが含まれている場合は二重付与しない
+  if (rawName.toUpperCase().includes(sku.toUpperCase())) return rawName;
+  return `${sku}  ${rawName}`;
+}
+window.formatDocItemNameWithSku = formatDocItemNameWithSku;
+
 function renderSheetItemsTable(items = []) {
   DOM.sheetItemsTableBody.innerHTML = '';
 
@@ -16390,6 +16412,8 @@ function renderSheetItemsTable(items = []) {
     DOM.sheetItemsTableBody.appendChild(emptyTr);
     return;
   }
+
+  const masterListForSku = typeof getItemMasterList === 'function' ? getItemMasterList(false) : [];
 
   items.forEach((item, index) => {
     const tr = document.createElement('tr');
@@ -16468,10 +16492,12 @@ function renderSheetItemsTable(items = []) {
     }
     const finalNoteHtml = noteLines.map(line => escapeHtml(line)).join('<br>\n');
 
+    const displayItemName = formatDocItemNameWithSku(item, masterListForSku);
+
     tr.innerHTML = `
       <td class="td-num">${index + 1}</td>
       <td class="td-item-name">
-        <div style="font-weight: 600; line-height: 1.35;">${escapeHtml(item.name || '')}</div>
+        <div style="font-weight: 600; line-height: 1.35;">${escapeHtml(displayItemName)}</div>
         ${itemEndUserHtml}
         ${descHtml}
         ${userPriceBadge}
@@ -20743,7 +20769,7 @@ function renderItemMasterList(searchQuery = '') {
         productId: item.id || '',
         sku: item.sku || '',
         hasSerial: !!item.hasSerial,
-        name: item.name,
+        name: formatDocItemNameWithSku({ name: item.name, sku: item.sku }),
         quantity: 1,
         unit: item.unit || '式',
         unitPrice: defaultPrice,
