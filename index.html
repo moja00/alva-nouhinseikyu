@@ -343,7 +343,7 @@
           style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
           <span
-            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.24-po-master-price-fix</span>
+            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.24-po-dual-name-price-no-dummy-cost</span>
         </div>
       </div>
 
@@ -1643,7 +1643,7 @@
 
           <div class="form-row" style="margin-bottom: 12px;">
             <div class="form-group" style="flex: 1.2;">
-              <label class="form-label" for="itemMasterInputPrice" style="font-size: 0.8rem; font-weight: 700;">帳票の単価
+              <label class="form-label" for="itemMasterInputPrice" style="font-size: 0.8rem; font-weight: 700;">出荷・請求用の単価
                 (税抜) <span style="color: var(--danger);">*</span></label>
               <input type="number" id="itemMasterInputPrice" class="form-input" placeholder="0" min="0">
             </div>
@@ -1660,6 +1660,34 @@
                 <option value="8">8% (軽減税率)</option>
                 <option value="0">0% (非課税)</option>
               </select>
+            </div>
+          </div>
+
+          <!-- 発注書（注文書/PO）専用の名称・単価設定（任意） -->
+          <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px;">
+            <div style="font-size: 0.8rem; font-weight: 700; color: #1e3a8a; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+              <span>📋 発注書（注文書 / PO）用の名称・単価（任意）</span>
+              <span style="font-size: 0.7rem; font-weight: 500; color: #475569;">※仕入先への発注時と出荷・請求時で名称や金額が異なる場合に設定します（空欄時は上の名称を使用）</span>
+            </div>
+            <div class="form-row" style="margin-bottom: 0; gap: 10px;">
+              <div class="form-group" style="flex: 1.8; min-width: 220px;">
+                <label class="form-label" for="itemMasterInputOrderName" style="font-size: 0.76rem; font-weight: 700; color: #1e40af;">発注用の名称</label>
+                <input type="text" id="itemMasterInputOrderName" class="form-input" placeholder="例: カーボン社用プッシュ＆プルシステム本体">
+              </div>
+              <div class="form-group" style="flex: 1; min-width: 130px;">
+                <label class="form-label" for="itemMasterInputOrderPrice" style="font-size: 0.76rem; font-weight: 700; color: #1e40af;">発注用の単価 (税抜)</label>
+                <input type="text" inputmode="decimal" id="itemMasterInputOrderPrice" class="form-input" placeholder="例: 21216" style="font-family: monospace; text-align: right;">
+              </div>
+              <div class="form-group" style="flex: 0.7; min-width: 100px;">
+                <label class="form-label" for="itemMasterSelectOrderCurrency" style="font-size: 0.76rem; font-weight: 700; color: #1e40af;">発注通貨</label>
+                <select id="itemMasterSelectOrderCurrency" class="form-select" style="font-weight: 700;">
+                  <option value="JPY" selected>JPY (円)</option>
+                  <option value="EUR">EUR (€)</option>
+                  <option value="USD">USD ($)</option>
+                  <option value="CNY">CNY (¥)</option>
+                  <option value="GBP">GBP (£)</option>
+                </select>
+              </div>
             </div>
           </div>
 
@@ -5451,7 +5479,7 @@
           <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             <h2 class="view-screen-title" style="margin: 0;">勤怠管理・退勤タイムカード</h2>
             <span
-              style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.24-po-master-price-fix</span>
+              style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.24-po-dual-name-price-no-dummy-cost</span>
           </div>
           <span class="view-screen-subtitle">休憩1時間自動控除・ワンタップ出退勤打刻・月次出勤簿・打刻漏れ修正</span>
         </div>
@@ -7836,7 +7864,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261124_po_master_price_fix"></script>
+  <script src="js/app.bundle.js?v=20261124_po_dual_name_price_no_dummy_cost"></script>
 </body>
 
 </html>

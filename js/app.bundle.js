@@ -8945,7 +8945,7 @@ function getInventoryList() {
           currentStock: 0,
           safetyStock: 5,
           unit: prod.unit || '個',
-          unitCost: prod.unitPrice ? Math.round(prod.unitPrice * 0.6) : 0,
+          unitCost: 0,
           unitPrice: prod.unitPrice || 0,
           location: '本社倉庫',
           lastInDate: '',
@@ -9310,7 +9310,7 @@ function syncInventoryWithItemsMaster() {
         currentStock: 0,
         safetyStock: 5,
         unit: item.unit || '個',
-        unitCost: item.unitPrice ? Math.round(item.unitPrice * 0.6) : 0,
+        unitCost: 0,
         unitPrice: item.unitPrice || 0,
         location: '本社倉庫',
         lastInDate: '',
@@ -20133,6 +20133,12 @@ function resetItemMasterForm() {
   DOM.itemMasterInputUnit.value = '式';
   DOM.itemMasterSelectTax.value = '10';
   DOM.itemMasterInputNote.value = '';
+  const ordNameEl = document.getElementById('itemMasterInputOrderName');
+  const ordPriceEl = document.getElementById('itemMasterInputOrderPrice');
+  const ordCurrEl = document.getElementById('itemMasterSelectOrderCurrency');
+  if (ordNameEl) ordNameEl.value = '';
+  if (ordPriceEl) ordPriceEl.value = '';
+  if (ordCurrEl) ordCurrEl.value = 'JPY';
   updateMasterCalculator(false);
   if (typeof updateCategoryStockStatusHint === 'function') {
     updateCategoryStockStatusHint();
@@ -20535,6 +20541,12 @@ function handleSaveItemMaster(e) {
   const unitInput = document.getElementById('itemMasterInputUnit') || (DOM && DOM.itemMasterInputUnit);
   const taxInput = document.getElementById('itemMasterSelectTax') || (DOM && DOM.itemMasterSelectTax);
   const noteInput = document.getElementById('itemMasterInputNote') || (DOM && DOM.itemMasterInputNote);
+  const orderNameInput = document.getElementById('itemMasterInputOrderName');
+  const orderPriceInput = document.getElementById('itemMasterInputOrderPrice');
+  const orderCurrencySelect = document.getElementById('itemMasterSelectOrderCurrency');
+
+  const rawOrderPrice = orderPriceInput ? normalizePoHalfWidthNumberStr(orderPriceInput.value, true) : '';
+  const parsedOrderPrice = rawOrderPrice !== '' ? Number(rawOrderPrice) : 0;
 
   const itemData = {
     name: name,
@@ -20543,6 +20555,9 @@ function handleSaveItemMaster(e) {
     hasSerial: !!(hasSerialChk && hasSerialChk.checked),
     unitPrice: Math.abs(Number(priceVal)),
     userPrice: Number(userPriceInput ? userPriceInput.value : 0) || 0,
+    orderName: orderNameInput ? orderNameInput.value.trim() : '',
+    orderPrice: parsedOrderPrice > 0 ? parsedOrderPrice : 0,
+    orderCurrency: orderCurrencySelect ? orderCurrencySelect.value : 'JPY',
     unit: (unitInput && unitInput.value.trim()) || '式',
     taxRate: Number(taxInput ? taxInput.value : 10) || 10,
     note: (noteInput && noteInput.value.trim()) || ''
@@ -20650,6 +20665,13 @@ function renderItemMasterList(searchQuery = '') {
           </div>
         </div>
         ${item.note ? `<div class="master-item-note">${escapeHtml(item.note)}</div>` : ''}
+        ${(item.orderName || Number(item.orderPrice) > 0) ? `
+          <div style="margin-top: 4px; font-size: 0.74rem; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; padding: 3px 8px; border-radius: 5px; display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+            <strong>📋 発注用:</strong>
+            ${item.orderName ? `<span>${escapeHtml(item.orderName)}</span>` : ''}
+            ${Number(item.orderPrice) > 0 ? `<span style="font-family: monospace; font-weight: 800;">${escapeHtml(formatPoMoney(item.orderPrice, item.orderCurrency || 'JPY', true))}</span>` : ''}
+          </div>
+        ` : ''}
         <div class="master-item-meta" style="margin-top: 3px;">
           仕切り税込: ${formatCurrency(wholesaleInc)}
           <span style="color: #64748b; margin-left: 8px;">(想定ユーザー税込: 約${formatCurrency(estUserPriceInc)})</span>
@@ -20729,6 +20751,12 @@ function renderItemMasterList(searchQuery = '') {
       DOM.itemMasterInputUnit.value = item.unit || '式';
       DOM.itemMasterSelectTax.value = String(item.taxRate !== undefined ? item.taxRate : 10);
       DOM.itemMasterInputNote.value = item.note || '';
+      const ordNameEl = document.getElementById('itemMasterInputOrderName');
+      const ordPriceEl = document.getElementById('itemMasterInputOrderPrice');
+      const ordCurrEl = document.getElementById('itemMasterSelectOrderCurrency');
+      if (ordNameEl) ordNameEl.value = item.orderName || '';
+      if (ordPriceEl) ordPriceEl.value = Number(item.orderPrice) > 0 ? String(item.orderPrice) : '';
+      if (ordCurrEl) ordCurrEl.value = item.orderCurrency || 'JPY';
       DOM.calcInputUserPriceInc.value = estUserPriceInc;
       updateMasterCalculator(false);
       DOM.itemMasterInputName.focus();
@@ -21487,7 +21515,12 @@ function renderInventoryTable() {
       typeBadges += `<span class="badge" style="background:#fef3c7; color:#92400e; font-size:0.675rem; font-weight:700; padding:1px 5px; border-radius:4px; cursor:pointer;" onclick="window.invFilterSerialByItem('${item.id}')" title="シリアル番号台帳で一覧を表示">🔢 S/N追跡</span>`;
     }
 
-    const formattedCost = item.unitCost ? `¥${Number(item.unitCost).toLocaleString()}` : '-';
+    // ロット入庫（または実原価登録）されていない未入庫品目の旧0.6掛け仮原価は非表示（-）にする
+    const isLegacyDummyCost = !item.lastInDate && Number(item.currentStock) === 0 && Number(item.unitPrice) > 0 && Number(item.unitCost) === Math.round(Number(item.unitPrice) * 0.6);
+    const displayUnitCost = isLegacyDummyCost ? 0 : (Number(item.unitCost) || 0);
+    const formattedCost = displayUnitCost > 0
+      ? `¥${displayUnitCost.toLocaleString()}`
+      : `<span style="color:#94a3b8;" title="ロット入庫後に確定原価が表示されます">-</span>`;
     const skuDisp = item.sku ? `<span style="font-size: 0.725rem; color: #64748b; font-family: monospace;">SKU: ${escapeHtml(item.sku)}</span>` : '';
 
     html += `
@@ -21933,21 +21966,27 @@ function getPoMasterCatalogOptions() {
   const entries = [];
   const addedNames = new Set();
 
-  // 1. 商品マスタの「発注用 / 仕入用」カテゴリ商品を最優先（商品マスタの登録単価 unitPrice をそのまま採用）
+  // 1. 商品マスタの「発注用 / 仕入用」カテゴリ、または発注用名称・単価が設定済みの商品を最優先
   itemList.forEach(it => {
     if (!it || !it.name) return;
-    if (!isPurchaseCategory(it.category)) return;
+    const hasCustomOrder = Boolean(it.orderName) || Number(it.orderPrice) > 0;
+    if (!isPurchaseCategory(it.category) && !hasCustomOrder) return;
     const nameKey = String(it.name).trim();
     if (addedNames.has(nameKey)) return;
     addedNames.add(nameKey);
     const invMatch = invList.find(i => i && (i.itemId === it.id || i.id === it.id || String(i.name || '').trim() === nameKey));
+    const resolvedOrderPrice = Number(it.orderPrice) > 0
+      ? Number(it.orderPrice)
+      : (isPurchaseCategory(it.category) ? (Number(it.unitPrice) || 0) : (Number(invMatch && invMatch.unitCost) || 0));
     entries.push({
       id: (invMatch && invMatch.id) || it.id || nameKey,
       sku: it.sku || it.code || (invMatch && invMatch.sku) || '',
-      name: it.name,
+      name: (it.orderName && it.orderName.trim()) || it.name,
+      salesName: it.name,
       category: it.category || '',
       isPurchaseItem: true,
-      unitCost: Number(it.unitPrice || it.costPrice || (invMatch && invMatch.unitCost)) || 0
+      orderCurrency: it.orderCurrency || 'JPY',
+      unitCost: resolvedOrderPrice
     });
   });
 
@@ -22603,8 +22642,12 @@ function initPurchaseOrderEvents() {
         row.itemId = found.id;
         row.sku = found.sku || row.sku;
         row.itemName = found.name;
-        const curr = document.getElementById('poSelectCurrency')?.value || 'JPY';
-        if (curr === 'JPY' && found.unitCost > 0) {
+        const currSel = document.getElementById('poSelectCurrency');
+        const curr = currSel ? currSel.value : 'JPY';
+        const itemCurr = found.orderCurrency || 'JPY';
+        if (found.unitCost > 0 && (itemCurr === curr || (itemCurr !== 'JPY' && curr === itemCurr) || (itemCurr === 'JPY' && curr === 'JPY'))) {
+          row.unitPrice = found.unitCost;
+        } else if (found.unitCost > 0 && found.orderCurrency && found.orderCurrency !== 'JPY') {
           row.unitPrice = found.unitCost;
         }
         renderPoItemRows();
