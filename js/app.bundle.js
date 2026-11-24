@@ -22270,9 +22270,9 @@ function getPoMasterCatalogOptions() {
   return entries;
 }
 
-function populatePoSupplierDatalist() {
-  const dl = document.getElementById('poSupplierDatalist');
+function populatePoSupplierDatalist(selectedSupplier = null) {
   const quickSel = document.getElementById('poSelectSupplierQuick');
+  const supInput = document.getElementById('poInputSupplier');
   const names = new Set();
   // 取引先マスタの「仕入先（vendor / both）」を最優先候補に追加
   (typeof getClientMasterList === 'function' ? getClientMasterList() : []).forEach(c => {
@@ -22287,14 +22287,27 @@ function populatePoSupplierDatalist() {
     if (l && l.supplier) names.add(l.supplier.trim());
   });
   const sortedNames = Array.from(names).filter(Boolean);
-  if (dl) {
-    dl.innerHTML = sortedNames.map(n => `<option value="${escapeHtml(n)}"></option>`).join('');
-  }
+  const currentSup = selectedSupplier !== null ? String(selectedSupplier || '').trim() : (supInput ? supInput.value.trim() : '');
+
   if (quickSel) {
-    const currentSup = (document.getElementById('poInputSupplier')?.value || '').trim();
-    quickSel.innerHTML = '<option value="">📋 仕入先を選択...</option>' + sortedNames.map(n =>
-      `<option value="${escapeHtml(n)}" ${n === currentSup ? 'selected' : ''}>${escapeHtml(n)}</option>`
-    ).join('');
+    quickSel.innerHTML =
+      '<option value="">-- 仕入先を選択してください --</option>' +
+      sortedNames.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('') +
+      '<option value="__manual__">✏️ 直接入力する...</option>';
+
+    if (currentSup && sortedNames.includes(currentSup)) {
+      quickSel.value = currentSup;
+      if (supInput) supInput.style.display = 'none';
+    } else if (currentSup) {
+      quickSel.value = '__manual__';
+      if (supInput) {
+        supInput.value = currentSup;
+        supInput.style.display = 'block';
+      }
+    } else {
+      quickSel.value = '';
+      if (supInput) supInput.style.display = 'none';
+    }
   }
 }
 
@@ -22482,6 +22495,7 @@ function openPurchaseOrderModal(poId = null) {
     if (delivEl) delivEl.value = existing.deliveryDate || '';
     if (statusEl) statusEl.value = existing.status || 'ordered';
     if (supEl) supEl.value = existing.supplier || '';
+    populatePoSupplierDatalist(existing.supplier || '');
     if (honEl) honEl.value = existing.honorific !== undefined ? existing.honorific : (existing.regionType === 'overseas' ? '' : '御中');
     if (currEl) currEl.value = existing.currency || (existing.regionType === 'overseas' ? 'EUR' : 'JPY');
     if (taxEl) taxEl.value = String(existing.taxRate !== undefined ? existing.taxRate : (existing.regionType === 'overseas' ? 0 : 10));
@@ -22511,6 +22525,7 @@ function openPurchaseOrderModal(poId = null) {
     if (delivEl) delivEl.value = '';
     if (statusEl) statusEl.value = 'ordered';
     if (supEl) supEl.value = '';
+    populatePoSupplierDatalist('');
     if (honEl) honEl.value = '御中';
     if (currEl) currEl.value = 'JPY';
     if (taxEl) taxEl.value = '10';
@@ -22865,13 +22880,34 @@ function initPurchaseOrderEvents() {
   document.getElementById('btnClosePurchaseOrderModal')?.addEventListener('click', closePurchaseOrderModal);
   document.getElementById('btnCancelPurchaseOrderModal')?.addEventListener('click', closePurchaseOrderModal);
 
-  // 仕入先クイック切替プルダウン ＆ クリアボタン（何度でも自由に切り替え可能）
-  document.getElementById('poSelectSupplierQuick')?.addEventListener('change', (e) => {
+  // 仕入先プルダウン切替（イベント委譲で確実に発火・何度でも自由に切り替え可能）
+  document.addEventListener('change', (e) => {
+    if (!e.target || e.target.id !== 'poSelectSupplierQuick') return;
     const val = e.target.value;
-    if (!val) return;
     const supEl = document.getElementById('poInputSupplier');
-    if (supEl) supEl.value = val;
-    // 選んだ仕入先が海外（英字のみ、または支払条件にEUR/USDを含む）なら自動で海外発注へ切替案内
+    console.log('【発注書仕入先切替】選択:', val);
+
+    if (val === '__manual__') {
+      if (supEl) {
+        supEl.style.display = 'block';
+        supEl.value = '';
+        supEl.focus();
+      }
+      updatePoFormTotalsAndPreview();
+      return;
+    }
+
+    if (supEl) {
+      supEl.style.display = 'none';
+      supEl.value = val || '';
+    }
+
+    if (!val) {
+      updatePoFormTotalsAndPreview();
+      return;
+    }
+
+    // 選んだ仕入先が海外（英字のみ、または住所/支払条件にEUR/USD/Italy等を含む）なら自動で海外発注へ切替
     const clients = typeof getClientMasterList === 'function' ? getClientMasterList() : [];
     const matched = clients.find(c => c && c.name && c.name.trim() === val);
     const isLikelyOverseas = (matched && /(EUR|USD|Italy|Germany|China|USA|T\/T)/i.test(`${matched.address || ''} ${matched.paymentTerms || ''}`)) || /^[A-Za-z0-9\s.,&\-]+$/.test(val);
@@ -22883,14 +22919,6 @@ function initPurchaseOrderEvents() {
     } else {
       updatePoFormTotalsAndPreview();
     }
-  });
-
-  document.getElementById('btnClearPoSupplier')?.addEventListener('click', () => {
-    const supEl = document.getElementById('poInputSupplier');
-    const quickSel = document.getElementById('poSelectSupplierQuick');
-    if (supEl) { supEl.value = ''; supEl.focus(); }
-    if (quickSel) quickSel.value = '';
-    updatePoFormTotalsAndPreview();
   });
 
   // 国内・海外切替
