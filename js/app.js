@@ -8508,29 +8508,79 @@ window.buildPoDocumentHtml = buildPoDocumentHtml;
 function getPoMasterCatalogOptions() {
   const invList = typeof getInventoryList === 'function' ? getInventoryList() : [];
   const itemList = typeof getItemMasterList === 'function' ? getItemMasterList() : [];
-  const map = new Map();
-  invList.forEach(i => {
-    if (!i || !i.name) return;
-    map.set(i.id, {
-      id: i.id,
-      sku: i.sku || '',
-      name: i.name,
-      unitCost: Number(i.unitCost) || 0
-    });
-  });
+
+  const isPurchaseCategory = (cat) => {
+    const c = String(cat || '');
+    return c.includes('発注') || c.includes('仕入');
+  };
+
+  // 商品マスタを名前・ID・品番で引けるようインデックス化
+  const itemById = new Map();
+  const itemByName = new Map();
   itemList.forEach(it => {
     if (!it || !it.name) return;
-    const key = it.id || it.name;
-    if (!Array.from(map.values()).some(v => v.name === it.name)) {
-      map.set(key, {
-        id: it.id || '',
-        sku: it.sku || it.code || '',
-        name: it.name,
-        unitCost: Number(it.costPrice || it.unitCost || it.unitPrice) || 0
-      });
-    }
+    if (it.id) itemById.set(it.id, it);
+    itemByName.set(String(it.name).trim(), it);
   });
-  return Array.from(map.values());
+
+  const entries = [];
+  const addedNames = new Set();
+
+  // 1. 商品マスタの「発注用 / 仕入用」カテゴリ商品を最優先（商品マスタの登録単価 unitPrice をそのまま採用）
+  itemList.forEach(it => {
+    if (!it || !it.name) return;
+    if (!isPurchaseCategory(it.category)) return;
+    const nameKey = String(it.name).trim();
+    if (addedNames.has(nameKey)) return;
+    addedNames.add(nameKey);
+    const invMatch = invList.find(i => i && (i.itemId === it.id || i.id === it.id || String(i.name || '').trim() === nameKey));
+    entries.push({
+      id: (invMatch && invMatch.id) || it.id || nameKey,
+      sku: it.sku || it.code || (invMatch && invMatch.sku) || '',
+      name: it.name,
+      category: it.category || '',
+      isPurchaseItem: true,
+      unitCost: Number(it.unitPrice || it.costPrice || (invMatch && invMatch.unitCost)) || 0
+    });
+  });
+
+  // 2. 在庫マスタの商品（通常品は在庫マスタの確定仕入原価 unitCost を採用）
+  invList.forEach(i => {
+    if (!i || !i.name) return;
+    const nameKey = String(i.name).trim();
+    if (addedNames.has(nameKey)) return;
+    addedNames.add(nameKey);
+    const matchedItem = itemById.get(i.itemId) || itemById.get(i.id) || itemByName.get(nameKey);
+    const isPurch = matchedItem && isPurchaseCategory(matchedItem.category);
+    entries.push({
+      id: i.id,
+      sku: i.sku || (matchedItem && (matchedItem.sku || matchedItem.code)) || '',
+      name: i.name,
+      category: (matchedItem && matchedItem.category) || i.category || '',
+      isPurchaseItem: Boolean(isPurch),
+      unitCost: isPurch
+        ? (Number(matchedItem.unitPrice) || Number(i.unitCost) || 0)
+        : (Number(i.unitCost) || Number(matchedItem && (matchedItem.costPrice || matchedItem.unitPrice)) || 0)
+    });
+  });
+
+  // 3. 在庫マスタ未登録のその他商品マスタ品目
+  itemList.forEach(it => {
+    if (!it || !it.name) return;
+    const nameKey = String(it.name).trim();
+    if (addedNames.has(nameKey)) return;
+    addedNames.add(nameKey);
+    entries.push({
+      id: it.id || nameKey,
+      sku: it.sku || it.code || '',
+      name: it.name,
+      category: it.category || '',
+      isPurchaseItem: false,
+      unitCost: Number(it.costPrice || it.unitCost || it.unitPrice) || 0
+    });
+  });
+
+  return entries;
 }
 
 function populatePoSupplierDatalist() {
