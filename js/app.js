@@ -7255,6 +7255,9 @@ function renderItemMasterList(searchQuery = '') {
   if (q) {
     filtered = filtered.filter(item =>
       (item.name && item.name.toLowerCase().includes(q)) ||
+      (item.sku && item.sku.toLowerCase().includes(q)) ||
+      (item.orderSku && item.orderSku.toLowerCase().includes(q)) ||
+      (item.orderName && item.orderName.toLowerCase().includes(q)) ||
       (item.note && item.note.toLowerCase().includes(q)) ||
       (item.category && item.category.toLowerCase().includes(q))
     );
@@ -7288,10 +7291,10 @@ function renderItemMasterList(searchQuery = '') {
     card.innerHTML = `
       <div class="master-item-info">
         <div class="master-item-header">
+          ${item.sku ? `<span class="badge" title="SKU・型番" style="background: #1e293b; color: #ffffff; font-family: monospace; font-size: 0.78rem; font-weight: 800; padding: 2px 8px; border-radius: 5px; letter-spacing: 0.03em; flex-shrink: 0;">${escapeHtml(item.sku)}</span>` : ''}
           <span class="master-item-name">${escapeHtml(item.name)}</span>
           <div style="display: flex; gap: 4px; align-items: center; flex-wrap: wrap;">
             ${item.category ? `<span class="item-category-badge" title="カテゴリ: ${escapeHtml(item.category)}">🏷️ ${escapeHtml(item.category)}</span>` : ''}
-            ${item.sku ? `<span class="badge" style="background: #eef2ff; color: #4338ca; font-family: monospace; font-size: 0.7rem; padding: 2px 6px; border-radius: 4px;">${escapeHtml(item.sku)}</span>` : ''}
             ${item.hasSerial ? `<span class="badge" style="background: #f0fdfa; color: #0f766e; border: 1px solid #99f6e4; font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; font-weight: 700;">🔢 S/N管理</span>` : ''}
             <span class="master-usage-badge" title="納品請求書への記載実績: ${docUsage}回">★ 頻度: ${docUsage}回</span>
             <span class="badge" style="background: #f1f5f9; color: #475569; font-size: 0.7rem; padding: 2px 6px; border-radius: 4px;">
