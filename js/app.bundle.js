@@ -4057,6 +4057,46 @@ function getMasterKey(name) {
   return normalizeMasterName(name).toLowerCase();
 }
 
+/**
+ * 枝番部品（例: DP-EG-07 / DP-EGフット / DP-MS-01 等）を主要本体グループへ誤合算しないための判定ヘルパー
+ */
+const SUB_PART_KEYWORD_RE = /フット|押さえ|金具|カラー|パッド|ボルト|ナット|ピン|スプリング|バネ|シール|パッキン|補修|スペア|部品|パーツ/;
+function isDpEgMainItem(normName, itemId = '') {
+  if (itemId === 'inv_prod_1790319164152_angp' || itemId === 'prod_1790319164152_angp') return true;
+  const n = String(normName || '').toLowerCase();
+  if (!n) return false;
+  if (/dp-?eg-?\d+/i.test(n) || SUB_PART_KEYWORD_RE.test(n)) return false;
+  return n.includes('3点引き') || n.includes('３点引き') ||
+    /(?:^|[\s_\(\[【])dp-?eg(?=$|[\s_\)\]】])/.test(n) ||
+    /^dp-?eg(?:アタッチメント|本体)?$/.test(n);
+}
+function isDpMsMainItem(normName, itemId = '') {
+  if (itemId === 'inv_2') return true;
+  const n = String(normName || '').toLowerCase();
+  if (!n) return false;
+  if (/dp-?ms-?\d+/i.test(n) || SUB_PART_KEYWORD_RE.test(n)) return false;
+  return n.includes('スプレッダー') ||
+    /(?:^|[\s_\(\[【])dp-?ms(?=$|[\s_\)\]】])/.test(n) ||
+    /^dp-?ms(?:本体)?$/.test(n);
+}
+function isDpAcMainItem(normName, itemId = '') {
+  if (itemId === 'inv_prod_1790319113830_war6' || itemId === 'prod_1790319113830_war6') return true;
+  const n = String(normName || '').toLowerCase();
+  if (!n) return false;
+  if (/dp-?ac-?\d+/i.test(n) || SUB_PART_KEYWORD_RE.test(n)) return false;
+  return n.includes('アクセサリー') ||
+    /(?:^|[\s_\(\[【])dp-?ac(?=$|[\s_\)\]】])/.test(n) ||
+    /^dp-?ac(?:キット|本体)?$/.test(n);
+}
+function isHicMainItem(normName, itemId = '') {
+  if (itemId === 'inv_prod_auto_7') return true;
+  const n = String(normName || '').toLowerCase();
+  if (!n) return false;
+  if (/hic-?025-?\d+/i.test(n) || SUB_PART_KEYWORD_RE.test(n)) return false;
+  return n.includes('クランプ') || n.includes('ホールドイット') ||
+    /(?:^|[\s_\(\[【])hic-?025(?=$|[\s_\)\]】])/.test(n);
+}
+
 // 排除すべきサンプルデータの一覧（正規化キー）
 const SAMPLE_ITEM_KEYS = new Set([
   getMasterKey('製品基本セット（一式）'),
@@ -10850,13 +10890,13 @@ function syncInventoryStockFromIssuedDocs(syncToServer = true) {
         let groupKey = norm;
         if (norm.includes('dp-5000') || norm.includes('ベーシックセット') || norm.includes('ket.ic.2b') || norm.includes('エレクトロパワー')) {
           groupKey = 'grp_dp5000';
-        } else if (norm.includes('dp-ms') || norm.includes('スプレッダー')) {
+        } else if (isDpMsMainItem(norm, it.itemId || it.productId || it.inventoryId)) {
           groupKey = 'grp_dpms';
-        } else if (norm.includes('dp-eg') || norm.includes('3点引き') || norm.includes('３点引き')) {
+        } else if (isDpEgMainItem(norm, it.itemId || it.productId || it.inventoryId)) {
           groupKey = 'grp_dpeg';
-        } else if (norm.includes('dp-ac') || norm.includes('アクセサリー')) {
+        } else if (isDpAcMainItem(norm, it.itemId || it.productId || it.inventoryId)) {
           groupKey = 'grp_dpac';
-        } else if (norm.includes('hic-025') || norm.includes('クランプ') || norm.includes('ホールドイット')) {
+        } else if (isHicMainItem(norm, it.itemId || it.productId || it.inventoryId)) {
           groupKey = 'grp_hic';
         } else if (norm.includes('急速充電器')) {
           groupKey = 'grp_charger';
@@ -10952,10 +10992,10 @@ function syncInventoryStockFromIssuedDocs(syncToServer = true) {
       else if (isBatCS) groupKey = 'grp_dp5000_bat_cs';
       else if (isBat) groupKey = 'grp_dp5000_bat';
       else if (isChg) groupKey = 'grp_dp5000_chg';
-      else if (norm.includes('dpms') || norm.includes('スプレッダー')) groupKey = 'grp_dpms';
-      else if (norm.includes('dpeg') || norm.includes('3点引き')) groupKey = 'grp_dpeg';
-      else if (norm.includes('dpac') || norm.includes('アクセサリー')) groupKey = 'grp_dpac';
-      else if (norm.includes('hic025') || norm.includes('クランプ')) groupKey = 'grp_hic';
+      else if (isDpMsMainItem(norm, item.id)) groupKey = 'grp_dpms';
+      else if (isDpEgMainItem(norm, item.id)) groupKey = 'grp_dpeg';
+      else if (isDpAcMainItem(norm, item.id)) groupKey = 'grp_dpac';
+      else if (isHicMainItem(norm, item.id)) groupKey = 'grp_hic';
 
       let itemManualOut = 0;
       let itemAdjustDelta = 0;
@@ -11044,10 +11084,10 @@ function syncInventoryStockFromIssuedDocs(syncToServer = true) {
             else if (itIsBatCS) groupKey = 'grp_dp5000_bat_cs';
             else if (itIsBat) groupKey = 'grp_dp5000_bat';
             else if (itIsChg) groupKey = 'grp_dp5000_chg';
-            else if (itNorm.includes('dpms') || itNorm.includes('スプレッダー')) groupKey = 'grp_dpms';
-            else if (itNorm.includes('dpeg') || itNorm.includes('3点引き')) groupKey = 'grp_dpeg';
-            else if (itNorm.includes('dpac') || itNorm.includes('アクセサリー')) groupKey = 'grp_dpac';
-            else if (itNorm.includes('hic025') || itNorm.includes('クランプ')) groupKey = 'grp_hic';
+            else if (isDpMsMainItem(itNorm, it.itemId)) groupKey = 'grp_dpms';
+            else if (isDpEgMainItem(itNorm, it.itemId)) groupKey = 'grp_dpeg';
+            else if (isDpAcMainItem(itNorm, it.itemId)) groupKey = 'grp_dpac';
+            else if (isHicMainItem(itNorm, it.itemId)) groupKey = 'grp_hic';
 
             const q = Number(it.quantity || it.qty) || 0;
             totalInQtyMap[groupKey] = (totalInQtyMap[groupKey] || 0) + q;
@@ -11087,10 +11127,10 @@ function syncInventoryStockFromIssuedDocs(syncToServer = true) {
           else if (itIsBatCS) groupKey = 'grp_dp5000_bat_cs';
           else if (itIsBat) groupKey = 'grp_dp5000_bat';
           else if (itIsChg) groupKey = 'grp_dp5000_chg';
-          else if (itNorm.includes('dpms') || itNorm.includes('スプレッダー')) groupKey = 'grp_dpms';
-          else if (itNorm.includes('dpeg') || itNorm.includes('3点引き')) groupKey = 'grp_dpeg';
-          else if (itNorm.includes('dpac') || itNorm.includes('アクセサリー')) groupKey = 'grp_dpac';
-          else if (itNorm.includes('hic025') || itNorm.includes('クランプ')) groupKey = 'grp_hic';
+          else if (isDpMsMainItem(itNorm, lot.itemId)) groupKey = 'grp_dpms';
+          else if (isDpEgMainItem(itNorm, lot.itemId)) groupKey = 'grp_dpeg';
+          else if (isDpAcMainItem(itNorm, lot.itemId)) groupKey = 'grp_dpac';
+          else if (isHicMainItem(itNorm, lot.itemId)) groupKey = 'grp_hic';
 
           const q = Number(lot.quantity || lot.qty) || 0;
           totalInQtyMap[groupKey] = (totalInQtyMap[groupKey] || 0) + q;
@@ -11133,10 +11173,10 @@ function syncInventoryStockFromIssuedDocs(syncToServer = true) {
       else if (isBatCS) groupKey = 'grp_dp5000_bat_cs';
       else if (isBat) groupKey = 'grp_dp5000_bat';
       else if (isChg) groupKey = 'grp_dp5000_chg';
-      else if (norm.includes('dpms') || norm.includes('スプレッダー')) groupKey = 'grp_dpms';
-      else if (norm.includes('dpeg') || norm.includes('3点引き')) groupKey = 'grp_dpeg';
-      else if (norm.includes('dpac') || norm.includes('アクセサリー')) groupKey = 'grp_dpac';
-      else if (norm.includes('hic025') || norm.includes('クランプ')) groupKey = 'grp_hic';
+      else if (isDpMsMainItem(norm, item.id)) groupKey = 'grp_dpms';
+      else if (isDpEgMainItem(norm, item.id)) groupKey = 'grp_dpeg';
+      else if (isDpAcMainItem(norm, item.id)) groupKey = 'grp_dpac';
+      else if (isHicMainItem(norm, item.id)) groupKey = 'grp_hic';
 
       // ベーシックセットの単位は「セット」に自動正規化
       if (isBundle && item.unit !== 'セット') {
@@ -12959,10 +12999,10 @@ function getInventoryHistoryWithShipments(item) {
   else if (isBatCS) groupKey = 'grp_dp5000_bat_cs';
   else if (isBat) groupKey = 'grp_dp5000_bat';
   else if (isChg) groupKey = 'grp_dp5000_chg';
-  else if (norm.includes('dp-ms') || norm.includes('スプレッダー')) groupKey = 'grp_dpms';
-  else if (norm.includes('dp-eg') || norm.includes('3点引き')) groupKey = 'grp_dpeg';
-  else if (norm.includes('dp-ac') || norm.includes('アクセサリー')) groupKey = 'grp_dpac';
-  else if (norm.includes('hic-025') || norm.includes('クランプ')) groupKey = 'grp_hic';
+  else if (isDpMsMainItem(norm, item.id)) groupKey = 'grp_dpms';
+  else if (isDpEgMainItem(norm, item.id)) groupKey = 'grp_dpeg';
+  else if (isDpAcMainItem(norm, item.id)) groupKey = 'grp_dpac';
+  else if (isHicMainItem(norm, item.id)) groupKey = 'grp_hic';
 
   // 1. 基本履歴（手動出庫・ロット入庫・調整）
   const baseLogs = Array.isArray(item.history) ? [...item.history] : [];
@@ -13038,10 +13078,10 @@ function getInventoryHistoryWithShipments(item) {
           else if (itIsBatCS) itGk = 'grp_dp5000_bat_cs';
           else if (itIsBat) itGk = 'grp_dp5000_bat';
           else if (itIsChg) itGk = 'grp_dp5000_chg';
-          else if (itNorm.includes('dp-ms') || itNorm.includes('スプレッダー')) itGk = 'grp_dpms';
-          else if (itNorm.includes('dp-eg') || itNorm.includes('3点引き')) itGk = 'grp_dpeg';
-          else if (itNorm.includes('dp-ac') || itNorm.includes('アクセサリー')) itGk = 'grp_dpac';
-          else if (itNorm.includes('hic-025') || itNorm.includes('クランプ')) itGk = 'grp_hic';
+          else if (isDpMsMainItem(itNorm, it.itemId)) itGk = 'grp_dpms';
+          else if (isDpEgMainItem(itNorm, it.itemId)) itGk = 'grp_dpeg';
+          else if (isDpAcMainItem(itNorm, it.itemId)) itGk = 'grp_dpac';
+          else if (isHicMainItem(itNorm, it.itemId)) itGk = 'grp_hic';
 
           let isLotMatch = false;
           if (it.itemId && (it.itemId === item.id || it.itemId === item.itemId)) {
@@ -13266,10 +13306,10 @@ function getInventoryHistoryWithShipments(item) {
         else if (itIsBatCS) itGk = 'grp_dp5000_bat_cs';
         else if (itIsBat) itGk = 'grp_dp5000_bat';
         else if (itIsChg) itGk = 'grp_dp5000_chg';
-        else if (itNorm.includes('dp-ms') || itNorm.includes('スプレッダー')) itGk = 'grp_dpms';
-        else if (itNorm.includes('dp-eg') || itNorm.includes('3点引き')) itGk = 'grp_dpeg';
-        else if (itNorm.includes('dp-ac') || itNorm.includes('アクセサリー')) itGk = 'grp_dpac';
-        else if (itNorm.includes('hic-025') || itNorm.includes('クランプ')) itGk = 'grp_hic';
+        else if (isDpMsMainItem(itNorm, it.itemId)) itGk = 'grp_dpms';
+        else if (isDpEgMainItem(itNorm, it.itemId)) itGk = 'grp_dpeg';
+        else if (isDpAcMainItem(itNorm, it.itemId)) itGk = 'grp_dpac';
+        else if (isHicMainItem(itNorm, it.itemId)) itGk = 'grp_hic';
 
         let isMatch = false;
         let itemQty = Number(it.quantity) || 0;
@@ -26905,9 +26945,9 @@ function openEditInventoryLotModal(lotId) {
 
   // 過去ロットの旧品目ID（例: inv_dp5000_bat 等）をシリアル台帳・在庫マスタから現行品目へ自動解決
   const resolveLotRowCurrentMaster = (it) => {
-    if (!it) return { itemId: '', itemName: '' };
+    if (!it) return { itemId: '', itemName: '', master: null };
     const directMatch = singleItems.find(m => m && m.id === it.itemId);
-    if (directMatch) return { itemId: directMatch.id, itemName: directMatch.name || it.itemName };
+    if (directMatch) return { itemId: directMatch.id, itemName: directMatch.name || it.itemName, master: directMatch };
 
     const rowSerials = Array.isArray(it.serials) ? it.serials : [];
     for (const rSn of rowSerials) {
@@ -26918,7 +26958,7 @@ function openEditInventoryLotModal(lotId) {
         const sTargetId = sRec.itemId || sRec.inventoryId || '';
         const bySerialId = singleItems.find(m => m && (m.id === sTargetId || (sRec.sku && m.sku === sRec.sku)));
         if (bySerialId) {
-          return { itemId: bySerialId.id, itemName: bySerialId.name || it.itemName };
+          return { itemId: bySerialId.id, itemName: bySerialId.name || it.itemName, master: bySerialId };
         }
       }
     }
@@ -26926,9 +26966,9 @@ function openEditInventoryLotModal(lotId) {
     const normLotName = String(it.itemName || '').replace(/[\u3000\s]+/g, ' ').trim();
     if (normLotName) {
       const byName = singleItems.find(m => m && String(m.name || '').replace(/[\u3000\s]+/g, ' ').trim() === normLotName);
-      if (byName) return { itemId: byName.id, itemName: byName.name };
+      if (byName) return { itemId: byName.id, itemName: byName.name, master: byName };
     }
-    return { itemId: it.itemId || '', itemName: it.itemName || '' };
+    return { itemId: it.itemId || '', itemName: it.itemName || '', master: null };
   };
 
   console.log('【ロット編集】品目・シリアル復元開始', { lotNumber: lot.lotNumber, itemCount: (lot.items || []).length });
@@ -26951,8 +26991,16 @@ function openEditInventoryLotModal(lotId) {
     nextLotRowId = 1;
     lotItemRows = lot.items.map(it => {
       const resolvedMaster = resolveLotRowCurrentMaster(it);
-      const isB = isBundleLotRow({ ...it, itemId: resolvedMaster.itemId, itemName: resolvedMaster.itemName });
-      const isReqSerial = isLotRowRequireSerial({ ...it, itemId: resolvedMaster.itemId, itemName: resolvedMaster.itemName });
+      const masterItem = resolvedMaster.master;
+      const isB = isBundleLotRow({ ...it, itemId: resolvedMaster.itemId, itemName: resolvedMaster.itemName, type: masterItem ? masterItem.type : it.type });
+      const resolvedHasSerial = masterItem ? Boolean(masterItem.hasSerial) : Boolean(it.hasSerial);
+      const isReqSerial = isLotRowRequireSerial({
+        ...it,
+        itemId: resolvedMaster.itemId,
+        itemName: resolvedMaster.itemName,
+        type: masterItem ? masterItem.type : it.type,
+        hasSerial: resolvedHasSerial
+      });
       // シリアル管理対象品目のみシリアル配列をセット。非対象品目（DP-EG・DP-AC等）には他品目のシリアルを流し込まない
       const itemSns = isReqSerial
         ? (Array.isArray(it.serials) && it.serials.length > 0 ? it.serials : combinedSerials)
@@ -27663,10 +27711,16 @@ function isItemSerialTracked(item) {
     name.includes('DP-AC') || name.includes('アクセサリー') || name.includes('クランプ')) {
     return false;
   }
+  const isLegacyFixedSerialId = (id === 'inv_1' || id === 'inv_2' || id === 'inv_dp5000_body' || id === 'inv_dp5000_bat' || id === 'inv_dp5000_chg');
+  if (item.type === 'bundle' || isLegacyFixedSerialId) {
+    return true;
+  }
+  // 商品マスタ・在庫マスタで明示的にシリアル管理オフ（hasSerial === false）の場合は、品名キーワードで強制ONにしない
+  if (item.hasSerial === false) {
+    return false;
+  }
   return Boolean(
     (item.hasSerial === true) ||
-    item.type === 'bundle' ||
-    id === 'inv_1' || id === 'inv_2' || id === 'inv_dp5000_body' || id === 'inv_dp5000_bat' || id === 'inv_dp5000_chg' ||
     name.includes('DP-5000') ||
     name.includes('バッテリー') ||
     name.includes('充電器') ||
@@ -27802,7 +27856,23 @@ function onLotItemSelectChange(rowId, selectElem) {
     row.sku = opt.dataset.sku || '';
     const isBundle = opt.dataset.isBundle === '1' || opt.value === 'inv_1' || (row.itemName && row.itemName.includes('ベーシックセット'));
     row.isBundle = isBundle;
-    row.hasSerial = opt.dataset.hasSerial === '1' || isItemSerialTracked(row);
+    // 変更前の古い row.hasSerial を引きずらないよう、選択されたマスタの data-has-serial を正として再判定
+    const optHasSerial = opt.dataset.hasSerial === '1';
+    row.hasSerial = optHasSerial || isItemSerialTracked({
+      id: row.itemId,
+      itemId: row.itemId,
+      name: row.itemName,
+      itemName: row.itemName,
+      type: isBundle ? 'bundle' : (opt.dataset.type || 'single'),
+      hasSerial: optHasSerial
+    });
+    if (!row.hasSerial && !isBundle) {
+      row.serials = [];
+      row.bodySerials = [];
+      row.batSerials = [];
+      row.chgSerials = [];
+    }
+    console.log('【ロット品目変更】シリアル要否再判定:', { rowId, itemId: row.itemId, itemName: row.itemName, optHasSerial, hasSerial: row.hasSerial, isBundle });
     const cost = Number(opt.dataset.unitCost) || 0;
     if (cost > 0 && !row.foreignPrice && !row.foreignSubtotal) {
       row.unitPrice = cost;
@@ -27837,7 +27907,18 @@ function syncLotItemRowsFromDOM() {
       if (opt) {
         r.itemName = opt.dataset.name || opt.text.split('[')[0].trim();
         r.isBundle = opt.dataset.isBundle === '1' || opt.value === 'inv_1' || (r.itemName && r.itemName.includes('ベーシックセット'));
-        r.hasSerial = opt.dataset.hasSerial === '1' || isItemSerialTracked(r);
+        const optHasSerial = opt.dataset.hasSerial === '1';
+        r.hasSerial = optHasSerial || isItemSerialTracked({
+          id: r.itemId,
+          itemId: r.itemId,
+          name: r.itemName,
+          itemName: r.itemName,
+          type: r.isBundle ? 'bundle' : (opt.dataset.type || 'single'),
+          hasSerial: optHasSerial
+        });
+        if (!r.hasSerial && !r.isBundle) {
+          r.serials = [];
+        }
       }
     }
 
