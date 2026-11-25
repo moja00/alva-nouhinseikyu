@@ -23,7 +23,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
 
-  <link rel="stylesheet" href="css/style.css?v=20261124_mobile_sheet_zoom_btn">
+  <link rel="stylesheet" href="css/style.css?v=20261125_sidebar_scroll_fix">
   <link rel="stylesheet" href="css/print.css?v=20261118_print_pagebreak_fix" media="print">
   <!-- ブラウザ内AI文字認識（OCR）エンジン -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -343,7 +343,7 @@
           style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
           <span
-            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.25-export-packing-detail-marks</span>
+            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.25-sidebar-scroll-fix</span>
         </div>
       </div>
 
@@ -439,9 +439,13 @@
           <!-- 海外輸出（English）モード専用：通貨・Incoterms・輸送経路・出荷元・梱包・英語銀行情報パネル -->
           <div id="exportSettingsPanel"
             style="display: none; flex-direction: column; gap: 7px; padding-top: 6px; border-top: 1px dashed #93c5fd;">
-            <div style="font-size: 0.7rem; font-weight: 800; color: #0369a1;">
-              ✈️ 海外輸出ドキュメント設定（Commercial Invoice / Packing List / Receipt）
-            </div>
+            <button type="button" id="btnToggleExportSettingsBody"
+              onclick="(function(btn){var b=document.getElementById('exportSettingsBody');if(!b)return;var open=b.style.display!=='none';b.style.display=open?'none':'flex';var ic=btn.querySelector('.exp-toggle-icon');if(ic)ic.textContent=open?'▶ 開く':'▼ 畳む';})(this)"
+              style="display: flex; align-items: center; justify-content: space-between; width: 100%; background: #e0f2fe; border: 1px solid #bae6fd; border-radius: 6px; padding: 5px 8px; font-size: 0.72rem; font-weight: 800; color: #0369a1; cursor: pointer; text-align: left;">
+              <span>✈️ 海外輸出ドキュメント設定（Invoice / Packing List / Receipt）</span>
+              <span class="exp-toggle-icon" style="font-size: 0.68rem; background: #ffffff; padding: 1px 6px; border-radius: 4px; border: 1px solid #93c5fd;">▼ 畳む</span>
+            </button>
+            <div id="exportSettingsBody" style="display: flex; flex-direction: column; gap: 7px;">
             <div style="display: grid; grid-template-columns: 0.9fr 1.1fr; gap: 6px;">
               <div>
                 <label style="font-size: 0.68rem; font-weight: 700; color: #334155; display: block;">通貨 (Currency)</label>
@@ -581,6 +585,7 @@
               <textarea id="expBankInfoEn" class="form-input" rows="2"
                 placeholder="Bank Name, Branch, SWIFT/BIC, Account No., Beneficiary Name..."
                 style="font-size: 0.74rem; line-height: 1.4; padding: 4px 6px;"></textarea>
+            </div>
             </div>
           </div>
         </div>
@@ -5854,7 +5859,7 @@
           <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             <h2 class="view-screen-title" style="margin: 0;">勤怠管理・退勤タイムカード</h2>
             <span
-              style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.25-export-packing-detail-marks</span>
+              style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.25-sidebar-scroll-fix</span>
           </div>
           <span class="view-screen-subtitle">休憩1時間自動控除・ワンタップ出退勤打刻・月次出勤簿・打刻漏れ修正</span>
         </div>
@@ -7968,7 +7973,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261125_export_packing_detail_marks"></script>
+  <script src="js/app.bundle.js?v=20261125_sidebar_scroll_fix"></script>
 </body>
 
 </html>
