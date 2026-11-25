@@ -762,7 +762,7 @@ function renderBusinessAnalyticsView(period = null) {
                       <span style="font-size:0.63rem; color:#059669; width:24px; font-weight:700;">粗利</span>
                       <div style="flex:1; height:8px; background:#e2e8f0; border-radius:4px; overflow:hidden; display:flex;">
                         <div style="width:${gpBarW}%; height:100%; background:#10b981;"></div>
-                        ${salesExtW > 0 ? `<div style="width:${salesExtW}%; height:100%; background:#a7f3d0;"></div>` : ''}
+                        ${salesExtW > 0 ? `<div style="width:${salesExtW}%; height:100%; background:#93c5fd;"></div>` : ''}
                       </div>
                     </div>
                     <div style="display:flex; align-items:center; gap:4px;" title="地域経費合計: ${fmtYenAnalytics(g.totalExpense)}">
@@ -847,9 +847,9 @@ function renderBusinessAnalyticsView(period = null) {
             <div style="font-size:0.7rem; color:#059669; font-weight:700;">粗利率 ${fmtPctAnalytics(data.kpi.grossMarginPct)}</div>
           </div>
           <div style="background:#ffffff; border:1px solid #e2e8f0; border-left:4px solid #f59e0b; border-radius:8px; padding:12px;">
-            <div style="font-size:0.72rem; color:#64748b; font-weight:700;">地域経費 合計（全経費）</div>
+            <div style="font-size:0.72rem; color:#64748b; font-weight:700;">デモ・地域営業経費 合計</div>
             <div style="font-size:1.25rem; font-weight:800; color:#b45309; font-family:monospace; margin-top:2px;">${fmtYenAnalytics(data.kpi.totalTravelDemoExpense)}</div>
-            <div style="font-size:0.7rem; color:#64748b;">デモ遠征 ${data.kpi.demoSessionCount}回検出 / 全 ${data.kpi.travelDemoExpenseCount}件</div>
+            <div style="font-size:0.7rem; color:#64748b;">デモ遠征 ${data.kpi.demoSessionCount}回検出 / 対象 ${data.kpi.travelDemoExpenseCount}件</div>
           </div>
           <div style="background:#ffffff; border:1px solid #e2e8f0; border-left:4px solid #7c3aed; border-radius:8px; padding:12px;">
             <div style="font-size:0.72rem; color:#64748b; font-weight:700;">経費差引 貢献益</div>

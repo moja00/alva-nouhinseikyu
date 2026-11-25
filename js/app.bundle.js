@@ -13603,17 +13603,42 @@ function isTravelDemoExpenseCategory(category) {
 }
 
 /**
- * 遠征デモ出張の現地・移動経費ではなく、本社固定インフラ／配送等の共通事務費かを判定
- * （※経費合計からは除外せず全件計上するが、遠征先のデモ出張セッションへ誤吸収されないよう保護する）
+ * 明らかにデモ・営業活動に関係ないオフィス事務・通信・宅配・書籍・工具備品等の経費かを汎用判定
  */
 function isFixedOfficeOverhead(expense) {
   if (!expense) return false;
   const cat = String(expense.category || '').trim();
   const text = `${expense.payee || ''} ${expense.note || ''}`;
-  if (/NTTファイナンス|お名前\.com|レンタルサーバー|ドメイン|電話料金|通信費支払|レターパック|切手|ヤマト運輸|宅配便|書籍|プリンター|リングファイル|ステッカー台紙/i.test(text)) {
+  // 明らかにデモ無関係な事務・通信・配送・書籍・工具資材
+  if (/NTTファイナンス|お名前\.com|レンタルサーバー|ドメイン|電話料金|通信費支払|レターパック|切手|ヤマト運輸|宅配便|書籍|プリンター|インク|リングファイル|ステッカー台紙|パーツクリーナー|グリース|紙やすり|カーエアコン|郵便局|蔦屋書店|Seria|ベイシア電器|アストロプロダクツ|セキチュー|CAINZ|カインズ/i.test(text)) {
     return true;
   }
-  if (/通信費|新聞図書費|地代家賃|水道光熱費|荷造運賃|租税公課|保険料/.test(cat)) {
+  if (/通信費|新聞図書費|地代家賃|水道光熱費|荷造運賃|租税公課|保険料|雑費/.test(cat)) {
+    return true;
+  }
+  // 消耗品費のうち、食事・飲食・宿泊・交通（高速/航空/電車/PA/SA）以外はオフィス・作業資材とみなして除外
+  if (cat.includes('消耗品')) {
+    const isTripMealOrTransit = /食事|飲食|弁当|ホテル|宿泊|高速|通行料|ETC|航空|飛行機|新幹線|鉄道|電車|タクシー|駐車|パーキングエリア|サービスエリア|PA|SA/i.test(text);
+    if (!isTripMealOrTransit) return true;
+  }
+  return false;
+}
+
+/**
+ * 本社本拠地（homePrefecture）内での「明らかにデモ無関係な日常小口費」かを汎用判定
+ * （※遠征デモ出張セッション期間中、または県外移動日の経費、および同行・会食・商談・高速・給油は除外しない）
+ */
+function isHomeDailyNonDemoExpense(expense, homePrefecture = '') {
+  if (!expense || !homePrefecture) return false;
+  if (expense.demoSessionId) return false; // 遠征デモ出張に紐づく往復移動等は除外しない
+  if (expense.prefecture !== homePrefecture) return false; // 本拠地以外の地域はすべて対象
+  const text = `${expense.payee || ''} ${expense.note || ''}`;
+  // 明確にデモ・営業活動（同行・会食・商談・接待・デモ・高速道路・宿泊・航空・新幹線）なら残す
+  if (/同行|会食|商談|接待|デモ|手土産|NEXCO|高速|通行|ETC|ホテル|宿泊|航空|飛行機|新幹線/i.test(text)) {
+    return false;
+  }
+  // 本拠地内での洗車・郵便局駐車・日常コンビニ/ファストフード/カフェ/ファミレス/単独食事はデモ無関係とみなして除外
+  if (/洗車|郵便局|セブン|LAWSON|ローソン|FamilyMart|ファミリーマート|ミニストップ|MINISTOP|マクドナルド|ガスト|魚べい|cafe|カフェ|ラーメン|らーめん|さば寅|食堂|飲食|食事|コーヒー|飲料/i.test(text)) {
     return true;
   }
   return false;
@@ -14805,23 +14830,24 @@ function buildBusinessAnalytics({
   }
 
   // ------------------------------------------------------------------------
-  // (B) 全経費の正規化 ＆ 地域・移動費（領収書内容・デモ集中期間）自動帰属
+  // (B) 経費の正規化 ＆ 地域・移動費（領収書内容・デモ集中期間）自動帰属
+  //     ※明らかにデモに関係ないオフィス事務・通信・宅配・書籍・工具・本拠地日常小口費は除外
   // ------------------------------------------------------------------------
   const rawRelevantExpenses = [];
   safeExpenses.forEach(e => {
     if (!e) return;
+    if (isFixedOfficeOverhead(e)) return;
     const dt = String(e.date || '').slice(0, 10);
     const amount = Number(e.amount) || 0;
     if (amount === 0) return;
     const geo = resolveExpenseGeoWithHome(e, homePrefecture);
-    const fixedOverhead = isFixedOfficeOverhead(e);
     rawRelevantExpenses.push({
       id: e.id || '',
       source: 'expense',
       date: dt,
       category: String(e.category || 'その他'),
-      role: fixedOverhead ? 'other' : classifyExpenseRole(e),
-      isFixedOverhead: fixedOverhead,
+      role: classifyExpenseRole(e),
+      isFixedOverhead: false,
       payee: String(e.payee || '').trim() || '未設定',
       note: String(e.note || '').trim(),
       claimant: String(e.claimant || '').trim(),
@@ -14864,8 +14890,9 @@ function buildBusinessAnalytics({
   });
 
   // 全期間ベースでデモ出張セッションを検出し、往路・現地・復路の移動/高速/航空/電車/宿泊/飲食を目的地地域へ帰属
+  // ※本拠地（本社所在県）内の明らかにデモ無関係な日常小口費（洗車・通常コンビニ軽食等）は除外
   const demoSessionResult = buildDemoTripSessions(rawRelevantExpenses, homePrefecture, homeRegion);
-  const allTravelExpenses = demoSessionResult.attributedExpenses;
+  const allTravelExpenses = demoSessionResult.attributedExpenses.filter(e => !isHomeDailyNonDemoExpense(e, homePrefecture));
   const allDemoSessions = demoSessionResult.sessions;
 
   const scopedTravelExpenses = allTravelExpenses.filter(e => {
@@ -41383,7 +41410,7 @@ function renderBusinessAnalyticsView(period = null) {
                       <span style="font-size:0.63rem; color:#059669; width:24px; font-weight:700;">粗利</span>
                       <div style="flex:1; height:8px; background:#e2e8f0; border-radius:4px; overflow:hidden; display:flex;">
                         <div style="width:${gpBarW}%; height:100%; background:#10b981;"></div>
-                        ${salesExtW > 0 ? `<div style="width:${salesExtW}%; height:100%; background:#a7f3d0;"></div>` : ''}
+                        ${salesExtW > 0 ? `<div style="width:${salesExtW}%; height:100%; background:#93c5fd;"></div>` : ''}
                       </div>
                     </div>
                     <div style="display:flex; align-items:center; gap:4px;" title="地域経費合計: ${fmtYenAnalytics(g.totalExpense)}">
@@ -41468,9 +41495,9 @@ function renderBusinessAnalyticsView(period = null) {
             <div style="font-size:0.7rem; color:#059669; font-weight:700;">粗利率 ${fmtPctAnalytics(data.kpi.grossMarginPct)}</div>
           </div>
           <div style="background:#ffffff; border:1px solid #e2e8f0; border-left:4px solid #f59e0b; border-radius:8px; padding:12px;">
-            <div style="font-size:0.72rem; color:#64748b; font-weight:700;">地域経費 合計（全経費）</div>
+            <div style="font-size:0.72rem; color:#64748b; font-weight:700;">デモ・地域営業経費 合計</div>
             <div style="font-size:1.25rem; font-weight:800; color:#b45309; font-family:monospace; margin-top:2px;">${fmtYenAnalytics(data.kpi.totalTravelDemoExpense)}</div>
-            <div style="font-size:0.7rem; color:#64748b;">デモ遠征 ${data.kpi.demoSessionCount}回検出 / 全 ${data.kpi.travelDemoExpenseCount}件</div>
+            <div style="font-size:0.7rem; color:#64748b;">デモ遠征 ${data.kpi.demoSessionCount}回検出 / 対象 ${data.kpi.travelDemoExpenseCount}件</div>
           </div>
           <div style="background:#ffffff; border:1px solid #e2e8f0; border-left:4px solid #7c3aed; border-radius:8px; padding:12px;">
             <div style="font-size:0.72rem; color:#64748b; font-weight:700;">経費差引 貢献益</div>
