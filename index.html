@@ -343,7 +343,7 @@
           style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
           <span
-            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.24-po-vendor-master-only</span>
+            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.25-export-english-3sheet-pdf</span>
         </div>
       </div>
 
@@ -415,6 +415,95 @@
             <span style="font-weight: 800; font-size: 0.95rem;">📋 見積書</span>
             <span style="font-size: 0.72rem; opacity: 0.85; font-weight: 600;">（御見積書 単票）</span>
           </button>
+        </div>
+
+        <!-- 帳票言語切替スイッチ（国内：日本語 ⇔ 海外輸出：English 3点セット） -->
+        <div id="docLanguageBar"
+          style="margin-top: 8px; padding: 7px 10px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; display: flex; flex-direction: column; gap: 6px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
+            <span style="font-size: 0.72rem; font-weight: 700; color: #334155;">🌐 帳票言語:</span>
+            <div style="display: inline-flex; gap: 4px; flex: 1; justify-content: flex-end;">
+              <button type="button" id="btnDocLangJa" data-doc-lang="ja"
+                onclick="window.setDocLanguage &amp;&amp; window.setDocLanguage('ja')"
+                style="padding: 4px 10px; font-size: 0.73rem; font-weight: 700; border-radius: 6px; border: 1.5px solid #2563eb; background: #eff6ff; color: #1d4ed8; cursor: pointer;">
+                🇯🇵 日本語（国内）
+              </button>
+              <button type="button" id="btnDocLangEn" data-doc-lang="en"
+                onclick="window.setDocLanguage &amp;&amp; window.setDocLanguage('en')"
+                style="padding: 4px 10px; font-size: 0.73rem; font-weight: 700; border-radius: 6px; border: 1px solid #cbd5e1; background: #ffffff; color: #475569; cursor: pointer;">
+                🌐 English（海外輸出）
+              </button>
+            </div>
+          </div>
+
+          <!-- 海外輸出（English）モード専用：通貨・Incoterms・梱包・英語銀行情報パネル -->
+          <div id="exportSettingsPanel"
+            style="display: none; flex-direction: column; gap: 7px; padding-top: 6px; border-top: 1px dashed #93c5fd;">
+            <div style="font-size: 0.7rem; font-weight: 800; color: #0369a1;">
+              ✈️ 海外輸出ドキュメント設定（Commercial Invoice / Packing List / Receipt）
+            </div>
+            <div style="display: grid; grid-template-columns: 0.9fr 1.1fr; gap: 6px;">
+              <div>
+                <label style="font-size: 0.68rem; font-weight: 700; color: #334155; display: block;">通貨 (Currency)</label>
+                <select id="expCurrency" class="form-select" style="font-size: 0.78rem; font-weight: 700; padding: 3px 6px;">
+                  <option value="USD">USD ($)</option>
+                  <option value="EUR">EUR (€)</option>
+                  <option value="JPY" selected>JPY (¥)</option>
+                  <option value="GBP">GBP (£)</option>
+                  <option value="CNY">CNY (¥)</option>
+                </select>
+              </div>
+              <div>
+                <label style="font-size: 0.68rem; font-weight: 700; color: #334155; display: block;">円換算レート (会計用・任意)</label>
+                <input type="text" inputmode="decimal" id="expExchangeRate" class="form-input" placeholder="例: 155.00"
+                  style="font-size: 0.78rem; font-family: monospace; padding: 3px 6px;">
+              </div>
+            </div>
+            <div id="expJpyEquivHint" style="display: none; font-size: 0.7rem; font-weight: 700; color: #047857; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 4px; padding: 2px 6px;"></div>
+
+            <div style="display: grid; grid-template-columns: 0.8fr 1.2fr; gap: 6px;">
+              <div>
+                <label style="font-size: 0.68rem; font-weight: 700; color: #334155; display: block;">Incoterms</label>
+                <select id="expIncoterm" class="form-select" style="font-size: 0.78rem; font-weight: 700; padding: 3px 6px;">
+                  <option value="EXW">EXW</option>
+                  <option value="FOB" selected>FOB</option>
+                  <option value="CIF">CIF</option>
+                  <option value="DDP">DDP</option>
+                  <option value="FCA">FCA</option>
+                  <option value="DAP">DAP</option>
+                </select>
+              </div>
+              <div>
+                <label style="font-size: 0.68rem; font-weight: 700; color: #334155; display: block;">港・都市 (Port / City)</label>
+                <input type="text" id="expIncotermPlace" class="form-input" placeholder="例: Tokyo, Japan"
+                  style="font-size: 0.78rem; padding: 3px 6px;">
+              </div>
+            </div>
+
+            <div>
+              <label style="font-size: 0.68rem; font-weight: 700; color: #334155; display: block;">支払条件 (Payment Terms)</label>
+              <input type="text" id="expPaymentTerms" class="form-input" placeholder="例: 100% T/T in advance / Net 30 Days"
+                style="font-size: 0.78rem; padding: 3px 6px;">
+            </div>
+
+            <!-- 梱包情報（Packing List用・任意） -->
+            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 8px;">
+              <div style="font-size: 0.68rem; font-weight: 800; color: #475569; margin-bottom: 4px;">📦 Packing List 梱包情報（任意）</div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
+                <input type="text" id="expCartons" class="form-input" placeholder="梱包数 (例: 2 Cartons)" style="font-size: 0.75rem; padding: 3px 6px;">
+                <input type="text" id="expDimensions" class="form-input" placeholder="サイズ (例: 60x45x40cm)" style="font-size: 0.75rem; padding: 3px 6px;">
+                <input type="text" inputmode="decimal" id="expNetWeight" class="form-input" placeholder="Net Weight (kg)" style="font-size: 0.75rem; padding: 3px 6px; font-family: monospace;">
+                <input type="text" inputmode="decimal" id="expGrossWeight" class="form-input" placeholder="Gross Weight (kg)" style="font-size: 0.75rem; padding: 3px 6px; font-family: monospace;">
+              </div>
+            </div>
+
+            <div>
+              <label style="font-size: 0.68rem; font-weight: 700; color: #334155; display: block;">英語銀行情報 (Bank Information / SWIFT)</label>
+              <textarea id="expBankInfoEn" class="form-input" rows="2"
+                placeholder="Bank Name, Branch, SWIFT/BIC, Account No., Beneficiary Name..."
+                style="font-size: 0.74rem; line-height: 1.4; padding: 4px 6px;"></textarea>
+            </div>
+          </div>
         </div>
 
         <!-- 確定発行中ステータス ＆ 確定取消バー（左側入力パネル用） -->
@@ -980,6 +1069,9 @@
 
         <!-- 納品書（ページ2） ＆ 領収証（ページ3）動的出力コンテナ（納品請求書モード時に自動生成） -->
         <div id="subSheetsContainer"></div>
+
+        <!-- 🌐 海外輸出（English）3点セット（Commercial Invoice / Packing List / Receipt）動的出力コンテナ -->
+        <div id="englishDocSheetsContainer"></div>
       </div>
 
     </section>
@@ -5655,7 +5747,7 @@
           <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             <h2 class="view-screen-title" style="margin: 0;">勤怠管理・退勤タイムカード</h2>
             <span
-              style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.24-po-vendor-master-only</span>
+              style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.25-export-english-3sheet-pdf</span>
           </div>
           <span class="view-screen-subtitle">休憩1時間自動控除・ワンタップ出退勤打刻・月次出勤簿・打刻漏れ修正</span>
         </div>
@@ -7976,7 +8068,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261124_po_vendor_master_only"></script>
+  <script src="js/app.bundle.js?v=20261125_export_english_3sheet_pdf"></script>
 </body>
 
 </html>

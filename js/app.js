@@ -1530,6 +1530,9 @@ setInterval(() => {
 // フォームへのデータ設定
 // ==========================================================================
 function populateFormFromDoc() {
+  if (typeof syncExportSettingsFormFromDoc === 'function') {
+    syncExportSettingsFormFromDoc();
+  }
   // ⚠️ ユーザーが編集・削除した内容を勝手に上書き復元させないため、syncEndUsersToDocItems は呼ばない
 
   // 書類種別ボタングループの選択状態（納品請求書 vs 見積書）
@@ -1598,11 +1601,43 @@ function updateItemCountBadge() {
 // ==========================================================================
 function renderDeliveryAndReceiptSubSheets(totals, displayUsers, endUserNamePart) {
   const container = document.getElementById('subSheetsContainer');
+  const enContainer = document.getElementById('englishDocSheetsContainer');
+  const invoiceSheetEl = document.getElementById('invoiceSheet');
+  const pageInd1Wrap = document.getElementById('sheetPageIndicator1');
   if (!container) return;
 
   const pageInd1 = document.getElementById('sheetPageIndicator1Text');
   const mobilePageGroup = document.getElementById('mobileSheetPageGroup');
   const previewWrapper = document.getElementById('previewWrapper');
+
+  const isEnMode = currentDoc && currentDoc.docLanguage === 'en';
+  if (previewWrapper) {
+    previewWrapper.setAttribute('data-doc-lang', isEnMode ? 'en' : 'ja');
+  }
+
+  // 🌐 海外販売（English）モード時は専用3点セット（Commercial Invoice / Packing List / Receipt）を一括生成
+  if (isEnMode) {
+    if (invoiceSheetEl) invoiceSheetEl.style.display = 'none';
+    if (pageInd1Wrap) pageInd1Wrap.style.display = 'none';
+    container.innerHTML = '';
+    if (enContainer && typeof renderEnglishExportSheets === 'function') {
+      renderEnglishExportSheets(totals, enContainer);
+    }
+    return;
+  }
+
+  // 🇯🇵 日本語モード復帰時は通常表示へ戻す
+  if (invoiceSheetEl) invoiceSheetEl.style.display = '';
+  if (pageInd1Wrap) pageInd1Wrap.style.display = '';
+  if (enContainer) enContainer.innerHTML = '';
+
+  // モバイルタブのラベルを日本語に戻す
+  if (mobilePageGroup) {
+    const btns = mobilePageGroup.querySelectorAll('.mobile-sheet-tab-btn');
+    if (btns[0]) btns[0].textContent = '📄 請求書';
+    if (btns[1]) btns[1].textContent = '📦 納品書';
+    if (btns[2]) btns[2].textContent = '🧾 領収書';
+  }
 
   // 見積書の場合は納品書・領収書は生成せず、単票表示にする（拡大ボタンは見積書でも利用可能）
   if (currentDoc.docType === 'estimate') {
@@ -2209,6 +2244,529 @@ function renderAll(options = {}) {
   }
 }
 
+// ==========================================================================
+// 🌐 海外販売（English）3点セット一括レンダラー ＆ 言語切替制御
+// Page 1: COMMERCIAL INVOICE / Page 2: PACKING LIST / Page 3: RECEIPT
+// ==========================================================================
+
+function ensureExportMeta(doc) {
+  if (!doc) return {};
+  if (!doc.exportMeta || typeof doc.exportMeta !== 'object') {
+    const savedBankEn = (typeof localStorage !== 'undefined' && localStorage.getItem('alva_export_bank_info_en')) || '';
+    doc.exportMeta = {
+      currency: 'USD',
+      exchangeRate: '',
+      incoterm: 'FOB',
+      incotermPlace: '',
+      paymentTerms: '100% T/T in advance',
+      cartons: '',
+      netWeight: '',
+      grossWeight: '',
+      dimensions: '',
+      bankInfoEn: savedBankEn
+    };
+  }
+  return doc.exportMeta;
+}
+
+function syncExportSettingsFormFromDoc() {
+  if (!currentDoc) return;
+  const lang = currentDoc.docLanguage === 'en' ? 'en' : 'ja';
+  const btnJa = document.getElementById('btnDocLangJa');
+  const btnEn = document.getElementById('btnDocLangEn');
+  const panel = document.getElementById('exportSettingsPanel');
+
+  if (btnJa && btnEn) {
+    if (lang === 'en') {
+      btnJa.style.border = '1px solid #cbd5e1'; btnJa.style.background = '#ffffff'; btnJa.style.color = '#475569';
+      btnEn.style.border = '1.5px solid #0284c7'; btnEn.style.background = '#e0f2fe'; btnEn.style.color = '#0369a1';
+    } else {
+      btnJa.style.border = '1.5px solid #2563eb'; btnJa.style.background = '#eff6ff'; btnJa.style.color = '#1d4ed8';
+      btnEn.style.border = '1px solid #cbd5e1'; btnEn.style.background = '#ffffff'; btnEn.style.color = '#475569';
+    }
+  }
+  if (panel) panel.style.display = (lang === 'en') ? 'flex' : 'none';
+
+  const meta = ensureExportMeta(currentDoc);
+  const setVal = (id, val) => { const el = document.getElementById(id); if (el && el.value !== String(val ?? '')) el.value = String(val ?? ''); };
+  setVal('expCurrency', meta.currency || 'USD');
+  setVal('expExchangeRate', meta.exchangeRate || '');
+  setVal('expIncoterm', meta.incoterm || 'FOB');
+  setVal('expIncotermPlace', meta.incotermPlace || '');
+  setVal('expPaymentTerms', meta.paymentTerms || '');
+  setVal('expCartons', meta.cartons || '');
+  setVal('expNetWeight', meta.netWeight || '');
+  setVal('expGrossWeight', meta.grossWeight || '');
+  setVal('expDimensions', meta.dimensions || '');
+  setVal('expBankInfoEn', meta.bankInfoEn || '');
+
+  // 円換算ヒント更新
+  const hintEl = document.getElementById('expJpyEquivHint');
+  if (hintEl) {
+    const rate = Number(meta.exchangeRate) || 0;
+    const curr = meta.currency || 'USD';
+    if (lang === 'en' && curr !== 'JPY' && rate > 0) {
+      const foreignSub = (currentDoc.items || []).reduce((s, it) => s + ((Number(it.quantity) || 0) * (Number(it.unitPrice) || 0)), 0);
+      const jpyEquiv = Math.round(foreignSub * rate);
+      hintEl.textContent = `💱 社内会計参考 円換算: ¥${jpyEquiv.toLocaleString('ja-JP')} (${curr} ${formatPoMoney(foreignSub, curr)} × @${rate})`;
+      hintEl.style.display = 'block';
+    } else {
+      hintEl.style.display = 'none';
+    }
+  }
+}
+
+window.setDocLanguage = function (lang = 'ja') {
+  if (!currentDoc) return;
+  const targetLang = (lang === 'en') ? 'en' : 'ja';
+  console.log('【帳票言語切替】実行開始', { from: currentDoc.docLanguage || 'ja', to: targetLang });
+  currentDoc.docLanguage = targetLang;
+  const meta = ensureExportMeta(currentDoc);
+
+  if (targetLang === 'en') {
+    // 海外モード選択時：デフォルト税率を 0%（輸出免税）に設定し、マスタに英語表記があれば自動引用
+    const itemMasters = typeof getItemMasterList === 'function' ? getItemMasterList(false) : [];
+    (currentDoc.items || []).forEach(it => {
+      it.taxRate = 0;
+      const m = itemMasters.find(x => x && (
+        (it.itemId && x.id === it.itemId) ||
+        (it.productId && x.id === it.productId) ||
+        (it.sku && x.sku && String(x.sku).toUpperCase() === String(it.sku).toUpperCase()) ||
+        (x.name && it.name && String(x.name).trim() === String(it.name).trim())
+      ));
+      if (m) {
+        if (m.nameEn && !it.nameEn) it.nameEn = m.nameEn;
+        if (m.unitEn && !it.unitEn) it.unitEn = m.unitEn;
+      }
+    });
+    if (typeof renderItemInputCards === 'function') renderItemInputCards();
+  }
+
+  syncExportSettingsFormFromDoc();
+  renderAll();
+  showToast(targetLang === 'en'
+    ? '🌐 海外輸出モード（English: Commercial Invoice / Packing List / Receipt）に切り替えました（デフォルト税率0%）'
+    : '🇯🇵 国内モード（日本語: 請求書・納品書・領収書）に切り替えました', 'info');
+};
+
+function buildEnglishExportDocumentsHtml(doc, totals) {
+  const isEstimate = doc.docType === 'estimate';
+  const meta = ensureExportMeta(doc);
+  const currency = meta.currency || 'USD';
+  const isJpy = currency === 'JPY';
+  const docNo = doc.docNumber || '';
+  const issueDateEn = formatPoDateEN(doc.issueDate);
+  const dueDateEn = formatPoDateEN(doc.dueDate);
+
+  // 取引先マスタから英語社名・英語住所を優先解決
+  const clients = typeof getClientMasterList === 'function' ? getClientMasterList() : [];
+  const matchedClient = clients.find(c => c && (
+    (doc.client?.id && c.id === doc.client.id) ||
+    (c.name && doc.client?.name && c.name.trim() === doc.client.name.trim())
+  ));
+  const billToName = (matchedClient && matchedClient.nameEn) || doc.client?.name || 'Customer Name';
+  const billToAddr = (matchedClient && (matchedClient.addressEn || matchedClient.address)) || doc.client?.address || '';
+  const billToZip = (matchedClient && matchedClient.zip) || doc.client?.zip || '';
+  const billToContact = (matchedClient && matchedClient.contactPerson) || doc.client?.contactPerson || '';
+  const billToTel = (matchedClient && matchedClient.tel) || doc.client?.tel || '';
+
+  // 自社情報（英語表記）
+  const masterIssuer = typeof loadIssuerProfile === 'function' ? (loadIssuerProfile() || {}) : {};
+  const companyJP = doc.issuer?.name || masterIssuer.companyName || '株式会社アルバワークス';
+  const companyEN = masterIssuer.companyNameEn || 'ALVA WORKS CORP.';
+  const addressEN = masterIssuer.addressEn || '63-7 Shimokawa-machi, Maebashi, Gunma 379-2144, Japan';
+  const telRaw = doc.issuer?.tel || masterIssuer.tel || '027-289-0367';
+  const faxRaw = doc.issuer?.fax || masterIssuer.fax || '027-289-0368';
+  const telEN = telRaw.startsWith('0') ? '+81-' + telRaw.slice(1) : telRaw;
+  const faxEN = faxRaw.startsWith('0') ? '+81-' + faxRaw.slice(1) : faxRaw;
+  const emailEN = doc.issuer?.email || masterIssuer.email || '';
+
+  const showStamp = doc.issuer?.showStamp !== false;
+  const stampSrc = doc.issuer?.stampDataUrl || masterIssuer.stampDataUrl || '';
+  const stampHtml = (showStamp && stampSrc)
+    ? `<img src="${stampSrc}" alt="Stamp" style="position: absolute; right: 6px; top: 4px; width: 52px; height: 52px; opacity: 0.75; pointer-events: none;">`
+    : '';
+
+  const tradeTermsText = [meta.incoterm || '', meta.incotermPlace || ''].map(s => String(s).trim()).filter(Boolean).join(' ') || 'To be agreed';
+  const paymentTermsText = (meta.paymentTerms || '').trim() || '100% T/T in advance';
+  const bankInfoText = (meta.bankInfoEn || '').trim() || (masterIssuer.bankInfoEn || '').trim() || (doc.issuer?.bankInfo || '').trim();
+
+  // 明細計算（外貨時は小数2桁対応）
+  const items = Array.isArray(doc.items) ? doc.items : [];
+  let subtotal = 0;
+  let taxTotal = 0;
+  let totalQty = 0;
+  const itemMasters = typeof getItemMasterList === 'function' ? getItemMasterList(false) : [];
+
+  const normalizedItems = items.map((it, idx) => {
+    const qty = Number(it.quantity) || 0;
+    const price = Number(it.unitPrice) || 0;
+    const rate = Number(it.taxRate) || 0;
+    const lineAmt = isJpy ? Math.round(qty * price) : Math.round(qty * price * 100) / 100;
+    const lineTax = rate > 0 ? (isJpy ? Math.floor(lineAmt * rate / 100) : Math.round(lineAmt * rate) / 100) : 0;
+    subtotal += lineAmt;
+    taxTotal += lineTax;
+    totalQty += qty;
+
+    const m = itemMasters.find(x => x && (
+      (it.itemId && x.id === it.itemId) ||
+      (it.productId && x.id === it.productId) ||
+      (it.sku && x.sku && String(x.sku).toUpperCase() === String(it.sku).toUpperCase())
+    ));
+    const descEn = (it.nameEn && it.nameEn.trim()) || (m && m.nameEn) || (it.name || '');
+    const unitEn = resolvePoUnitEn(it.unit, it.unitEn || (m && m.unitEn));
+    const skuDisp = it.sku || (m && m.sku) || String(idx + 1);
+    const snDisp = (it.serialNumber || (Array.isArray(it.assignedSerials) ? it.assignedSerials.map(s => s.serialNumber).join(', ') : '') || '').trim();
+    return {
+      sku: skuDisp,
+      description: descEn,
+      qty,
+      unitEn,
+      unitPrice: price,
+      amount: lineAmt,
+      sn: snDisp,
+      note: (it.note || '').trim()
+    };
+  });
+
+  if (!isJpy) {
+    subtotal = Math.round(subtotal * 100) / 100;
+    taxTotal = Math.round(taxTotal * 100) / 100;
+  }
+  const grandTotal = isJpy ? (subtotal + taxTotal) : Math.round((subtotal + taxTotal) * 100) / 100;
+
+  const totalPages = isEstimate ? 1 : 3;
+  const page1Title = isEstimate ? 'QUOTATION' : 'COMMERCIAL INVOICE';
+
+  // 共通ヘッダー・宛先ブロックビルダー
+  const buildEnHeaderAndParties = (docTitle, rightMetaRowsHtml) => `
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #233b6c; padding-bottom: 10px; margin-bottom: 14px;">
+      <div>${typeof getPoAlvaLogoSvg === 'function' ? getPoAlvaLogoSvg() : `<div style="font-size:18px; font-weight:800; color:#233b6c;">${escapeHtml(companyEN)}</div>`}</div>
+      <div style="text-align: right;">
+        <div style="font-size: 21px; font-weight: 800; color: #233b6c; letter-spacing: 1.2px; line-height: 1.1; margin-bottom: 6px;">${docTitle}</div>
+        <table style="border-collapse: collapse; font-size: 10.5px; margin-left: auto;">
+          ${rightMetaRowsHtml}
+        </table>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px;">
+      <div style="border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden;">
+        <div style="background: #233b6c; color: #ffffff; font-size: 10px; font-weight: 700; letter-spacing: 0.7px; padding: 4px 10px;">BILL TO / CONSIGNEE</div>
+        <div style="padding: 8px 10px; font-size: 11px; line-height: 1.55;">
+          <div style="font-size: 13px; font-weight: 800; color: #0f172a; margin-bottom: 3px;">${escapeHtml(billToName)}</div>
+          ${billToAddr ? `<div style="color: #334155;">${escapeHtml(billToAddr)}${billToZip && !billToAddr.includes(billToZip) ? ` ${escapeHtml(billToZip)}` : ''}</div>` : ''}
+          ${billToContact ? `<div style="color: #334155; margin-top: 2px;"><strong>Attn:</strong> ${escapeHtml(billToContact)}</div>` : ''}
+          ${billToTel ? `<div style="color: #475569; font-family: monospace;">TEL: ${escapeHtml(billToTel)}</div>` : ''}
+        </div>
+      </div>
+
+      <div style="border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden; position: relative;">
+        <div style="background: #334155; color: #ffffff; font-size: 10px; font-weight: 700; letter-spacing: 0.7px; padding: 4px 10px;">SHIPPER / EXPORTER</div>
+        <div style="padding: 8px 10px; font-size: 11px; line-height: 1.55; position: relative;">
+          ${stampHtml}
+          <div style="font-size: 13px; font-weight: 800; color: #0f172a; margin-bottom: 3px;">${escapeHtml(companyEN)}</div>
+          <div style="color: #334155;">${escapeHtml(addressEN)}</div>
+          <div style="color: #475569; font-family: monospace; margin-top: 2px;">TEL: ${escapeHtml(telEN)} / FAX: ${escapeHtml(faxEN)}</div>
+          ${emailEN ? `<div style="color: #475569;">Email: ${escapeHtml(emailEN)}</div>` : ''}
+        </div>
+      </div>
+    </div>
+  `;
+
+  // -------------------------------------------------------------------------
+  // Page 1: COMMERCIAL INVOICE (or QUOTATION)
+  // -------------------------------------------------------------------------
+  const invRowsHtml = normalizedItems.map(it => `
+    <tr>
+      <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: center; font-family: monospace; font-size: 10.5px;">${escapeHtml(it.sku)}</td>
+      <td style="border: 1px solid #cbd5e1; padding: 6px 8px; text-align: left; font-size: 11px;">
+        <div style="font-weight: 600;">${escapeHtml(it.description)}</div>
+        ${it.sn ? `<div style="font-size: 9.5px; color: #475569; font-family: monospace; margin-top: 2px;">S/N: ${escapeHtml(it.sn)}</div>` : ''}
+      </td>
+      <td style="border: 1px solid #cbd5e1; padding: 6px 6px; text-align: right; font-family: monospace; font-size: 11px;">${it.qty ? it.qty.toLocaleString('en-US') : ''}</td>
+      <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: center; font-size: 10.5px; color: #475569;">${it.qty ? escapeHtml(it.unitEn) : ''}</td>
+      <td style="border: 1px solid #cbd5e1; padding: 6px 6px; text-align: right; font-family: monospace; font-size: 11px;">${formatPoMoney(it.unitPrice, currency)}</td>
+      <td style="border: 1px solid #cbd5e1; padding: 6px 8px; text-align: right; font-family: monospace; font-weight: 700; font-size: 11px;">${formatPoMoney(it.amount, currency)}</td>
+    </tr>
+  `).join('');
+
+  const taxRowEnHtml = taxTotal > 0 ? `
+    <tr>
+      <td colspan="4" style="border: none;"></td>
+      <td style="border: 1px solid #cbd5e1; background: #f8fafc; padding: 5px 8px; text-align: right; font-size: 10.5px; font-weight: 600; color: #475569;">Tax</td>
+      <td style="border: 1px solid #cbd5e1; padding: 5px 8px; text-align: right; font-family: monospace; font-size: 11px;">${formatPoMoney(taxTotal, currency)}</td>
+    </tr>
+  ` : '';
+
+  const page1Html = `
+    <div class="sheet-page-indicator no-print" data-sheet-page="1" style="margin-bottom: 8px; font-size: 0.8rem; font-weight: 700; color: #1e3a8a; background: #eff6ff; border: 1px solid #bfdbfe; padding: 4px 12px; border-radius: 6px; display: inline-flex; align-items: center; gap: 6px;">
+      <span>📄</span> Page 1 / ${totalPages} 【${page1Title}】
+    </div>
+    <article class="invoice-sheet" id="enCommercialInvoiceSheet" data-sheet-page="1" style="font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', sans-serif;">
+      ${buildEnHeaderAndParties(page1Title, `
+        <tr><td style="padding: 2px 8px 2px 0; color: #64748b; font-weight: 700;">${isEstimate ? 'Quotation No.:' : 'Invoice No.:'}</td><td style="font-family: monospace; font-weight: 800; color: #0f172a;">${escapeHtml(docNo)}</td></tr>
+        <tr><td style="padding: 2px 8px 2px 0; color: #64748b; font-weight: 700;">Date:</td><td style="font-family: monospace;">${escapeHtml(issueDateEn)}</td></tr>
+        ${dueDateEn ? `<tr><td style="padding: 2px 8px 2px 0; color: #64748b; font-weight: 700;">${isEstimate ? 'Valid Until:' : 'Due Date:'}</td><td style="font-family: monospace;">${escapeHtml(dueDateEn)}</td></tr>` : ''}
+        <tr><td style="padding: 2px 8px 2px 0; color: #64748b; font-weight: 700;">Currency:</td><td style="font-family: monospace; font-weight: 700; color: #0369a1;">${escapeHtml(currency)}</td></tr>
+      `)}
+
+      <table style="width: 100%; border-collapse: collapse; margin-bottom: 14px; font-size: 10.5px;">
+        <thead>
+          <tr style="background: #f1f5f9; color: #334155;">
+            <th style="border: 1px solid #cbd5e1; padding: 4px 8px; text-align: left; width: 34%;">Trade Terms (Incoterms)</th>
+            <th style="border: 1px solid #cbd5e1; padding: 4px 8px; text-align: left; width: 40%;">Payment Terms</th>
+            <th style="border: 1px solid #cbd5e1; padding: 4px 8px; text-align: left; width: 26%;">Country of Origin</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="border: 1px solid #cbd5e1; padding: 6px 8px; font-weight: 700; color: #0369a1;">${escapeHtml(tradeTermsText)}</td>
+            <td style="border: 1px solid #cbd5e1; padding: 6px 8px; font-weight: 600;">${escapeHtml(paymentTermsText)}</td>
+            <td style="border: 1px solid #cbd5e1; padding: 6px 8px; font-weight: 700;">JAPAN</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <table style="width: 100%; border-collapse: collapse; margin-bottom: 14px;">
+        <thead>
+          <tr style="background: #233b6c; color: #ffffff; font-size: 10.5px;">
+            <th style="border: 1px solid #233b6c; padding: 6px 4px; width: 15%; text-align: center;">Item No.</th>
+            <th style="border: 1px solid #233b6c; padding: 6px 8px; width: 37%; text-align: left;">Description</th>
+            <th style="border: 1px solid #233b6c; padding: 6px 6px; width: 9%; text-align: right;">Qty</th>
+            <th style="border: 1px solid #233b6c; padding: 6px 4px; width: 9%; text-align: center;">Unit</th>
+            <th style="border: 1px solid #233b6c; padding: 6px 6px; width: 14%; text-align: right;">Unit Price</th>
+            <th style="border: 1px solid #233b6c; padding: 6px 8px; width: 16%; text-align: right;">Amount (${escapeHtml(currency)})</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${invRowsHtml || '<tr><td colspan="6" style="border:1px solid #cbd5e1; padding:16px; text-align:center; color:#94a3b8;">No items</td></tr>'}
+          <tr>
+            <td colspan="4" style="border: none;"></td>
+            <td style="border: 1px solid #cbd5e1; background: #f8fafc; padding: 5px 8px; text-align: right; font-size: 10.5px; font-weight: 700; color: #475569;">Subtotal</td>
+            <td style="border: 1px solid #cbd5e1; padding: 5px 8px; text-align: right; font-family: monospace; font-size: 11px; font-weight: 700;">${formatPoMoney(subtotal, currency)}</td>
+          </tr>
+          ${taxRowEnHtml}
+          <tr>
+            <td colspan="4" style="border: none;"></td>
+            <td style="border: 1px solid #233b6c; background: #233b6c; color: #ffffff; padding: 6px 8px; text-align: right; font-size: 11px; font-weight: 800;">TOTAL (${escapeHtml(currency)})</td>
+            <td style="border: 1px solid #233b6c; background: #eff6ff; color: #1e3a8a; padding: 6px 8px; text-align: right; font-family: monospace; font-size: 13px; font-weight: 800;">${escapeHtml(currency)} ${formatPoMoney(grandTotal, currency)}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      ${bankInfoText ? `
+        <div style="border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; background: #f8fafc;">
+          <div style="font-size: 10px; font-weight: 800; color: #1e3a8a; letter-spacing: 0.5px; margin-bottom: 3px;">BANK INFORMATION (REMITTANCE DETAILS)</div>
+          <div style="font-size: 10.5px; line-height: 1.5; white-space: pre-line; color: #0f172a;">${escapeHtml(bankInfoText)}</div>
+        </div>
+      ` : ''}
+
+      ${doc.notes ? `
+        <div style="border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; margin-bottom: 14px;">
+          <div style="font-size: 10px; font-weight: 800; color: #475569; margin-bottom: 3px;">REMARKS</div>
+          <div style="font-size: 10.5px; line-height: 1.5; white-space: pre-line; color: #0f172a;">${escapeHtml(doc.notes)}</div>
+        </div>
+      ` : ''}
+
+      <div style="margin-top: 22px; display: flex; justify-content: flex-end;">
+        <div style="width: 260px; font-size: 10.5px; color: #334155;">
+          <div style="font-weight: 700; color: #0f172a; margin-bottom: 28px;">Signed by: ${escapeHtml(companyEN)}</div>
+          <div style="border-top: 1px solid #334155; padding-top: 4px; font-size: 9.5px; color: #64748b;">Authorized Signature</div>
+        </div>
+      </div>
+    </article>
+  `;
+
+  if (isEstimate) {
+    return page1Html;
+  }
+
+  // -------------------------------------------------------------------------
+  // Page 2: PACKING LIST（単価・金額欄なし、数量・梱包情報専用）
+  // -------------------------------------------------------------------------
+  const cartonsVal = (meta.cartons || '').trim() || '-';
+  const netWeightVal = (meta.netWeight || '').trim() ? `${meta.netWeight} kg` : '-';
+  const grossWeightVal = (meta.grossWeight || '').trim() ? `${meta.grossWeight} kg` : '-';
+  const dimsVal = (meta.dimensions || '').trim() || '-';
+
+  const packingRowsHtml = normalizedItems.map((it, idx) => `
+    <tr>
+      <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: center; font-family: monospace; font-size: 10.5px;">${escapeHtml(it.sku)}</td>
+      <td style="border: 1px solid #cbd5e1; padding: 6px 8px; text-align: left; font-size: 11px;">
+        <div style="font-weight: 600;">${escapeHtml(it.description)}</div>
+        ${it.sn ? `<div style="font-size: 9.5px; color: #475569; font-family: monospace; margin-top: 2px;">S/N: ${escapeHtml(it.sn)}</div>` : ''}
+      </td>
+      <td style="border: 1px solid #cbd5e1; padding: 6px 6px; text-align: right; font-family: monospace; font-weight: 700; font-size: 11px;">${it.qty ? it.qty.toLocaleString('en-US') : ''}</td>
+      <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: center; font-size: 10.5px; color: #475569;">${it.qty ? escapeHtml(it.unitEn) : ''}</td>
+      <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: center; font-size: 10.5px;">${idx === 0 ? escapeHtml(cartonsVal) : '-'}</td>
+      <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: right; font-family: monospace; font-size: 10.5px;">${idx === 0 ? escapeHtml(netWeightVal) : '-'}</td>
+      <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: right; font-family: monospace; font-size: 10.5px;">${idx === 0 ? escapeHtml(grossWeightVal) : '-'}</td>
+      <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: center; font-size: 10px;">${idx === 0 ? escapeHtml(dimsVal) : '-'}</td>
+    </tr>
+  `).join('');
+
+  const page2Html = `
+    <div class="sheet-page-indicator no-print" data-sheet-page="2" style="margin-top: 28px; margin-bottom: 8px; font-size: 0.8rem; font-weight: 700; color: #047857; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 4px 12px; border-radius: 6px; display: inline-flex; align-items: center; gap: 6px;">
+      <span>📦</span> Page 2 / 3 【PACKING LIST】
+    </div>
+    <article class="invoice-sheet invoice-sheet-page" id="enPackingListSheet" data-sheet-page="2" style="font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', sans-serif;">
+      ${buildEnHeaderAndParties('PACKING LIST', `
+        <tr><td style="padding: 2px 8px 2px 0; color: #64748b; font-weight: 700;">Ref. Invoice No.:</td><td style="font-family: monospace; font-weight: 800; color: #0f172a;">${escapeHtml(docNo)}</td></tr>
+        <tr><td style="padding: 2px 8px 2px 0; color: #64748b; font-weight: 700;">Date:</td><td style="font-family: monospace;">${escapeHtml(issueDateEn)}</td></tr>
+        <tr><td style="padding: 2px 8px 2px 0; color: #64748b; font-weight: 700;">Country of Origin:</td><td style="font-weight: 700;">JAPAN</td></tr>
+      `)}
+
+      <table style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">
+        <thead>
+          <tr style="background: #233b6c; color: #ffffff; font-size: 10px;">
+            <th style="border: 1px solid #233b6c; padding: 6px 4px; width: 12%; text-align: center;">Item No.</th>
+            <th style="border: 1px solid #233b6c; padding: 6px 6px; width: 29%; text-align: left;">Description</th>
+            <th style="border: 1px solid #233b6c; padding: 6px 4px; width: 7%; text-align: right;">Qty</th>
+            <th style="border: 1px solid #233b6c; padding: 6px 4px; width: 7%; text-align: center;">Unit</th>
+            <th style="border: 1px solid #233b6c; padding: 6px 4px; width: 12%; text-align: center;">Cartons / Pkg</th>
+            <th style="border: 1px solid #233b6c; padding: 6px 4px; width: 10%; text-align: right;">Net Wt</th>
+            <th style="border: 1px solid #233b6c; padding: 6px 4px; width: 10%; text-align: right;">Gross Wt</th>
+            <th style="border: 1px solid #233b6c; padding: 6px 4px; width: 13%; text-align: center;">Dimensions</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${packingRowsHtml || '<tr><td colspan="8" style="border:1px solid #cbd5e1; padding:16px; text-align:center; color:#94a3b8;">No items</td></tr>'}
+          <tr style="background: #f1f5f9; font-weight: 800; font-size: 10.5px;">
+            <td colspan="2" style="border: 1px solid #cbd5e1; padding: 6px 8px; text-align: right;">TOTAL SUMMARY</td>
+            <td style="border: 1px solid #cbd5e1; padding: 6px 6px; text-align: right; font-family: monospace;">${totalQty.toLocaleString('en-US')}</td>
+            <td style="border: 1px solid #cbd5e1; padding: 6px 4px; text-align: center;">-</td>
+            <td style="border: 1px solid #cbd5e1; padding: 6px 4px; text-align: center;">${escapeHtml(cartonsVal)}</td>
+            <td style="border: 1px solid #cbd5e1; padding: 6px 4px; text-align: right; font-family: monospace;">${escapeHtml(netWeightVal)}</td>
+            <td style="border: 1px solid #cbd5e1; padding: 6px 4px; text-align: right; font-family: monospace;">${escapeHtml(grossWeightVal)}</td>
+            <td style="border: 1px solid #cbd5e1; padding: 6px 4px; text-align: center;">${escapeHtml(dimsVal)}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style="border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; margin-bottom: 18px; background: #f8fafc; font-size: 10.5px; color: #334155;">
+        <strong>DECLARATION:</strong> We certify that the goods described above have been packed in accordance with export standards and are of Japanese origin unless otherwise stated.
+      </div>
+
+      <div style="margin-top: 22px; display: flex; justify-content: flex-end;">
+        <div style="width: 260px; font-size: 10.5px; color: #334155;">
+          <div style="font-weight: 700; color: #0f172a; margin-bottom: 28px;">Shipper: ${escapeHtml(companyEN)}</div>
+          <div style="border-top: 1px solid #334155; padding-top: 4px; font-size: 9.5px; color: #64748b;">Authorized Signature</div>
+        </div>
+      </div>
+    </article>
+  `;
+
+  // -------------------------------------------------------------------------
+  // Page 3: RECEIPT（英語領収書）
+  // -------------------------------------------------------------------------
+  const page3Html = `
+    <div class="sheet-page-indicator no-print" data-sheet-page="3" style="margin-top: 28px; margin-bottom: 8px; font-size: 0.8rem; font-weight: 700; color: #7c3aed; background: #f5f3ff; border: 1px solid #ddd6fe; padding: 4px 12px; border-radius: 6px; display: inline-flex; align-items: center; gap: 6px;">
+      <span>🧾</span> Page 3 / 3 【RECEIPT】
+    </div>
+    <article class="invoice-sheet invoice-sheet-page" id="enReceiptSheet" data-sheet-page="3" style="font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', sans-serif;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #233b6c; padding-bottom: 12px; margin-bottom: 22px;">
+        <div>${typeof getPoAlvaLogoSvg === 'function' ? getPoAlvaLogoSvg() : `<div style="font-size:18px; font-weight:800; color:#233b6c;">${escapeHtml(companyEN)}</div>`}</div>
+        <div style="text-align: right;">
+          <div style="font-size: 24px; font-weight: 800; color: #233b6c; letter-spacing: 2px; margin-bottom: 6px;">RECEIPT</div>
+          <div style="font-size: 11px; color: #475569;">Receipt No.: <strong style="font-family: monospace; color: #0f172a;">REC-${escapeHtml(docNo)}</strong></div>
+          <div style="font-size: 11px; color: #475569;">Date: <strong style="font-family: monospace; color: #0f172a;">${escapeHtml(issueDateEn)}</strong></div>
+        </div>
+      </div>
+
+      <div style="margin-bottom: 22px;">
+        <div style="font-size: 11px; font-weight: 700; color: #64748b; margin-bottom: 4px;">RECEIVED FROM:</div>
+        <div style="font-size: 18px; font-weight: 800; color: #0f172a; border-bottom: 2px solid #0f172a; padding-bottom: 6px;">
+          ${escapeHtml(billToName)}
+        </div>
+        ${billToAddr ? `<div style="font-size: 11px; color: #475569; margin-top: 4px;">${escapeHtml(billToAddr)}</div>` : ''}
+      </div>
+
+      <div style="background: #eff6ff; border: 2px solid #233b6c; border-radius: 8px; padding: 16px 20px; margin-bottom: 22px; display: flex; justify-content: space-between; align-items: baseline;">
+        <span style="font-size: 13px; font-weight: 800; color: #1e3a8a; letter-spacing: 0.5px;">AMOUNT RECEIVED</span>
+        <span style="font-size: 26px; font-weight: 800; font-family: monospace; color: #0f172a;">${escapeHtml(currency)} ${formatPoMoney(grandTotal, currency)}</span>
+      </div>
+
+      <div style="border: 1px solid #cbd5e1; border-radius: 6px; padding: 12px 16px; margin-bottom: 26px; font-size: 12px; line-height: 1.7;">
+        <div><strong>For:</strong> Payment of Commercial Invoice No. <span style="font-family: monospace; font-weight: 700;">${escapeHtml(docNo)}</span></div>
+        <div><strong>Payment Method / Terms:</strong> ${escapeHtml(paymentTermsText)}</div>
+        <div style="margin-top: 6px; color: #475569; font-size: 11px;">We hereby acknowledge receipt of the above sum in full settlement.</div>
+      </div>
+
+      <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 32px;">
+        <div style="font-size: 11px; line-height: 1.6; color: #334155; position: relative; padding-right: 64px;">
+          ${stampHtml}
+          <div style="font-size: 13px; font-weight: 800; color: #0f172a;">${escapeHtml(companyEN)}</div>
+          <div>${escapeHtml(addressEN)}</div>
+          <div style="font-family: monospace;">TEL: ${escapeHtml(telEN)} / FAX: ${escapeHtml(faxEN)}</div>
+        </div>
+        <div style="width: 240px; font-size: 10.5px; color: #334155;">
+          <div style="margin-bottom: 30px; font-weight: 700; color: #0f172a;">Issued By: ${escapeHtml(companyEN)}</div>
+          <div style="border-top: 1px solid #334155; padding-top: 4px; font-size: 9.5px; color: #64748b;">Authorized Signature</div>
+        </div>
+      </div>
+    </article>
+  `;
+
+  return page1Html + page2Html + page3Html;
+}
+window.buildEnglishExportDocumentsHtml = buildEnglishExportDocumentsHtml;
+
+function renderEnglishExportSheets(totals, enContainer) {
+  if (!enContainer || !currentDoc) return;
+  const mobilePageGroup = document.getElementById('mobileSheetPageGroup');
+  if (mobilePageGroup) {
+    if (currentDoc.docType === 'estimate') {
+      mobilePageGroup.style.display = 'none';
+    } else {
+      mobilePageGroup.style.display = '';
+      const btns = mobilePageGroup.querySelectorAll('.mobile-sheet-tab-btn');
+      if (btns[0]) btns[0].textContent = '📄 Invoice';
+      if (btns[1]) btns[1].textContent = '📦 Packing List';
+      if (btns[2]) btns[2].textContent = '🧾 Receipt';
+    }
+  }
+  enContainer.innerHTML = buildEnglishExportDocumentsHtml(currentDoc, totals);
+  syncExportSettingsFormFromDoc();
+}
+
+// 海外輸出設定フォームのイベント委譲（入力時に即プレビュー反映）
+(function initExportDocDelegatedEvents() {
+  if (typeof document === 'undefined' || window._exportDocEventsBound) return;
+  window._exportDocEventsBound = true;
+  const fieldMap = {
+    expCurrency: 'currency',
+    expExchangeRate: 'exchangeRate',
+    expIncoterm: 'incoterm',
+    expIncotermPlace: 'incotermPlace',
+    expPaymentTerms: 'paymentTerms',
+    expCartons: 'cartons',
+    expNetWeight: 'netWeight',
+    expGrossWeight: 'grossWeight',
+    expDimensions: 'dimensions',
+    expBankInfoEn: 'bankInfoEn'
+  };
+  const handler = (e) => {
+    const id = e.target && e.target.id;
+    if (!id || !fieldMap[id] || !currentDoc) return;
+    const meta = ensureExportMeta(currentDoc);
+    let val = e.target.value;
+    if (id === 'expExchangeRate' || id === 'expNetWeight' || id === 'expGrossWeight') {
+      if (!e.isComposing && typeof normalizePoHalfWidthNumberStr === 'function') {
+        const norm = normalizePoHalfWidthNumberStr(val, true);
+        if (val !== norm) { val = norm; e.target.value = norm; }
+      }
+    }
+    meta[fieldMap[id]] = val;
+    if (id === 'expBankInfoEn') {
+      try { localStorage.setItem('alva_export_bank_info_en', val); } catch (err) { }
+    }
+    renderAll();
+  };
+  document.addEventListener('input', handler);
+  document.addEventListener('change', handler);
+})();
+
 /**
  * A4印刷・PDF出力セーフ実行ヘルパー
  * ポップアップブロックを完全回避し、印刷用CSSクラスを付与してwindow.print()を起動します。
@@ -2220,13 +2778,16 @@ function triggerSafePrint(printClass) {
     document.body.classList.add(printClass);
   }
 
-  // PDF保存時のデフォルトファイル名を「販売店名_日付_納品請求書or見積書」に動的連動
+  // PDF保存時のデフォルトファイル名を「販売店名_日付_納品請求書or見積書」（英語時はCommercial_Invoice_Set等）に動的連動
   const originalTitle = document.title;
   if (printClass === 'printing-invoice' && currentDoc) {
     try {
-      const clientName = (currentDoc.client?.name || '取引先').trim().replace(/[/\\?%*:|"<>]/g, '_');
+      const isEn = currentDoc.docLanguage === 'en';
+      const clientName = (currentDoc.client?.name || (isEn ? 'Client' : '取引先')).trim().replace(/[/\\?%*:|"<>]/g, '_');
       const issueDate = (currentDoc.issueDate || (typeof getTodayDateString === 'function' ? getTodayDateString() : new Date().toISOString().split('T')[0])).trim();
-      const docTypeName = (currentDoc.docType === 'estimate') ? '見積書' : '納品請求書';
+      const docTypeName = isEn
+        ? ((currentDoc.docType === 'estimate') ? 'Quotation' : 'Commercial_Invoice_Set')
+        : ((currentDoc.docType === 'estimate') ? '見積書' : '納品請求書');
       document.title = `${clientName}_${issueDate}_${docTypeName}`;
     } catch (e) {
       console.warn('PDFファイル名設定エラー:', e);

@@ -167,6 +167,25 @@
     break-before: page !important;
   }
 
+  /* 海外販売（English）3点セット印刷制御（Commercial Invoice → Packing List → Receipt） */
+  #previewWrapper[data-doc-lang="en"] #invoiceSheet,
+  #previewWrapper[data-doc-lang="en"] #subSheetsContainer {
+    display: none !important;
+  }
+
+  #englishDocSheetsContainer {
+    display: block !important;
+  }
+
+  #englishDocSheetsContainer:empty {
+    display: none !important;
+  }
+
+  #englishDocSheetsContainer .invoice-sheet-page {
+    page-break-before: always !important;
+    break-before: page !important;
+  }
+
   .sheet-page-indicator {
     display: none !important;
   }
