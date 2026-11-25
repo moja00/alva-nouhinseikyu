@@ -41241,7 +41241,8 @@ function renderBusinessAnalyticsView(period = null) {
           const isExpanded = bizAnalyticsViewState.expandedRegions.has(g.key);
           const isCollapsed = !isExpanded;
           const salesBarW = Math.min(100, Math.max(0, Math.round((Math.max(0, g.sales) / maxGeoScale) * 100)));
-          const gpBarW = Math.min(100, Math.max(0, Math.round((Math.max(0, g.grossProfit) / maxGeoScale) * 100)));
+          const gpBarW = Math.min(salesBarW || 100, Math.max(0, Math.round((Math.max(0, g.grossProfit) / maxGeoScale) * 100)));
+          const salesExtW = Math.max(0, salesBarW - gpBarW);
           const expBarW = Math.min(100, Math.max(0, Math.round((g.totalExpense / maxGeoScale) * 100)));
 
           // 地域に紐づく「デモ出張セッション（集中経費）」パネル
@@ -41342,13 +41343,13 @@ function renderBusinessAnalyticsView(period = null) {
 
           return `
             <div style="background: #ffffff; border: 1.5px solid #cbd5e1; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(15,23,42,0.04);">
-              <!-- 大枠：地域サマリーヘッダー -->
-              <div style="padding: 11px 14px; background: linear-gradient(135deg, #f8fafc, #eff6ff); border-bottom: 1px solid #cbd5e1; display: grid; grid-template-columns: minmax(180px, 1.15fr) repeat(4, minmax(110px, 0.85fr)) minmax(135px, 0.9fr); gap: 10px; align-items: center;">
+              <!-- 大枠：地域サマリーヘッダー（カード全体クリックで直下の販売店・経費明細を開閉） -->
+              <div class="biz-toggle-region-card" data-region-key="${safeEscAnalytics(g.key)}" title="クリックで直下の販売店・経費明細を開閉" style="padding: 11px 14px; background: linear-gradient(135deg, #f8fafc, #eff6ff); border-bottom: ${isCollapsed ? 'none' : '1px solid #cbd5e1'}; display: grid; grid-template-columns: minmax(180px, 1.15fr) repeat(4, minmax(110px, 0.85fr)) minmax(135px, 0.9fr); gap: 10px; align-items: center; cursor: pointer; user-select: none;">
                 <div>
                   <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-                    <button type="button" class="biz-toggle-region-card" data-region-key="${safeEscAnalytics(g.key)}" style="background:none; border:none; padding:0; cursor:pointer; font-size:0.95rem; font-weight:800; color:#0f172a;">
+                    <span style="font-size:0.95rem; font-weight:800; color:#0f172a;">
                       <span style="color:#2563eb; margin-right:4px;">${isCollapsed ? '▶' : '▼'}</span>🗾 ${safeEscAnalytics(displayRegionTitle)}
-                    </button>
+                    </span>
                     ${bizAnalyticsViewState.geoGranularity === 'prefecture' && g.region !== g.label ? `<span style="font-size:0.68rem; color:#64748b;">(${safeEscAnalytics(g.region)})</span>` : ''}
                   </div>
                   <div style="font-size: 0.7rem; color: #475569; margin-top: 2px;">
@@ -41377,18 +41378,17 @@ function renderBusinessAnalyticsView(period = null) {
                   <div style="font-size: 0.66rem; color: #64748b;">${g.expenseToSalesPct !== null ? `経費率 ${g.expenseToSalesPct.toFixed(1)}%` : '経費率 -'}${g.roiMultiple !== null ? ` (${g.roiMultiple.toFixed(1)}倍)` : ''}</div>
                 </div>
                 <div>
-                  <div style="display: flex; flex-direction: column; gap: 3px;">
-                    <div style="display:flex; align-items:center; gap:4px;" title="売上高(税抜): ${fmtYenAnalytics(g.sales)}">
-                      <span style="font-size:0.62rem; color:#2563eb; width:24px; font-weight:700;">売上</span>
-                      <div style="flex:1; height:7px; background:#e2e8f0; border-radius:4px; overflow:hidden;"><div style="width:${salesBarW}%; height:100%; background:#3b82f6;"></div></div>
-                    </div>
-                    <div style="display:flex; align-items:center; gap:4px;" title="粗利額: ${fmtYenAnalytics(g.grossProfit)}">
-                      <span style="font-size:0.62rem; color:#059669; width:24px; font-weight:700;">粗利</span>
-                      <div style="flex:1; height:7px; background:#e2e8f0; border-radius:4px; overflow:hidden;"><div style="width:${gpBarW}%; height:100%; background:#10b981;"></div></div>
+                  <div style="display: flex; flex-direction: column; gap: 4px;">
+                    <div style="display:flex; align-items:center; gap:4px;" title="粗利額: ${fmtYenAnalytics(g.grossProfit)} / 売上高(税抜): ${fmtYenAnalytics(g.sales)}">
+                      <span style="font-size:0.63rem; color:#059669; width:24px; font-weight:700;">粗利</span>
+                      <div style="flex:1; height:8px; background:#e2e8f0; border-radius:4px; overflow:hidden; display:flex;">
+                        <div style="width:${gpBarW}%; height:100%; background:#10b981;"></div>
+                        ${salesExtW > 0 ? `<div style="width:${salesExtW}%; height:100%; background:#a7f3d0;"></div>` : ''}
+                      </div>
                     </div>
                     <div style="display:flex; align-items:center; gap:4px;" title="地域経費合計: ${fmtYenAnalytics(g.totalExpense)}">
-                      <span style="font-size:0.62rem; color:#d97706; width:24px; font-weight:700;">経費</span>
-                      <div style="flex:1; height:7px; background:#e2e8f0; border-radius:4px; overflow:hidden;"><div style="width:${expBarW}%; height:100%; background:#f59e0b;"></div></div>
+                      <span style="font-size:0.63rem; color:#d97706; width:24px; font-weight:700;">経費</span>
+                      <div style="flex:1; height:8px; background:#e2e8f0; border-radius:4px; overflow:hidden;"><div style="width:${expBarW}%; height:100%; background:#f59e0b;"></div></div>
                     </div>
                   </div>
                 </div>
