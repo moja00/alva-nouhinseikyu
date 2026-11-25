@@ -69,7 +69,7 @@ function safeEscAnalytics(str) {
 function renderLotCostAnalyticsView(targetContainerId = null) {
   const targetIds = targetContainerId
     ? [targetContainerId]
-    : ['accLotCostAnalyticsRoot', 'invLotCostAnalyticsRoot'];
+    : ['invLotCostAnalyticsRoot'];
 
   const containers = targetIds
     .map(id => document.getElementById(id))

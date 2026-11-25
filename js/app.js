@@ -17603,10 +17603,6 @@ function switchAccountingTab(tabKey) {
     renderAccountingExpenses(currentAccGlobalPeriod);
   } else if (fullId === 'acc-tab-journals') {
     renderAccountingJournals(currentAccGlobalPeriod);
-  } else if (fullId === 'acc-tab-lot-cost') {
-    if (typeof window.renderLotCostAnalyticsView === 'function') {
-      window.renderLotCostAnalyticsView('accLotCostAnalyticsRoot');
-    }
   } else if (fullId === 'acc-tab-analytics') {
     if (typeof window.renderBusinessAnalyticsView === 'function') {
       window.renderBusinessAnalyticsView(currentAccGlobalPeriod);
@@ -18184,7 +18180,6 @@ function applyAccGlobalPeriod(preset = 'thisMonth', customStart = null, customEn
   if (typeof renderBalanceSheet === 'function') renderBalanceSheet(currentAccGlobalPeriod);
   if (typeof renderTrialBalance === 'function') renderTrialBalance(currentAccGlobalPeriod);
   if (typeof renderGeneralLedger === 'function') renderGeneralLedger(currentAccGlobalPeriod);
-  if (typeof window.renderLotCostAnalyticsView === 'function') window.renderLotCostAnalyticsView('accLotCostAnalyticsRoot');
   if (typeof window.renderBusinessAnalyticsView === 'function') window.renderBusinessAnalyticsView(currentAccGlobalPeriod);
 }
 
