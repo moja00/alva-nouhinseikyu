@@ -343,7 +343,7 @@
           style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
           <span
-            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.25-export-english-layout-fix</span>
+            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.25-export-trade-practical-fields</span>
         </div>
       </div>
 
@@ -436,7 +436,7 @@
             </div>
           </div>
 
-          <!-- 海外輸出（English）モード専用：通貨・Incoterms・梱包・英語銀行情報パネル -->
+          <!-- 海外輸出（English）モード専用：通貨・Incoterms・輸送経路・出荷元・梱包・英語銀行情報パネル -->
           <div id="exportSettingsPanel"
             style="display: none; flex-direction: column; gap: 7px; padding-top: 6px; border-top: 1px dashed #93c5fd;">
             <div style="font-size: 0.7rem; font-weight: 800; color: #0369a1;">
@@ -481,19 +481,83 @@
             </div>
 
             <div>
-              <label style="font-size: 0.68rem; font-weight: 700; color: #334155; display: block;">支払条件 (Payment Terms)</label>
-              <input type="text" id="expPaymentTerms" class="form-input" placeholder="例: 100% T/T in advance / Net 30 Days"
+              <label style="font-size: 0.68rem; font-weight: 700; color: #334155; display: block;">支払条件 (PAYMENT)</label>
+              <input type="text" id="expPaymentTerms" class="form-input" placeholder="例: T/T IN ADVANCE / 50% T/T Advance"
                 style="font-size: 0.78rem; padding: 3px 6px;">
+            </div>
+
+            <!-- 発地・仕向地・輸送手段・運賃・原産国 -->
+            <div style="background: #ffffff; border: 1px solid #dbeafe; border-radius: 6px; padding: 6px 8px;">
+              <div style="font-size: 0.68rem; font-weight: 800; color: #1e40af; margin-bottom: 4px;">🚢 輸送経路・条件（Shipment Route &amp; Vessel）</div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 5px;">
+                <div>
+                  <label style="font-size: 0.64rem; font-weight: 700; color: #475569; display: block;">SHIPMENT FROM</label>
+                  <input type="text" id="expShipmentFrom" class="form-input" placeholder="JAPAN" style="font-size: 0.74rem; padding: 3px 6px;">
+                </div>
+                <div>
+                  <label style="font-size: 0.64rem; font-weight: 700; color: #475569; display: block;">TO (Destination)</label>
+                  <input type="text" id="expShipmentTo" class="form-input" placeholder="例: GERMANY / USA" style="font-size: 0.74rem; padding: 3px 6px;">
+                </div>
+              </div>
+              <div style="display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 5px; margin-bottom: 5px;">
+                <div>
+                  <label style="font-size: 0.64rem; font-weight: 700; color: #475569; display: block;">VESSEL / MODE</label>
+                  <input type="text" id="expVessel" list="expVesselOptions" class="form-input" placeholder="OCEAN SHIPMENT / AIR SHIPMENT / TBA" style="font-size: 0.74rem; padding: 3px 6px;">
+                  <datalist id="expVesselOptions">
+                    <option value="OCEAN SHIPMENT"></option>
+                    <option value="AIR SHIPMENT"></option>
+                    <option value="COURIER (DHL / FedEx)"></option>
+                    <option value="TBA"></option>
+                  </datalist>
+                </div>
+                <div>
+                  <label style="font-size: 0.64rem; font-weight: 700; color: #475569; display: block;">FREIGHT</label>
+                  <select id="expFreight" class="form-select" style="font-size: 0.74rem; font-weight: 700; padding: 3px 6px;">
+                    <option value="">（未指定）</option>
+                    <option value="COLLECT">COLLECT</option>
+                    <option value="PREPAID">PREPAID</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label style="font-size: 0.64rem; font-weight: 700; color: #475569; display: block;">COUNTRY OF ORIGIN</label>
+                <input type="text" id="expCountryOfOrigin" class="form-input" placeholder="JAPAN" style="font-size: 0.74rem; padding: 3px 6px;">
+              </div>
+            </div>
+
+            <!-- 出荷元（Ship From / Ex-Works Location：メーカー直送・代行出荷対応） -->
+            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 8px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px; margin-bottom: 4px;">
+                <label style="font-size: 0.68rem; font-weight: 800; color: #475569; margin: 0;">🏭 出荷元 (Ship From / Ex-Works・任意)</label>
+                <select id="expShipFromVendorSelect" class="form-select" style="font-size: 0.68rem; padding: 2px 5px; max-width: 145px;" title="取引先・仕入先マスタから英語社名・住所を引用">
+                  <option value="">マスタから引用...</option>
+                </select>
+              </div>
+              <textarea id="expShipFrom" class="form-input" rows="2"
+                placeholder="メーカー直送・代行出荷時の出荷元英語社名・住所（空欄時は非表示）"
+                style="font-size: 0.73rem; line-height: 1.4; padding: 4px 6px;"></textarea>
+              <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px;">
+                <button type="button" id="btnInsertOnBehalfRemark"
+                  style="font-size: 0.66rem; font-weight: 700; padding: 2px 7px; border-radius: 4px; border: 1px solid #93c5fd; background: #eff6ff; color: #1d4ed8; cursor: pointer;"
+                  title="Ship From の出荷元名を使った代行出荷注記（ON BEHALF OF...）を備考欄へ挿入">
+                  ＋ 代行出荷注記をRemarksへ挿入
+                </button>
+                <button type="button" id="btnInsertBankChargeRemark"
+                  style="font-size: 0.66rem; font-weight: 700; padding: 2px 7px; border-radius: 4px; border: 1px solid #cbd5e1; background: #f8fafc; color: #334155; cursor: pointer;"
+                  title="海外送金手数料の買主負担注記を備考欄へ挿入">
+                  ＋ 銀行手数料注記
+                </button>
+              </div>
             </div>
 
             <!-- 梱包情報（Packing List用・任意） -->
             <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 8px;">
-              <div style="font-size: 0.68rem; font-weight: 800; color: #475569; margin-bottom: 4px;">📦 Packing List 梱包情報（任意）</div>
+              <div style="font-size: 0.68rem; font-weight: 800; color: #475569; margin-bottom: 4px;">📦 Packing List 梱包・パレット情報（任意）</div>
               <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
-                <input type="text" id="expCartons" class="form-input" placeholder="梱包数 (例: 2 Cartons)" style="font-size: 0.75rem; padding: 3px 6px;">
-                <input type="text" id="expDimensions" class="form-input" placeholder="サイズ (例: 60x45x40cm)" style="font-size: 0.75rem; padding: 3px 6px;">
-                <input type="text" inputmode="decimal" id="expNetWeight" class="form-input" placeholder="Net Weight (kg)" style="font-size: 0.75rem; padding: 3px 6px; font-family: monospace;">
-                <input type="text" inputmode="decimal" id="expGrossWeight" class="form-input" placeholder="Gross Weight (kg)" style="font-size: 0.75rem; padding: 3px 6px; font-family: monospace;">
+                <input type="text" id="expCartons" class="form-input" placeholder="C/ No. / Cartons (例: 1 Pallet (24 Ctns.))" style="font-size: 0.74rem; padding: 3px 6px;">
+                <input type="text" id="expDimensions" class="form-input" placeholder="PALLET SIZE (例: 1100x1100x860mm)" style="font-size: 0.74rem; padding: 3px 6px;">
+                <input type="text" inputmode="decimal" id="expNetWeight" class="form-input" placeholder="N/ Weight (kg)" style="font-size: 0.74rem; padding: 3px 6px; font-family: monospace;">
+                <input type="text" inputmode="decimal" id="expGrossWeight" class="form-input" placeholder="G/ Weight (kg)" style="font-size: 0.74rem; padding: 3px 6px; font-family: monospace;">
               </div>
             </div>
 
@@ -1790,6 +1854,28 @@
                   <option value="CNY">CNY (¥)</option>
                   <option value="GBP">GBP (£)</option>
                 </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- 🌐 海外輸出用（Commercial Invoice / Packing List）英語名称・単位・HSコード（任意） -->
+          <div style="background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px;">
+            <div style="font-size: 0.8rem; font-weight: 700; color: #0369a1; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+              <span>🌐 海外輸出用：英語商品名・単位・HSコード（任意）</span>
+              <span style="font-size: 0.7rem; font-weight: 500; color: #475569;">※English帳票（Commercial Invoice / Packing List / PO）出力時に自動引用されます</span>
+            </div>
+            <div class="form-row" style="margin-bottom: 0; gap: 10px;">
+              <div class="form-group" style="flex: 2; min-width: 220px;">
+                <label class="form-label" for="itemMasterInputNameEn" style="font-size: 0.76rem; font-weight: 700; color: #0369a1;">英語商品名 (Description EN)</label>
+                <input type="text" id="itemMasterInputNameEn" class="form-input" placeholder="例: Pneumatic Tool Main Unit">
+              </div>
+              <div class="form-group" style="flex: 0.7; min-width: 95px;">
+                <label class="form-label" for="itemMasterInputUnitEn" style="font-size: 0.76rem; font-weight: 700; color: #0369a1;">英語単位 (Unit)</label>
+                <input type="text" id="itemMasterInputUnitEn" class="form-input" placeholder="例: Sets / Pcs">
+              </div>
+              <div class="form-group" style="flex: 0.9; min-width: 120px;">
+                <label class="form-label" for="itemMasterInputHsCode" style="font-size: 0.76rem; font-weight: 700; color: #0369a1;">HSコード (HSN / HS Code)</label>
+                <input type="text" id="itemMasterInputHsCode" class="form-input" placeholder="例: 8467.19" style="font-family: monospace;">
               </div>
             </div>
           </div>
@@ -5747,7 +5833,7 @@
           <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             <h2 class="view-screen-title" style="margin: 0;">勤怠管理・退勤タイムカード</h2>
             <span
-              style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.25-export-english-layout-fix</span>
+              style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.25-export-trade-practical-fields</span>
           </div>
           <span class="view-screen-subtitle">休憩1時間自動控除・ワンタップ出退勤打刻・月次出勤簿・打刻漏れ修正</span>
         </div>
@@ -7967,7 +8053,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261125_export_english_layout_fix"></script>
+  <script src="js/app.bundle.js?v=20261125_export_trade_practical_fields"></script>
 </body>
 
 </html>
