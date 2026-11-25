@@ -26,7 +26,7 @@ const bizAnalyticsViewState = {
   clientSearch: '',
   expandedClients: new Set(),
   expandedDemoSessions: new Set(),
-  collapsedRegions: new Set(),
+  expandedRegions: new Set(),
   geoGranularity: 'region', // 'region' | 'prefecture'
   tripStart: '',
   tripEnd: '',
@@ -617,7 +617,8 @@ function renderBusinessAnalyticsView(period = null) {
     const regionClientCardsHtml = filteredGeoGroups.length === 0
       ? `<div style="padding: 28px; text-align: center; color: #94a3b8; background: #ffffff; border: 1px dashed #cbd5e1; border-radius: 10px;">対象条件の地域・販売店データがありません。</div>`
       : filteredGeoGroups.map(g => {
-          const isCollapsed = bizAnalyticsViewState.collapsedRegions.has(g.key);
+          const isExpanded = bizAnalyticsViewState.expandedRegions.has(g.key);
+          const isCollapsed = !isExpanded;
           const salesBarW = Math.min(100, Math.max(0, Math.round((Math.max(0, g.sales) / maxGeoScale) * 100)));
           const gpBarW = Math.min(100, Math.max(0, Math.round((Math.max(0, g.grossProfit) / maxGeoScale) * 100)));
           const expBarW = Math.min(100, Math.max(0, Math.round((g.totalExpense / maxGeoScale) * 100)));
@@ -873,6 +874,8 @@ function renderBusinessAnalyticsView(period = null) {
             ${hasGeoOrClientFilter ? `<button type="button" class="btn btn-secondary btn-xs biz-clear-scope-btn" style="font-size: 0.73rem; color: #dc2626; border-color: #fca5a5;">✕ 解除</button>` : ''}
           </div>
           <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+            <button type="button" class="btn btn-secondary btn-xs biz-expand-all-regions-btn" style="font-size: 0.72rem; padding: 4px 8px;">すべて展開</button>
+            <button type="button" class="btn btn-secondary btn-xs biz-collapse-all-regions-btn" style="font-size: 0.72rem; padding: 4px 8px;">すべて閉じる</button>
             <input type="text" class="form-input biz-client-search" value="${safeEscAnalytics(bizAnalyticsViewState.clientSearch)}" placeholder="🔍 地域・販売店・EU検索..." style="font-size: 0.76rem; width: 185px; padding: 4px 8px;">
             <select class="form-select biz-client-sort" style="font-size: 0.76rem; width: auto; padding: 4px 8px;">
               <option value="sales_desc"${bizAnalyticsViewState.clientSortBy === 'sales_desc' ? ' selected' : ''}>販売店: 売上高順</option>
@@ -942,16 +945,34 @@ document.addEventListener('click', (e) => {
     return;
   }
 
-  // 統合分析：地域大枠カードの開閉トグル
+  // 統合分析：地域大枠カードの開閉トグル（デフォルト閉）
   const toggleRegionBtn = target.closest('.biz-toggle-region-card');
   if (toggleRegionBtn) {
     const key = toggleRegionBtn.dataset.regionKey;
     if (key) {
-      if (bizAnalyticsViewState.collapsedRegions.has(key)) bizAnalyticsViewState.collapsedRegions.delete(key);
-      else bizAnalyticsViewState.collapsedRegions.add(key);
-      console.log('【統合分析ビュー】地域カード開閉トグル:', key);
+      if (bizAnalyticsViewState.expandedRegions.has(key)) bizAnalyticsViewState.expandedRegions.delete(key);
+      else bizAnalyticsViewState.expandedRegions.add(key);
+      console.log('【地域別売上・経費分析ビュー】地域カード開閉トグル:', key, bizAnalyticsViewState.expandedRegions.has(key));
       renderBusinessAnalyticsView();
     }
+    return;
+  }
+
+  // 統合分析：全地域カード一括展開
+  if (target.closest('.biz-expand-all-regions-btn')) {
+    document.querySelectorAll('.biz-toggle-region-card').forEach(btn => {
+      if (btn.dataset.regionKey) bizAnalyticsViewState.expandedRegions.add(btn.dataset.regionKey);
+    });
+    console.log('【地域別売上・経費分析ビュー】全地域一括展開');
+    renderBusinessAnalyticsView();
+    return;
+  }
+
+  // 統合分析：全地域カード一括折りたたみ
+  if (target.closest('.biz-collapse-all-regions-btn')) {
+    bizAnalyticsViewState.expandedRegions.clear();
+    console.log('【地域別売上・経費分析ビュー】全地域一括折りたたみ');
+    renderBusinessAnalyticsView();
     return;
   }
 

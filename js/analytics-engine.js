@@ -24,7 +24,8 @@ export const REGION_ORDER = [
   '近畿',
   '中国',
   '四国',
-  '九州・沖縄',
+  '九州',
+  '沖縄',
   '海外',
   '未設定'
 ];
@@ -69,14 +70,14 @@ const PREF_GEO_TABLE = [
   { pref: '香川県', region: '四国', zipRanges: [[760, 769]], keywords: ['香川県', '高松', '丸亀'] },
   { pref: '愛媛県', region: '四国', zipRanges: [[790, 799]], keywords: ['愛媛県', '松山', '今治', '新居浜'] },
   { pref: '高知県', region: '四国', zipRanges: [[780, 789]], keywords: ['高知県', '高知市'] },
-  { pref: '福岡県', region: '九州・沖縄', zipRanges: [[800, 839]], keywords: ['福岡県', '福岡市', '福岡空港', '博多', '天神', '北九州', '小倉', '久留米', '飯塚'] },
-  { pref: '佐賀県', region: '九州・沖縄', zipRanges: [[840, 849]], keywords: ['佐賀県', '佐賀市', '鳥栖', '唐津'] },
-  { pref: '長崎県', region: '九州・沖縄', zipRanges: [[850, 859]], keywords: ['長崎県', '長崎市', '佐世保', '諫早'] },
-  { pref: '熊本県', region: '九州・沖縄', zipRanges: [[860, 869]], keywords: ['熊本県', '熊本市', '熊本空港', '阿蘇くまもと', '八代', '玉名'] },
-  { pref: '大分県', region: '九州・沖縄', zipRanges: [[870, 879]], keywords: ['大分県', '大分市', '別府', '中津'] },
-  { pref: '宮崎県', region: '九州・沖縄', zipRanges: [[880, 889]], keywords: ['宮崎県', '宮崎市', '都城', '延岡'] },
-  { pref: '鹿児島県', region: '九州・沖縄', zipRanges: [[890, 899]], keywords: ['鹿児島県', '鹿児島市', '鹿児島空港', '霧島', '鹿屋'] },
-  { pref: '沖縄県', region: '九州・沖縄', zipRanges: [[900, 907]], keywords: ['沖縄県', '那覇', '沖縄市', '浦添', '宜野湾', '石垣', '宮古島'] }
+  { pref: '福岡県', region: '九州', zipRanges: [[800, 839]], keywords: ['福岡県', '福岡市', '福岡空港', '博多', '天神', '北九州', '小倉', '久留米', '飯塚'] },
+  { pref: '佐賀県', region: '九州', zipRanges: [[840, 849]], keywords: ['佐賀県', '佐賀市', '鳥栖', '唐津'] },
+  { pref: '長崎県', region: '九州', zipRanges: [[850, 859]], keywords: ['長崎県', '長崎市', '佐世保', '諫早'] },
+  { pref: '熊本県', region: '九州', zipRanges: [[860, 869]], keywords: ['熊本県', '熊本市', '熊本空港', '阿蘇くまもと', '八代', '玉名'] },
+  { pref: '大分県', region: '九州', zipRanges: [[870, 879]], keywords: ['大分県', '大分市', '別府', '中津'] },
+  { pref: '宮崎県', region: '九州', zipRanges: [[880, 889]], keywords: ['宮崎県', '宮崎市', '都城', '延岡'] },
+  { pref: '鹿児島県', region: '九州', zipRanges: [[890, 899]], keywords: ['鹿児島県', '鹿児島市', '鹿児島空港', '霧島', '鹿屋'] },
+  { pref: '沖縄県', region: '沖縄', zipRanges: [[900, 907]], keywords: ['沖縄県', '那覇', '沖縄市', '浦添', '宜野湾', '石垣', '宮古島'] }
 ];
 
 const OVERSEAS_COUNTRY_RE = /\b(germany|deutschland|italy|italia|france|uk|united kingdom|england|usa|united states|america|canada|china|taiwan|korea|singapore|thailand|vietnam|australia|switzerland|austria|netherlands|spain|sweden|poland|belgium|europe|eu)\b/i;

@@ -13535,7 +13535,8 @@ const REGION_ORDER = [
   '近畿',
   '中国',
   '四国',
-  '九州・沖縄',
+  '九州',
+  '沖縄',
   '海外',
   '未設定'
 ];
@@ -13580,14 +13581,14 @@ const PREF_GEO_TABLE = [
   { pref: '香川県', region: '四国', zipRanges: [[760, 769]], keywords: ['香川県', '高松', '丸亀'] },
   { pref: '愛媛県', region: '四国', zipRanges: [[790, 799]], keywords: ['愛媛県', '松山', '今治', '新居浜'] },
   { pref: '高知県', region: '四国', zipRanges: [[780, 789]], keywords: ['高知県', '高知市'] },
-  { pref: '福岡県', region: '九州・沖縄', zipRanges: [[800, 839]], keywords: ['福岡県', '福岡市', '福岡空港', '博多', '天神', '北九州', '小倉', '久留米', '飯塚'] },
-  { pref: '佐賀県', region: '九州・沖縄', zipRanges: [[840, 849]], keywords: ['佐賀県', '佐賀市', '鳥栖', '唐津'] },
-  { pref: '長崎県', region: '九州・沖縄', zipRanges: [[850, 859]], keywords: ['長崎県', '長崎市', '佐世保', '諫早'] },
-  { pref: '熊本県', region: '九州・沖縄', zipRanges: [[860, 869]], keywords: ['熊本県', '熊本市', '熊本空港', '阿蘇くまもと', '八代', '玉名'] },
-  { pref: '大分県', region: '九州・沖縄', zipRanges: [[870, 879]], keywords: ['大分県', '大分市', '別府', '中津'] },
-  { pref: '宮崎県', region: '九州・沖縄', zipRanges: [[880, 889]], keywords: ['宮崎県', '宮崎市', '都城', '延岡'] },
-  { pref: '鹿児島県', region: '九州・沖縄', zipRanges: [[890, 899]], keywords: ['鹿児島県', '鹿児島市', '鹿児島空港', '霧島', '鹿屋'] },
-  { pref: '沖縄県', region: '九州・沖縄', zipRanges: [[900, 907]], keywords: ['沖縄県', '那覇', '沖縄市', '浦添', '宜野湾', '石垣', '宮古島'] }
+  { pref: '福岡県', region: '九州', zipRanges: [[800, 839]], keywords: ['福岡県', '福岡市', '福岡空港', '博多', '天神', '北九州', '小倉', '久留米', '飯塚'] },
+  { pref: '佐賀県', region: '九州', zipRanges: [[840, 849]], keywords: ['佐賀県', '佐賀市', '鳥栖', '唐津'] },
+  { pref: '長崎県', region: '九州', zipRanges: [[850, 859]], keywords: ['長崎県', '長崎市', '佐世保', '諫早'] },
+  { pref: '熊本県', region: '九州', zipRanges: [[860, 869]], keywords: ['熊本県', '熊本市', '熊本空港', '阿蘇くまもと', '八代', '玉名'] },
+  { pref: '大分県', region: '九州', zipRanges: [[870, 879]], keywords: ['大分県', '大分市', '別府', '中津'] },
+  { pref: '宮崎県', region: '九州', zipRanges: [[880, 889]], keywords: ['宮崎県', '宮崎市', '都城', '延岡'] },
+  { pref: '鹿児島県', region: '九州', zipRanges: [[890, 899]], keywords: ['鹿児島県', '鹿児島市', '鹿児島空港', '霧島', '鹿屋'] },
+  { pref: '沖縄県', region: '沖縄', zipRanges: [[900, 907]], keywords: ['沖縄県', '那覇', '沖縄市', '浦添', '宜野湾', '石垣', '宮古島'] }
 ];
 
 const OVERSEAS_COUNTRY_RE = /\b(germany|deutschland|italy|italia|france|uk|united kingdom|england|usa|united states|america|canada|china|taiwan|korea|singapore|thailand|vietnam|australia|switzerland|austria|netherlands|spain|sweden|poland|belgium|europe|eu)\b/i;
@@ -40646,7 +40647,7 @@ const bizAnalyticsViewState = {
   clientSearch: '',
   expandedClients: new Set(),
   expandedDemoSessions: new Set(),
-  collapsedRegions: new Set(),
+  expandedRegions: new Set(),
   geoGranularity: 'region', // 'region' | 'prefecture'
   tripStart: '',
   tripEnd: '',
@@ -41237,7 +41238,8 @@ function renderBusinessAnalyticsView(period = null) {
     const regionClientCardsHtml = filteredGeoGroups.length === 0
       ? `<div style="padding: 28px; text-align: center; color: #94a3b8; background: #ffffff; border: 1px dashed #cbd5e1; border-radius: 10px;">対象条件の地域・販売店データがありません。</div>`
       : filteredGeoGroups.map(g => {
-          const isCollapsed = bizAnalyticsViewState.collapsedRegions.has(g.key);
+          const isExpanded = bizAnalyticsViewState.expandedRegions.has(g.key);
+          const isCollapsed = !isExpanded;
           const salesBarW = Math.min(100, Math.max(0, Math.round((Math.max(0, g.sales) / maxGeoScale) * 100)));
           const gpBarW = Math.min(100, Math.max(0, Math.round((Math.max(0, g.grossProfit) / maxGeoScale) * 100)));
           const expBarW = Math.min(100, Math.max(0, Math.round((g.totalExpense / maxGeoScale) * 100)));
@@ -41493,6 +41495,8 @@ function renderBusinessAnalyticsView(period = null) {
             ${hasGeoOrClientFilter ? `<button type="button" class="btn btn-secondary btn-xs biz-clear-scope-btn" style="font-size: 0.73rem; color: #dc2626; border-color: #fca5a5;">✕ 解除</button>` : ''}
           </div>
           <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+            <button type="button" class="btn btn-secondary btn-xs biz-expand-all-regions-btn" style="font-size: 0.72rem; padding: 4px 8px;">すべて展開</button>
+            <button type="button" class="btn btn-secondary btn-xs biz-collapse-all-regions-btn" style="font-size: 0.72rem; padding: 4px 8px;">すべて閉じる</button>
             <input type="text" class="form-input biz-client-search" value="${safeEscAnalytics(bizAnalyticsViewState.clientSearch)}" placeholder="🔍 地域・販売店・EU検索..." style="font-size: 0.76rem; width: 185px; padding: 4px 8px;">
             <select class="form-select biz-client-sort" style="font-size: 0.76rem; width: auto; padding: 4px 8px;">
               <option value="sales_desc"${bizAnalyticsViewState.clientSortBy === 'sales_desc' ? ' selected' : ''}>販売店: 売上高順</option>
@@ -41562,16 +41566,34 @@ document.addEventListener('click', (e) => {
     return;
   }
 
-  // 統合分析：地域大枠カードの開閉トグル
+  // 統合分析：地域大枠カードの開閉トグル（デフォルト閉）
   const toggleRegionBtn = target.closest('.biz-toggle-region-card');
   if (toggleRegionBtn) {
     const key = toggleRegionBtn.dataset.regionKey;
     if (key) {
-      if (bizAnalyticsViewState.collapsedRegions.has(key)) bizAnalyticsViewState.collapsedRegions.delete(key);
-      else bizAnalyticsViewState.collapsedRegions.add(key);
-      console.log('【統合分析ビュー】地域カード開閉トグル:', key);
+      if (bizAnalyticsViewState.expandedRegions.has(key)) bizAnalyticsViewState.expandedRegions.delete(key);
+      else bizAnalyticsViewState.expandedRegions.add(key);
+      console.log('【地域別売上・経費分析ビュー】地域カード開閉トグル:', key, bizAnalyticsViewState.expandedRegions.has(key));
       renderBusinessAnalyticsView();
     }
+    return;
+  }
+
+  // 統合分析：全地域カード一括展開
+  if (target.closest('.biz-expand-all-regions-btn')) {
+    document.querySelectorAll('.biz-toggle-region-card').forEach(btn => {
+      if (btn.dataset.regionKey) bizAnalyticsViewState.expandedRegions.add(btn.dataset.regionKey);
+    });
+    console.log('【地域別売上・経費分析ビュー】全地域一括展開');
+    renderBusinessAnalyticsView();
+    return;
+  }
+
+  // 統合分析：全地域カード一括折りたたみ
+  if (target.closest('.biz-collapse-all-regions-btn')) {
+    bizAnalyticsViewState.expandedRegions.clear();
+    console.log('【地域別売上・経費分析ビュー】全地域一括折りたたみ');
+    renderBusinessAnalyticsView();
     return;
   }
 
