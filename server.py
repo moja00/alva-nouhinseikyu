@@ -916,19 +916,14 @@ def get_fs_collection(col_name, default_data=None):
         docs = db.collection(col_name).get()
         data = [doc.to_dict() for doc in docs if doc.to_dict()]
         
-        # 削除済みIDの永続化除外フィルタ
-        settings_doc = None
-        if col_name == 'invoices':
-            settings_doc = 'deleted_invoices'
-        elif col_name == 'expenses':
-            settings_doc = 'deleted_expenses'
-
+        # 削除済みIDの永続化除外フィルタ（DELETED_SETTINGS_MAP登録の全コレクションに適用）
+        settings_doc = DELETED_SETTINGS_MAP.get(col_name)
         if settings_doc and data:
             try:
                 del_snap = db.collection('settings').document(settings_doc).get()
                 if del_snap.exists:
-                    del_ids = set(del_snap.to_dict().get('ids', []))
-                    data = [d for d in data if d.get('id') not in del_ids and not d.get('isDeleted') and not d.get('_deleted')]
+                    del_ids = set(str(x).strip() for x in (del_snap.to_dict() or {}).get('ids', []) if x)
+                    data = [d for d in data if str(d.get('id', '')).strip() not in del_ids and not d.get('isDeleted') and not d.get('_deleted')]
             except Exception as e_del:
                 print(f"[Firestore {settings_doc} フィルタ警告]: {e_del}")
 
@@ -968,6 +963,10 @@ DELETED_SETTINGS_MAP = {
     'expenses': 'deleted_expenses',
     'items': 'deleted_items',
     'inventory': 'deleted_inventory',
+    'inventory_lots': 'deleted_inventory_lots',
+    'purchase_orders': 'deleted_purchase_orders',
+    'clients': 'deleted_clients',
+    'manual_journals': 'deleted_manual_journals',
 }
 
 def get_deleted_fs_ids(col_name):
@@ -2159,20 +2158,21 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
                 self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
             return
 
-        # 在庫ロット 保存API
+        # 在庫ロット 保存API（削除済みIDの旧端末キャッシュからの逆流復活をサーバー側で強制ブロック）
         if self.path == '/api/inventory-lots':
             content_length = int(self.headers.get('Content-Length', 0))
             post_data = self.rfile.read(content_length).decode('utf-8')
             try:
                 lots_data = json.loads(post_data)
+                deleted_lot_ids = get_deleted_fs_ids('inventory_lots')
                 if isinstance(lots_data, list):
                     for item in lots_data:
-                        doc_id = item.get('id')
-                        if doc_id:
+                        doc_id = str(item.get('id') or '').strip() if isinstance(item, dict) else ''
+                        if doc_id and doc_id not in deleted_lot_ids:
                             db.collection('inventory_lots').document(doc_id).set(item)
                 elif isinstance(lots_data, dict):
-                    doc_id = lots_data.get('id')
-                    if doc_id:
+                    doc_id = str(lots_data.get('id') or '').strip()
+                    if doc_id and doc_id not in deleted_lot_ids:
                         db.collection('inventory_lots').document(doc_id).set(lots_data)
                 
                 self.send_response(200)
@@ -2186,20 +2186,21 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
                 self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
             return
 
-        # 発注書（注文書/PO）保存API
+        # 発注書（注文書/PO）保存API（削除済みIDの逆流復活をサーバー側でブロック）
         if self.path == '/api/purchase-orders':
             content_length = int(self.headers.get('Content-Length', 0))
             post_data = self.rfile.read(content_length).decode('utf-8')
             try:
                 po_data = json.loads(post_data)
+                deleted_po_ids = get_deleted_fs_ids('purchase_orders')
                 if isinstance(po_data, list):
                     for item in po_data:
-                        doc_id = item.get('id')
-                        if doc_id:
+                        doc_id = str(item.get('id') or '').strip() if isinstance(item, dict) else ''
+                        if doc_id and doc_id not in deleted_po_ids:
                             db.collection('purchase_orders').document(doc_id).set(item)
                 elif isinstance(po_data, dict):
-                    doc_id = po_data.get('id')
-                    if doc_id:
+                    doc_id = str(po_data.get('id') or '').strip()
+                    if doc_id and doc_id not in deleted_po_ids:
                         db.collection('purchase_orders').document(doc_id).set(po_data)
 
                 self.send_response(200)

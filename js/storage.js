@@ -3649,83 +3649,54 @@ export async function syncMastersWithServer(force = false) {
       return true;
     }
 
-    // 1. 商品マスタの同期（スマートマージ: サーバー・ローカル双方の最新データを保護）
+    // 1. 商品マスタの同期（サーバー正: 削除済み商品のキャッシュ逆流復活を完全防止）
     const deletedItemIds = getDeletedItemIds();
     const serverItems = await fetchServerMasterItems();
     const localItems = getItemMasterList(false);
     if (serverItems && Array.isArray(serverItems)) {
-      const mergedMap = new Map();
-      serverItems.forEach(i => {
-        if (i && (i.id || i.name) && !(i.id && deletedItemIds.has(String(i.id).trim()))) {
-          mergedMap.set(i.id || i.name, i);
-        }
-      });
-      let hasLocalChanges = false;
-      localItems.forEach(i => {
-        const key = i.id || i.name;
-        if (!key) return;
-        if (i.id && deletedItemIds.has(String(i.id).trim())) return;
-        if (!mergedMap.has(key)) {
-          mergedMap.set(key, i);
-          hasLocalChanges = true;
-        } else {
-          const sItem = mergedMap.get(key);
-          const lTime = new Date(i.updatedAt || i.createdAt || 0).getTime();
-          const sTime = new Date(sItem.updatedAt || sItem.createdAt || 0).getTime();
-          if (lTime > sTime) {
-            mergedMap.set(key, i);
-            hasLocalChanges = true;
-          }
-        }
-      });
-      const validItems = Array.from(mergedMap.values()).filter(i => !SAMPLE_ITEM_KEYS.has(getMasterKey(i.name)));
+      let resolvedItems = [];
+      let needsUpload = false;
+      if (serverItems.length > 0 || localItems.length === 0) {
+        resolvedItems = serverItems.filter(i => i && (i.id || i.name) && !(i.id && deletedItemIds.has(String(i.id).trim())));
+      } else {
+        resolvedItems = localItems.filter(i => i && !(i.id && deletedItemIds.has(String(i.id).trim())));
+        needsUpload = resolvedItems.length > 0;
+      }
+      const validItems = resolvedItems.filter(i => !SAMPLE_ITEM_KEYS.has(getMasterKey(i.name)));
       const mergedItems = deduplicateItemMasterList(validItems);
       localStorageSetItemOnly(KEYS.ITEM_MASTER, JSON.stringify(mergedItems));
-      if (hasLocalChanges) {
+      if (needsUpload) {
         saveServerMasterItems(mergedItems).catch(() => { });
       }
-      console.log(`[マスタ同期完了] 商品マスタ: 全 ${mergedItems.length} 件をスマート同期しました`);
+      console.log(`[マスタ同期完了] 商品マスタ: 全 ${mergedItems.length} 件をサーバー正で完全同期しました`);
     } else if (localItems && localItems.length > 0) {
       await saveServerMasterItems(localItems);
     }
 
-    // 2. 取引先マスタの同期（スマートマージ: サーバー・ローカル双方の最新データを保護）
+    // 2. 取引先マスタの同期（サーバー正: 削除済み取引先のキャッシュ逆流復活を完全防止）
     const serverClients = await fetchServerMasterClients();
     const localClients = getClientMasterList(false);
     if (serverClients && Array.isArray(serverClients)) {
-      const mergedMap = new Map();
-      serverClients.forEach(c => {
-        if (c && (c.id || c.name)) mergedMap.set(c.id || c.name, c);
-      });
-      let hasLocalChanges = false;
-      localClients.forEach(c => {
-        const key = c.id || c.name;
-        if (!key) return;
-        if (!mergedMap.has(key)) {
-          mergedMap.set(key, c);
-          hasLocalChanges = true;
-        } else {
-          const sClient = mergedMap.get(key);
-          const lTime = new Date(c.updatedAt || c.createdAt || 0).getTime();
-          const sTime = new Date(sClient.updatedAt || sClient.createdAt || 0).getTime();
-          if (lTime > sTime) {
-            mergedMap.set(key, c);
-            hasLocalChanges = true;
-          }
-        }
-      });
-      const validClients = Array.from(mergedMap.values()).filter(c => !SAMPLE_CLIENT_KEYS.has(getMasterKey(c.name)));
+      let resolvedClients = [];
+      let needsUpload = false;
+      if (serverClients.length > 0 || localClients.length === 0) {
+        resolvedClients = serverClients.filter(c => c && (c.id || c.name));
+      } else {
+        resolvedClients = [...localClients];
+        needsUpload = resolvedClients.length > 0;
+      }
+      const validClients = resolvedClients.filter(c => !SAMPLE_CLIENT_KEYS.has(getMasterKey(c.name)));
       const finalClients = deduplicateClientMasterList(validClients);
       localStorageSetItemOnly(KEYS.CLIENT_MASTER, JSON.stringify(finalClients));
-      if (hasLocalChanges) {
+      if (needsUpload) {
         saveServerMasterClients(finalClients).catch(() => { });
       }
-      console.log(`[マスタ同期完了] 取引先マスタ: 全 ${finalClients.length} 件をスマート同期しました`);
+      console.log(`[マスタ同期完了] 取引先マスタ: 全 ${finalClients.length} 件をサーバー正で完全同期しました`);
     } else if (localClients && localClients.length > 0) {
       await saveServerMasterClients(localClients);
     }
 
-    // 2-2. 商品カテゴリ・非在庫カテゴリの同期（クラウド双方向同期）
+    // 2-2. 商品カテゴリ・非在庫カテゴリの同期（サーバー正: 削除済みカテゴリのキャッシュ逆流復活を防止）
     try {
       const serverCats = await fetchServerItemCategories();
       const localItemCats = getItemCategoryList();
@@ -3736,26 +3707,15 @@ export async function syncMastersWithServer(force = false) {
       let hasCatChanges = false;
 
       if (serverCats && Array.isArray(serverCats.itemCategories) && serverCats.itemCategories.length > 0) {
-        // サーバーとローカルを統合（並び順と新規登録項目を漏れなく保護）
-        const mergedSet = new Set(serverCats.itemCategories);
-        localItemCats.forEach(c => mergedSet.add(c));
-        finalItemCats = Array.from(mergedSet);
+        finalItemCats = Array.from(new Set(serverCats.itemCategories));
         localStorageSetItemOnly(KEYS.ITEM_CATEGORIES, JSON.stringify(finalItemCats));
-        if (finalItemCats.length !== serverCats.itemCategories.length) {
-          hasCatChanges = true;
-        }
       } else if (localItemCats.length > 0) {
         hasCatChanges = true;
       }
 
       if (serverCats && Array.isArray(serverCats.nonStockCategories) && serverCats.nonStockCategories.length > 0) {
-        const mergedNonStock = new Set(serverCats.nonStockCategories);
-        localNonStockCats.forEach(c => mergedNonStock.add(c));
-        finalNonStockCats = Array.from(mergedNonStock);
+        finalNonStockCats = Array.from(new Set(serverCats.nonStockCategories));
         localStorageSetItemOnly(KEYS.NON_STOCK_CATEGORIES, JSON.stringify(finalNonStockCats));
-        if (finalNonStockCats.length !== serverCats.nonStockCategories.length) {
-          hasCatChanges = true;
-        }
       } else if (localNonStockCats.length > 0) {
         hasCatChanges = true;
       }
@@ -3766,7 +3726,7 @@ export async function syncMastersWithServer(force = false) {
           nonStockCategories: finalNonStockCats
         });
       }
-      console.log(`[カテゴリ同期完了] 商品カテゴリ: 全 ${finalItemCats.length} 件をサーバー・ローカルで完全同期しました`);
+      console.log(`[カテゴリ同期完了] 商品カテゴリ: 全 ${finalItemCats.length} 件をサーバー正で完全同期しました`);
     } catch (catErr) {
       console.warn('Sync categories error:', catErr);
     }
@@ -7091,35 +7051,33 @@ export async function syncPurchaseOrdersWithServer() {
     const deleted = getDeletedPurchaseOrderIds();
 
     if (serverList && Array.isArray(serverList)) {
-      const poMap = new Map();
-      serverList.forEach(p => {
-        if (!p || !p.id || deleted.has(p.id)) return;
-        poMap.set(p.id, p);
-      });
-      let hasLocalOnly = false;
-      localList.forEach(p => {
-        if (!p || !p.id || deleted.has(p.id)) return;
-        const existing = poMap.get(p.id);
-        if (!existing) {
+      // サーバー（Firestore）を正（Source of Truth）とし、削除済み発注書のキャッシュ逆流復活を防止
+      let resolvedList = [];
+      let needsUpload = false;
+      if (serverList.length > 0 || localList.length === 0) {
+        const poMap = new Map();
+        serverList.forEach(p => {
+          if (!p || !p.id || deleted.has(p.id)) return;
           poMap.set(p.id, p);
-          hasLocalOnly = true;
-        } else if (p.updatedAt && (!existing.updatedAt || p.updatedAt > existing.updatedAt)) {
-          poMap.set(p.id, p);
-          hasLocalOnly = true;
-        }
-      });
-      const merged = Array.from(poMap.values()).sort((a, b) => {
+        });
+        resolvedList = Array.from(poMap.values());
+      } else {
+        resolvedList = localList.filter(p => p && p.id && !deleted.has(p.id));
+        needsUpload = resolvedList.length > 0;
+      }
+
+      resolvedList.sort((a, b) => {
         const dA = a.issueDate || '';
         const dB = b.issueDate || '';
         if (dB !== dA) return dB.localeCompare(dA);
         return String(b.poNumber || '').localeCompare(String(a.poNumber || ''));
       });
-      localStorageSetItemOnly(KEYS.PURCHASE_ORDERS, JSON.stringify(merged));
-      if (hasLocalOnly) {
-        saveServerPurchaseOrders(merged).catch(() => { });
+      localStorageSetItemOnly(KEYS.PURCHASE_ORDERS, JSON.stringify(resolvedList));
+      if (needsUpload) {
+        saveServerPurchaseOrders(resolvedList).catch(() => { });
       }
-      console.log(`[発注書同期完了] 全 ${merged.length} 件の発注書をサーバー・ローカルで同期しました`);
-      return merged;
+      console.log(`[発注書同期完了] 全 ${resolvedList.length} 件の発注書をサーバー正で完全同期しました`);
+      return resolvedList;
     }
   } catch (err) {
     console.warn('syncPurchaseOrdersWithServer error:', err);
@@ -9442,75 +9400,42 @@ export async function syncInventorySerialsWithServer() {
 
     if (serverSerials && Array.isArray(serverSerials)) {
       const deletedSerials = getDeletedSerialNumbers();
-      const serialMap = new Map();
+      let resolvedSerials = [];
+      let needsUpload = false;
 
-      serverSerials.forEach(s => {
-        if (!s || !s.serialNumber) return;
-        const sn = String(s.serialNumber).trim().toUpperCase();
-        if (deletedSerials.has(sn)) return;
-        serialMap.set(sn, s);
-      });
-
-      // 未読込みの初期デフォルト補完が「ローカル未同期変更」としてサーバーへ逆流するのを防止
-      const rawLocal = localStorage.getItem(KEYS.INVENTORY_SERIALS);
-      let localSerials = [];
-      if (rawLocal) {
-        try {
-          const parsedLocal = JSON.parse(rawLocal);
-          if (Array.isArray(parsedLocal)) localSerials = parsedLocal;
-        } catch (_) { }
-      }
-      const defaultSnMap = new Map(
-        DEFAULT_INVENTORY_SERIALS.map(d => [String(d.serialNumber || '').trim().toUpperCase(), d])
-      );
-
-      let hasLocalOnly = false;
-      localSerials.forEach(s => {
-        if (!s || !s.serialNumber) return;
-        const sn = String(s.serialNumber).trim().toUpperCase();
-        if (deletedSerials.has(sn)) return;
-        if (!serialMap.has(sn)) {
-          const defRec = defaultSnMap.get(sn);
-          const isUnmodifiedDefault = defRec &&
-            (s.status || '') === (defRec.status || '') &&
-            (s.docNumber || '') === (defRec.docNumber || '') &&
-            (s.clientName || '') === (defRec.clientName || '') &&
-            !!s.isBundled === !!defRec.isBundled;
-          if (!isUnmodifiedDefault || serverSerials.length === 0) {
-            serialMap.set(sn, s);
-            hasLocalOnly = true;
-          }
-        } else {
-          const sItem = serialMap.get(sn);
-          // サーバー側に確定伝票番号(docNumber)がある場合、ローカルの空文字・未設定による破損・巻き戻しを防止
-          if (sItem && sItem.docNumber && !s.docNumber) {
-            s.docNumber = sItem.docNumber;
-            s.docId = sItem.docId || s.docId;
-            s.shipDate = sItem.shipDate || s.shipDate;
-            s.shippedDate = sItem.shippedDate || s.shippedDate;
-            s.clientName = sItem.clientName || s.clientName;
-            s.endUserName = sItem.endUserName || s.endUserName;
-          }
-          const lTime = new Date(s.updatedAt || s.createdAt || 0).getTime();
-          const sTime = new Date(sItem.updatedAt || sItem.createdAt || 0).getTime();
-          if (lTime > sTime) {
-            serialMap.set(sn, s);
-            hasLocalOnly = true;
-          }
+      // サーバー（Firestore）を正（Source of Truth）とし、削除・統合済みシリアルのキャッシュ逆流復活を防止
+      if (serverSerials.length > 0) {
+        const serialMap = new Map();
+        serverSerials.forEach(s => {
+          if (!s || !s.serialNumber) return;
+          const sn = String(s.serialNumber).trim().toUpperCase();
+          if (deletedSerials.has(sn)) return;
+          serialMap.set(sn, s);
+        });
+        resolvedSerials = Array.from(serialMap.values());
+      } else {
+        const rawLocal = localStorage.getItem(KEYS.INVENTORY_SERIALS);
+        if (rawLocal) {
+          try {
+            const parsedLocal = JSON.parse(rawLocal);
+            if (Array.isArray(parsedLocal) && parsedLocal.length > 0) {
+              resolvedSerials = parsedLocal.filter(s => s && s.serialNumber && !deletedSerials.has(String(s.serialNumber).trim().toUpperCase()));
+              needsUpload = resolvedSerials.length > 0;
+            }
+          } catch (_) { }
         }
-      });
+      }
 
-      const mergedSerials = Array.from(serialMap.values());
       // 全シリアルの備考欄を自動サニタイズ（請求書支払案内文の混入を完全除去）
-      mergedSerials.forEach(s => {
+      resolvedSerials.forEach(s => {
         if (s && s.note) s.note = sanitizeSerialNote(s.note);
       });
-      localStorageSetItemOnly(KEYS.INVENTORY_SERIALS, JSON.stringify(mergedSerials));
-      if (hasLocalOnly) {
-        saveServerInventorySerials(mergedSerials).catch(() => { });
+      localStorageSetItemOnly(KEYS.INVENTORY_SERIALS, JSON.stringify(resolvedSerials));
+      if (needsUpload) {
+        saveServerInventorySerials(resolvedSerials).catch(() => { });
       }
-      console.log(`[シリアル同期完了] 全 ${mergedSerials.length} 件のシリアル台帳をサーバー・ローカルで完全同期しました`);
-      return mergedSerials;
+      console.log(`[シリアル同期完了] 全 ${resolvedSerials.length} 件のシリアル台帳をサーバー正で完全同期しました`);
+      return resolvedSerials;
     }
   } catch (err) {
     console.warn('syncInventorySerialsWithServer error:', err);
