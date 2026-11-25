@@ -18930,6 +18930,7 @@ function setupEventListeners() {
   }
   if (DOM.inputNewCategoryName) {
     DOM.inputNewCategoryName.addEventListener('keydown', (e) => {
+      if (e.isComposing || e.keyCode === 229) return;
       if (e.key === 'Enter') {
         e.preventDefault();
         handleAddNewCategory();
@@ -19271,8 +19272,9 @@ function setupEventListeners() {
       }
     });
 
-    // Enterキー押下時：連番補完 ＆ 次スロットへフォーカス移動
+    // Enterキー押下時：連番補完 ＆ 次スロットへフォーカス移動（日本語IME変換確定時は除外）
     DOM.lotSerialGroupsContainer.addEventListener('keydown', (e) => {
+      if (e.isComposing || e.keyCode === 229) return;
       if (e.key === 'Enter' && e.target && e.target.classList.contains('lot-serial-group-input')) {
         e.preventDefault();
         handleLotSerialAutoFill(e.target);
