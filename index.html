@@ -23,7 +23,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
 
-  <link rel="stylesheet" href="css/style.css?v=20261125_dpeg_stock_serial_fix">
+  <link rel="stylesheet" href="css/style.css?v=20261125_lot_cost_biz_analytics">
   <link rel="stylesheet" href="css/print.css?v=20261118_print_pagebreak_fix" media="print">
   <!-- ブラウザ内AI文字認識（OCR）エンジン -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -343,7 +343,7 @@
           style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
           <span
-            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.25-dpeg-stock-serial-fix</span>
+            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.25-lot-cost-biz-analytics</span>
         </div>
       </div>
 
@@ -2109,6 +2109,10 @@
       <button type="button" id="tabBtnInventoryLots" class="acc-tab-btn" style="font-weight: 600;">
         📜 入荷ロット履歴
       </button>
+      <button type="button" id="tabBtnInventoryLotCost" class="acc-tab-btn" style="font-weight: 600;"
+        onclick="window.switchInventoryTab && window.switchInventoryTab('lotCost')">
+        📊 ロット別原価
+      </button>
       <button type="button" id="tabBtnPurchaseOrders" class="acc-tab-btn" style="font-weight: 600;">
         📋 発注管理 (注文書/PO)
       </button>
@@ -2438,6 +2442,11 @@
           <div id="purchaseOrderTableContainer" style="overflow-x: auto;">
             <!-- JSでレンダリング -->
           </div>
+        </div>
+
+        <!-- 5. ロット別原価分析タブ（在庫マスタ側クイックビュー） -->
+        <div id="inventoryLotCostTabContent" style="display: none;">
+          <div id="invLotCostAnalyticsRoot"></div>
         </div>
 
       </div>
@@ -4563,6 +4572,23 @@
         </svg>
         仕訳帳・振替伝票
       </button>
+      <button type="button" class="acc-tab-btn" data-tab="acc-tab-lot-cost"
+        onclick="window.switchAccountingTab && window.switchAccountingTab('acc-tab-lot-cost')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+          <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+          <line x1="12" y1="22.08" x2="12" y2="12" />
+        </svg>
+        ロット別原価
+      </button>
+      <button type="button" class="acc-tab-btn" data-tab="acc-tab-analytics"
+        onclick="window.switchAccountingTab && window.switchAccountingTab('acc-tab-analytics')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="10" r="3" />
+          <path d="M12 21.7C17.3 17 20 13 20 10a8 8 0 1 0-16 0c0 3 2.7 7 8 11.7z" />
+        </svg>
+        取引先・地域・出張分析
+      </button>
       <button type="button" class="acc-tab-btn" data-tab="acc-tab-settings"
         onclick="window.switchAccountingTab && window.switchAccountingTab('acc-tab-settings')">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -5400,6 +5426,16 @@
           </div>
         </div>
 
+        <!-- 9. ロット別原価ビューペイン -->
+        <div class="acc-pane" id="acc-tab-lot-cost" style="display: none;">
+          <div id="accLotCostAnalyticsRoot"></div>
+        </div>
+
+        <!-- 10. 出張・地域・取引先 統合分析ビューペイン -->
+        <div class="acc-pane" id="acc-tab-analytics" style="display: none;">
+          <div id="accBusinessAnalyticsRoot"></div>
+        </div>
+
       </div><!-- /.accounting-view-container -->
     </div><!-- /.view-screen-content -->
   </section><!-- /#accountingViewScreen -->
@@ -5877,7 +5913,7 @@
           <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             <h2 class="view-screen-title" style="margin: 0;">勤怠管理・退勤タイムカード</h2>
             <span
-              style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.25-dpeg-stock-serial-fix</span>
+              style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.25-lot-cost-biz-analytics</span>
           </div>
           <span class="view-screen-subtitle">休憩1時間自動控除・ワンタップ出退勤打刻・月次出勤簿・打刻漏れ修正</span>
         </div>
@@ -7991,7 +8027,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261125_dpeg_stock_serial_fix"></script>
+  <script src="js/app.bundle.js?v=20261125_lot_cost_biz_analytics"></script>
 </body>
 
 </html>

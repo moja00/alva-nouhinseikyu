@@ -13508,6 +13508,1119 @@ if (typeof window !== 'undefined') {
 }
 
   // ==========================================================================
+  // 経営分析コアエンジン（ロット別原価・取引先/地域/出張統合分析）
+  // ==========================================================================
+/**
+ * analytics-engine.js
+ * Alva-works ERP - 経営分析コアエンジン
+ *
+ * 1. ロット別原価ビュー（入荷ロット・商品マスタ・在庫・シリアル・伝票からの動的集計）
+ * 2. 出張・地域・取引先 統合分析ビュー
+ *    - 取引先別 売上・粗利サマリー（複数回取引・エンドユーザー展開追跡）
+ *    - 地域（エリア・都道府県）別 売上・経費バランス
+ *    - 出張期間と「直後〜後追い」売上の連動分析
+ *
+ * ※ ハードコード禁止ルール準拠：特定の取引先名・ロット番号・単価・経費金額等は一切記述せず、
+ *   すべてマスタ・伝票・ロット台帳・経費・仕訳データから動的に算出します。
+ */
+
+// ==========================================================================
+// 1. 汎用地理マスタ（日本47都道府県・地方区分・標準郵便番号3桁帯）
+// ==========================================================================
+const REGION_ORDER = [
+  '北海道',
+  '東北',
+  '関東',
+  '中部',
+  '近畿',
+  '中国',
+  '四国',
+  '九州・沖縄',
+  '海外',
+  '未設定'
+];
+
+const PREF_GEO_TABLE = [
+  { pref: '北海道', region: '北海道', zipRanges: [[1, 99]], keywords: ['北海道', '札幌', '新千歳', '函館', '旭川', '帯広', '釧路', '北見', '苫小牧', '千歳'] },
+  { pref: '青森県', region: '東北', zipRanges: [[30, 39]], keywords: ['青森県', '青森市', '八戸', '弘前'] },
+  { pref: '岩手県', region: '東北', zipRanges: [[20, 29]], keywords: ['岩手県', '盛岡', '花巻', '一関'] },
+  { pref: '宮城県', region: '東北', zipRanges: [[980, 989]], keywords: ['宮城県', '仙台', '石巻', '大崎'] },
+  { pref: '秋田県', region: '東北', zipRanges: [[10, 19]], keywords: ['秋田県', '秋田市', '横手'] },
+  { pref: '山形県', region: '東北', zipRanges: [[990, 999]], keywords: ['山形県', '山形市', '米沢', '鶴岡', '酒田'] },
+  { pref: '福島県', region: '東北', zipRanges: [[960, 979]], keywords: ['福島県', '福島市', '郡山', 'いわき', '会津若松'] },
+  { pref: '茨城県', region: '関東', zipRanges: [[300, 319]], keywords: ['茨城県', '水戸', 'つくば', '日立', '土浦'] },
+  { pref: '栃木県', region: '関東', zipRanges: [[320, 329]], keywords: ['栃木県', '宇都宮', '小山', '足利', '佐野', '那須'] },
+  { pref: '群馬県', region: '関東', zipRanges: [[370, 379]], keywords: ['群馬県', '前橋', '高崎', '太田', '伊勢崎', '桐生', '渋川', '館林'] },
+  { pref: '埼玉県', region: '関東', zipRanges: [[330, 369]], keywords: ['埼玉県', 'さいたま', '川口', '大宮', '浦和', '川越', '熊谷', '深谷', '所沢', '春日部', '越谷', '本庄'] },
+  { pref: '千葉県', region: '関東', zipRanges: [[260, 299]], keywords: ['千葉県', '千葉市', '船橋', '柏', '松戸', '市川', '成田', '幕張', '木更津'] },
+  { pref: '東京都', region: '関東', zipRanges: [[100, 208]], keywords: ['東京都', '羽田空港', '羽田', '東京駅', '品川', '新宿', '渋谷', '池袋', '銀座', '丸の内', '八王子', '立川', '町田', '足立区', '港区', '千代田区', '中央区', '江東区', '大田区', '世田谷区'] },
+  { pref: '神奈川県', region: '関東', zipRanges: [[210, 259]], keywords: ['神奈川県', '横浜', '川崎', '相模原', '藤沢', '厚木', '小田原', '横須賀', '新横浜'] },
+  { pref: '新潟県', region: '中部', zipRanges: [[940, 959]], keywords: ['新潟県', '新潟市', '長岡', '上越', '三条'] },
+  { pref: '富山県', region: '中部', zipRanges: [[930, 939]], keywords: ['富山県', '富山市', '高岡'] },
+  { pref: '石川県', region: '中部', zipRanges: [[920, 929]], keywords: ['石川県', '金沢', '小松', '白山'] },
+  { pref: '福井県', region: '中部', zipRanges: [[910, 919]], keywords: ['福井県', '福井市', '敦賀'] },
+  { pref: '山梨県', region: '中部', zipRanges: [[400, 409]], keywords: ['山梨県', '甲府', '富士吉田'] },
+  { pref: '長野県', region: '中部', zipRanges: [[380, 399]], keywords: ['長野県', '長野市', '松本', '上田', '千曲', '軽井沢', '飯田', '佐久'] },
+  { pref: '岐阜県', region: '中部', zipRanges: [[500, 509]], keywords: ['岐阜県', '岐阜市', '大垣', '高山', '各務原', '多治見'] },
+  { pref: '静岡県', region: '中部', zipRanges: [[410, 439]], keywords: ['静岡県', '静岡市', '浜松', '沼津', '富士市', '熱海', '三島'] },
+  { pref: '愛知県', region: '中部', zipRanges: [[440, 498]], keywords: ['愛知県', '名古屋', '中部国際空港', 'セントレア', '豊田', '岡崎', '一宮', '豊橋', '春日井', '刈谷'] },
+  { pref: '三重県', region: '近畿', zipRanges: [[510, 519]], keywords: ['三重県', '津市', '四日市', '鈴鹿', '桑名', '伊勢'] },
+  { pref: '滋賀県', region: '近畿', zipRanges: [[520, 529]], keywords: ['滋賀県', '大津', '草津', '彦根', '長浜'] },
+  { pref: '京都府', region: '近畿', zipRanges: [[600, 629]], keywords: ['京都府', '京都市', '京都駅', '宇治', '舞鶴', '福知山'] },
+  { pref: '大阪府', region: '近畿', zipRanges: [[530, 599]], keywords: ['大阪府', '大阪市', '新大阪', '伊丹空港', '関西国際空港', '関西空港', '関空', '梅田', '難波', '堺市', '東大阪', '豊中', '吹田', '枚方'] },
+  { pref: '兵庫県', region: '近畿', zipRanges: [[650, 679]], keywords: ['兵庫県', '神戸', '姫路', '尼崎', '西宮', '明石', '加古川', '伊丹市'] },
+  { pref: '奈良県', region: '近畿', zipRanges: [[630, 639]], keywords: ['奈良県', '奈良市', '橿原', '生駒'] },
+  { pref: '和歌山県', region: '近畿', zipRanges: [[640, 649]], keywords: ['和歌山県', '和歌山市', '田辺'] },
+  { pref: '鳥取県', region: '中国', zipRanges: [[680, 689]], keywords: ['鳥取県', '鳥取市', '米子'] },
+  { pref: '島根県', region: '中国', zipRanges: [[690, 699]], keywords: ['島根県', '松江', '出雲'] },
+  { pref: '岡山県', region: '中国', zipRanges: [[700, 719]], keywords: ['岡山県', '岡山市', '倉敷', '津山'] },
+  { pref: '広島県', region: '中国', zipRanges: [[720, 739]], keywords: ['広島県', '広島市', '広島空港', '福山', '呉市', '廿日市', '東広島'] },
+  { pref: '山口県', region: '中国', zipRanges: [[740, 759]], keywords: ['山口県', '山口市', '下関', '宇部', '周南', '岩国'] },
+  { pref: '徳島県', region: '四国', zipRanges: [[770, 779]], keywords: ['徳島県', '徳島市', '鳴門'] },
+  { pref: '香川県', region: '四国', zipRanges: [[760, 769]], keywords: ['香川県', '高松', '丸亀'] },
+  { pref: '愛媛県', region: '四国', zipRanges: [[790, 799]], keywords: ['愛媛県', '松山', '今治', '新居浜'] },
+  { pref: '高知県', region: '四国', zipRanges: [[780, 789]], keywords: ['高知県', '高知市'] },
+  { pref: '福岡県', region: '九州・沖縄', zipRanges: [[800, 839]], keywords: ['福岡県', '福岡市', '福岡空港', '博多', '天神', '北九州', '小倉', '久留米', '飯塚'] },
+  { pref: '佐賀県', region: '九州・沖縄', zipRanges: [[840, 849]], keywords: ['佐賀県', '佐賀市', '鳥栖', '唐津'] },
+  { pref: '長崎県', region: '九州・沖縄', zipRanges: [[850, 859]], keywords: ['長崎県', '長崎市', '佐世保', '諫早'] },
+  { pref: '熊本県', region: '九州・沖縄', zipRanges: [[860, 869]], keywords: ['熊本県', '熊本市', '熊本空港', '阿蘇くまもと', '八代', '玉名'] },
+  { pref: '大分県', region: '九州・沖縄', zipRanges: [[870, 879]], keywords: ['大分県', '大分市', '別府', '中津'] },
+  { pref: '宮崎県', region: '九州・沖縄', zipRanges: [[880, 889]], keywords: ['宮崎県', '宮崎市', '都城', '延岡'] },
+  { pref: '鹿児島県', region: '九州・沖縄', zipRanges: [[890, 899]], keywords: ['鹿児島県', '鹿児島市', '鹿児島空港', '霧島', '鹿屋'] },
+  { pref: '沖縄県', region: '九州・沖縄', zipRanges: [[900, 907]], keywords: ['沖縄県', '那覇', '沖縄市', '浦添', '宜野湾', '石垣', '宮古島'] }
+];
+
+const OVERSEAS_COUNTRY_RE = /\b(germany|deutschland|italy|italia|france|uk|united kingdom|england|usa|united states|america|canada|china|taiwan|korea|singapore|thailand|vietnam|australia|switzerland|austria|netherlands|spain|sweden|poland|belgium|europe|eu)\b/i;
+
+// 移動・デモ・出張関連の経費カテゴリキーワード
+const TRAVEL_DEMO_EXPENSE_CATEGORIES = ['旅費交通費', '車両費', '接待交際費', '会議費'];
+function isTravelDemoExpenseCategory(category) {
+  const c = String(category || '').trim();
+  if (!c) return false;
+  return TRAVEL_DEMO_EXPENSE_CATEGORIES.some(k => c.includes(k)) ||
+    /旅費|交通|出張|車両|ガソリン|高速|駐車|宿泊|交際/.test(c);
+}
+
+/**
+ * 住所・郵便番号・テキストから汎用的に都道府県・地方エリアを判定する
+ * （ハードコード禁止：一般的な日本の都道府県・郵便番号規則・海外判定のみを使用）
+ */
+function resolveGeoLocation({ address = '', zip = '', text = '', currency = '', docLang = '' } = {}) {
+  const addrStr = String(address || '').normalize('NFKC').trim();
+  const zipStr = String(zip || '').normalize('NFKC').trim();
+  const extraStr = String(text || '').normalize('NFKC').trim();
+  const combined = `${addrStr} ${extraStr}`.trim();
+
+  // 1. 住所・テキスト内の明確な47都道府県名（完全一致優先）
+  for (const row of PREF_GEO_TABLE) {
+    if (addrStr && addrStr.includes(row.pref)) {
+      return { prefecture: row.pref, region: row.region, source: 'address_pref' };
+    }
+  }
+
+  // 2. 日本標準郵便番号（NNN-NNNN または 7桁数字）の上3桁から判定
+  const jpZipMatch = zipStr.replace(/〒/g, '').trim().match(/^(\d{3})-?(\d{4})$/);
+  if (jpZipMatch) {
+    const prefix3 = parseInt(jpZipMatch[1], 10);
+    // 001〜099 は北海道・東北（010-019秋田, 020-029岩手, 030-039青森, その他北海道）
+    if (prefix3 >= 10 && prefix3 <= 19) return { prefecture: '秋田県', region: '東北', source: 'zip' };
+    if (prefix3 >= 20 && prefix3 <= 29) return { prefecture: '岩手県', region: '東北', source: 'zip' };
+    if (prefix3 >= 30 && prefix3 <= 39) return { prefecture: '青森県', region: '東北', source: 'zip' };
+    if ((prefix3 >= 1 && prefix3 <= 9) || (prefix3 >= 40 && prefix3 <= 99)) {
+      return { prefecture: '北海道', region: '北海道', source: 'zip' };
+    }
+    for (const row of PREF_GEO_TABLE) {
+      if (row.pref === '北海道' || row.pref === '青森県' || row.pref === '岩手県' || row.pref === '秋田県') continue;
+      for (const [lo, hi] of row.zipRanges) {
+        if (prefix3 >= lo && prefix3 <= hi) {
+          return { prefecture: row.pref, region: row.region, source: 'zip' };
+        }
+      }
+    }
+  }
+
+  // 3. 海外判定（英語書類・海外国名・欧州郵便番号 D-xxxxx 等）
+  if (
+    OVERSEAS_COUNTRY_RE.test(combined) ||
+    /^[A-Z]{1,2}-\d{4,6}$/i.test(zipStr) ||
+    (docLang === 'en' && !/[ぁ-んァ-ヶ一-龠]/.test(addrStr)) ||
+    (currency && currency !== 'JPY' && !/[ぁ-んァ-ヶ一-龠]/.test(addrStr))
+  ) {
+    return { prefecture: '海外', region: '海外', source: 'overseas' };
+  }
+
+  // 4. テキスト全体（支払先・摘要・住所）から都道府県名・一般主要地名キーワードを判定
+  for (const row of PREF_GEO_TABLE) {
+    if (combined.includes(row.pref)) {
+      return { prefecture: row.pref, region: row.region, source: 'text_pref' };
+    }
+  }
+  for (const row of PREF_GEO_TABLE) {
+    for (const kw of row.keywords) {
+      if (kw && combined.includes(kw)) {
+        return { prefecture: row.pref, region: row.region, source: 'text_keyword' };
+      }
+    }
+  }
+
+  return { prefecture: '未設定', region: '未設定', source: 'unknown' };
+}
+
+// ==========================================================================
+// 2. 日付ユーティリティ
+// ==========================================================================
+
+function parseYmdToUtcMs(dateStr) {
+  const s = String(dateStr || '').trim().slice(0, 10);
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  if (!y || mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  return Date.UTC(y, mo - 1, d);
+}
+
+function addDaysYmd(dateStr, days) {
+  const ms = parseYmdToUtcMs(dateStr);
+  if (ms === null) return '';
+  const dt = new Date(ms + (Number(days) || 0) * 86400000);
+  const y = dt.getUTCFullYear();
+  const mo = String(dt.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(dt.getUTCDate()).padStart(2, '0');
+  return `${y}-${mo}-${d}`;
+}
+
+function diffDaysYmd(startStr, endStr) {
+  const ms1 = parseYmdToUtcMs(startStr);
+  const ms2 = parseYmdToUtcMs(endStr);
+  if (ms1 === null || ms2 === null) return null;
+  return Math.round((ms2 - ms1) / 86400000);
+}
+
+function isDateInRange(dateStr, startStr, endStr) {
+  const d = String(dateStr || '').trim().slice(0, 10);
+  if (!d) return false;
+  if (startStr && d < startStr) return false;
+  if (endStr && d > endStr) return false;
+  return true;
+}
+
+function normalizeLookupName(str) {
+  return String(str || '')
+    .normalize('NFKC')
+    .replace(/[\s\u3000]+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+// ==========================================================================
+// 3. ロット別原価ビュー 分析エンジン
+// ==========================================================================
+
+/**
+ * ロット台帳・商品マスタ・在庫マスタ・シリアル台帳・確定伝票から
+ * ロット別原価・諸掛按分・原価率・前回ロット比を動的集計する
+ */
+function buildLotCostAnalytics({
+  lots = [],
+  itemsMaster = [],
+  inventoryList = [],
+  serials = [],
+  docs = []
+} = {}) {
+  const safeLots = Array.isArray(lots) ? lots : [];
+  const safeItems = Array.isArray(itemsMaster) ? itemsMaster : [];
+  const safeInv = Array.isArray(inventoryList) ? inventoryList : [];
+  const safeSerials = Array.isArray(serials) ? serials : [];
+  const safeDocs = Array.isArray(docs) ? docs : [];
+
+  // 商品マスタ・在庫マスタの高速ルックアップ辞書を構築
+  const itemById = new Map();
+  const itemBySku = new Map();
+  const itemByName = new Map();
+  safeItems.forEach(it => {
+    if (!it) return;
+    if (it.id) {
+      itemById.set(String(it.id), it);
+      itemById.set(`inv_${it.id}`, it);
+    }
+    if (it.sku) itemBySku.set(normalizeLookupName(it.sku), it);
+    if (it.name) itemByName.set(normalizeLookupName(it.name), it);
+  });
+
+  const invById = new Map();
+  const invByName = new Map();
+  safeInv.forEach(inv => {
+    if (!inv) return;
+    if (inv.id) invById.set(String(inv.id), inv);
+    if (inv.name) invByName.set(normalizeLookupName(inv.name), inv);
+  });
+
+  // 確定伝票から品目別の実績平均販売単価（マスタ単価が無い場合のフォールバック）を動的算出
+  const salesPriceAcc = new Map(); // normName / itemId -> { sum, qty }
+  safeDocs.forEach(rawDoc => {
+    const doc = (typeof normalizeInvoiceDoc === 'function') ? normalizeInvoiceDoc(rawDoc) : rawDoc;
+    if (!doc || doc.isCancelled || doc.isSuperseded || doc.docType === 'estimate') return;
+    if (Number(doc.subtotal) <= 0) return; // 0円伝票（デモ・寄贈等）は販売単価平均から除外
+    const docItems = Array.isArray(doc.items) ? doc.items : [];
+    docItems.forEach(it => {
+      if (!it || (Number(it.unitPrice) || 0) <= 0) return;
+      const qty = Number(it.quantity) || 0;
+      if (qty <= 0) return;
+      const price = Number(it.unitPrice) || 0;
+      const keys = [it.itemId ? String(it.itemId) : '', it.name ? normalizeLookupName(it.name) : ''].filter(Boolean);
+      keys.forEach(k => {
+        const cur = salesPriceAcc.get(k) || { sum: 0, qty: 0 };
+        cur.sum += price * qty;
+        cur.qty += qty;
+        salesPriceAcc.set(k, cur);
+      });
+    });
+  });
+
+  // シリアル台帳からロット×品目別のシリアル件数（総数・在庫中・出荷済）を動的集計
+  const serialStatsByLot = new Map(); // `${lotNumber}__${itemIdOrNorm}` -> { total, inStock, shipped }
+  safeSerials.forEach(s => {
+    if (!s) return;
+    const lNum = String(s.lotNumber || '').trim();
+    if (!lNum) return;
+    const isInStock = (s.status === 'in_stock');
+    const keys = [
+      s.inventoryId ? `${lNum}__${s.inventoryId}` : '',
+      s.itemId ? `${lNum}__${s.itemId}` : '',
+      s.itemName ? `${lNum}__${normalizeLookupName(s.itemName)}` : ''
+    ].filter(Boolean);
+    keys.forEach(k => {
+      const st = serialStatsByLot.get(k) || { total: 0, inStock: 0, shipped: 0 };
+      st.total += 1;
+      if (isInStock) st.inStock += 1;
+      else st.shipped += 1;
+      serialStatsByLot.set(k, st);
+    });
+  });
+
+  const resolveMasterRef = (itemId, itemName, sku) => {
+    const idStr = String(itemId || '').trim();
+    const inv = invById.get(idStr) || invByName.get(normalizeLookupName(itemName)) || null;
+    const strippedId = idStr.replace(/^inv_/, '');
+    const prod =
+      itemById.get(idStr) ||
+      itemById.get(strippedId) ||
+      (sku ? itemBySku.get(normalizeLookupName(sku)) : null) ||
+      (inv && inv.sku ? itemBySku.get(normalizeLookupName(inv.sku)) : null) ||
+      itemByName.get(normalizeLookupName(itemName)) ||
+      (inv && inv.name ? itemByName.get(normalizeLookupName(inv.name)) : null) ||
+      null;
+
+    // 基準販売単価の決定（商品マスタ標準売価 → 伝票実績平均単価 → null）
+    let refSalesPrice = 0;
+    let refSalesSource = '';
+    if (prod && Number(prod.unitPrice) > 0) {
+      refSalesPrice = Number(prod.unitPrice);
+      refSalesSource = '商品マスタ';
+    } else if (inv && Number(inv.salesPrice || inv.sellingPrice) > 0) {
+      refSalesPrice = Number(inv.salesPrice || inv.sellingPrice);
+      refSalesSource = '在庫マスタ';
+    } else {
+      const acc =
+        salesPriceAcc.get(strippedId) ||
+        salesPriceAcc.get(idStr) ||
+        salesPriceAcc.get(normalizeLookupName(itemName));
+      if (acc && acc.qty > 0) {
+        refSalesPrice = Math.round(acc.sum / acc.qty);
+        refSalesSource = '伝票平均';
+      }
+    }
+
+    return {
+      canonicalItemId: (inv && inv.id) || idStr || normalizeLookupName(itemName),
+      canonicalName: (inv && inv.name) || (prod && prod.name) || String(itemName || '名称未設定').trim(),
+      sku: String(sku || (inv && inv.sku) || (prod && prod.sku) || '').trim(),
+      category: String((prod && prod.category) || (inv && inv.category) || '未分類').trim(),
+      unit: String((inv && inv.unit) || (prod && prod.unit) || '個').trim(),
+      refSalesPrice: refSalesPrice > 0 ? refSalesPrice : null,
+      refSalesSource: refSalesSource || '未設定'
+    };
+  };
+
+  // 全ロット明細をフラット展開
+  const rows = [];
+  const lotSet = new Set();
+
+  safeLots.forEach(lot => {
+    if (!lot) return;
+    const lotNumber = String(lot.lotNumber || lot.id || '').trim() || '未設定';
+    lotSet.add(lotNumber);
+    const arrivalDate = String(lot.arrivalDate || lot.date || '').trim().slice(0, 10);
+    const procurementType = lot.procurementType === 'domestic' ? 'domestic' : 'import';
+    const supplier = String(lot.supplier || lot.supplierName || '').trim() || '未設定';
+    const foreignCurrency = procurementType === 'import' ? String(lot.foreignCurrency || '').trim() : 'JPY';
+    const exchangeRate = procurementType === 'import' ? (Number(lot.exchangeRate) || 0) : 0;
+
+    const rawItems = (Array.isArray(lot.items) && lot.items.length > 0)
+      ? lot.items
+      : [{
+          itemId: lot.itemId || '',
+          itemName: lot.itemName || '',
+          sku: lot.sku || '',
+          quantity: Number(lot.quantity || lot.qty) || 0,
+          foreignPrice: Number(lot.foreignPrice) || 0,
+          foreignSubtotal: Number(lot.foreignAmount) || 0,
+          unitPrice: Number(lot.unitPrice) || 0,
+          subtotal: Number(lot.subtotal || lot.totalCost) || 0,
+          allocatedCost: Number(lot.allocatedCost) || 0,
+          unitCost: Number(lot.unitCost || lot.landedUnitCost) || 0
+        }];
+
+    rawItems.forEach((it, idx) => {
+      if (!it) return;
+      const qty = Math.max(0, Number(it.quantity ?? it.qty) || 0);
+      if (qty <= 0) return;
+
+      const meta = resolveMasterRef(it.itemId, it.itemName, it.sku);
+      const landedUnitCost = Math.round(Number(it.unitCost ?? it.landedUnitCost) || 0);
+      const rawSubtotal = Number(it.subtotal) || 0;
+      const rawUnitPrice = Number(it.unitPrice) || (rawSubtotal > 0 ? Math.round(rawSubtotal / qty) : 0);
+      const rawAllocatedTotal = Number(it.allocatedCost) || 0;
+
+      // 本体単価と1台あたり諸掛按分額を整合計算
+      let baseUnitCost = rawUnitPrice > 0 ? Math.round(rawUnitPrice) : landedUnitCost;
+      let allocatedUnitCost = rawAllocatedTotal > 0
+        ? Math.round(rawAllocatedTotal / qty)
+        : Math.max(0, landedUnitCost - baseUnitCost);
+      if (baseUnitCost > landedUnitCost && landedUnitCost > 0) {
+        // 本体単価が確定原価を上回るデータ揺れがある場合は確定原価基準に丸める
+        baseUnitCost = landedUnitCost;
+        allocatedUnitCost = 0;
+      }
+
+      const totalLandedCost = landedUnitCost * qty;
+      const totalAllocatedCost = allocatedUnitCost * qty;
+      const allocatedRatioPct = landedUnitCost > 0 ? Math.round((allocatedUnitCost / landedUnitCost) * 1000) / 10 : 0;
+
+      const foreignPrice = Number(it.foreignPrice) || 0;
+      const foreignSubtotal = Number(it.foreignSubtotal) || (foreignPrice > 0 ? Math.round(foreignPrice * qty * 100) / 100 : 0);
+
+      const refPrice = meta.refSalesPrice;
+      const costRatioPct = (refPrice && refPrice > 0 && landedUnitCost > 0)
+        ? Math.round((landedUnitCost / refPrice) * 1000) / 10
+        : null;
+      const estGrossMarginPerUnit = (refPrice && refPrice > 0)
+        ? (refPrice - landedUnitCost)
+        : null;
+
+      const snStat =
+        serialStatsByLot.get(`${lotNumber}__${meta.canonicalItemId}`) ||
+        serialStatsByLot.get(`${lotNumber}__${it.itemId || ''}`) ||
+        serialStatsByLot.get(`${lotNumber}__${normalizeLookupName(meta.canonicalName)}`) ||
+        { total: 0, inStock: 0, shipped: 0 };
+
+      rows.push({
+        rowKey: `${lot.id || lotNumber}_${idx}`,
+        lotId: lot.id || '',
+        lotNumber,
+        arrivalDate,
+        procurementType,
+        supplier,
+        foreignCurrency,
+        exchangeRate,
+        itemId: meta.canonicalItemId,
+        itemName: meta.canonicalName,
+        sku: meta.sku,
+        category: meta.category,
+        unit: meta.unit,
+        qty,
+        foreignPrice,
+        foreignSubtotal,
+        baseUnitCost,
+        allocatedUnitCost,
+        landedUnitCost,
+        totalLandedCost,
+        totalAllocatedCost,
+        allocatedRatioPct,
+        refSalesPrice: refPrice,
+        refSalesSource: meta.refSalesSource,
+        costRatioPct,
+        estGrossMarginPerUnit,
+        serialStats: snStat,
+        // 推移比較（後段で埋める）
+        prevUnitCost: null,
+        prevDelta: null,
+        prevDeltaPct: null,
+        itemMinCost: landedUnitCost,
+        itemMaxCost: landedUnitCost,
+        itemAvgCost: landedUnitCost
+      });
+    });
+  });
+
+  // 品目ごとに時系列ソートして前回ロット比・最安・最高・平均を算出
+  const byItemMap = new Map();
+  rows.forEach(r => {
+    const key = r.itemId || normalizeLookupName(r.itemName);
+    if (!byItemMap.has(key)) byItemMap.set(key, []);
+    byItemMap.get(key).push(r);
+  });
+
+  const itemTrends = [];
+  byItemMap.forEach((list, key) => {
+    list.sort((a, b) => {
+      const da = a.arrivalDate || '';
+      const db = b.arrivalDate || '';
+      if (da !== db) return da.localeCompare(db);
+      return a.lotNumber.localeCompare(b.lotNumber);
+    });
+
+    const validCosts = list.map(r => r.landedUnitCost).filter(c => c > 0);
+    const minCost = validCosts.length > 0 ? Math.min(...validCosts) : 0;
+    const maxCost = validCosts.length > 0 ? Math.max(...validCosts) : 0;
+    const totalQty = list.reduce((s, r) => s + r.qty, 0);
+    const totalCost = list.reduce((s, r) => s + r.totalLandedCost, 0);
+    const weightedAvgCost = totalQty > 0 ? Math.round(totalCost / totalQty) : 0;
+
+    list.forEach((r, idx) => {
+      r.itemMinCost = minCost;
+      r.itemMaxCost = maxCost;
+      r.itemAvgCost = weightedAvgCost;
+      if (idx > 0 && list[idx - 1].landedUnitCost > 0 && r.landedUnitCost > 0) {
+        const prev = list[idx - 1].landedUnitCost;
+        r.prevUnitCost = prev;
+        r.prevDelta = r.landedUnitCost - prev;
+        r.prevDeltaPct = Math.round(((r.landedUnitCost - prev) / prev) * 1000) / 10;
+      }
+    });
+
+    const latest = list[list.length - 1];
+    itemTrends.push({
+      itemKey: key,
+      itemId: latest.itemId,
+      itemName: latest.itemName,
+      sku: latest.sku,
+      category: latest.category,
+      unit: latest.unit,
+      lotCount: list.length,
+      totalQty,
+      totalCost,
+      minCost,
+      maxCost,
+      costSpread: maxCost - minCost,
+      costSpreadPct: minCost > 0 ? Math.round(((maxCost - minCost) / minCost) * 1000) / 10 : 0,
+      weightedAvgCost,
+      latestCost: latest.landedUnitCost,
+      latestArrivalDate: latest.arrivalDate,
+      latestLotNumber: latest.lotNumber,
+      latestPrevDelta: latest.prevDelta,
+      latestPrevDeltaPct: latest.prevDeltaPct,
+      refSalesPrice: latest.refSalesPrice,
+      latestCostRatioPct: latest.costRatioPct,
+      points: list.map(r => ({
+        lotNumber: r.lotNumber,
+        arrivalDate: r.arrivalDate,
+        procurementType: r.procurementType,
+        foreignCurrency: r.foreignCurrency,
+        exchangeRate: r.exchangeRate,
+        qty: r.qty,
+        baseUnitCost: r.baseUnitCost,
+        allocatedUnitCost: r.allocatedUnitCost,
+        landedUnitCost: r.landedUnitCost,
+        prevDelta: r.prevDelta,
+        prevDeltaPct: r.prevDeltaPct,
+        costRatioPct: r.costRatioPct
+      }))
+    });
+  });
+
+  // 複数ロットが存在する品目（比較価値が高い品目）を先頭に、総仕入額降順で並べる
+  itemTrends.sort((a, b) => {
+    if ((b.lotCount > 1 ? 1 : 0) !== (a.lotCount > 1 ? 1 : 0)) {
+      return (b.lotCount > 1 ? 1 : 0) - (a.lotCount > 1 ? 1 : 0);
+    }
+    return b.totalCost - a.totalCost;
+  });
+
+  // 全体サマリーKPI
+  const totalLandedAmount = rows.reduce((s, r) => s + r.totalLandedCost, 0);
+  const totalAllocatedAmount = rows.reduce((s, r) => s + r.totalAllocatedCost, 0);
+  const totalQuantity = rows.reduce((s, r) => s + r.qty, 0);
+  const avgAllocatedRatioPct = totalLandedAmount > 0
+    ? Math.round((totalAllocatedAmount / totalLandedAmount) * 1000) / 10
+    : 0;
+  const rowsWithCostRatio = rows.filter(r => r.costRatioPct !== null);
+  const weightedRefSales = rowsWithCostRatio.reduce((s, r) => s + (r.refSalesPrice * r.qty), 0);
+  const weightedRefCost = rowsWithCostRatio.reduce((s, r) => s + r.totalLandedCost, 0);
+  const avgCostRatioPct = weightedRefSales > 0
+    ? Math.round((weightedRefCost / weightedRefSales) * 1000) / 10
+    : null;
+
+  const maxSpreadItem = itemTrends.filter(t => t.lotCount >= 2).sort((a, b) => b.costSpread - a.costSpread)[0] || null;
+
+  return {
+    summary: {
+      lotCount: lotSet.size,
+      rowCount: rows.length,
+      itemCount: itemTrends.length,
+      totalQuantity,
+      totalLandedAmount,
+      totalAllocatedAmount,
+      avgAllocatedRatioPct,
+      avgCostRatioPct,
+      maxSpreadItem: maxSpreadItem ? {
+        itemName: maxSpreadItem.itemName,
+        sku: maxSpreadItem.sku,
+        costSpread: maxSpreadItem.costSpread,
+        minCost: maxSpreadItem.minCost,
+        maxCost: maxSpreadItem.maxCost
+      } : null
+    },
+    rows,
+    itemTrends
+  };
+}
+
+// ==========================================================================
+// 4. 出張・地域・取引先 統合分析エンジン
+// ==========================================================================
+
+/**
+ * 経費データから出張候補期間（旅費交通費等が近接発生した期間クラスタ）を動的抽出する
+ * （特定日付や特定地域のハードコード禁止）
+ */
+function extractTripPeriodCandidates(expenses = [], maxGapDays = 2) {
+  const safeExp = Array.isArray(expenses) ? expenses : [];
+  const travelRows = safeExp
+    .filter(e => e && e.date && isTravelDemoExpenseCategory(e.category))
+    .map(e => {
+      const geo = resolveGeoLocation({
+        text: `${e.payee || ''} ${e.note || ''} ${e.memo || ''} ${e.location || ''}`
+      });
+      return {
+        id: e.id || '',
+        date: String(e.date).slice(0, 10),
+        amount: Number(e.amount) || 0,
+        category: String(e.category || ''),
+        payee: String(e.payee || ''),
+        note: String(e.note || ''),
+        region: geo.region,
+        prefecture: geo.prefecture
+      };
+    })
+    .filter(e => parseYmdToUtcMs(e.date) !== null)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  if (travelRows.length === 0) return [];
+
+  const clusters = [];
+  let cur = null;
+
+  travelRows.forEach(row => {
+    if (!cur) {
+      cur = { startDate: row.date, endDate: row.date, items: [row] };
+      return;
+    }
+    const gap = diffDaysYmd(cur.endDate, row.date);
+    if (gap !== null && gap <= maxGapDays) {
+      cur.endDate = row.date;
+      cur.items.push(row);
+    } else {
+      clusters.push(cur);
+      cur = { startDate: row.date, endDate: row.date, items: [row] };
+    }
+  });
+  if (cur) clusters.push(cur);
+
+  // 旅費交通費を含むクラスタ、または複数日・複数件のクラスタを優先提示
+  return clusters
+    .map((cl, idx) => {
+      const totalAmount = cl.items.reduce((s, x) => s + x.amount, 0);
+      const travelCount = cl.items.filter(x => String(x.category).includes('旅費')).length;
+      const prefCounts = new Map();
+      const regionCounts = new Map();
+      cl.items.forEach(x => {
+        if (x.prefecture && x.prefecture !== '未設定') {
+          prefCounts.set(x.prefecture, (prefCounts.get(x.prefecture) || 0) + 1);
+        }
+        if (x.region && x.region !== '未設定') {
+          regionCounts.set(x.region, (regionCounts.get(x.region) || 0) + 1);
+        }
+      });
+      const topPref = Array.from(prefCounts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || '未設定';
+      const topRegion = Array.from(regionCounts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || '未設定';
+      const days = (diffDaysYmd(cl.startDate, cl.endDate) || 0) + 1;
+      const dateLabel = cl.startDate === cl.endDate ? cl.startDate : `${cl.startDate} 〜 ${cl.endDate}`;
+      return {
+        id: `trip_${idx}_${cl.startDate}_${cl.endDate}`,
+        startDate: cl.startDate,
+        endDate: cl.endDate,
+        days,
+        itemCount: cl.items.length,
+        travelCount,
+        totalAmount,
+        primaryPrefecture: topPref,
+        primaryRegion: topRegion,
+        label: `${dateLabel}（${topPref !== '未設定' ? topPref : 'エリア未設定'} / ${cl.items.length}件・¥${Math.round(totalAmount).toLocaleString()}）`
+      };
+    })
+    .filter(c => c.travelCount > 0 || c.itemCount >= 2)
+    .sort((a, b) => b.startDate.localeCompare(a.startDate));
+}
+
+/**
+ * 取引先別サマリー・地域別売上経費バランス・出張＆後追い売上連動を一括算出する
+ */
+function buildBusinessAnalytics({
+  docs = [],
+  clients = [],
+  expenses = [],
+  manualJournals = [],
+  period = null,
+  includeZeroDocs = true,
+  tripStart = '',
+  tripEnd = '',
+  followUpDays = 60,
+  filterRegion = 'all',
+  filterPrefecture = 'all',
+  filterClient = 'all'
+} = {}) {
+  const safeDocs = Array.isArray(docs) ? docs : [];
+  const safeClients = Array.isArray(clients) ? clients : [];
+  const safeExpenses = Array.isArray(expenses) ? expenses : [];
+  const safeJournals = Array.isArray(manualJournals) ? manualJournals : [];
+
+  const periodStart = (period && period.start) ? String(period.start).slice(0, 10) : '';
+  const periodEnd = (period && period.end) ? String(period.end).slice(0, 10) : '';
+
+  // 取引先マスタの高速ルックアップ（名前・IDで住所・郵便番号を補完）
+  const clientById = new Map();
+  const clientByName = new Map();
+  safeClients.forEach(c => {
+    if (!c) return;
+    if (c.id) clientById.set(String(c.id), c);
+    if (c.name) clientByName.set(normalizeLookupName(c.name), c);
+  });
+
+  // 全有効確定伝票の正規化（出張後追い分析では期間外の後追い伝票も必要なため全期間ベースで一度正規化）
+  const allNormalizedDocs = [];
+  safeDocs.forEach(rawDoc => {
+    const doc = (typeof normalizeInvoiceDoc === 'function') ? normalizeInvoiceDoc(rawDoc) : rawDoc;
+    if (!doc || doc.isCancelled || doc.isSuperseded || doc.docType === 'estimate') return;
+    if (doc.isIssued === false) return;
+
+    const rawInner = (rawDoc && rawDoc.fullDoc) ? rawDoc.fullDoc : (rawDoc || {});
+    const clientObj = rawInner.client || doc.client || {};
+    const clientName = String(doc.clientName || clientObj.name || '名称未設定').trim() || '名称未設定';
+    const masterClient =
+      (clientObj.id && clientById.get(String(clientObj.id))) ||
+      clientByName.get(normalizeLookupName(clientName)) ||
+      null;
+
+    const address = String(clientObj.address || (masterClient && masterClient.address) || '').trim();
+    const zip = String(clientObj.zip || (masterClient && masterClient.zip) || '').trim();
+    const currency = String(rawInner.currency || (rawDoc && rawDoc.currency) || 'JPY').trim().toUpperCase();
+    const docLang = String(rawInner.docLang || (rawDoc && rawDoc.docLang) || 'ja').trim().toLowerCase();
+
+    const geo = resolveGeoLocation({
+      address,
+      zip,
+      text: `${clientName} ${address}`,
+      currency,
+      docLang
+    });
+
+    const items = Array.isArray(doc.items) ? doc.items : [];
+    let totalQty = 0;
+    const endUsersSet = new Set();
+    const topEndUser = String(rawInner.endUserName || (rawDoc && rawDoc.endUserName) || clientObj.endUserName || '').trim();
+    if (topEndUser) endUsersSet.add(topEndUser);
+    items.forEach(it => {
+      if (!it) return;
+      const itName = String(it.name || '');
+      const unitPrice = Number(it.unitPrice) || 0;
+      if (unitPrice >= 0 && !/値引|割引|相殺|調整/.test(itName)) {
+        totalQty += Math.max(0, Number(it.quantity) || 0);
+      }
+      if (it.endUserName && String(it.endUserName).trim()) {
+        endUsersSet.add(String(it.endUserName).trim());
+      }
+    });
+
+    const sales = Number(doc.subtotal) || 0;
+    const cogs = Number(doc.costTotal) || 0;
+    const grossProfit = sales - cogs;
+    const isZeroDoc = (sales === 0);
+
+    allNormalizedDocs.push({
+      id: doc.id,
+      docNumber: String(doc.docNumber || doc.id || '').trim(),
+      docType: doc.docType || 'invoice',
+      issueDate: String(doc.issueDate || '').slice(0, 10),
+      title: String(rawInner.title || (rawDoc && rawDoc.title) || '').trim(),
+      clientName,
+      address,
+      zip,
+      region: geo.region,
+      prefecture: geo.prefecture,
+      sales,
+      cogs,
+      grossProfit,
+      grossMarginPct: sales > 0 ? Math.round((grossProfit / sales) * 1000) / 10 : null,
+      totalQty,
+      endUsers: Array.from(endUsersSet),
+      isZeroDoc,
+      isPaid: !!doc.isPaid
+    });
+  });
+
+  // 期間・0円伝票フィルタ適用後の伝票リスト
+  const scopedDocs = allNormalizedDocs.filter(d => {
+    if (!includeZeroDocs && d.isZeroDoc) return false;
+    if (periodStart || periodEnd) {
+      return isDateInRange(d.issueDate, periodStart, periodEnd);
+    }
+    return true;
+  });
+
+  // ------------------------------------------------------------------------
+  // (A) 取引先別 売上・粗利サマリー
+  // ------------------------------------------------------------------------
+  const clientMap = new Map();
+  scopedDocs.forEach(d => {
+    const key = normalizeLookupName(d.clientName) || 'unknown';
+    if (!clientMap.has(key)) {
+      clientMap.set(key, {
+        clientKey: key,
+        clientName: d.clientName,
+        region: d.region,
+        prefecture: d.prefecture,
+        address: d.address,
+        sales: 0,
+        cogs: 0,
+        grossProfit: 0,
+        grossMarginPct: null,
+        docCount: 0,
+        totalQty: 0,
+        firstDate: d.issueDate,
+        lastDate: d.issueDate,
+        endUsersSet: new Set(),
+        titlesSet: new Set(),
+        docs: []
+      });
+    }
+    const c = clientMap.get(key);
+    c.sales += d.sales;
+    c.cogs += d.cogs;
+    c.grossProfit += d.grossProfit;
+    c.docCount += 1;
+    c.totalQty += d.totalQty;
+    if (d.issueDate && (!c.firstDate || d.issueDate < c.firstDate)) c.firstDate = d.issueDate;
+    if (d.issueDate && (!c.lastDate || d.issueDate > c.lastDate)) c.lastDate = d.issueDate;
+    if (c.region === '未設定' && d.region !== '未設定') {
+      c.region = d.region;
+      c.prefecture = d.prefecture;
+      c.address = d.address;
+    }
+    d.endUsers.forEach(eu => c.endUsersSet.add(eu));
+    if (d.title) c.titlesSet.add(d.title);
+    c.docs.push(d);
+  });
+
+  const clientSummary = Array.from(clientMap.values()).map(c => {
+    c.docs.sort((a, b) => b.issueDate.localeCompare(a.issueDate));
+    return {
+      clientKey: c.clientKey,
+      clientName: c.clientName,
+      region: c.region,
+      prefecture: c.prefecture,
+      address: c.address,
+      sales: Math.round(c.sales),
+      cogs: Math.round(c.cogs),
+      grossProfit: Math.round(c.grossProfit),
+      grossMarginPct: c.sales > 0 ? Math.round((c.grossProfit / c.sales) * 1000) / 10 : null,
+      docCount: c.docCount,
+      totalQty: c.totalQty,
+      firstDate: c.firstDate || '',
+      lastDate: c.lastDate || '',
+      isRepeat: c.docCount >= 2,
+      endUsers: Array.from(c.endUsersSet),
+      endUserCount: c.endUsersSet.size,
+      titles: Array.from(c.titlesSet),
+      docs: c.docs
+    };
+  }).sort((a, b) => b.sales - a.sales);
+
+  // ------------------------------------------------------------------------
+  // (B) 移動・デモ関連経費の正規化（expenses + manual_journals の該当勘定科目）
+  // ------------------------------------------------------------------------
+  const allTravelExpenses = [];
+  safeExpenses.forEach(e => {
+    if (!e) return;
+    if (!isTravelDemoExpenseCategory(e.category)) return;
+    const dt = String(e.date || '').slice(0, 10);
+    const amount = Number(e.amount) || 0;
+    if (amount === 0) return;
+    const geo = resolveGeoLocation({
+      text: `${e.payee || ''} ${e.note || ''} ${e.memo || ''} ${e.location || ''}`
+    });
+    allTravelExpenses.push({
+      id: e.id || '',
+      source: 'expense',
+      date: dt,
+      category: String(e.category || 'その他'),
+      payee: String(e.payee || '').trim() || '未設定',
+      note: String(e.note || '').trim(),
+      claimant: String(e.claimant || '').trim(),
+      amount: Math.round(amount),
+      region: geo.region,
+      prefecture: geo.prefecture
+    });
+  });
+
+  // 振替仕訳（manual_journals）にも旅費交通費・車両費・接待交際費が直接計上されていれば取り込む
+  safeJournals.forEach(j => {
+    if (!j || j.sourceType === 'expense') return; // expenses と二重計上しない
+    const dt = String(j.date || '').slice(0, 10);
+    const desc = String(j.description || '');
+    (j.debitLines || []).forEach((ln, idx) => {
+      if (!ln || !isTravelDemoExpenseCategory(ln.accountName)) return;
+      const amount = Number(ln.amount) || 0;
+      if (amount === 0) return;
+      const geo = resolveGeoLocation({ text: `${desc} ${ln.subAccount || ''}` });
+      allTravelExpenses.push({
+        id: `${j.id || 'jnl'}_${idx}`,
+        source: 'journal',
+        date: dt,
+        category: String(ln.accountName || ''),
+        payee: String(ln.subAccount || '振替仕訳'),
+        note: desc,
+        claimant: '',
+        amount: Math.round(amount),
+        region: geo.region,
+        prefecture: geo.prefecture
+      });
+    });
+  });
+
+  const scopedTravelExpenses = allTravelExpenses.filter(e => {
+    if (periodStart || periodEnd) {
+      return isDateInRange(e.date, periodStart, periodEnd);
+    }
+    return true;
+  });
+
+  // 地域別 / 都道府県別 集計ビルダー
+  const aggregateGeoBuckets = (mode) => {
+    const map = new Map();
+    const getOrCreate = (key, region, prefecture) => {
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          label: key,
+          region,
+          prefecture,
+          sales: 0,
+          cogs: 0,
+          grossProfit: 0,
+          grossMarginPct: null,
+          docCount: 0,
+          clientNamesSet: new Set(),
+          travelExpense: 0,
+          vehicleExpense: 0,
+          entertainExpense: 0,
+          otherDemoExpense: 0,
+          totalExpense: 0,
+          expenseCount: 0,
+          netContribution: 0,
+          expenseToSalesPct: null,
+          roiMultiple: null
+        });
+      }
+      return map.get(key);
+    };
+
+    scopedDocs.forEach(d => {
+      const key = mode === 'region' ? d.region : d.prefecture;
+      const b = getOrCreate(key, d.region, d.prefecture);
+      b.sales += d.sales;
+      b.cogs += d.cogs;
+      b.grossProfit += d.grossProfit;
+      b.docCount += 1;
+      b.clientNamesSet.add(d.clientName);
+    });
+
+    scopedTravelExpenses.forEach(e => {
+      const key = mode === 'region' ? e.region : e.prefecture;
+      const b = getOrCreate(key, e.region, e.prefecture);
+      b.totalExpense += e.amount;
+      b.expenseCount += 1;
+      if (e.category.includes('旅費') || e.category.includes('交通')) b.travelExpense += e.amount;
+      else if (e.category.includes('車両')) b.vehicleExpense += e.amount;
+      else if (e.category.includes('交際') || e.category.includes('会議')) b.entertainExpense += e.amount;
+      else b.otherDemoExpense += e.amount;
+    });
+
+    const list = Array.from(map.values()).map(b => {
+      b.sales = Math.round(b.sales);
+      b.cogs = Math.round(b.cogs);
+      b.grossProfit = Math.round(b.grossProfit);
+      b.totalExpense = Math.round(b.totalExpense);
+      b.netContribution = b.grossProfit - b.totalExpense;
+      b.grossMarginPct = b.sales > 0 ? Math.round((b.grossProfit / b.sales) * 1000) / 10 : null;
+      b.expenseToSalesPct = b.sales > 0 ? Math.round((b.totalExpense / b.sales) * 1000) / 10 : null;
+      b.roiMultiple = b.totalExpense > 0 ? Math.round((b.sales / b.totalExpense) * 10) / 10 : null;
+      b.clientCount = b.clientNamesSet.size;
+      delete b.clientNamesSet;
+      return b;
+    });
+
+    if (mode === 'region') {
+      list.sort((a, b) => {
+        const ia = REGION_ORDER.indexOf(a.key);
+        const ib = REGION_ORDER.indexOf(b.key);
+        return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
+      });
+    } else {
+      list.sort((a, b) => (b.sales + b.totalExpense) - (a.sales + a.totalExpense));
+    }
+    return list;
+  };
+
+  const regionSummary = aggregateGeoBuckets('region');
+  const prefectureSummary = aggregateGeoBuckets('prefecture');
+
+  // ------------------------------------------------------------------------
+  // (C) 出張期間と「直後〜後追い」売上の連動分析
+  // ------------------------------------------------------------------------
+  const tripCandidates = extractTripPeriodCandidates(safeExpenses, 2);
+
+  // 未指定時は最新の出張候補をデフォルト提案（存在しない場合は空で安全に0表示）
+  let effectiveTripStart = String(tripStart || '').slice(0, 10);
+  let effectiveTripEnd = String(tripEnd || '').slice(0, 10);
+  if (!effectiveTripStart && !effectiveTripEnd && tripCandidates.length > 0) {
+    effectiveTripStart = tripCandidates[0].startDate;
+    effectiveTripEnd = tripCandidates[0].endDate;
+  }
+  if (effectiveTripStart && !effectiveTripEnd) effectiveTripEnd = effectiveTripStart;
+  if (!effectiveTripStart && effectiveTripEnd) effectiveTripStart = effectiveTripEnd;
+  if (effectiveTripStart && effectiveTripEnd && effectiveTripStart > effectiveTripEnd) {
+    const tmp = effectiveTripStart;
+    effectiveTripStart = effectiveTripEnd;
+    effectiveTripEnd = tmp;
+  }
+
+  const safeFollowUpDays = Math.max(0, Math.min(365, Number(followUpDays) || 0));
+  const followUpStart = effectiveTripEnd ? addDaysYmd(effectiveTripEnd, 1) : '';
+  const followUpEnd = effectiveTripEnd ? addDaysYmd(effectiveTripEnd, safeFollowUpDays) : '';
+
+  const matchesTripScope = (item) => {
+    if (filterRegion && filterRegion !== 'all' && item.region !== filterRegion) return false;
+    if (filterPrefecture && filterPrefecture !== 'all' && item.prefecture !== filterPrefecture) return false;
+    if (filterClient && filterClient !== 'all' && item.clientName && item.clientName !== filterClient) return false;
+    return true;
+  };
+
+  let tripExpenses = [];
+  let duringDocs = [];
+  let followUpDocs = [];
+
+  if (effectiveTripStart && effectiveTripEnd) {
+    tripExpenses = allTravelExpenses.filter(e => {
+      if (!isDateInRange(e.date, effectiveTripStart, effectiveTripEnd)) return false;
+      if (filterRegion && filterRegion !== 'all' && e.region !== filterRegion && e.region !== '未設定') return false;
+      if (filterPrefecture && filterPrefecture !== 'all' && e.prefecture !== filterPrefecture && e.prefecture !== '未設定') return false;
+      return true;
+    }).sort((a, b) => a.date.localeCompare(b.date));
+
+    allNormalizedDocs.forEach(d => {
+      if (!includeZeroDocs && d.isZeroDoc) return;
+      if (!matchesTripScope(d)) return;
+      if (isDateInRange(d.issueDate, effectiveTripStart, effectiveTripEnd)) {
+        duringDocs.push({ ...d, phase: 'during', daysAfterTrip: 0 });
+      } else if (safeFollowUpDays > 0 && followUpStart && followUpEnd && isDateInRange(d.issueDate, followUpStart, followUpEnd)) {
+        const lag = diffDaysYmd(effectiveTripEnd, d.issueDate);
+        followUpDocs.push({ ...d, phase: 'followup', daysAfterTrip: lag !== null ? lag : 0 });
+      }
+    });
+    duringDocs.sort((a, b) => a.issueDate.localeCompare(b.issueDate));
+    followUpDocs.sort((a, b) => a.issueDate.localeCompare(b.issueDate));
+  }
+
+  const sumDocs = (arr) => ({
+    docCount: arr.length,
+    sales: Math.round(arr.reduce((s, d) => s + d.sales, 0)),
+    cogs: Math.round(arr.reduce((s, d) => s + d.cogs, 0)),
+    grossProfit: Math.round(arr.reduce((s, d) => s + d.grossProfit, 0)),
+    qty: arr.reduce((s, d) => s + d.totalQty, 0)
+  });
+
+  const duringMetrics = sumDocs(duringDocs);
+  const followUpMetrics = sumDocs(followUpDocs);
+  const combinedMetrics = {
+    docCount: duringMetrics.docCount + followUpMetrics.docCount,
+    sales: duringMetrics.sales + followUpMetrics.sales,
+    cogs: duringMetrics.cogs + followUpMetrics.cogs,
+    grossProfit: duringMetrics.grossProfit + followUpMetrics.grossProfit,
+    qty: duringMetrics.qty + followUpMetrics.qty
+  };
+
+  const tripExpenseTotal = Math.round(tripExpenses.reduce((s, e) => s + e.amount, 0));
+  const tripExpenseBreakdown = {
+    travel: Math.round(tripExpenses.filter(e => e.category.includes('旅費') || e.category.includes('交通')).reduce((s, e) => s + e.amount, 0)),
+    vehicle: Math.round(tripExpenses.filter(e => e.category.includes('車両')).reduce((s, e) => s + e.amount, 0)),
+    entertain: Math.round(tripExpenses.filter(e => e.category.includes('交際') || e.category.includes('会議')).reduce((s, e) => s + e.amount, 0)),
+    other: Math.round(tripExpenses.filter(e => !e.category.includes('旅費') && !e.category.includes('交通') && !e.category.includes('車両') && !e.category.includes('交際') && !e.category.includes('会議')).reduce((s, e) => s + e.amount, 0))
+  };
+
+  const tripImpact = {
+    tripStart: effectiveTripStart,
+    tripEnd: effectiveTripEnd,
+    tripDays: (effectiveTripStart && effectiveTripEnd) ? ((diffDaysYmd(effectiveTripStart, effectiveTripEnd) || 0) + 1) : 0,
+    followUpDays: safeFollowUpDays,
+    followUpStart,
+    followUpEnd,
+    tripExpenseCount: tripExpenses.length,
+    tripExpenseTotal,
+    tripExpenseBreakdown,
+    during: duringMetrics,
+    followUp: followUpMetrics,
+    combined: combinedMetrics,
+    netAfterTripExpense: combinedMetrics.grossProfit - tripExpenseTotal,
+    salesToExpenseRatio: tripExpenseTotal > 0 ? Math.round((combinedMetrics.sales / tripExpenseTotal) * 10) / 10 : null,
+    grossProfitToExpenseRatio: tripExpenseTotal > 0 ? Math.round((combinedMetrics.grossProfit / tripExpenseTotal) * 10) / 10 : null,
+    tripExpenses,
+    timelineDocs: [...duringDocs, ...followUpDocs]
+  };
+
+  // 全体KPIサマリー
+  const totalSales = Math.round(scopedDocs.reduce((s, d) => s + d.sales, 0));
+  const totalCogs = Math.round(scopedDocs.reduce((s, d) => s + d.cogs, 0));
+  const totalGrossProfit = totalSales - totalCogs;
+  const totalTravelDemoExpense = Math.round(scopedTravelExpenses.reduce((s, e) => s + e.amount, 0));
+
+  return {
+    kpi: {
+      totalSales,
+      totalCogs,
+      totalGrossProfit,
+      grossMarginPct: totalSales > 0 ? Math.round((totalGrossProfit / totalSales) * 1000) / 10 : null,
+      clientCount: clientSummary.length,
+      repeatClientCount: clientSummary.filter(c => c.isRepeat).length,
+      docCount: scopedDocs.length,
+      totalTravelDemoExpense,
+      travelDemoExpenseCount: scopedTravelExpenses.length,
+      netAfterTravelExpense: totalGrossProfit - totalTravelDemoExpense
+    },
+    clientSummary,
+    regionSummary,
+    prefectureSummary,
+    tripCandidates,
+    tripImpact,
+    availableRegions: Array.from(new Set([...regionSummary.map(r => r.key)])),
+    availablePrefectures: Array.from(new Set([...prefectureSummary.map(p => p.key)])),
+    availableClients: clientSummary.map(c => c.clientName)
+  };
+}
+
+  // ==========================================================================
   // アプリケーションUI制御ロジック
   // ==========================================================================
 /**
@@ -22779,6 +23892,7 @@ function switchInventoryTab(tabName) {
     { key: 'items', btn: DOM.tabBtnInventoryItems, content: DOM.inventoryItemsTabContent },
     { key: 'serials', btn: DOM.tabBtnInventorySerials, content: DOM.inventorySerialsTabContent },
     { key: 'lots', btn: DOM.tabBtnInventoryLots, content: DOM.inventoryLotsTabContent },
+    { key: 'lotCost', btn: document.getElementById('tabBtnInventoryLotCost'), content: document.getElementById('inventoryLotCostTabContent') },
     { key: 'pos', btn: DOM.tabBtnPurchaseOrders, content: DOM.purchaseOrdersTabContent }
   ];
 
@@ -22832,6 +23946,18 @@ function switchInventoryTab(tabName) {
     renderInventoryLotTable();
     if (typeof syncInventoryLotsWithServer === 'function') {
       syncInventoryLotsWithServer().then(() => renderInventoryLotTable()).catch(() => { });
+    }
+  }
+  if (tabName === 'lotCost') {
+    if (typeof window.renderLotCostAnalyticsView === 'function') {
+      window.renderLotCostAnalyticsView('invLotCostAnalyticsRoot');
+    }
+    if (typeof syncInventoryLotsWithServer === 'function') {
+      syncInventoryLotsWithServer().then(() => {
+        if (typeof window.renderLotCostAnalyticsView === 'function') {
+          window.renderLotCostAnalyticsView('invLotCostAnalyticsRoot');
+        }
+      }).catch(() => { });
     }
   }
   if (tabName === 'pos') {
@@ -30966,6 +32092,14 @@ function switchAccountingTab(tabKey) {
     renderAccountingExpenses(currentAccGlobalPeriod);
   } else if (fullId === 'acc-tab-journals') {
     renderAccountingJournals(currentAccGlobalPeriod);
+  } else if (fullId === 'acc-tab-lot-cost') {
+    if (typeof window.renderLotCostAnalyticsView === 'function') {
+      window.renderLotCostAnalyticsView('accLotCostAnalyticsRoot');
+    }
+  } else if (fullId === 'acc-tab-analytics') {
+    if (typeof window.renderBusinessAnalyticsView === 'function') {
+      window.renderBusinessAnalyticsView(currentAccGlobalPeriod);
+    }
   } else if (fullId === 'acc-tab-settings') {
     renderAccountingSettings();
     renderMonthLockManagement();
@@ -31539,6 +32673,8 @@ function applyAccGlobalPeriod(preset = 'thisMonth', customStart = null, customEn
   if (typeof renderBalanceSheet === 'function') renderBalanceSheet(currentAccGlobalPeriod);
   if (typeof renderTrialBalance === 'function') renderTrialBalance(currentAccGlobalPeriod);
   if (typeof renderGeneralLedger === 'function') renderGeneralLedger(currentAccGlobalPeriod);
+  if (typeof window.renderLotCostAnalyticsView === 'function') window.renderLotCostAnalyticsView('accLotCostAnalyticsRoot');
+  if (typeof window.renderBusinessAnalyticsView === 'function') window.renderBusinessAnalyticsView(currentAccGlobalPeriod);
 }
 
 // グローバルスコープへの公開（HTMLインラインonclick等からの呼び出し対応）
@@ -38969,5 +40105,1143 @@ function startDocCorrection(origDocNumber) {
   showToast(`伝票【${cleanNum}】の訂正伝票【${candidateNum}】を作成しました。金額等を修正して保存してください。`, 'success');
 }
 window.startDocCorrection = startDocCorrection;
+
+  // ==========================================================================
+  // 経営分析UIビュー（ロット別原価・出張/地域/取引先統合分析）
+  // ==========================================================================
+/**
+ * analytics-views.js
+ * Alva-works ERP - 経営分析UIビューコントローラー
+ *
+ * 1. ロット別原価ビュー（財務会計タブ・在庫マスタタブ共通レンダリング）
+ * 2. 出張・地域・取引先 統合分析ビュー（3セクション連動UI）
+ *
+ * ※ すべてのUI操作は document.addEventListener によるイベント委譲で処理します。
+ */
+
+// ==========================================================================
+// 状態管理（ビュー別フィルタ・ソート・展開状態）
+// ==========================================================================
+
+const lotCostViewState = {
+  itemFilter: 'all',
+  procFilter: 'all',
+  searchQuery: '',
+  sortBy: 'date_desc'
+};
+
+const bizAnalyticsViewState = {
+  activeSubTab: 'all', // 'all' | 'clients' | 'regions' | 'trips'
+  includeZeroDocs: true,
+  clientSortBy: 'sales_desc',
+  clientSearch: '',
+  expandedClients: new Set(),
+  geoGranularity: 'region', // 'region' | 'prefecture'
+  tripStart: '',
+  tripEnd: '',
+  followUpDays: 60,
+  tripRegion: 'all',
+  tripPrefecture: 'all',
+  tripClient: 'all',
+  initializedTripDefault: false
+};
+
+function fmtYenAnalytics(val, allowDashIfNull = false) {
+  if (allowDashIfNull && (val === null || val === undefined || Number.isNaN(Number(val)))) {
+    return '未設定 (-)';
+  }
+  const n = Math.round(Number(val) || 0);
+  return `${n < 0 ? '-' : ''}¥${Math.abs(n).toLocaleString()}`;
+}
+
+function fmtPctAnalytics(val) {
+  if (val === null || val === undefined || Number.isNaN(Number(val))) {
+    return '未設定 (-)';
+  }
+  return `${Number(val).toFixed(1)}%`;
+}
+
+function safeEscAnalytics(str) {
+  if (typeof escapeHtml === 'function') return escapeHtml(str);
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// ==========================================================================
+// 1. ロット別原価ビュー レンダリング（財務会計 & 在庫マスタ共通）
+// ==========================================================================
+
+function renderLotCostAnalyticsView(targetContainerId = null) {
+  const targetIds = targetContainerId
+    ? [targetContainerId]
+    : ['accLotCostAnalyticsRoot', 'invLotCostAnalyticsRoot'];
+
+  const containers = targetIds
+    .map(id => document.getElementById(id))
+    .filter(Boolean);
+  if (containers.length === 0) return;
+
+  console.log('【ロット別原価ビュー】集計・描画開始', { state: lotCostViewState, targets: containers.map(c => c.id) });
+
+  try {
+    const lots = typeof getInventoryLotList === 'function' ? getInventoryLotList() : [];
+    const itemsMaster = typeof getItemMasterList === 'function' ? getItemMasterList(false) : [];
+    const inventoryList = typeof getInventoryList === 'function' ? getInventoryList() : [];
+    const serials = typeof getInventorySerialList === 'function' ? getInventorySerialList() : [];
+    const docs = typeof getHistoryList === 'function' ? getHistoryList(false) : [];
+
+    const data = buildLotCostAnalytics({ lots, itemsMaster, inventoryList, serials, docs });
+    const q = lotCostViewState.searchQuery.trim().toLowerCase();
+
+    // フィルタ適用
+    let filteredRows = data.rows.filter(r => {
+      if (lotCostViewState.itemFilter !== 'all' && r.itemId !== lotCostViewState.itemFilter) return false;
+      if (lotCostViewState.procFilter !== 'all' && r.procurementType !== lotCostViewState.procFilter) return false;
+      if (q) {
+        const hay = `${r.lotNumber} ${r.itemName} ${r.sku} ${r.supplier} ${r.category} ${r.arrivalDate}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+
+    // ソート適用
+    filteredRows = [...filteredRows].sort((a, b) => {
+      switch (lotCostViewState.sortBy) {
+        case 'date_asc':
+          return (a.arrivalDate || '').localeCompare(b.arrivalDate || '') || a.lotNumber.localeCompare(b.lotNumber);
+        case 'cost_desc':
+          return b.landedUnitCost - a.landedUnitCost;
+        case 'cost_asc':
+          return a.landedUnitCost - b.landedUnitCost;
+        case 'ratio_desc':
+          return (b.costRatioPct ?? -1) - (a.costRatioPct ?? -1);
+        case 'delta_desc':
+          return Math.abs(b.prevDelta || 0) - Math.abs(a.prevDelta || 0);
+        case 'date_desc':
+        default:
+          return (b.arrivalDate || '').localeCompare(a.arrivalDate || '') || b.lotNumber.localeCompare(a.lotNumber);
+      }
+    });
+
+    const filteredTrends = data.itemTrends.filter(t => {
+      if (lotCostViewState.itemFilter !== 'all' && t.itemId !== lotCostViewState.itemFilter) return false;
+      if (q) {
+        const hay = `${t.itemName} ${t.sku} ${t.category}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+
+    // フィルタ後のKPI再集計
+    const fTotalLanded = filteredRows.reduce((s, r) => s + r.totalLandedCost, 0);
+    const fTotalAlloc = filteredRows.reduce((s, r) => s + r.totalAllocatedCost, 0);
+    const fTotalQty = filteredRows.reduce((s, r) => s + r.qty, 0);
+    const fLotCount = new Set(filteredRows.map(r => r.lotNumber)).size;
+    const fAllocRatio = fTotalLanded > 0 ? Math.round((fTotalAlloc / fTotalLanded) * 1000) / 10 : 0;
+    const fRefRows = filteredRows.filter(r => r.costRatioPct !== null && r.refSalesPrice > 0);
+    const fRefSales = fRefRows.reduce((s, r) => s + r.refSalesPrice * r.qty, 0);
+    const fRefCost = fRefRows.reduce((s, r) => s + r.totalLandedCost, 0);
+    const fAvgCostRatio = fRefSales > 0 ? Math.round((fRefCost / fRefSales) * 1000) / 10 : null;
+
+    // 品目ドロップダウン選択肢
+    const itemOptionsHtml = [
+      `<option value="all"${lotCostViewState.itemFilter === 'all' ? ' selected' : ''}>すべての品目（${data.itemTrends.length}品目）</option>`,
+      ...data.itemTrends.map(t => {
+        const label = `${t.sku ? `[${t.sku}] ` : ''}${t.itemName}（${t.lotCount}ロット）`;
+        return `<option value="${safeEscAnalytics(t.itemId)}"${lotCostViewState.itemFilter === t.itemId ? ' selected' : ''}>${safeEscAnalytics(label)}</option>`;
+      })
+    ].join('');
+
+    // 品目別ロット推移カードHTML
+    const trendCardsHtml = filteredTrends.length === 0
+      ? `<div style="padding: 20px; text-align: center; color: #94a3b8; font-size: 0.82rem; background: #f8fafc; border-radius: 8px; border: 1px dashed #cbd5e1;">表示対象のロット原価推移データがありません。</div>`
+      : filteredTrends.map(t => {
+          const maxBarVal = Math.max(t.maxCost || 1, 1);
+          const spreadBadge = t.lotCount >= 2 && t.costSpread > 0
+            ? `<span style="background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; padding: 1px 7px; border-radius: 9999px; font-size: 0.68rem; font-weight: 700;">変動幅 ${fmtYenAnalytics(t.costSpread)}（${t.costSpreadPct.toFixed(1)}%）</span>`
+            : `<span style="background: #f1f5f9; color: #64748b; border: 1px solid #cbd5e1; padding: 1px 7px; border-radius: 9999px; font-size: 0.68rem; font-weight: 600;">${t.lotCount}ロット</span>`;
+
+          const barsHtml = t.points.map(pt => {
+            const totalPct = Math.max(6, Math.round((pt.landedUnitCost / maxBarVal) * 100));
+            const basePct = pt.landedUnitCost > 0 ? Math.min(100, Math.round((pt.baseUnitCost / pt.landedUnitCost) * 100)) : 100;
+            const allocPct = Math.max(0, 100 - basePct);
+            let deltaTag = '<span style="color:#94a3b8; font-size:0.68rem;">初回</span>';
+            if (pt.prevDelta !== null) {
+              const isUp = pt.prevDelta > 0;
+              const isDown = pt.prevDelta < 0;
+              const color = isUp ? '#dc2626' : (isDown ? '#059669' : '#64748b');
+              const bg = isUp ? '#fef2f2' : (isDown ? '#ecfdf5' : '#f1f5f9');
+              const sign = isUp ? '+' : '';
+              deltaTag = `<span style="background:${bg}; color:${color}; padding:1px 5px; border-radius:4px; font-size:0.68rem; font-weight:700;">${sign}${fmtYenAnalytics(pt.prevDelta)} (${sign}${(pt.prevDeltaPct || 0).toFixed(1)}%)</span>`;
+            }
+            const fxLabel = pt.procurementType === 'import' && pt.exchangeRate > 0
+              ? `${safeEscAnalytics(pt.foreignCurrency)} @${pt.exchangeRate}`
+              : (pt.procurementType === 'domestic' ? '国内仕入' : '輸入仕入');
+            return `
+              <div style="display: grid; grid-template-columns: 155px 1fr 120px 125px; gap: 8px; align-items: center; padding: 5px 0; border-bottom: 1px dashed #e2e8f0; font-size: 0.75rem;">
+                <div>
+                  <div style="font-weight: 700; color: #1e293b; font-family: monospace;">${safeEscAnalytics(pt.lotNumber)}</div>
+                  <div style="font-size: 0.67rem; color: #64748b;">${safeEscAnalytics(pt.arrivalDate || '未設定 (-)')} / ${pt.qty}${safeEscAnalytics(t.unit)} / ${fxLabel}</div>
+                </div>
+                <div>
+                  <div style="height: 16px; background: #f1f5f9; border-radius: 4px; overflow: hidden; display: flex; width: 100%;">
+                    <div style="width: ${totalPct}%; display: flex; height: 100%; transition: width 0.25s;">
+                      <div style="width: ${basePct}%; background: #3b82f6; height: 100%;" title="本体単価: ${fmtYenAnalytics(pt.baseUnitCost)}"></div>
+                      <div style="width: ${allocPct}%; background: #f59e0b; height: 100%;" title="諸掛按分単価: ${fmtYenAnalytics(pt.allocatedUnitCost)}"></div>
+                    </div>
+                  </div>
+                  <div style="font-size: 0.65rem; color: #64748b; margin-top: 2px;">
+                    本体 ${fmtYenAnalytics(pt.baseUnitCost)} ＋ 諸掛 ${fmtYenAnalytics(pt.allocatedUnitCost)}
+                  </div>
+                </div>
+                <div style="text-align: right;">
+                  <div style="font-weight: 800; color: #0f172a; font-family: monospace;">${fmtYenAnalytics(pt.landedUnitCost)}</div>
+                  <div style="font-size: 0.67rem; color: #64748b;">原価率 ${fmtPctAnalytics(pt.costRatioPct)}</div>
+                </div>
+                <div style="text-align: right;">${deltaTag}</div>
+              </div>
+            `;
+          }).join('');
+
+          return `
+            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; box-shadow: 0 1px 2px rgba(0,0,0,0.03);">
+              <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; flex-wrap: wrap; margin-bottom: 8px;">
+                <div>
+                  <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                    ${t.sku ? `<span style="background:#0f172a; color:#fff; font-family:monospace; font-size:0.68rem; font-weight:700; padding:1px 6px; border-radius:4px;">${safeEscAnalytics(t.sku)}</span>` : ''}
+                    <strong style="font-size: 0.88rem; color: #0f172a;">${safeEscAnalytics(t.itemName)}</strong>
+                    ${spreadBadge}
+                  </div>
+                  <div style="font-size: 0.72rem; color: #64748b; margin-top: 3px;">
+                    累計入庫: <strong>${t.totalQty}${safeEscAnalytics(t.unit)}</strong> / 加重平均原価: <strong>${fmtYenAnalytics(t.weightedAvgCost)}</strong> / レンジ: ${fmtYenAnalytics(t.minCost)} 〜 ${fmtYenAnalytics(t.maxCost)} / 基準売価: <strong>${fmtYenAnalytics(t.refSalesPrice, true)}</strong>
+                  </div>
+                </div>
+                <button type="button" class="btn btn-secondary btn-xs lot-cost-pick-item-btn" data-item-id="${safeEscAnalytics(t.itemId)}" style="font-size: 0.7rem; padding: 3px 8px;">
+                  ${lotCostViewState.itemFilter === t.itemId ? '全品目に戻す' : 'この品目で絞込'}
+                </button>
+              </div>
+              <div>${barsHtml}</div>
+            </div>
+          `;
+        }).join('');
+
+    // 詳細テーブル行HTML
+    const tableRowsHtml = filteredRows.length === 0
+      ? `<tr><td colspan="12" style="padding: 28px; text-align: center; color: #94a3b8;">条件に一致するロット明細がありません。</td></tr>`
+      : filteredRows.map(r => {
+          const procBadge = r.procurementType === 'domestic'
+            ? `<span style="background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; padding:1px 6px; border-radius:4px; font-size:0.68rem; font-weight:700;">国内</span>`
+            : `<span style="background:#f0fdf4; color:#15803d; border:1px solid #bbf7d0; padding:1px 6px; border-radius:4px; font-size:0.68rem; font-weight:700;">輸入 ${r.foreignCurrency && r.exchangeRate > 0 ? `${safeEscAnalytics(r.foreignCurrency)}@${r.exchangeRate}` : ''}</span>`;
+          let deltaHtml = '<span style="color:#94a3b8;">-</span>';
+          if (r.prevDelta !== null) {
+            const isUp = r.prevDelta > 0;
+            const isDown = r.prevDelta < 0;
+            const color = isUp ? '#dc2626' : (isDown ? '#059669' : '#64748b');
+            const sign = isUp ? '+' : '';
+            deltaHtml = `<span style="color:${color}; font-weight:700; font-family:monospace;">${sign}${fmtYenAnalytics(r.prevDelta)}<br><small>(${sign}${(r.prevDeltaPct || 0).toFixed(1)}%)</small></span>`;
+          }
+          let ratioColor = '#0f172a';
+          if (r.costRatioPct !== null) {
+            if (r.costRatioPct >= 60) ratioColor = '#dc2626';
+            else if (r.costRatioPct >= 40) ratioColor = '#d97706';
+            else ratioColor = '#059669';
+          }
+          const snHtml = r.serialStats && r.serialStats.total > 0
+            ? `<span style="font-size:0.7rem; color:#334155;">計${r.serialStats.total}<br><small style="color:#059669;">在庫${r.serialStats.inStock}</small> / <small style="color:#64748b;">出${r.serialStats.shipped}</small></span>`
+            : `<span style="color:#94a3b8; font-size:0.72rem;">-</span>`;
+
+          return `
+            <tr style="border-bottom: 1px solid #e2e8f0;">
+              <td style="padding: 8px 6px; font-family: monospace; font-weight: 700; color: #1e293b; white-space: nowrap;">
+                ${safeEscAnalytics(r.lotNumber)}
+                <div style="font-size: 0.68rem; color: #64748b; font-weight: 400;">${safeEscAnalytics(r.supplier)}</div>
+              </td>
+              <td style="padding: 8px 6px; white-space: nowrap; color: #334155;">
+                ${safeEscAnalytics(r.arrivalDate || '未設定 (-)')}
+                <div style="margin-top: 2px;">${procBadge}</div>
+              </td>
+              <td style="padding: 8px 6px;">
+                ${r.sku ? `<span style="background:#1e293b; color:#fff; font-family:monospace; font-size:0.66rem; padding:1px 5px; border-radius:3px; margin-right:4px;">${safeEscAnalytics(r.sku)}</span>` : ''}
+                <span style="font-weight: 600; color: #0f172a;">${safeEscAnalytics(r.itemName)}</span>
+              </td>
+              <td style="padding: 8px 6px; text-align: right; font-weight: 700; white-space: nowrap;">${r.qty} <small style="color:#64748b; font-weight:400;">${safeEscAnalytics(r.unit)}</small></td>
+              <td style="padding: 8px 6px; text-align: right; font-family: monospace; color: #475569; white-space: nowrap;">
+                ${r.foreignPrice > 0 ? `${safeEscAnalytics(r.foreignCurrency)} ${r.foreignPrice.toLocaleString()}` : '-'}
+              </td>
+              <td style="padding: 8px 6px; text-align: right; font-family: monospace; color: #1d4ed8; white-space: nowrap;">${fmtYenAnalytics(r.baseUnitCost)}</td>
+              <td style="padding: 8px 6px; text-align: right; font-family: monospace; color: #b45309; white-space: nowrap;">
+                +${fmtYenAnalytics(r.allocatedUnitCost)}
+                <div style="font-size: 0.66rem; color: #94a3b8;">(${r.allocatedRatioPct.toFixed(1)}%)</div>
+              </td>
+              <td style="padding: 8px 6px; text-align: right; font-family: monospace; font-weight: 800; color: #0f172a; white-space: nowrap; background: #f8fafc;">
+                ${fmtYenAnalytics(r.landedUnitCost)}
+                <div style="font-size: 0.66rem; color: #64748b; font-weight: 400;">計 ${fmtYenAnalytics(r.totalLandedCost)}</div>
+              </td>
+              <td style="padding: 8px 6px; text-align: right; white-space: nowrap;">${deltaHtml}</td>
+              <td style="padding: 8px 6px; text-align: right; font-family: monospace; color: #334155; white-space: nowrap;">
+                ${fmtYenAnalytics(r.refSalesPrice, true)}
+                <div style="font-size: 0.65rem; color: #94a3b8;">${safeEscAnalytics(r.refSalesSource)}</div>
+              </td>
+              <td style="padding: 8px 6px; text-align: right; font-family: monospace; font-weight: 800; color: ${ratioColor}; white-space: nowrap;">
+                ${fmtPctAnalytics(r.costRatioPct)}
+                ${r.estGrossMarginPerUnit !== null ? `<div style="font-size: 0.66rem; color: #64748b; font-weight: 400;">粗利 ${fmtYenAnalytics(r.estGrossMarginPerUnit)}</div>` : ''}
+              </td>
+              <td style="padding: 8px 6px; text-align: center; white-space: nowrap;">${snHtml}</td>
+            </tr>
+          `;
+        }).join('');
+
+    const html = `
+      <div class="lot-cost-analytics-wrapper" style="display: flex; flex-direction: column; gap: 14px;">
+        <!-- ヘッダー説明＆凡例 -->
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+          <div>
+            <h3 style="margin: 0; font-size: 1rem; font-weight: 800; color: #0f172a;">📦 ロット別 仕入原価・諸掛按分・原価率分析ビュー</h3>
+            <p style="margin: 2px 0 0 0; font-size: 0.75rem; color: #64748b;">
+              入荷ロット台帳・商品マスタ・シリアル台帳・確定伝票からリアルタイム集計（本体単価＋諸掛按分＝確定実原価、前回ロット比と原価率を比較）
+            </p>
+          </div>
+          <div style="display: flex; align-items: center; gap: 12px; font-size: 0.72rem; color: #475569;">
+            <span><span style="display:inline-block; width:10px; height:10px; background:#3b82f6; border-radius:2px; margin-right:4px;"></span>本体仕入単価</span>
+            <span><span style="display:inline-block; width:10px; height:10px; background:#f59e0b; border-radius:2px; margin-right:4px;"></span>諸掛按分単価</span>
+          </div>
+        </div>
+
+        <!-- KPIカード群 -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(175px, 1fr)); gap: 10px;">
+          <div style="background: #ffffff; border: 1px solid #e2e8f0; border-left: 4px solid #2563eb; border-radius: 8px; padding: 12px;">
+            <div style="font-size: 0.72rem; color: #64748b; font-weight: 700;">対象ロット / 明細数</div>
+            <div style="font-size: 1.3rem; font-weight: 800; color: #0f172a; margin-top: 2px;">${fLotCount} <small style="font-size:0.75rem; color:#64748b;">ロット (${filteredRows.length}行)</small></div>
+            <div style="font-size: 0.7rem; color: #64748b; margin-top: 2px;">総入荷数量: ${fTotalQty.toLocaleString()}</div>
+          </div>
+          <div style="background: #ffffff; border: 1px solid #e2e8f0; border-left: 4px solid #059669; border-radius: 8px; padding: 12px;">
+            <div style="font-size: 0.72rem; color: #64748b; font-weight: 700;">確定実原価 総額</div>
+            <div style="font-size: 1.25rem; font-weight: 800; color: #0f172a; margin-top: 2px; font-family: monospace;">${fmtYenAnalytics(fTotalLanded)}</div>
+            <div style="font-size: 0.7rem; color: #64748b; margin-top: 2px;">うち諸掛按分: ${fmtYenAnalytics(fTotalAlloc)}</div>
+          </div>
+          <div style="background: #ffffff; border: 1px solid #e2e8f0; border-left: 4px solid #f59e0b; border-radius: 8px; padding: 12px;">
+            <div style="font-size: 0.72rem; color: #64748b; font-weight: 700;">平均 諸掛按分比率</div>
+            <div style="font-size: 1.3rem; font-weight: 800; color: #b45309; margin-top: 2px; font-family: monospace;">${fAllocRatio.toFixed(1)}%</div>
+            <div style="font-size: 0.7rem; color: #64748b; margin-top: 2px;">運賃・関税・手数料等の構成比</div>
+          </div>
+          <div style="background: #ffffff; border: 1px solid #e2e8f0; border-left: 4px solid #7c3aed; border-radius: 8px; padding: 12px;">
+            <div style="font-size: 0.72rem; color: #64748b; font-weight: 700;">加重平均 原価率</div>
+            <div style="font-size: 1.3rem; font-weight: 800; color: #5b21b6; margin-top: 2px; font-family: monospace;">${fmtPctAnalytics(fAvgCostRatio)}</div>
+            <div style="font-size: 0.7rem; color: #64748b; margin-top: 2px;">基準売価が設定済の品目で算出</div>
+          </div>
+          <div style="background: #ffffff; border: 1px solid #e2e8f0; border-left: 4px solid #dc2626; border-radius: 8px; padding: 12px;">
+            <div style="font-size: 0.72rem; color: #64748b; font-weight: 700;">最大ロット原価差</div>
+            <div style="font-size: 1.15rem; font-weight: 800; color: #b91c1c; margin-top: 2px; font-family: monospace;">
+              ${data.summary.maxSpreadItem ? fmtYenAnalytics(data.summary.maxSpreadItem.costSpread) : '未設定 (-)'}
+            </div>
+            <div style="font-size: 0.68rem; color: #64748b; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+              ${data.summary.maxSpreadItem ? safeEscAnalytics(data.summary.maxSpreadItem.itemName) : '複数ロット品目なし'}
+            </div>
+          </div>
+        </div>
+
+        <!-- フィルタ＆ソートバー -->
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+          <select class="form-select lot-cost-filter-item" style="font-size: 0.8rem; width: auto; min-width: 210px;">
+            ${itemOptionsHtml}
+          </select>
+          <select class="form-select lot-cost-filter-proc" style="font-size: 0.8rem; width: auto;">
+            <option value="all"${lotCostViewState.procFilter === 'all' ? ' selected' : ''}>仕入区分: すべて</option>
+            <option value="import"${lotCostViewState.procFilter === 'import' ? ' selected' : ''}>🌐 輸入仕入のみ</option>
+            <option value="domestic"${lotCostViewState.procFilter === 'domestic' ? ' selected' : ''}>🇯🇵 国内仕入のみ</option>
+          </select>
+          <select class="form-select lot-cost-sort-by" style="font-size: 0.8rem; width: auto;">
+            <option value="date_desc"${lotCostViewState.sortBy === 'date_desc' ? ' selected' : ''}>並び順: 入荷日（新しい順）</option>
+            <option value="date_asc"${lotCostViewState.sortBy === 'date_asc' ? ' selected' : ''}>並び順: 入荷日（古い順）</option>
+            <option value="cost_desc"${lotCostViewState.sortBy === 'cost_desc' ? ' selected' : ''}>並び順: 確定実原価（高い順）</option>
+            <option value="cost_asc"${lotCostViewState.sortBy === 'cost_asc' ? ' selected' : ''}>並び順: 確定実原価（安い順）</option>
+            <option value="ratio_desc"${lotCostViewState.sortBy === 'ratio_desc' ? ' selected' : ''}>並び順: 原価率（高い順）</option>
+            <option value="delta_desc"${lotCostViewState.sortBy === 'delta_desc' ? ' selected' : ''}>並び順: 前回ロット比変動が大きい順</option>
+          </select>
+          <input type="text" class="form-input lot-cost-search-input" value="${safeEscAnalytics(lotCostViewState.searchQuery)}" placeholder="🔍 ロット番号・品名・仕入先で検索..." style="font-size: 0.8rem; flex: 1; min-width: 180px;">
+          <button type="button" class="btn btn-secondary btn-sm lot-cost-reset-btn" style="font-size: 0.75rem;">リセット</button>
+        </div>
+
+        <!-- 品目別 ロット原価推移比較パネル -->
+        <div>
+          <div style="font-size: 0.84rem; font-weight: 800; color: #1e293b; margin-bottom: 8px;">📈 品目別 ロット間 原価推移・調達条件差の比較</div>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(460px, 1fr)); gap: 10px;">
+            ${trendCardsHtml}
+          </div>
+        </div>
+
+        <!-- ロット別原価明細テーブル -->
+        <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden;">
+          <div style="padding: 10px 14px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+            <strong style="font-size: 0.85rem; color: #0f172a;">📋 ロット別 原価・諸掛按分・原価率一覧（${filteredRows.length}件）</strong>
+          </div>
+          <div style="overflow-x: auto;">
+            <table class="acc-table" style="width: 100%; border-collapse: collapse; font-size: 0.78rem;">
+              <thead style="background: #f1f5f9; color: #334155;">
+                <tr style="border-bottom: 1px solid #cbd5e1;">
+                  <th style="padding: 8px 6px; text-align: left;">ロット番号 / 仕入先</th>
+                  <th style="padding: 8px 6px; text-align: left;">入荷日 / 区分</th>
+                  <th style="padding: 8px 6px; text-align: left;">対象品目</th>
+                  <th style="padding: 8px 6px; text-align: right;">数量</th>
+                  <th style="padding: 8px 6px; text-align: right;">外貨単価</th>
+                  <th style="padding: 8px 6px; text-align: right;">本体円単価</th>
+                  <th style="padding: 8px 6px; text-align: right;">諸掛按分/台</th>
+                  <th style="padding: 8px 6px; text-align: right;">確定実原価/台</th>
+                  <th style="padding: 8px 6px; text-align: right;">前回ロット比</th>
+                  <th style="padding: 8px 6px; text-align: right;">基準販売単価</th>
+                  <th style="padding: 8px 6px; text-align: right;">原価率</th>
+                  <th style="padding: 8px 6px; text-align: center;">S/N台帳</th>
+                </tr>
+              </thead>
+              <tbody>${tableRowsHtml}</tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    `;
+
+    containers.forEach(c => {
+      c.innerHTML = html;
+    });
+    console.log('【ロット別原価ビュー】描画完了', { lots: fLotCount, rows: filteredRows.length });
+  } catch (err) {
+    console.error('【ロット別原価ビュー】描画エラー:', err);
+    containers.forEach(c => {
+      c.innerHTML = `<div style="padding: 16px; color: #dc2626; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px;">ロット別原価ビューの読み込み中にエラーが発生しました: ${safeEscAnalytics(err.message || err)}</div>`;
+    });
+  }
+}
+window.renderLotCostAnalyticsView = renderLotCostAnalyticsView;
+
+// ==========================================================================
+// 2. 出張・地域・取引先 統合分析ビュー レンダリング
+// ==========================================================================
+
+function renderBusinessAnalyticsView(period = null) {
+  const container = document.getElementById('accBusinessAnalyticsRoot');
+  if (!container) return;
+
+  const activePeriod = period || (typeof currentAccGlobalPeriod !== 'undefined' ? currentAccGlobalPeriod : { preset: 'all', start: '', end: '' });
+  console.log('【統合分析ビュー】集計・描画開始', { period: activePeriod, state: { ...bizAnalyticsViewState, expandedClients: bizAnalyticsViewState.expandedClients.size } });
+
+  try {
+    const docs = typeof getHistoryList === 'function' ? getHistoryList(false) : [];
+    const clients = typeof getClientMasterList === 'function' ? getClientMasterList(false) : [];
+    const expenses = typeof getExpenseList === 'function' ? getExpenseList() : [];
+    const manualJournals = typeof getManualJournals === 'function' ? getManualJournals() : [];
+
+    const data = buildBusinessAnalytics({
+      docs,
+      clients,
+      expenses,
+      manualJournals,
+      period: activePeriod,
+      includeZeroDocs: bizAnalyticsViewState.includeZeroDocs,
+      tripStart: bizAnalyticsViewState.tripStart,
+      tripEnd: bizAnalyticsViewState.tripEnd,
+      followUpDays: bizAnalyticsViewState.followUpDays,
+      filterRegion: bizAnalyticsViewState.tripRegion,
+      filterPrefecture: bizAnalyticsViewState.tripPrefecture,
+      filterClient: bizAnalyticsViewState.tripClient
+    });
+
+    // 初回のみ自動検出された最新出張期間を状態へ同期
+    if (!bizAnalyticsViewState.initializedTripDefault && data.tripImpact.tripStart) {
+      bizAnalyticsViewState.tripStart = data.tripImpact.tripStart;
+      bizAnalyticsViewState.tripEnd = data.tripImpact.tripEnd;
+      bizAnalyticsViewState.initializedTripDefault = true;
+    }
+
+    const periodBadgeText = (activePeriod && (activePeriod.start || activePeriod.end))
+      ? `${activePeriod.start || '開始指定なし'} 〜 ${activePeriod.end || '終了指定なし'}`
+      : '全期間（累計）';
+
+    // --- Section 1: 取引先別 売上・粗利サマリー ---
+    const clientQ = bizAnalyticsViewState.clientSearch.trim().toLowerCase();
+    let filteredClients = data.clientSummary.filter(c => {
+      if (bizAnalyticsViewState.tripRegion !== 'all' && c.region !== bizAnalyticsViewState.tripRegion) return false;
+      if (bizAnalyticsViewState.tripPrefecture !== 'all' && c.prefecture !== bizAnalyticsViewState.tripPrefecture) return false;
+      if (clientQ) {
+        const hay = `${c.clientName} ${c.region} ${c.prefecture} ${c.endUsers.join(' ')} ${c.titles.join(' ')}`.toLowerCase();
+        if (!hay.includes(clientQ)) return false;
+      }
+      return true;
+    });
+
+    filteredClients = [...filteredClients].sort((a, b) => {
+      switch (bizAnalyticsViewState.clientSortBy) {
+        case 'gp_desc': return b.grossProfit - a.grossProfit;
+        case 'margin_desc': return (b.grossMarginPct ?? -999) - (a.grossMarginPct ?? -999);
+        case 'count_desc': return b.docCount - a.docCount || b.sales - a.sales;
+        case 'last_desc': return (b.lastDate || '').localeCompare(a.lastDate || '');
+        case 'sales_desc':
+        default: return b.sales - a.sales;
+      }
+    });
+
+    const clientRowsHtml = filteredClients.length === 0
+      ? `<tr><td colspan="9" style="padding: 24px; text-align: center; color: #94a3b8;">対象条件の取引先データがありません。</td></tr>`
+      : filteredClients.map(c => {
+          const isOpen = bizAnalyticsViewState.expandedClients.has(c.clientKey);
+          const repeatBadge = c.isRepeat
+            ? `<span style="background:#dbeafe; color:#1d4ed8; font-size:0.66rem; font-weight:700; padding:1px 6px; border-radius:9999px; margin-left:4px;">リピート ${c.docCount}回</span>`
+            : '';
+          const euHtml = c.endUsers.length > 0
+            ? c.endUsers.slice(0, 4).map(eu => `<span style="display:inline-block; background:#f0fdf4; color:#166534; border:1px solid #bbf7d0; font-size:0.66rem; padding:1px 5px; border-radius:4px; margin:1px 2px 1px 0;">${safeEscAnalytics(eu)}</span>`).join('') +
+              (c.endUsers.length > 4 ? `<span style="font-size:0.66rem; color:#64748b;"> +${c.endUsers.length - 4}件</span>` : '')
+            : `<span style="color:#94a3b8; font-size:0.72rem;">未設定 (-)</span>`;
+
+          const detailRowHtml = isOpen ? `
+            <tr style="background: #f8fafc;">
+              <td colspan="9" style="padding: 10px 14px; border-bottom: 2px solid #cbd5e1;">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 6px;">
+                  <div style="font-size: 0.75rem; font-weight: 700; color: #334155;">
+                    📂 「${safeEscAnalytics(c.clientName)}」取引履歴・エンドユーザー展開（計 ${c.docs.length} 件 / 初回 ${safeEscAnalytics(c.firstDate || '-')} 〜 最終 ${safeEscAnalytics(c.lastDate || '-')}）
+                  </div>
+                  <button type="button" class="btn btn-secondary btn-xs biz-focus-client-trip-btn" data-client-name="${safeEscAnalytics(c.clientName)}" style="font-size: 0.7rem;">
+                    🎯 この取引先で出張後追い分析を絞込
+                  </button>
+                </div>
+                <table style="width: 100%; border-collapse: collapse; font-size: 0.74rem; background: #ffffff; border: 1px solid #e2e8f0;">
+                  <thead>
+                    <tr style="background: #f1f5f9; color: #475569; border-bottom: 1px solid #cbd5e1;">
+                      <th style="padding: 5px 6px; text-align: left;">発行日</th>
+                      <th style="padding: 5px 6px; text-align: left;">伝票番号</th>
+                      <th style="padding: 5px 6px; text-align: left;">件名 / エンドユーザー</th>
+                      <th style="padding: 5px 6px; text-align: right;">数量</th>
+                      <th style="padding: 5px 6px; text-align: right;">売上(税抜)</th>
+                      <th style="padding: 5px 6px; text-align: right;">原価</th>
+                      <th style="padding: 5px 6px; text-align: right;">粗利額</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${c.docs.map(d => `
+                      <tr style="border-bottom: 1px solid #f1f5f9;">
+                        <td style="padding: 5px 6px; white-space: nowrap;">${safeEscAnalytics(d.issueDate || '-')}</td>
+                        <td style="padding: 5px 6px; font-family: monospace; white-space: nowrap;">${safeEscAnalytics(d.docNumber)}</td>
+                        <td style="padding: 5px 6px;">
+                          ${safeEscAnalytics(d.title || '（件名なし）')}
+                          ${d.endUsers.length > 0 ? `<span style="margin-left:6px; color:#15803d; font-size:0.68rem;">[EU: ${safeEscAnalytics(d.endUsers.join(', '))}]</span>` : ''}
+                        </td>
+                        <td style="padding: 5px 6px; text-align: right;">${d.totalQty}</td>
+                        <td style="padding: 5px 6px; text-align: right; font-family: monospace;">${fmtYenAnalytics(d.sales)}</td>
+                        <td style="padding: 5px 6px; text-align: right; font-family: monospace; color: #64748b;">${fmtYenAnalytics(d.cogs)}</td>
+                        <td style="padding: 5px 6px; text-align: right; font-family: monospace; font-weight: 700; color: ${d.grossProfit >= 0 ? '#059669' : '#dc2626'};">${fmtYenAnalytics(d.grossProfit)}</td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </td>
+            </tr>
+          ` : '';
+
+          return `
+            <tr style="border-bottom: 1px solid #e2e8f0;">
+              <td style="padding: 8px 6px;">
+                <button type="button" class="biz-toggle-client-detail" data-client-key="${safeEscAnalytics(c.clientKey)}" style="background: none; border: none; padding: 0; cursor: pointer; text-align: left; font-weight: 700; color: #0f172a; font-size: 0.8rem;">
+                  <span style="display:inline-block; width:14px; color:#2563eb;">${isOpen ? '▼' : '▶'}</span>${safeEscAnalytics(c.clientName)}
+                </button>${repeatBadge}
+              </td>
+              <td style="padding: 8px 6px; white-space: nowrap; font-size: 0.74rem; color: #475569;">
+                <span style="background:#f1f5f9; padding:1px 6px; border-radius:4px;">${safeEscAnalytics(c.region)}</span>
+                <div style="font-size:0.68rem; color:#64748b; margin-top:2px;">${safeEscAnalytics(c.prefecture)}</div>
+              </td>
+              <td style="padding: 8px 6px; text-align: right; font-family: monospace; font-weight: 700; color: #0f172a; white-space: nowrap;">${fmtYenAnalytics(c.sales)}</td>
+              <td style="padding: 8px 6px; text-align: right; font-family: monospace; color: #64748b; white-space: nowrap;">${fmtYenAnalytics(c.cogs)}</td>
+              <td style="padding: 8px 6px; text-align: right; font-family: monospace; font-weight: 800; color: ${c.grossProfit >= 0 ? '#059669' : '#dc2626'}; white-space: nowrap;">${fmtYenAnalytics(c.grossProfit)}</td>
+              <td style="padding: 8px 6px; text-align: right; font-family: monospace; font-weight: 700; color: #334155; white-space: nowrap;">${fmtPctAnalytics(c.grossMarginPct)}</td>
+              <td style="padding: 8px 6px; text-align: right; white-space: nowrap;">
+                <strong>${c.docCount}件</strong><div style="font-size:0.68rem; color:#64748b;">計 ${c.totalQty}点</div>
+              </td>
+              <td style="padding: 8px 6px; white-space: nowrap; font-size: 0.74rem; color: #334155;">${safeEscAnalytics(c.lastDate || '未設定 (-)')}</td>
+              <td style="padding: 8px 6px; max-width: 220px;">${euHtml}</td>
+            </tr>
+            ${detailRowHtml}
+          `;
+        }).join('');
+
+    // --- Section 2: 地域（エリア・都道府県）別 売上・経費バランス ---
+    const geoRows = bizAnalyticsViewState.geoGranularity === 'prefecture' ? data.prefectureSummary : data.regionSummary;
+    const maxGeoScale = Math.max(1, ...geoRows.map(g => Math.max(g.grossProfit, g.totalExpense, g.sales * 0.5)));
+
+    const geoRowsHtml = geoRows.length === 0
+      ? `<tr><td colspan="10" style="padding: 24px; text-align: center; color: #94a3b8;">対象期間の地域別データがありません。</td></tr>`
+      : geoRows.map(g => {
+          const gpBarW = Math.min(100, Math.max(0, Math.round((Math.max(0, g.grossProfit) / maxGeoScale) * 100)));
+          const expBarW = Math.min(100, Math.max(0, Math.round((g.totalExpense / maxGeoScale) * 100)));
+          const isSelectedGeo =
+            (bizAnalyticsViewState.geoGranularity === 'region' && bizAnalyticsViewState.tripRegion === g.key) ||
+            (bizAnalyticsViewState.geoGranularity === 'prefecture' && bizAnalyticsViewState.tripPrefecture === g.key);
+
+          return `
+            <tr style="border-bottom: 1px solid #e2e8f0; background: ${isSelectedGeo ? '#eff6ff' : '#ffffff'};">
+              <td style="padding: 8px 6px; font-weight: 700; white-space: nowrap;">
+                <button type="button" class="biz-pick-geo-btn" data-geo-mode="${bizAnalyticsViewState.geoGranularity}" data-geo-key="${safeEscAnalytics(g.key)}" style="background:none; border:none; padding:0; cursor:pointer; font-weight:800; color:${isSelectedGeo ? '#1d4ed8' : '#0f172a'}; text-decoration: underline;">
+                  ${safeEscAnalytics(g.label)}
+                </button>
+                ${bizAnalyticsViewState.geoGranularity === 'prefecture' && g.region !== g.label ? `<div style="font-size:0.66rem; color:#64748b; font-weight:400;">${safeEscAnalytics(g.region)}</div>` : ''}
+              </td>
+              <td style="padding: 8px 6px; text-align: right; white-space: nowrap; font-size: 0.74rem; color: #475569;">${g.clientCount}社 / ${g.docCount}件</td>
+              <td style="padding: 8px 6px; text-align: right; font-family: monospace; font-weight: 700; white-space: nowrap;">${fmtYenAnalytics(g.sales)}</td>
+              <td style="padding: 8px 6px; text-align: right; font-family: monospace; font-weight: 800; color: ${g.grossProfit >= 0 ? '#059669' : '#dc2626'}; white-space: nowrap;">
+                ${fmtYenAnalytics(g.grossProfit)}
+                <div style="font-size:0.66rem; color:#64748b; font-weight:400;">${fmtPctAnalytics(g.grossMarginPct)}</div>
+              </td>
+              <td style="padding: 8px 6px; text-align: right; font-family: monospace; color: #b45309; font-weight: 700; white-space: nowrap;">
+                ${fmtYenAnalytics(g.totalExpense)}
+                <div style="font-size:0.66rem; color:#64748b; font-weight:400;">${g.expenseCount}件</div>
+              </td>
+              <td style="padding: 8px 6px; font-size: 0.7rem; color: #475569; white-space: nowrap;">
+                旅費 ${fmtYenAnalytics(g.travelExpense)} / 車両 ${fmtYenAnalytics(g.vehicleExpense)}<br>交際 ${fmtYenAnalytics(g.entertainExpense)}
+              </td>
+              <td style="padding: 8px 6px; text-align: right; font-family: monospace; font-weight: 800; color: ${g.netContribution >= 0 ? '#047857' : '#dc2626'}; white-space: nowrap;">
+                ${fmtYenAnalytics(g.netContribution)}
+              </td>
+              <td style="padding: 8px 6px; text-align: right; font-family: monospace; white-space: nowrap; color: #334155;">
+                ${g.expenseToSalesPct !== null ? `${g.expenseToSalesPct.toFixed(1)}%` : '未設定 (-)'}
+                <div style="font-size:0.66rem; color:#64748b;">${g.roiMultiple !== null ? `${g.roiMultiple.toFixed(1)}倍` : '-'}</div>
+              </td>
+              <td style="padding: 8px 6px; min-width: 140px;">
+                <div style="display: flex; flex-direction: column; gap: 3px;">
+                  <div style="display:flex; align-items:center; gap:4px;">
+                    <span style="font-size:0.62rem; color:#059669; width:24px;">粗利</span>
+                    <div style="flex:1; height:7px; background:#f1f5f9; border-radius:4px; overflow:hidden;"><div style="width:${gpBarW}%; height:100%; background:#10b981;"></div></div>
+                  </div>
+                  <div style="display:flex; align-items:center; gap:4px;">
+                    <span style="font-size:0.62rem; color:#d97706; width:24px;">経費</span>
+                    <div style="flex:1; height:7px; background:#f1f5f9; border-radius:4px; overflow:hidden;"><div style="width:${expBarW}%; height:100%; background:#f59e0b;"></div></div>
+                  </div>
+                </div>
+              </td>
+            </tr>
+          `;
+        }).join('');
+
+    // --- Section 3: 出張期間と「直後〜後追い」売上の連動確認 ---
+    const ti = data.tripImpact;
+    const candidateOptionsHtml = [
+      `<option value="">-- 経費発生期間から自動抽出された出張候補（${data.tripCandidates.length}件） --</option>`,
+      ...data.tripCandidates.map(c => {
+        const selected = (c.startDate === ti.tripStart && c.endDate === ti.tripEnd) ? ' selected' : '';
+        return `<option value="${safeEscAnalytics(c.startDate)}|${safeEscAnalytics(c.endDate)}|${safeEscAnalytics(c.primaryRegion)}"${selected}>${safeEscAnalytics(c.label)}</option>`;
+      })
+    ].join('');
+
+    const regionFilterOptionsHtml = [
+      `<option value="all"${bizAnalyticsViewState.tripRegion === 'all' ? ' selected' : ''}>エリア: すべて</option>`,
+      ...data.availableRegions.map(r => `<option value="${safeEscAnalytics(r)}"${bizAnalyticsViewState.tripRegion === r ? ' selected' : ''}>${safeEscAnalytics(r)}</option>`)
+    ].join('');
+
+    const prefFilterOptionsHtml = [
+      `<option value="all"${bizAnalyticsViewState.tripPrefecture === 'all' ? ' selected' : ''}>都道府県: すべて</option>`,
+      ...data.availablePrefectures.map(p => `<option value="${safeEscAnalytics(p)}"${bizAnalyticsViewState.tripPrefecture === p ? ' selected' : ''}>${safeEscAnalytics(p)}</option>`)
+    ].join('');
+
+    const clientFilterOptionsHtml = [
+      `<option value="all"${bizAnalyticsViewState.tripClient === 'all' ? ' selected' : ''}>取引先: すべて</option>`,
+      ...data.availableClients.map(cn => `<option value="${safeEscAnalytics(cn)}"${bizAnalyticsViewState.tripClient === cn ? ' selected' : ''}>${safeEscAnalytics(cn)}</option>`)
+    ].join('');
+
+    const timelineRowsHtml = ti.timelineDocs.length === 0
+      ? `<tr><td colspan="8" style="padding: 20px; text-align: center; color: #94a3b8;">指定された出張期間および後追い期間（${ti.followUpDays}日間）に該当する売上伝票はありません。</td></tr>`
+      : ti.timelineDocs.map(d => {
+          const phaseBadge = d.phase === 'during'
+            ? `<span style="background:#dbeafe; color:#1d4ed8; border:1px solid #93c5fd; padding:1px 6px; border-radius:9999px; font-size:0.68rem; font-weight:700;">出張期間中</span>`
+            : `<span style="background:#ecfdf5; color:#047857; border:1px solid #86efac; padding:1px 6px; border-radius:9999px; font-size:0.68rem; font-weight:700;">終了後 +${d.daysAfterTrip}日</span>`;
+          return `
+            <tr style="border-bottom: 1px solid #e2e8f0;">
+              <td style="padding: 7px 6px; white-space: nowrap;">${phaseBadge}</td>
+              <td style="padding: 7px 6px; white-space: nowrap;">${safeEscAnalytics(d.issueDate)}</td>
+              <td style="padding: 7px 6px; font-family: monospace; white-space: nowrap;">${safeEscAnalytics(d.docNumber)}</td>
+              <td style="padding: 7px 6px; font-weight: 700;">${safeEscAnalytics(d.clientName)}</td>
+              <td style="padding: 7px 6px; font-size: 0.74rem; color: #475569; white-space: nowrap;">${safeEscAnalytics(d.prefecture)}</td>
+              <td style="padding: 7px 6px; font-size: 0.74rem; color: #475569;">${safeEscAnalytics(d.endUsers.join(', ') || d.title || '-')}</td>
+              <td style="padding: 7px 6px; text-align: right; font-family: monospace; font-weight: 700;">${fmtYenAnalytics(d.sales)}</td>
+              <td style="padding: 7px 6px; text-align: right; font-family: monospace; font-weight: 800; color: ${d.grossProfit >= 0 ? '#059669' : '#dc2626'};">${fmtYenAnalytics(d.grossProfit)}</td>
+            </tr>
+          `;
+        }).join('');
+
+    const tripExpRowsHtml = ti.tripExpenses.length === 0
+      ? `<tr><td colspan="5" style="padding: 16px; text-align: center; color: #94a3b8;">該当する出張期間内の移動・デモ関連経費はありません。</td></tr>`
+      : ti.tripExpenses.map(e => `
+          <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 6px; white-space: nowrap;">${safeEscAnalytics(e.date)}</td>
+            <td style="padding: 6px; white-space: nowrap;"><span style="background:#fef3c7; color:#92400e; padding:1px 6px; border-radius:4px; font-size:0.68rem; font-weight:700;">${safeEscAnalytics(e.category)}</span></td>
+            <td style="padding: 6px; white-space: nowrap; font-size: 0.72rem; color: #475569;">${safeEscAnalytics(e.prefecture)}</td>
+            <td style="padding: 6px; font-size: 0.74rem;">${safeEscAnalytics(e.payee)}${e.note ? ` <span style="color:#64748b;">(${safeEscAnalytics(e.note)})</span>` : ''}</td>
+            <td style="padding: 6px; text-align: right; font-family: monospace; font-weight: 700; color: #b45309; white-space: nowrap;">${fmtYenAnalytics(e.amount)}</td>
+          </tr>
+        `).join('');
+
+    const showClients = bizAnalyticsViewState.activeSubTab === 'all' || bizAnalyticsViewState.activeSubTab === 'clients';
+    const showRegions = bizAnalyticsViewState.activeSubTab === 'all' || bizAnalyticsViewState.activeSubTab === 'regions';
+    const showTrips = bizAnalyticsViewState.activeSubTab === 'all' || bizAnalyticsViewState.activeSubTab === 'trips';
+
+    const subTabBtn = (key, label) => {
+      const active = bizAnalyticsViewState.activeSubTab === key;
+      return `<button type="button" class="biz-subtab-btn" data-subtab="${key}" style="padding: 6px 12px; border-radius: 6px; font-size: 0.78rem; font-weight: 700; cursor: pointer; border: 1px solid ${active ? '#2563eb' : '#cbd5e1'}; background: ${active ? '#2563eb' : '#ffffff'}; color: ${active ? '#ffffff' : '#334155'};">${label}</button>`;
+    };
+
+    const followUpPresetBtn = (days) => {
+      const active = Number(bizAnalyticsViewState.followUpDays) === days;
+      return `<button type="button" class="biz-followup-preset-btn" data-days="${days}" style="padding: 4px 10px; border-radius: 6px; font-size: 0.74rem; font-weight: 700; cursor: pointer; border: 1px solid ${active ? '#059669' : '#cbd5e1'}; background: ${active ? '#ecfdf5' : '#ffffff'}; color: ${active ? '#047857' : '#475569'};">終了後 ${days}日</button>`;
+    };
+
+    const hasGeoOrClientFilter = bizAnalyticsViewState.tripRegion !== 'all' || bizAnalyticsViewState.tripPrefecture !== 'all' || bizAnalyticsViewState.tripClient !== 'all';
+
+    container.innerHTML = `
+      <div class="biz-analytics-wrapper" style="display: flex; flex-direction: column; gap: 16px;">
+        <!-- ヘッダー＆サブビュー切替 -->
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+          <div>
+            <h3 style="margin: 0; font-size: 1.02rem; font-weight: 800; color: #0f172a;">🗺️ 出張・地域・取引先 統合分析ビュー</h3>
+            <p style="margin: 2px 0 0 0; font-size: 0.75rem; color: #64748b;">
+              集計対象期間: <strong style="color:#0369a1;">${safeEscAnalytics(periodBadgeText)}</strong>（上部グローバル期間と連動 / 出張後追い分析は期間外の売上も横断追跡）
+            </p>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <label style="display: inline-flex; align-items: center; gap: 5px; font-size: 0.76rem; color: #334155; background: #f8fafc; border: 1px solid #e2e8f0; padding: 4px 10px; border-radius: 6px; cursor: pointer;">
+              <input type="checkbox" class="biz-include-zero-chk"${bizAnalyticsViewState.includeZeroDocs ? ' checked' : ''}>
+              ¥0伝票（デモ機・寄贈等）を含める
+            </label>
+            <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+              ${subTabBtn('all', 'すべて一覧')}
+              ${subTabBtn('clients', '🏢 取引先別')}
+              ${subTabBtn('regions', '🗾 地域・経費バランス')}
+              ${subTabBtn('trips', '🚄 出張・後追い売上')}
+            </div>
+          </div>
+        </div>
+
+        <!-- 全体KPIサマリー -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px;">
+          <div style="background:#ffffff; border:1px solid #e2e8f0; border-left:4px solid #2563eb; border-radius:8px; padding:12px;">
+            <div style="font-size:0.72rem; color:#64748b; font-weight:700;">期間売上高（税抜）</div>
+            <div style="font-size:1.25rem; font-weight:800; color:#0f172a; font-family:monospace; margin-top:2px;">${fmtYenAnalytics(data.kpi.totalSales)}</div>
+            <div style="font-size:0.7rem; color:#64748b;">伝票 ${data.kpi.docCount}件 / 原価 ${fmtYenAnalytics(data.kpi.totalCogs)}</div>
+          </div>
+          <div style="background:#ffffff; border:1px solid #e2e8f0; border-left:4px solid #059669; border-radius:8px; padding:12px;">
+            <div style="font-size:0.72rem; color:#64748b; font-weight:700;">粗利額 / 粗利率</div>
+            <div style="font-size:1.25rem; font-weight:800; color:#047857; font-family:monospace; margin-top:2px;">${fmtYenAnalytics(data.kpi.totalGrossProfit)}</div>
+            <div style="font-size:0.7rem; color:#059669; font-weight:700;">粗利率 ${fmtPctAnalytics(data.kpi.grossMarginPct)}</div>
+          </div>
+          <div style="background:#ffffff; border:1px solid #e2e8f0; border-left:4px solid #f59e0b; border-radius:8px; padding:12px;">
+            <div style="font-size:0.72rem; color:#64748b; font-weight:700;">移動・デモ関連経費</div>
+            <div style="font-size:1.25rem; font-weight:800; color:#b45309; font-family:monospace; margin-top:2px;">${fmtYenAnalytics(data.kpi.totalTravelDemoExpense)}</div>
+            <div style="font-size:0.7rem; color:#64748b;">旅費・車両・交際費 計 ${data.kpi.travelDemoExpenseCount}件</div>
+          </div>
+          <div style="background:#ffffff; border:1px solid #e2e8f0; border-left:4px solid #7c3aed; border-radius:8px; padding:12px;">
+            <div style="font-size:0.72rem; color:#64748b; font-weight:700;">移動経費控除後 貢献益</div>
+            <div style="font-size:1.25rem; font-weight:800; color:${data.kpi.netAfterTravelExpense >= 0 ? '#5b21b6' : '#dc2626'}; font-family:monospace; margin-top:2px;">${fmtYenAnalytics(data.kpi.netAfterTravelExpense)}</div>
+            <div style="font-size:0.7rem; color:#64748b;">粗利 − 移動/デモ関連経費</div>
+          </div>
+          <div style="background:#ffffff; border:1px solid #e2e8f0; border-left:4px solid #0891b2; border-radius:8px; padding:12px;">
+            <div style="font-size:0.72rem; color:#64748b; font-weight:700;">取引先数 / リピート</div>
+            <div style="font-size:1.25rem; font-weight:800; color:#0e7490; margin-top:2px;">${data.kpi.clientCount}社 <small style="font-size:0.75rem; color:#64748b;">(リピート ${data.kpi.repeatClientCount}社)</small></div>
+            <div style="font-size:0.7rem; color:#64748b;">2回以上取引のある顧客数</div>
+          </div>
+        </div>
+
+        <!-- 共通エリア・取引先連動フィルタバー -->
+        <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+          <span style="font-size: 0.76rem; font-weight: 700; color: #334155;">🎯 連動絞込:</span>
+          <select class="form-select biz-filter-region" style="font-size: 0.78rem; width: auto;">${regionFilterOptionsHtml}</select>
+          <select class="form-select biz-filter-pref" style="font-size: 0.78rem; width: auto;">${prefFilterOptionsHtml}</select>
+          <select class="form-select biz-filter-client" style="font-size: 0.78rem; width: auto; max-width: 240px;">${clientFilterOptionsHtml}</select>
+          ${hasGeoOrClientFilter ? `<button type="button" class="btn btn-secondary btn-xs biz-clear-scope-btn" style="font-size: 0.74rem; color: #dc2626; border-color: #fca5a5;">✕ 絞込解除</button>` : ''}
+        </div>
+
+        ${showClients ? `
+        <!-- ① 取引先別 売上・粗利サマリー -->
+        <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden;">
+          <div style="padding: 12px 14px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+            <div>
+              <strong style="font-size: 0.9rem; color: #0f172a;">① 取引先別 売上・粗利サマリー（${filteredClients.length}社）</strong>
+              <span style="font-size: 0.72rem; color: #64748b; margin-left: 8px;">※取引先名をクリックすると複数回取引・エンドユーザー展開の内訳を展開できます</span>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+              <input type="text" class="form-input biz-client-search" value="${safeEscAnalytics(bizAnalyticsViewState.clientSearch)}" placeholder="🔍 取引先・エンドユーザー検索..." style="font-size: 0.78rem; width: 200px; padding: 4px 8px;">
+              <select class="form-select biz-client-sort" style="font-size: 0.78rem; width: auto; padding: 4px 8px;">
+                <option value="sales_desc"${bizAnalyticsViewState.clientSortBy === 'sales_desc' ? ' selected' : ''}>売上高 高い順</option>
+                <option value="gp_desc"${bizAnalyticsViewState.clientSortBy === 'gp_desc' ? ' selected' : ''}>粗利額 高い順</option>
+                <option value="margin_desc"${bizAnalyticsViewState.clientSortBy === 'margin_desc' ? ' selected' : ''}>粗利率 高い順</option>
+                <option value="count_desc"${bizAnalyticsViewState.clientSortBy === 'count_desc' ? ' selected' : ''}>伝票件数 多い順</option>
+                <option value="last_desc"${bizAnalyticsViewState.clientSortBy === 'last_desc' ? ' selected' : ''}>最終取引日 新しい順</option>
+              </select>
+            </div>
+          </div>
+          <div style="overflow-x: auto;">
+            <table class="acc-table" style="width: 100%; border-collapse: collapse; font-size: 0.78rem;">
+              <thead style="background: #f1f5f9; color: #334155;">
+                <tr style="border-bottom: 1px solid #cbd5e1;">
+                  <th style="padding: 8px 6px; text-align: left;">取引先名</th>
+                  <th style="padding: 8px 6px; text-align: left;">エリア / 都道府県</th>
+                  <th style="padding: 8px 6px; text-align: right;">売上高(税抜)</th>
+                  <th style="padding: 8px 6px; text-align: right;">売上原価</th>
+                  <th style="padding: 8px 6px; text-align: right;">粗利額</th>
+                  <th style="padding: 8px 6px; text-align: right;">粗利率</th>
+                  <th style="padding: 8px 6px; text-align: right;">件数 / 数量</th>
+                  <th style="padding: 8px 6px; text-align: left;">最終取引日</th>
+                  <th style="padding: 8px 6px; text-align: left;">エンドユーザー / 展開先</th>
+                </tr>
+              </thead>
+              <tbody>${clientRowsHtml}</tbody>
+            </table>
+          </div>
+        </div>
+        ` : ''}
+
+        ${showRegions ? `
+        <!-- ② 地域（エリア・都道府県）別 売上・経費バランス -->
+        <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden;">
+          <div style="padding: 12px 14px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+            <div>
+              <strong style="font-size: 0.9rem; color: #0f172a;">② 地域（エリア・都道府県）別 売上・経費バランス</strong>
+              <span style="font-size: 0.72rem; color: #64748b; margin-left: 8px;">※地域名をクリックすると取引先一覧・出張後追い分析をその地域へ連動絞り込みします</span>
+            </div>
+            <div style="display: flex; gap: 4px;">
+              <button type="button" class="biz-geo-mode-btn" data-mode="region" style="padding: 4px 10px; border-radius: 6px; font-size: 0.74rem; font-weight: 700; cursor: pointer; border: 1px solid ${bizAnalyticsViewState.geoGranularity === 'region' ? '#2563eb' : '#cbd5e1'}; background: ${bizAnalyticsViewState.geoGranularity === 'region' ? '#eff6ff' : '#ffffff'}; color: ${bizAnalyticsViewState.geoGranularity === 'region' ? '#1d4ed8' : '#475569'};">地方エリア別</button>
+              <button type="button" class="biz-geo-mode-btn" data-mode="prefecture" style="padding: 4px 10px; border-radius: 6px; font-size: 0.74rem; font-weight: 700; cursor: pointer; border: 1px solid ${bizAnalyticsViewState.geoGranularity === 'prefecture' ? '#2563eb' : '#cbd5e1'}; background: ${bizAnalyticsViewState.geoGranularity === 'prefecture' ? '#eff6ff' : '#ffffff'}; color: ${bizAnalyticsViewState.geoGranularity === 'prefecture' ? '#1d4ed8' : '#475569'};">都道府県別</button>
+            </div>
+          </div>
+          <div style="overflow-x: auto;">
+            <table class="acc-table" style="width: 100%; border-collapse: collapse; font-size: 0.78rem;">
+              <thead style="background: #f1f5f9; color: #334155;">
+                <tr style="border-bottom: 1px solid #cbd5e1;">
+                  <th style="padding: 8px 6px; text-align: left;">${bizAnalyticsViewState.geoGranularity === 'prefecture' ? '都道府県' : '地方エリア'}</th>
+                  <th style="padding: 8px 6px; text-align: right;">取引先 / 伝票</th>
+                  <th style="padding: 8px 6px; text-align: right;">売上高(税抜)</th>
+                  <th style="padding: 8px 6px; text-align: right;">粗利額 / 率</th>
+                  <th style="padding: 8px 6px; text-align: right;">移動/デモ経費</th>
+                  <th style="padding: 8px 6px; text-align: left;">経費内訳（旅費/車両/交際）</th>
+                  <th style="padding: 8px 6px; text-align: right;">経費差引貢献益</th>
+                  <th style="padding: 8px 6px; text-align: right;">経費率 / 回収倍率</th>
+                  <th style="padding: 8px 6px; text-align: left;">粗利 vs 経費バランス</th>
+                </tr>
+              </thead>
+              <tbody>${geoRowsHtml}</tbody>
+            </table>
+          </div>
+        </div>
+        ` : ''}
+
+        ${showTrips ? `
+        <!-- ③ 出張期間と「直後〜後追い」売上の連動確認 -->
+        <div style="background: #ffffff; border: 1.5px solid #bfdbfe; border-radius: 10px; overflow: hidden;">
+          <div style="padding: 12px 14px; background: linear-gradient(135deg, #eff6ff, #f8fafc); border-bottom: 1px solid #bfdbfe;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
+              <div>
+                <strong style="font-size: 0.92rem; color: #1e3a8a;">③ 出張期間と「直後〜後追い」売上の連動確認</strong>
+                <span style="font-size: 0.72rem; color: #475569; margin-left: 8px;">出張期間中の売上と終了後 N 日間の後追い累計売上・粗利を出張経費と対比</span>
+              </div>
+              <div style="display: flex; gap: 4px; align-items: center; flex-wrap: wrap;">
+                ${followUpPresetBtn(30)}
+                ${followUpPresetBtn(60)}
+                ${followUpPresetBtn(90)}
+                ${followUpPresetBtn(180)}
+              </div>
+            </div>
+
+            <!-- 出張期間＆後追い日数コントロール -->
+            <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+              <select class="form-select biz-trip-candidate-select" style="font-size: 0.78rem; max-width: 380px;">
+                ${candidateOptionsHtml}
+              </select>
+              <div style="display: inline-flex; align-items: center; gap: 4px; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 3px 8px;">
+                <span style="font-size: 0.72rem; color: #475569; font-weight: 700;">出張期間:</span>
+                <input type="date" class="biz-trip-start-input" value="${safeEscAnalytics(ti.tripStart)}" style="border:none; font-size:0.78rem; outline:none;">
+                <span style="color:#64748b;">〜</span>
+                <input type="date" class="biz-trip-end-input" value="${safeEscAnalytics(ti.tripEnd)}" style="border:none; font-size:0.78rem; outline:none;">
+              </div>
+              <div style="display: inline-flex; align-items: center; gap: 4px; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 3px 8px;">
+                <span style="font-size: 0.72rem; color: #475569; font-weight: 700;">後追い:</span>
+                <input type="number" class="biz-followup-days-input" min="0" max="365" value="${ti.followUpDays}" style="width: 56px; border: none; text-align: right; font-weight: 700; font-size: 0.8rem; outline: none;">
+                <span style="font-size: 0.72rem; color: #475569;">日間（〜${safeEscAnalytics(ti.followUpEnd || '-')}）</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 出張経費 vs 期間中売上 vs 後追い累計 比較カード -->
+          <div style="padding: 14px; display: flex; flex-direction: column; gap: 12px;">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px;">
+              <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 12px;">
+                <div style="font-size: 0.72rem; font-weight: 700; color: #92400e;">🎫 出張期間中の関連経費（${ti.tripDays}日間 / ${ti.tripExpenseCount}件）</div>
+                <div style="font-size: 1.3rem; font-weight: 800; color: #b45309; font-family: monospace; margin-top: 3px;">${fmtYenAnalytics(ti.tripExpenseTotal)}</div>
+                <div style="font-size: 0.69rem; color: #78350f; margin-top: 4px;">
+                  旅費 ${fmtYenAnalytics(ti.tripExpenseBreakdown.travel)} / 車両 ${fmtYenAnalytics(ti.tripExpenseBreakdown.vehicle)} / 交際 ${fmtYenAnalytics(ti.tripExpenseBreakdown.entertain)}
+                </div>
+              </div>
+              <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 12px;">
+                <div style="font-size: 0.72rem; font-weight: 700; color: #1e40af;">📍 出張期間中の売上・粗利（${ti.during.docCount}件）</div>
+                <div style="font-size: 1.3rem; font-weight: 800; color: #1d4ed8; font-family: monospace; margin-top: 3px;">${fmtYenAnalytics(ti.during.sales)}</div>
+                <div style="font-size: 0.72rem; color: #1e3a8a; margin-top: 4px;">粗利: <strong>${fmtYenAnalytics(ti.during.grossProfit)}</strong>（原価 ${fmtYenAnalytics(ti.during.cogs)}）</div>
+              </div>
+              <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 12px;">
+                <div style="font-size: 0.72rem; font-weight: 700; color: #166534;">🚀 後追い期間の追加売上（終了後${ti.followUpDays}日 / ${ti.followUp.docCount}件）</div>
+                <div style="font-size: 1.3rem; font-weight: 800; color: #15803d; font-family: monospace; margin-top: 3px;">${fmtYenAnalytics(ti.followUp.sales)}</div>
+                <div style="font-size: 0.72rem; color: #166534; margin-top: 4px;">粗利: <strong>${fmtYenAnalytics(ti.followUp.grossProfit)}</strong>（${safeEscAnalytics(ti.followUpStart || '-')} 〜 ${safeEscAnalytics(ti.followUpEnd || '-')}）</div>
+              </div>
+              <div style="background: #f5f3ff; border: 1.5px solid #c4b5fd; border-radius: 8px; padding: 12px;">
+                <div style="font-size: 0.72rem; font-weight: 700; color: #5b21b6;">🏆 期間中＋後追い 累計成果（計 ${ti.combined.docCount}件）</div>
+                <div style="font-size: 1.3rem; font-weight: 800; color: #4c1d95; font-family: monospace; margin-top: 3px;">${fmtYenAnalytics(ti.combined.sales)}</div>
+                <div style="font-size: 0.71rem; color: #5b21b6; margin-top: 4px;">
+                  累計粗利 <strong>${fmtYenAnalytics(ti.combined.grossProfit)}</strong> / 経費差引 <strong style="color:${ti.netAfterTripExpense >= 0 ? '#047857' : '#dc2626'};">${fmtYenAnalytics(ti.netAfterTripExpense)}</strong>
+                  ${ti.salesToExpenseRatio !== null ? `（売上 ${ti.salesToExpenseRatio.toFixed(1)}倍）` : ''}
+                </div>
+              </div>
+            </div>
+
+            <!-- タイムライン詳細（売上伝票 ＆ 出張経費） -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 12px;">
+              <div style="border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+                <div style="padding: 8px 12px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; font-size: 0.8rem; font-weight: 700; color: #0f172a;">
+                  📄 連動売上タイムライン（出張中＋終了後 ${ti.followUpDays}日 / ${ti.timelineDocs.length}件）
+                </div>
+                <div style="max-height: 290px; overflow-y: auto;">
+                  <table class="acc-table" style="width: 100%; border-collapse: collapse; font-size: 0.74rem;">
+                    <thead style="position: sticky; top: 0; background: #f1f5f9;">
+                      <tr style="border-bottom: 1px solid #cbd5e1;">
+                        <th style="padding: 6px; text-align: left;">区分</th>
+                        <th style="padding: 6px; text-align: left;">日付</th>
+                        <th style="padding: 6px; text-align: left;">伝票番号</th>
+                        <th style="padding: 6px; text-align: left;">取引先</th>
+                        <th style="padding: 6px; text-align: left;">都道府県</th>
+                        <th style="padding: 6px; text-align: left;">案件 / EU</th>
+                        <th style="padding: 6px; text-align: right;">売上</th>
+                        <th style="padding: 6px; text-align: right;">粗利</th>
+                      </tr>
+                    </thead>
+                    <tbody>${timelineRowsHtml}</tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div style="border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+                <div style="padding: 8px 12px; background: #fffbeb; border-bottom: 1px solid #fde68a; font-size: 0.8rem; font-weight: 700; color: #92400e;">
+                  🧾 対象出張期間の移動・デモ関連経費明細（${ti.tripExpenses.length}件）
+                </div>
+                <div style="max-height: 290px; overflow-y: auto;">
+                  <table class="acc-table" style="width: 100%; border-collapse: collapse; font-size: 0.74rem;">
+                    <thead style="position: sticky; top: 0; background: #fef3c7;">
+                      <tr style="border-bottom: 1px solid #fde68a;">
+                        <th style="padding: 6px; text-align: left;">日付</th>
+                        <th style="padding: 6px; text-align: left;">科目</th>
+                        <th style="padding: 6px; text-align: left;">推定地</th>
+                        <th style="padding: 6px; text-align: left;">支払先・摘要</th>
+                        <th style="padding: 6px; text-align: right;">金額</th>
+                      </tr>
+                    </thead>
+                    <tbody>${tripExpRowsHtml}</tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        ` : ''}
+      </div>
+    `;
+
+    console.log('【統合分析ビュー】描画完了', {
+      clients: filteredClients.length,
+      geoRows: geoRows.length,
+      tripStart: ti.tripStart,
+      tripEnd: ti.tripEnd,
+      timelineDocs: ti.timelineDocs.length
+    });
+  } catch (err) {
+    console.error('【統合分析ビュー】描画エラー:', err);
+    container.innerHTML = `<div style="padding: 16px; color: #dc2626; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px;">統合分析ビューの読み込み中にエラーが発生しました: ${safeEscAnalytics(err.message || err)}</div>`;
+  }
+}
+window.renderBusinessAnalyticsView = renderBusinessAnalyticsView;
+
+// ==========================================================================
+// 3. イベント委譲（クリック・変更・入力を document レベルで一元管理）
+// ==========================================================================
+
+document.addEventListener('click', (e) => {
+  const target = e.target;
+  if (!target || typeof target.closest !== 'function') return;
+
+  // ロット原価：品目カードの絞込トグル
+  const pickItemBtn = target.closest('.lot-cost-pick-item-btn');
+  if (pickItemBtn) {
+    const id = pickItemBtn.dataset.itemId || 'all';
+    lotCostViewState.itemFilter = (lotCostViewState.itemFilter === id) ? 'all' : id;
+    console.log('【ロット別原価ビュー】品目フィルタ切替:', lotCostViewState.itemFilter);
+    renderLotCostAnalyticsView();
+    return;
+  }
+
+  // ロット原価：リセット
+  if (target.closest('.lot-cost-reset-btn')) {
+    lotCostViewState.itemFilter = 'all';
+    lotCostViewState.procFilter = 'all';
+    lotCostViewState.searchQuery = '';
+    lotCostViewState.sortBy = 'date_desc';
+    console.log('【ロット別原価ビュー】フィルタリセット');
+    renderLotCostAnalyticsView();
+    return;
+  }
+
+  // 統合分析：サブタブ切替
+  const subTabBtn = target.closest('.biz-subtab-btn');
+  if (subTabBtn) {
+    bizAnalyticsViewState.activeSubTab = subTabBtn.dataset.subtab || 'all';
+    console.log('【統合分析ビュー】サブタブ切替:', bizAnalyticsViewState.activeSubTab);
+    renderBusinessAnalyticsView();
+    return;
+  }
+
+  // 統合分析：取引先ドリルダウン展開
+  const toggleClientBtn = target.closest('.biz-toggle-client-detail');
+  if (toggleClientBtn) {
+    const key = toggleClientBtn.dataset.clientKey;
+    if (key) {
+      if (bizAnalyticsViewState.expandedClients.has(key)) bizAnalyticsViewState.expandedClients.delete(key);
+      else bizAnalyticsViewState.expandedClients.add(key);
+      console.log('【統合分析ビュー】取引先詳細展開トグル:', key);
+      renderBusinessAnalyticsView();
+    }
+    return;
+  }
+
+  // 統合分析：取引先詳細から出張連動分析を絞り込み
+  const focusClientBtn = target.closest('.biz-focus-client-trip-btn');
+  if (focusClientBtn) {
+    bizAnalyticsViewState.tripClient = focusClientBtn.dataset.clientName || 'all';
+    console.log('【統合分析ビュー】取引先で出張後追い分析絞込:', bizAnalyticsViewState.tripClient);
+    renderBusinessAnalyticsView();
+    return;
+  }
+
+  // 統合分析：地域粒度切替（地方エリア / 都道府県）
+  const geoModeBtn = target.closest('.biz-geo-mode-btn');
+  if (geoModeBtn) {
+    bizAnalyticsViewState.geoGranularity = geoModeBtn.dataset.mode === 'prefecture' ? 'prefecture' : 'region';
+    console.log('【統合分析ビュー】地域表示粒度切替:', bizAnalyticsViewState.geoGranularity);
+    renderBusinessAnalyticsView();
+    return;
+  }
+
+  // 統合分析：地域・都道府県クリックによる連動絞り込み
+  const pickGeoBtn = target.closest('.biz-pick-geo-btn');
+  if (pickGeoBtn) {
+    const mode = pickGeoBtn.dataset.geoMode;
+    const key = pickGeoBtn.dataset.geoKey || 'all';
+    if (mode === 'prefecture') {
+      bizAnalyticsViewState.tripPrefecture = (bizAnalyticsViewState.tripPrefecture === key) ? 'all' : key;
+      bizAnalyticsViewState.tripRegion = 'all';
+    } else {
+      bizAnalyticsViewState.tripRegion = (bizAnalyticsViewState.tripRegion === key) ? 'all' : key;
+      bizAnalyticsViewState.tripPrefecture = 'all';
+    }
+    console.log('【統合分析ビュー】地域クリック連動絞込:', { mode, key });
+    renderBusinessAnalyticsView();
+    return;
+  }
+
+  // 統合分析：連動絞込リセット
+  if (target.closest('.biz-clear-scope-btn')) {
+    bizAnalyticsViewState.tripRegion = 'all';
+    bizAnalyticsViewState.tripPrefecture = 'all';
+    bizAnalyticsViewState.tripClient = 'all';
+    console.log('【統合分析ビュー】連動絞込解除');
+    renderBusinessAnalyticsView();
+    return;
+  }
+
+  // 統合分析：後追い日数プリセット
+  const followBtn = target.closest('.biz-followup-preset-btn');
+  if (followBtn) {
+    bizAnalyticsViewState.followUpDays = Math.max(0, Number(followBtn.dataset.days) || 60);
+    console.log('【統合分析ビュー】後追い日数変更:', bizAnalyticsViewState.followUpDays);
+    renderBusinessAnalyticsView();
+    return;
+  }
+});
+
+document.addEventListener('change', (e) => {
+  const target = e.target;
+  if (!target) return;
+
+  if (target.classList.contains('lot-cost-filter-item')) {
+    lotCostViewState.itemFilter = target.value || 'all';
+    renderLotCostAnalyticsView();
+  } else if (target.classList.contains('lot-cost-filter-proc')) {
+    lotCostViewState.procFilter = target.value || 'all';
+    renderLotCostAnalyticsView();
+  } else if (target.classList.contains('lot-cost-sort-by')) {
+    lotCostViewState.sortBy = target.value || 'date_desc';
+    renderLotCostAnalyticsView();
+  } else if (target.classList.contains('biz-include-zero-chk')) {
+    bizAnalyticsViewState.includeZeroDocs = !!target.checked;
+    renderBusinessAnalyticsView();
+  } else if (target.classList.contains('biz-client-sort')) {
+    bizAnalyticsViewState.clientSortBy = target.value || 'sales_desc';
+    renderBusinessAnalyticsView();
+  } else if (target.classList.contains('biz-filter-region')) {
+    bizAnalyticsViewState.tripRegion = target.value || 'all';
+    if (bizAnalyticsViewState.tripRegion !== 'all') bizAnalyticsViewState.tripPrefecture = 'all';
+    renderBusinessAnalyticsView();
+  } else if (target.classList.contains('biz-filter-pref')) {
+    bizAnalyticsViewState.tripPrefecture = target.value || 'all';
+    if (bizAnalyticsViewState.tripPrefecture !== 'all') bizAnalyticsViewState.tripRegion = 'all';
+    renderBusinessAnalyticsView();
+  } else if (target.classList.contains('biz-filter-client')) {
+    bizAnalyticsViewState.tripClient = target.value || 'all';
+    renderBusinessAnalyticsView();
+  } else if (target.classList.contains('biz-trip-candidate-select')) {
+    const val = String(target.value || '');
+    if (val.includes('|')) {
+      const [s, en] = val.split('|');
+      bizAnalyticsViewState.tripStart = s || '';
+      bizAnalyticsViewState.tripEnd = en || '';
+      bizAnalyticsViewState.initializedTripDefault = true;
+      console.log('【統合分析ビュー】出張候補期間を選択:', { start: s, end: en });
+      renderBusinessAnalyticsView();
+    }
+  } else if (target.classList.contains('biz-trip-start-input')) {
+    bizAnalyticsViewState.tripStart = target.value || '';
+    bizAnalyticsViewState.initializedTripDefault = true;
+    renderBusinessAnalyticsView();
+  } else if (target.classList.contains('biz-trip-end-input')) {
+    bizAnalyticsViewState.tripEnd = target.value || '';
+    bizAnalyticsViewState.initializedTripDefault = true;
+    renderBusinessAnalyticsView();
+  } else if (target.classList.contains('biz-followup-days-input')) {
+    bizAnalyticsViewState.followUpDays = Math.max(0, Math.min(365, Number(target.value) || 0));
+    renderBusinessAnalyticsView();
+  }
+});
+
+let analyticsSearchDebounceTimer = null;
+document.addEventListener('input', (e) => {
+  const target = e.target;
+  if (!target) return;
+  if (target.classList.contains('lot-cost-search-input')) {
+    lotCostViewState.searchQuery = target.value || '';
+    clearTimeout(analyticsSearchDebounceTimer);
+    analyticsSearchDebounceTimer = setTimeout(() => {
+      renderLotCostAnalyticsView();
+      const inp = document.querySelector('.lot-cost-search-input');
+      if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+    }, 180);
+  } else if (target.classList.contains('biz-client-search')) {
+    bizAnalyticsViewState.clientSearch = target.value || '';
+    clearTimeout(analyticsSearchDebounceTimer);
+    analyticsSearchDebounceTimer = setTimeout(() => {
+      renderBusinessAnalyticsView();
+      const inp = document.querySelector('.biz-client-search');
+      if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+    }, 180);
+  }
+});
 
 })();

@@ -9403,6 +9403,7 @@ function switchInventoryTab(tabName) {
     { key: 'items', btn: DOM.tabBtnInventoryItems, content: DOM.inventoryItemsTabContent },
     { key: 'serials', btn: DOM.tabBtnInventorySerials, content: DOM.inventorySerialsTabContent },
     { key: 'lots', btn: DOM.tabBtnInventoryLots, content: DOM.inventoryLotsTabContent },
+    { key: 'lotCost', btn: document.getElementById('tabBtnInventoryLotCost'), content: document.getElementById('inventoryLotCostTabContent') },
     { key: 'pos', btn: DOM.tabBtnPurchaseOrders, content: DOM.purchaseOrdersTabContent }
   ];
 
@@ -9456,6 +9457,18 @@ function switchInventoryTab(tabName) {
     renderInventoryLotTable();
     if (typeof syncInventoryLotsWithServer === 'function') {
       syncInventoryLotsWithServer().then(() => renderInventoryLotTable()).catch(() => { });
+    }
+  }
+  if (tabName === 'lotCost') {
+    if (typeof window.renderLotCostAnalyticsView === 'function') {
+      window.renderLotCostAnalyticsView('invLotCostAnalyticsRoot');
+    }
+    if (typeof syncInventoryLotsWithServer === 'function') {
+      syncInventoryLotsWithServer().then(() => {
+        if (typeof window.renderLotCostAnalyticsView === 'function') {
+          window.renderLotCostAnalyticsView('invLotCostAnalyticsRoot');
+        }
+      }).catch(() => { });
     }
   }
   if (tabName === 'pos') {
@@ -17590,6 +17603,14 @@ function switchAccountingTab(tabKey) {
     renderAccountingExpenses(currentAccGlobalPeriod);
   } else if (fullId === 'acc-tab-journals') {
     renderAccountingJournals(currentAccGlobalPeriod);
+  } else if (fullId === 'acc-tab-lot-cost') {
+    if (typeof window.renderLotCostAnalyticsView === 'function') {
+      window.renderLotCostAnalyticsView('accLotCostAnalyticsRoot');
+    }
+  } else if (fullId === 'acc-tab-analytics') {
+    if (typeof window.renderBusinessAnalyticsView === 'function') {
+      window.renderBusinessAnalyticsView(currentAccGlobalPeriod);
+    }
   } else if (fullId === 'acc-tab-settings') {
     renderAccountingSettings();
     renderMonthLockManagement();
@@ -18163,6 +18184,8 @@ function applyAccGlobalPeriod(preset = 'thisMonth', customStart = null, customEn
   if (typeof renderBalanceSheet === 'function') renderBalanceSheet(currentAccGlobalPeriod);
   if (typeof renderTrialBalance === 'function') renderTrialBalance(currentAccGlobalPeriod);
   if (typeof renderGeneralLedger === 'function') renderGeneralLedger(currentAccGlobalPeriod);
+  if (typeof window.renderLotCostAnalyticsView === 'function') window.renderLotCostAnalyticsView('accLotCostAnalyticsRoot');
+  if (typeof window.renderBusinessAnalyticsView === 'function') window.renderBusinessAnalyticsView(currentAccGlobalPeriod);
 }
 
 // グローバルスコープへの公開（HTMLインラインonclick等からの呼び出し対応）

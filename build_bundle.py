@@ -36,8 +36,14 @@ with open('js/receipt-parser.js', 'r', encoding='utf-8') as f:
 with open('js/storage.js', 'r', encoding='utf-8') as f:
     storage_code = clean_code(f.read())
 
+with open('js/analytics-engine.js', 'r', encoding='utf-8') as f:
+    analytics_engine_code = clean_code(f.read())
+
 with open('js/app.js', 'r', encoding='utf-8') as f:
     app_code = clean_code(f.read())
+
+with open('js/analytics-views.js', 'r', encoding='utf-8') as f:
+    analytics_views_code = clean_code(f.read())
 
 bundle_content = f"""/**
  * app.bundle.js
@@ -89,9 +95,19 @@ bundle_content = f"""/**
 {storage_code}
 
   // ==========================================================================
+  // 経営分析コアエンジン（ロット別原価・取引先/地域/出張統合分析）
+  // ==========================================================================
+{analytics_engine_code}
+
+  // ==========================================================================
   // アプリケーションUI制御ロジック
   // ==========================================================================
 {app_code}
+
+  // ==========================================================================
+  // 経営分析UIビュー（ロット別原価・出張/地域/取引先統合分析）
+  // ==========================================================================
+{analytics_views_code}
 
 }})();
 """
