@@ -502,7 +502,18 @@ function renderBusinessAnalyticsView(period = null) {
       return true;
     });
 
-    const maxGeoScale = Math.max(1, ...filteredGeoGroups.map(g => Math.max(g.sales, g.grossProfit, g.totalExpense)));
+    // 海外売上が国内地域に比べて突出して大きい場合、国内最大値の1.15倍をグラフ上限（100%）とし、
+    // 国内地域同士のバー比較を見やすくしつつ、海外バーは「国内最大より少し大きめ（100%）」で表示する
+    const domesticGeoMax = Math.max(
+      0,
+      ...filteredGeoGroups
+        .filter(g => g.region !== '海外' && g.key !== '海外')
+        .map(g => Math.max(g.sales, g.grossProfit, g.totalExpense))
+    );
+    const overallGeoMax = Math.max(1, ...filteredGeoGroups.map(g => Math.max(g.sales, g.grossProfit, g.totalExpense)));
+    const maxGeoScale = (domesticGeoMax > 0 && overallGeoMax > domesticGeoMax * 1.15)
+      ? Math.round(domesticGeoMax * 1.15)
+      : overallGeoMax;
 
     const renderClientRowsForGroup = (clientsInGroup) => {
       const matchedClients = sortClientList(
@@ -619,6 +630,7 @@ function renderBusinessAnalyticsView(period = null) {
       : filteredGeoGroups.map(g => {
           const isExpanded = bizAnalyticsViewState.expandedRegions.has(g.key);
           const isCollapsed = !isExpanded;
+          const isGeoCapped = Math.max(g.sales, g.grossProfit) > maxGeoScale;
           const salesBarW = Math.min(100, Math.max(0, Math.round((Math.max(0, g.sales) / maxGeoScale) * 100)));
           const gpBarW = Math.min(salesBarW || 100, Math.max(0, Math.round((Math.max(0, g.grossProfit) / maxGeoScale) * 100)));
           const salesExtW = Math.max(0, salesBarW - gpBarW);
@@ -758,12 +770,13 @@ function renderBusinessAnalyticsView(period = null) {
                 </div>
                 <div>
                   <div style="display: flex; flex-direction: column; gap: 4px;">
-                    <div style="display:flex; align-items:center; gap:4px;" title="粗利額: ${fmtYenAnalytics(g.grossProfit)} / 売上高(税抜): ${fmtYenAnalytics(g.sales)}">
+                    <div style="display:flex; align-items:center; gap:4px;" title="粗利額: ${fmtYenAnalytics(g.grossProfit)} / 売上高(税抜): ${fmtYenAnalytics(g.sales)}${isGeoCapped ? '（国内比較のため上限スケール表示）' : ''}">
                       <span style="font-size:0.63rem; color:#059669; width:24px; font-weight:700;">粗利</span>
                       <div style="flex:1; height:8px; background:#e2e8f0; border-radius:4px; overflow:hidden; display:flex;">
                         <div style="width:${gpBarW}%; height:100%; background:#10b981;"></div>
                         ${salesExtW > 0 ? `<div style="width:${salesExtW}%; height:100%; background:#93c5fd;"></div>` : ''}
                       </div>
+                      ${isGeoCapped ? `<span style="font-size:0.65rem; font-weight:800; color:#059669; line-height:1;" title="国内最大比でスケール上限超過">»</span>` : ''}
                     </div>
                     <div style="display:flex; align-items:center; gap:4px;" title="地域経費合計: ${fmtYenAnalytics(g.totalExpense)}">
                       <span style="font-size:0.63rem; color:#d97706; width:24px; font-weight:700;">経費</span>
@@ -820,13 +833,21 @@ function renderBusinessAnalyticsView(period = null) {
       const sumDocs = flatClients.reduce((s, c) => s + c.docCount, 0);
       const sumQty = flatClients.reduce((s, c) => s + c.totalQty, 0);
       const sumMarginPct = sumSales > 0 ? Math.round((sumGp / sumSales) * 1000) / 10 : null;
-      const maxClientScale = Math.max(1, ...flatClients.map(c => Math.max(c.sales, c.grossProfit)));
+      const domesticClientMax = Math.max(
+        0,
+        ...flatClients.filter(c => c.region !== '海外').map(c => Math.max(c.sales, c.grossProfit))
+      );
+      const overallClientMax = Math.max(1, ...flatClients.map(c => Math.max(c.sales, c.grossProfit)));
+      const maxClientScale = (domesticClientMax > 0 && overallClientMax > domesticClientMax * 1.15)
+        ? Math.round(domesticClientMax * 1.15)
+        : overallClientMax;
 
       const flatRowsHtml = flatClients.length === 0
         ? `<tr><td colspan="10" style="padding: 24px; text-align: center; color: #94a3b8;">対象条件の販売店売上データがありません。</td></tr>`
         : flatClients.map((c, idx) => {
             const isOpen = bizAnalyticsViewState.expandedClients.has(c.clientKey);
             const sharePct = sumSales > 0 ? Math.round((c.sales / sumSales) * 1000) / 10 : 0;
+            const isClientCapped = Math.max(c.sales, c.grossProfit) > maxClientScale;
             const cSalesW = Math.min(100, Math.max(0, Math.round((Math.max(0, c.sales) / maxClientScale) * 100)));
             const cGpW = Math.min(cSalesW || 100, Math.max(0, Math.round((Math.max(0, c.grossProfit) / maxClientScale) * 100)));
             const cExtW = Math.max(0, cSalesW - cGpW);
@@ -929,9 +950,12 @@ function renderBusinessAnalyticsView(period = null) {
                 <td style="padding: 8px 6px; text-align: right; white-space: nowrap; font-size: 0.74rem;"><strong>${c.docCount}件</strong> / ${c.totalQty}点</td>
                 <td style="padding: 8px 6px; white-space: nowrap; font-size: 0.73rem; color: #475569;">${safeEscAnalytics(c.lastDate || '-')}</td>
                 <td style="padding: 8px 6px; min-width: 130px;">
-                  <div style="height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden; display: flex;" title="粗利額: ${fmtYenAnalytics(c.grossProfit)} / 売上高(税抜): ${fmtYenAnalytics(c.sales)}">
-                    <div style="width:${cGpW}%; height:100%; background:#10b981;"></div>
-                    ${cExtW > 0 ? `<div style="width:${cExtW}%; height:100%; background:#93c5fd;"></div>` : ''}
+                  <div style="display:flex; align-items:center; gap:3px;" title="粗利額: ${fmtYenAnalytics(c.grossProfit)} / 売上高(税抜): ${fmtYenAnalytics(c.sales)}${isClientCapped ? '（国内比較のため上限スケール表示）' : ''}">
+                    <div style="flex:1; height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden; display: flex;">
+                      <div style="width:${cGpW}%; height:100%; background:#10b981;"></div>
+                      ${cExtW > 0 ? `<div style="width:${cExtW}%; height:100%; background:#93c5fd;"></div>` : ''}
+                    </div>
+                    ${isClientCapped ? `<span style="font-size:0.65rem; font-weight:800; color:#059669; line-height:1;">»</span>` : ''}
                   </div>
                   <div style="margin-top: 3px;">${euHtml}</div>
                 </td>
