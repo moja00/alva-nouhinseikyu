@@ -14636,17 +14636,35 @@ function buildBusinessAnalytics({
     const items = Array.isArray(doc.items) ? doc.items : [];
     let totalQty = 0;
     const endUsersSet = new Set();
+    const lineItems = [];
     const topEndUser = String(rawInner.endUserName || (rawDoc && rawDoc.endUserName) || clientObj.endUserName || '').trim();
     if (topEndUser) endUsersSet.add(topEndUser);
     items.forEach(it => {
       if (!it) return;
-      const itName = String(it.name || '');
+      const itName = String(it.name || '').trim();
       const unitPrice = Number(it.unitPrice) || 0;
-      if (unitPrice >= 0 && !/値引|割引|相殺|調整/.test(itName)) {
-        totalQty += Math.max(0, Number(it.quantity) || 0);
+      const qty = Math.max(0, Number(it.quantity) || 0);
+      const isDiscount = unitPrice < 0 || /値引|割引|相殺|調整/.test(itName);
+      if (!isDiscount) {
+        totalQty += qty;
       }
       if (it.endUserName && String(it.endUserName).trim()) {
         endUsersSet.add(String(it.endUserName).trim());
+      }
+      if (itName) {
+        const lineCost = isDiscount
+          ? 0
+          : (Number(it.assignedCogs) > 0 ? Number(it.assignedCogs) : (Number(it.costPrice) > 0 ? qty * Number(it.costPrice) : 0));
+        lineItems.push({
+          name: itName,
+          qty,
+          unit: String(it.unit || '').trim(),
+          unitPrice: Math.round(unitPrice),
+          amount: Math.round(unitPrice * qty),
+          cost: Math.round(lineCost),
+          serialNumber: String(it.serialNumber || '').trim(),
+          isDiscount
+        });
       }
     });
 
@@ -14672,6 +14690,7 @@ function buildBusinessAnalytics({
       grossMarginPct: sales > 0 ? Math.round((grossProfit / sales) * 1000) / 10 : null,
       totalQty,
       endUsers: Array.from(endUsersSet),
+      lineItems,
       isZeroDoc,
       isPaid: !!doc.isPaid
     });
@@ -14732,6 +14751,19 @@ function buildBusinessAnalytics({
 
   const clientSummary = Array.from(clientMap.values()).map(c => {
     c.docs.sort((a, b) => b.issueDate.localeCompare(a.issueDate));
+    const soldItemAcc = new Map();
+    c.docs.forEach(d => {
+      (d.lineItems || []).forEach(li => {
+        if (!li || li.isDiscount || !li.name) return;
+        const k = normalizeLookupName(li.name);
+        const cur = soldItemAcc.get(k) || { name: li.name, qty: 0, unit: li.unit || '', sales: 0 };
+        cur.qty += li.qty;
+        cur.sales += li.amount;
+        if (!cur.unit && li.unit) cur.unit = li.unit;
+        soldItemAcc.set(k, cur);
+      });
+    });
+    const soldItemSummary = Array.from(soldItemAcc.values()).sort((a, b) => b.sales - a.sales || b.qty - a.qty);
     return {
       clientKey: c.clientKey,
       clientName: c.clientName,
@@ -14750,6 +14782,7 @@ function buildBusinessAnalytics({
       endUsers: Array.from(c.endUsersSet),
       endUserCount: c.endUsersSet.size,
       titles: Array.from(c.titlesSet),
+      soldItemSummary,
       docs: c.docs
     };
   }).sort((a, b) => b.sales - a.sales);
@@ -41089,7 +41122,7 @@ function renderBusinessAnalyticsView(period = null) {
       return true;
     });
 
-    const maxGeoScale = Math.max(1, ...filteredGeoGroups.map(g => Math.max(g.grossProfit, g.totalExpense, g.sales * 0.5)));
+    const maxGeoScale = Math.max(1, ...filteredGeoGroups.map(g => Math.max(g.sales, g.grossProfit, g.totalExpense)));
 
     const renderClientRowsForGroup = (clientsInGroup) => {
       const matchedClients = sortClientList(
@@ -41113,18 +41146,25 @@ function renderBusinessAnalyticsView(period = null) {
             (c.endUsers.length > 4 ? `<span style="font-size:0.65rem; color:#64748b;"> +${c.endUsers.length - 4}件</span>` : '')
           : `<span style="color:#94a3b8; font-size:0.7rem;">未設定 (-)</span>`;
 
+        const soldChipsHtml = (c.soldItemSummary && c.soldItemSummary.length > 0)
+          ? `<div style="display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px;">
+              ${c.soldItemSummary.map(si => `<span style="display:inline-flex; align-items:center; gap:4px; background:#eff6ff; color:#1e40af; border:1px solid #bfdbfe; padding:2px 7px; border-radius:9999px; font-size:0.68rem; font-weight:700;">📦 ${safeEscAnalytics(si.name)} <span style="color:#1d4ed8;">×${si.qty}${safeEscAnalytics(si.unit)}</span></span>`).join('')}
+            </div>`
+          : '';
+
         const detailRowHtml = isOpen ? `
           <tr style="background: #f8fafc;">
             <td colspan="8" style="padding: 8px 12px; border-bottom: 1.5px solid #cbd5e1;">
-              <div style="font-size: 0.73rem; font-weight: 700; color: #334155; margin-bottom: 6px;">
-                📂 「${safeEscAnalytics(c.clientName)}」取引履歴・エンドユーザー展開（計 ${c.docs.length} 件 / 初回 ${safeEscAnalytics(c.firstDate || '-')} 〜 最終 ${safeEscAnalytics(c.lastDate || '-')}）
+              <div style="font-size: 0.73rem; font-weight: 700; color: #334155; margin-bottom: 5px;">
+                📂 「${safeEscAnalytics(c.clientName)}」売上品目・取引履歴詳細（計 ${c.docs.length} 件 / 初回 ${safeEscAnalytics(c.firstDate || '-')} 〜 最終 ${safeEscAnalytics(c.lastDate || '-')}）
               </div>
+              ${soldChipsHtml}
               <table style="width: 100%; border-collapse: collapse; font-size: 0.72rem; background: #ffffff; border: 1px solid #e2e8f0;">
                 <thead>
                   <tr style="background: #f1f5f9; color: #475569; border-bottom: 1px solid #cbd5e1;">
                     <th style="padding: 5px 6px; text-align: left;">発行日</th>
                     <th style="padding: 5px 6px; text-align: left;">伝票番号</th>
-                    <th style="padding: 5px 6px; text-align: left;">件名 / エンドユーザー</th>
+                    <th style="padding: 5px 6px; text-align: left;">売上品目（数量・金額・S/N） / 件名・EU</th>
                     <th style="padding: 5px 6px; text-align: right;">数量</th>
                     <th style="padding: 5px 6px; text-align: right;">売上(税抜)</th>
                     <th style="padding: 5px 6px; text-align: right;">原価</th>
@@ -41132,20 +41172,39 @@ function renderBusinessAnalyticsView(period = null) {
                   </tr>
                 </thead>
                 <tbody>
-                  ${c.docs.map(d => `
-                    <tr style="border-bottom: 1px solid #f1f5f9;">
-                      <td style="padding: 5px 6px; white-space: nowrap;">${safeEscAnalytics(d.issueDate || '-')}</td>
-                      <td style="padding: 5px 6px; font-family: monospace; white-space: nowrap;">${safeEscAnalytics(d.docNumber)}</td>
-                      <td style="padding: 5px 6px;">
-                        ${safeEscAnalytics(d.title || '（件名なし）')}
-                        ${d.endUsers.length > 0 ? `<span style="margin-left:6px; color:#15803d; font-size:0.67rem;">[EU: ${safeEscAnalytics(d.endUsers.join(', '))}]</span>` : ''}
-                      </td>
-                      <td style="padding: 5px 6px; text-align: right;">${d.totalQty}</td>
-                      <td style="padding: 5px 6px; text-align: right; font-family: monospace;">${fmtYenAnalytics(d.sales)}</td>
-                      <td style="padding: 5px 6px; text-align: right; font-family: monospace; color: #64748b;">${fmtYenAnalytics(d.cogs)}</td>
-                      <td style="padding: 5px 6px; text-align: right; font-family: monospace; font-weight: 700; color: ${d.grossProfit >= 0 ? '#059669' : '#dc2626'};">${fmtYenAnalytics(d.grossProfit)}</td>
-                    </tr>
-                  `).join('')}
+                  ${c.docs.map(d => {
+                    const itemsListHtml = (d.lineItems && d.lineItems.length > 0)
+                      ? `<div style="display: flex; flex-direction: column; gap: 2px;">
+                          ${d.lineItems.map(li => `
+                            <div style="display: flex; justify-content: space-between; gap: 8px; font-size: 0.71rem; color: ${li.isDiscount ? '#64748b' : '#0f172a'};">
+                              <span>
+                                ${li.isDiscount ? '➖' : '•'} <strong>${safeEscAnalytics(li.name)}</strong>
+                                <span style="color:#475569;">× ${li.qty}${safeEscAnalytics(li.unit)}</span>
+                                ${li.serialNumber ? `<span style="margin-left:4px; font-family:monospace; font-size:0.65rem; background:#f1f5f9; color:#334155; padding:0 4px; border-radius:3px;">S/N:${safeEscAnalytics(li.serialNumber)}</span>` : ''}
+                              </span>
+                              <span style="font-family: monospace; white-space: nowrap; color: ${li.isDiscount ? '#dc2626' : '#334155'};">${fmtYenAnalytics(li.amount)}</span>
+                            </div>
+                          `).join('')}
+                        </div>`
+                      : `<span style="color:#94a3b8;">品目明細なし</span>`;
+                    const metaNoteHtml = (d.title || (d.endUsers && d.endUsers.length > 0))
+                      ? `<div style="font-size: 0.66rem; color: #64748b; margin-top: 3px;">
+                          ${d.title ? `件名: ${safeEscAnalytics(d.title)}` : ''}
+                          ${d.endUsers.length > 0 ? `<span style="margin-left:6px; color:#15803d; font-weight:700;">[EU: ${safeEscAnalytics(d.endUsers.join(', '))}]</span>` : ''}
+                        </div>`
+                      : '';
+                    return `
+                      <tr style="border-bottom: 1px solid #f1f5f9;">
+                        <td style="padding: 6px; white-space: nowrap; vertical-align: top;">${safeEscAnalytics(d.issueDate || '-')}</td>
+                        <td style="padding: 6px; font-family: monospace; white-space: nowrap; vertical-align: top;">${safeEscAnalytics(d.docNumber)}</td>
+                        <td style="padding: 6px; vertical-align: top;">${itemsListHtml}${metaNoteHtml}</td>
+                        <td style="padding: 6px; text-align: right; vertical-align: top;">${d.totalQty}</td>
+                        <td style="padding: 6px; text-align: right; font-family: monospace; font-weight: 700; vertical-align: top;">${fmtYenAnalytics(d.sales)}</td>
+                        <td style="padding: 6px; text-align: right; font-family: monospace; color: #64748b; vertical-align: top;">${fmtYenAnalytics(d.cogs)}</td>
+                        <td style="padding: 6px; text-align: right; font-family: monospace; font-weight: 700; color: ${d.grossProfit >= 0 ? '#059669' : '#dc2626'}; vertical-align: top;">${fmtYenAnalytics(d.grossProfit)}</td>
+                      </tr>
+                    `;
+                  }).join('')}
                 </tbody>
               </table>
             </td>
@@ -41179,6 +41238,7 @@ function renderBusinessAnalyticsView(period = null) {
       ? `<div style="padding: 28px; text-align: center; color: #94a3b8; background: #ffffff; border: 1px dashed #cbd5e1; border-radius: 10px;">対象条件の地域・販売店データがありません。</div>`
       : filteredGeoGroups.map(g => {
           const isCollapsed = bizAnalyticsViewState.collapsedRegions.has(g.key);
+          const salesBarW = Math.min(100, Math.max(0, Math.round((Math.max(0, g.sales) / maxGeoScale) * 100)));
           const gpBarW = Math.min(100, Math.max(0, Math.round((Math.max(0, g.grossProfit) / maxGeoScale) * 100)));
           const expBarW = Math.min(100, Math.max(0, Math.round((g.totalExpense / maxGeoScale) * 100)));
 
@@ -41315,14 +41375,18 @@ function renderBusinessAnalyticsView(period = null) {
                   <div style="font-size: 0.66rem; color: #64748b;">${g.expenseToSalesPct !== null ? `経費率 ${g.expenseToSalesPct.toFixed(1)}%` : '経費率 -'}${g.roiMultiple !== null ? ` (${g.roiMultiple.toFixed(1)}倍)` : ''}</div>
                 </div>
                 <div>
-                  <div style="display: flex; flex-direction: column; gap: 4px;">
-                    <div style="display:flex; align-items:center; gap:4px;">
-                      <span style="font-size:0.63rem; color:#059669; width:24px; font-weight:700;">粗利</span>
-                      <div style="flex:1; height:8px; background:#e2e8f0; border-radius:4px; overflow:hidden;"><div style="width:${gpBarW}%; height:100%; background:#10b981;"></div></div>
+                  <div style="display: flex; flex-direction: column; gap: 3px;">
+                    <div style="display:flex; align-items:center; gap:4px;" title="売上高(税抜): ${fmtYenAnalytics(g.sales)}">
+                      <span style="font-size:0.62rem; color:#2563eb; width:24px; font-weight:700;">売上</span>
+                      <div style="flex:1; height:7px; background:#e2e8f0; border-radius:4px; overflow:hidden;"><div style="width:${salesBarW}%; height:100%; background:#3b82f6;"></div></div>
                     </div>
-                    <div style="display:flex; align-items:center; gap:4px;">
-                      <span style="font-size:0.63rem; color:#d97706; width:24px; font-weight:700;">経費</span>
-                      <div style="flex:1; height:8px; background:#e2e8f0; border-radius:4px; overflow:hidden;"><div style="width:${expBarW}%; height:100%; background:#f59e0b;"></div></div>
+                    <div style="display:flex; align-items:center; gap:4px;" title="粗利額: ${fmtYenAnalytics(g.grossProfit)}">
+                      <span style="font-size:0.62rem; color:#059669; width:24px; font-weight:700;">粗利</span>
+                      <div style="flex:1; height:7px; background:#e2e8f0; border-radius:4px; overflow:hidden;"><div style="width:${gpBarW}%; height:100%; background:#10b981;"></div></div>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:4px;" title="地域経費合計: ${fmtYenAnalytics(g.totalExpense)}">
+                      <span style="font-size:0.62rem; color:#d97706; width:24px; font-weight:700;">経費</span>
+                      <div style="flex:1; height:7px; background:#e2e8f0; border-radius:4px; overflow:hidden;"><div style="width:${expBarW}%; height:100%; background:#f59e0b;"></div></div>
                     </div>
                   </div>
                 </div>

@@ -1126,17 +1126,35 @@ export function buildBusinessAnalytics({
     const items = Array.isArray(doc.items) ? doc.items : [];
     let totalQty = 0;
     const endUsersSet = new Set();
+    const lineItems = [];
     const topEndUser = String(rawInner.endUserName || (rawDoc && rawDoc.endUserName) || clientObj.endUserName || '').trim();
     if (topEndUser) endUsersSet.add(topEndUser);
     items.forEach(it => {
       if (!it) return;
-      const itName = String(it.name || '');
+      const itName = String(it.name || '').trim();
       const unitPrice = Number(it.unitPrice) || 0;
-      if (unitPrice >= 0 && !/値引|割引|相殺|調整/.test(itName)) {
-        totalQty += Math.max(0, Number(it.quantity) || 0);
+      const qty = Math.max(0, Number(it.quantity) || 0);
+      const isDiscount = unitPrice < 0 || /値引|割引|相殺|調整/.test(itName);
+      if (!isDiscount) {
+        totalQty += qty;
       }
       if (it.endUserName && String(it.endUserName).trim()) {
         endUsersSet.add(String(it.endUserName).trim());
+      }
+      if (itName) {
+        const lineCost = isDiscount
+          ? 0
+          : (Number(it.assignedCogs) > 0 ? Number(it.assignedCogs) : (Number(it.costPrice) > 0 ? qty * Number(it.costPrice) : 0));
+        lineItems.push({
+          name: itName,
+          qty,
+          unit: String(it.unit || '').trim(),
+          unitPrice: Math.round(unitPrice),
+          amount: Math.round(unitPrice * qty),
+          cost: Math.round(lineCost),
+          serialNumber: String(it.serialNumber || '').trim(),
+          isDiscount
+        });
       }
     });
 
@@ -1162,6 +1180,7 @@ export function buildBusinessAnalytics({
       grossMarginPct: sales > 0 ? Math.round((grossProfit / sales) * 1000) / 10 : null,
       totalQty,
       endUsers: Array.from(endUsersSet),
+      lineItems,
       isZeroDoc,
       isPaid: !!doc.isPaid
     });
@@ -1222,6 +1241,19 @@ export function buildBusinessAnalytics({
 
   const clientSummary = Array.from(clientMap.values()).map(c => {
     c.docs.sort((a, b) => b.issueDate.localeCompare(a.issueDate));
+    const soldItemAcc = new Map();
+    c.docs.forEach(d => {
+      (d.lineItems || []).forEach(li => {
+        if (!li || li.isDiscount || !li.name) return;
+        const k = normalizeLookupName(li.name);
+        const cur = soldItemAcc.get(k) || { name: li.name, qty: 0, unit: li.unit || '', sales: 0 };
+        cur.qty += li.qty;
+        cur.sales += li.amount;
+        if (!cur.unit && li.unit) cur.unit = li.unit;
+        soldItemAcc.set(k, cur);
+      });
+    });
+    const soldItemSummary = Array.from(soldItemAcc.values()).sort((a, b) => b.sales - a.sales || b.qty - a.qty);
     return {
       clientKey: c.clientKey,
       clientName: c.clientName,
@@ -1240,6 +1272,7 @@ export function buildBusinessAnalytics({
       endUsers: Array.from(c.endUsersSet),
       endUserCount: c.endUsersSet.size,
       titles: Array.from(c.titlesSet),
+      soldItemSummary,
       docs: c.docs
     };
   }).sort((a, b) => b.sales - a.sales);
