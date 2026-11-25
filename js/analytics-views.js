@@ -20,11 +20,13 @@ const lotCostViewState = {
 };
 
 const bizAnalyticsViewState = {
-  activeSubTab: 'all', // 'all' | 'clients' | 'regions' | 'trips'
+  activeSubTab: 'all', // 'all' | 'region_clients' | 'trips'
   includeZeroDocs: true,
   clientSortBy: 'sales_desc',
   clientSearch: '',
   expandedClients: new Set(),
+  expandedDemoSessions: new Set(),
+  collapsedRegions: new Set(),
   geoGranularity: 'region', // 'region' | 'prefecture'
   tripStart: '',
   tripEnd: '',
@@ -469,19 +471,11 @@ function renderBusinessAnalyticsView(period = null) {
       ? `${activePeriod.start || '開始指定なし'} 〜 ${activePeriod.end || '終了指定なし'}`
       : '全期間（累計）';
 
-    // --- Section 1: 取引先別 売上・粗利サマリー ---
+    // --- Section 1（統合版）: 大枠＝地域（地方エリア / 都道府県）別 売上・デモ経費バランス ＋ 直下＝各販売店＆デモ出張セッション ---
     const clientQ = bizAnalyticsViewState.clientSearch.trim().toLowerCase();
-    let filteredClients = data.clientSummary.filter(c => {
-      if (bizAnalyticsViewState.tripRegion !== 'all' && c.region !== bizAnalyticsViewState.tripRegion) return false;
-      if (bizAnalyticsViewState.tripPrefecture !== 'all' && c.prefecture !== bizAnalyticsViewState.tripPrefecture) return false;
-      if (clientQ) {
-        const hay = `${c.clientName} ${c.region} ${c.prefecture} ${c.endUsers.join(' ')} ${c.titles.join(' ')}`.toLowerCase();
-        if (!hay.includes(clientQ)) return false;
-      }
-      return true;
-    });
+    const rawGeoGroups = bizAnalyticsViewState.geoGranularity === 'prefecture' ? data.prefectureSummary : data.regionSummary;
 
-    filteredClients = [...filteredClients].sort((a, b) => {
+    const sortClientList = (list) => [...list].sort((a, b) => {
       switch (bizAnalyticsViewState.clientSortBy) {
         case 'gp_desc': return b.grossProfit - a.grossProfit;
         case 'margin_desc': return (b.grossMarginPct ?? -999) - (a.grossMarginPct ?? -999);
@@ -492,148 +486,286 @@ function renderBusinessAnalyticsView(period = null) {
       }
     });
 
-    const clientRowsHtml = filteredClients.length === 0
-      ? `<tr><td colspan="9" style="padding: 24px; text-align: center; color: #94a3b8;">対象条件の取引先データがありません。</td></tr>`
-      : filteredClients.map(c => {
-          const isOpen = bizAnalyticsViewState.expandedClients.has(c.clientKey);
-          const repeatBadge = c.isRepeat
-            ? `<span style="background:#dbeafe; color:#1d4ed8; font-size:0.66rem; font-weight:700; padding:1px 6px; border-radius:9999px; margin-left:4px;">リピート ${c.docCount}回</span>`
-            : '';
-          const euHtml = c.endUsers.length > 0
-            ? c.endUsers.slice(0, 4).map(eu => `<span style="display:inline-block; background:#f0fdf4; color:#166534; border:1px solid #bbf7d0; font-size:0.66rem; padding:1px 5px; border-radius:4px; margin:1px 2px 1px 0;">${safeEscAnalytics(eu)}</span>`).join('') +
-              (c.endUsers.length > 4 ? `<span style="font-size:0.66rem; color:#64748b;"> +${c.endUsers.length - 4}件</span>` : '')
-            : `<span style="color:#94a3b8; font-size:0.72rem;">未設定 (-)</span>`;
+    const filteredGeoGroups = rawGeoGroups.filter(g => {
+      if (bizAnalyticsViewState.tripRegion !== 'all' && g.region !== bizAnalyticsViewState.tripRegion) return false;
+      if (bizAnalyticsViewState.tripPrefecture !== 'all' && g.prefecture !== bizAnalyticsViewState.tripPrefecture) return false;
+      if (clientQ) {
+        const geoHit = `${g.label} ${g.region} ${g.prefecture}`.toLowerCase().includes(clientQ);
+        const clientHit = (g.clients || []).some(c =>
+          `${c.clientName} ${c.prefecture} ${c.endUsers.join(' ')} ${c.titles.join(' ')}`.toLowerCase().includes(clientQ)
+        );
+        const sessHit = (g.demoSessions || []).some(s =>
+          `${s.startDate} ${s.endDate} ${s.prefecture} ${(s.items || []).map(x => `${x.payee} ${x.note}`).join(' ')}`.toLowerCase().includes(clientQ)
+        );
+        return geoHit || clientHit || sessHit;
+      }
+      return true;
+    });
 
-          const detailRowHtml = isOpen ? `
-            <tr style="background: #f8fafc;">
-              <td colspan="9" style="padding: 10px 14px; border-bottom: 2px solid #cbd5e1;">
-                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 6px;">
-                  <div style="font-size: 0.75rem; font-weight: 700; color: #334155;">
-                    📂 「${safeEscAnalytics(c.clientName)}」取引履歴・エンドユーザー展開（計 ${c.docs.length} 件 / 初回 ${safeEscAnalytics(c.firstDate || '-')} 〜 最終 ${safeEscAnalytics(c.lastDate || '-')}）
-                  </div>
-                  <button type="button" class="btn btn-secondary btn-xs biz-focus-client-trip-btn" data-client-name="${safeEscAnalytics(c.clientName)}" style="font-size: 0.7rem;">
-                    🎯 この取引先で出張後追い分析を絞込
-                  </button>
+    const maxGeoScale = Math.max(1, ...filteredGeoGroups.map(g => Math.max(g.grossProfit, g.totalExpense, g.sales * 0.5)));
+
+    const renderClientRowsForGroup = (clientsInGroup) => {
+      const matchedClients = sortClientList(
+        (clientsInGroup || []).filter(c => {
+          if (bizAnalyticsViewState.tripClient !== 'all' && c.clientName !== bizAnalyticsViewState.tripClient) return false;
+          if (!clientQ) return true;
+          const hay = `${c.clientName} ${c.region} ${c.prefecture} ${c.endUsers.join(' ')} ${c.titles.join(' ')}`.toLowerCase();
+          return hay.includes(clientQ);
+        })
+      );
+      if (matchedClients.length === 0) {
+        return `<tr><td colspan="8" style="padding: 12px; text-align: center; color: #94a3b8; font-size: 0.74rem;">この地域の対象期間内に売上販売店はありません（デモ活動・経費発生のみのエリア）</td></tr>`;
+      }
+      return matchedClients.map(c => {
+        const isOpen = bizAnalyticsViewState.expandedClients.has(c.clientKey);
+        const repeatBadge = c.isRepeat
+          ? `<span style="background:#dbeafe; color:#1d4ed8; font-size:0.65rem; font-weight:700; padding:1px 6px; border-radius:9999px; margin-left:4px;">リピート ${c.docCount}回</span>`
+          : '';
+        const euHtml = c.endUsers.length > 0
+          ? c.endUsers.slice(0, 4).map(eu => `<span style="display:inline-block; background:#f0fdf4; color:#166534; border:1px solid #bbf7d0; font-size:0.65rem; padding:1px 5px; border-radius:4px; margin:1px 2px 1px 0;">${safeEscAnalytics(eu)}</span>`).join('') +
+            (c.endUsers.length > 4 ? `<span style="font-size:0.65rem; color:#64748b;"> +${c.endUsers.length - 4}件</span>` : '')
+          : `<span style="color:#94a3b8; font-size:0.7rem;">未設定 (-)</span>`;
+
+        const detailRowHtml = isOpen ? `
+          <tr style="background: #f8fafc;">
+            <td colspan="8" style="padding: 8px 12px; border-bottom: 1.5px solid #cbd5e1;">
+              <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 6px;">
+                <div style="font-size: 0.73rem; font-weight: 700; color: #334155;">
+                  📂 「${safeEscAnalytics(c.clientName)}」取引履歴・エンドユーザー展開（計 ${c.docs.length} 件 / 初回 ${safeEscAnalytics(c.firstDate || '-')} 〜 最終 ${safeEscAnalytics(c.lastDate || '-')}）
                 </div>
-                <table style="width: 100%; border-collapse: collapse; font-size: 0.74rem; background: #ffffff; border: 1px solid #e2e8f0;">
-                  <thead>
-                    <tr style="background: #f1f5f9; color: #475569; border-bottom: 1px solid #cbd5e1;">
-                      <th style="padding: 5px 6px; text-align: left;">発行日</th>
-                      <th style="padding: 5px 6px; text-align: left;">伝票番号</th>
-                      <th style="padding: 5px 6px; text-align: left;">件名 / エンドユーザー</th>
-                      <th style="padding: 5px 6px; text-align: right;">数量</th>
-                      <th style="padding: 5px 6px; text-align: right;">売上(税抜)</th>
-                      <th style="padding: 5px 6px; text-align: right;">原価</th>
-                      <th style="padding: 5px 6px; text-align: right;">粗利額</th>
+                <button type="button" class="btn btn-secondary btn-xs biz-focus-client-trip-btn" data-client-name="${safeEscAnalytics(c.clientName)}" style="font-size: 0.69rem;">
+                  🎯 この販売店で出張後追い分析を絞込
+                </button>
+              </div>
+              <table style="width: 100%; border-collapse: collapse; font-size: 0.72rem; background: #ffffff; border: 1px solid #e2e8f0;">
+                <thead>
+                  <tr style="background: #f1f5f9; color: #475569; border-bottom: 1px solid #cbd5e1;">
+                    <th style="padding: 5px 6px; text-align: left;">発行日</th>
+                    <th style="padding: 5px 6px; text-align: left;">伝票番号</th>
+                    <th style="padding: 5px 6px; text-align: left;">件名 / エンドユーザー</th>
+                    <th style="padding: 5px 6px; text-align: right;">数量</th>
+                    <th style="padding: 5px 6px; text-align: right;">売上(税抜)</th>
+                    <th style="padding: 5px 6px; text-align: right;">原価</th>
+                    <th style="padding: 5px 6px; text-align: right;">粗利額</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${c.docs.map(d => `
+                    <tr style="border-bottom: 1px solid #f1f5f9;">
+                      <td style="padding: 5px 6px; white-space: nowrap;">${safeEscAnalytics(d.issueDate || '-')}</td>
+                      <td style="padding: 5px 6px; font-family: monospace; white-space: nowrap;">${safeEscAnalytics(d.docNumber)}</td>
+                      <td style="padding: 5px 6px;">
+                        ${safeEscAnalytics(d.title || '（件名なし）')}
+                        ${d.endUsers.length > 0 ? `<span style="margin-left:6px; color:#15803d; font-size:0.67rem;">[EU: ${safeEscAnalytics(d.endUsers.join(', '))}]</span>` : ''}
+                      </td>
+                      <td style="padding: 5px 6px; text-align: right;">${d.totalQty}</td>
+                      <td style="padding: 5px 6px; text-align: right; font-family: monospace;">${fmtYenAnalytics(d.sales)}</td>
+                      <td style="padding: 5px 6px; text-align: right; font-family: monospace; color: #64748b;">${fmtYenAnalytics(d.cogs)}</td>
+                      <td style="padding: 5px 6px; text-align: right; font-family: monospace; font-weight: 700; color: ${d.grossProfit >= 0 ? '#059669' : '#dc2626'};">${fmtYenAnalytics(d.grossProfit)}</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    ${c.docs.map(d => `
-                      <tr style="border-bottom: 1px solid #f1f5f9;">
-                        <td style="padding: 5px 6px; white-space: nowrap;">${safeEscAnalytics(d.issueDate || '-')}</td>
-                        <td style="padding: 5px 6px; font-family: monospace; white-space: nowrap;">${safeEscAnalytics(d.docNumber)}</td>
-                        <td style="padding: 5px 6px;">
-                          ${safeEscAnalytics(d.title || '（件名なし）')}
-                          ${d.endUsers.length > 0 ? `<span style="margin-left:6px; color:#15803d; font-size:0.68rem;">[EU: ${safeEscAnalytics(d.endUsers.join(', '))}]</span>` : ''}
-                        </td>
-                        <td style="padding: 5px 6px; text-align: right;">${d.totalQty}</td>
-                        <td style="padding: 5px 6px; text-align: right; font-family: monospace;">${fmtYenAnalytics(d.sales)}</td>
-                        <td style="padding: 5px 6px; text-align: right; font-family: monospace; color: #64748b;">${fmtYenAnalytics(d.cogs)}</td>
-                        <td style="padding: 5px 6px; text-align: right; font-family: monospace; font-weight: 700; color: ${d.grossProfit >= 0 ? '#059669' : '#dc2626'};">${fmtYenAnalytics(d.grossProfit)}</td>
-                      </tr>
-                    `).join('')}
-                  </tbody>
-                </table>
-              </td>
-            </tr>
-          ` : '';
+                  `).join('')}
+                </tbody>
+              </table>
+            </td>
+          </tr>
+        ` : '';
 
-          return `
-            <tr style="border-bottom: 1px solid #e2e8f0;">
-              <td style="padding: 8px 6px;">
-                <button type="button" class="biz-toggle-client-detail" data-client-key="${safeEscAnalytics(c.clientKey)}" style="background: none; border: none; padding: 0; cursor: pointer; text-align: left; font-weight: 700; color: #0f172a; font-size: 0.8rem;">
-                  <span style="display:inline-block; width:14px; color:#2563eb;">${isOpen ? '▼' : '▶'}</span>${safeEscAnalytics(c.clientName)}
-                </button>${repeatBadge}
-              </td>
-              <td style="padding: 8px 6px; white-space: nowrap; font-size: 0.74rem; color: #475569;">
-                <span style="background:#f1f5f9; padding:1px 6px; border-radius:4px;">${safeEscAnalytics(c.region)}</span>
-                <div style="font-size:0.68rem; color:#64748b; margin-top:2px;">${safeEscAnalytics(c.prefecture)}</div>
-              </td>
-              <td style="padding: 8px 6px; text-align: right; font-family: monospace; font-weight: 700; color: #0f172a; white-space: nowrap;">${fmtYenAnalytics(c.sales)}</td>
-              <td style="padding: 8px 6px; text-align: right; font-family: monospace; color: #64748b; white-space: nowrap;">${fmtYenAnalytics(c.cogs)}</td>
-              <td style="padding: 8px 6px; text-align: right; font-family: monospace; font-weight: 800; color: ${c.grossProfit >= 0 ? '#059669' : '#dc2626'}; white-space: nowrap;">${fmtYenAnalytics(c.grossProfit)}</td>
-              <td style="padding: 8px 6px; text-align: right; font-family: monospace; font-weight: 700; color: #334155; white-space: nowrap;">${fmtPctAnalytics(c.grossMarginPct)}</td>
-              <td style="padding: 8px 6px; text-align: right; white-space: nowrap;">
-                <strong>${c.docCount}件</strong><div style="font-size:0.68rem; color:#64748b;">計 ${c.totalQty}点</div>
-              </td>
-              <td style="padding: 8px 6px; white-space: nowrap; font-size: 0.74rem; color: #334155;">${safeEscAnalytics(c.lastDate || '未設定 (-)')}</td>
-              <td style="padding: 8px 6px; max-width: 220px;">${euHtml}</td>
-            </tr>
-            ${detailRowHtml}
-          `;
-        }).join('');
+        return `
+          <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 7px 8px;">
+              <button type="button" class="biz-toggle-client-detail" data-client-key="${safeEscAnalytics(c.clientKey)}" style="background: none; border: none; padding: 0; cursor: pointer; text-align: left; font-weight: 700; color: #0f172a; font-size: 0.78rem;">
+                <span style="display:inline-block; width:14px; color:#2563eb;">${isOpen ? '▼' : '▶'}</span>${safeEscAnalytics(c.clientName)}
+              </button>${repeatBadge}
+              <span style="font-size:0.68rem; color:#64748b; margin-left:6px;">(${safeEscAnalytics(c.prefecture)})</span>
+            </td>
+            <td style="padding: 7px 6px; text-align: right; font-family: monospace; font-weight: 700; color: #0f172a; white-space: nowrap;">${fmtYenAnalytics(c.sales)}</td>
+            <td style="padding: 7px 6px; text-align: right; font-family: monospace; color: #64748b; white-space: nowrap;">${fmtYenAnalytics(c.cogs)}</td>
+            <td style="padding: 7px 6px; text-align: right; font-family: monospace; font-weight: 800; color: ${c.grossProfit >= 0 ? '#059669' : '#dc2626'}; white-space: nowrap;">${fmtYenAnalytics(c.grossProfit)}</td>
+            <td style="padding: 7px 6px; text-align: right; font-family: monospace; font-weight: 700; color: #334155; white-space: nowrap;">${fmtPctAnalytics(c.grossMarginPct)}</td>
+            <td style="padding: 7px 6px; text-align: right; white-space: nowrap; font-size: 0.74rem;"><strong>${c.docCount}件</strong> / ${c.totalQty}点</td>
+            <td style="padding: 7px 6px; white-space: nowrap; font-size: 0.73rem; color: #475569;">${safeEscAnalytics(c.lastDate || '未設定 (-)')}</td>
+            <td style="padding: 7px 6px; max-width: 210px;">${euHtml}</td>
+          </tr>
+          ${detailRowHtml}
+        `;
+      }).join('');
+    };
 
-    // --- Section 2: 地域（エリア・都道府県）別 売上・経費バランス ---
-    const geoRows = bizAnalyticsViewState.geoGranularity === 'prefecture' ? data.prefectureSummary : data.regionSummary;
-    const maxGeoScale = Math.max(1, ...geoRows.map(g => Math.max(g.grossProfit, g.totalExpense, g.sales * 0.5)));
+    const roleLabelMap = { transit: '🚄 移動/高速/燃料', lodging: '🏨 宿泊', meal: '🍽️ 飲食/交際', other: '📝 その他' };
 
-    const geoRowsHtml = geoRows.length === 0
-      ? `<tr><td colspan="10" style="padding: 24px; text-align: center; color: #94a3b8;">対象期間の地域別データがありません。</td></tr>`
-      : geoRows.map(g => {
+    const regionClientCardsHtml = filteredGeoGroups.length === 0
+      ? `<div style="padding: 28px; text-align: center; color: #94a3b8; background: #ffffff; border: 1px dashed #cbd5e1; border-radius: 10px;">対象条件の地域・販売店データがありません。</div>`
+      : filteredGeoGroups.map(g => {
+          const isCollapsed = bizAnalyticsViewState.collapsedRegions.has(g.key);
           const gpBarW = Math.min(100, Math.max(0, Math.round((Math.max(0, g.grossProfit) / maxGeoScale) * 100)));
           const expBarW = Math.min(100, Math.max(0, Math.round((g.totalExpense / maxGeoScale) * 100)));
-          const isSelectedGeo =
-            (bizAnalyticsViewState.geoGranularity === 'region' && bizAnalyticsViewState.tripRegion === g.key) ||
-            (bizAnalyticsViewState.geoGranularity === 'prefecture' && bizAnalyticsViewState.tripPrefecture === g.key);
+
+          // 地域に紐づく「デモ出張セッション（集中経費）」パネル
+          const demoSessionsHtml = (g.demoSessions && g.demoSessions.length > 0)
+            ? `
+              <div style="padding: 8px 14px; background: #fffbeb; border-bottom: 1px solid #fde68a; display: flex; flex-direction: column; gap: 6px;">
+                <div style="font-size: 0.73rem; font-weight: 800; color: #92400e;">
+                  🚄 検出されたデモ出張期間（往復移動・高速・航空・電車・宿泊・飲食を自動集約: ${g.demoSessions.length}回 / 計 ${fmtYenAnalytics(g.demoSessionExpenseTotal)}）
+                </div>
+                ${g.demoSessions.map(s => {
+                  const sOpen = bizAnalyticsViewState.expandedDemoSessions.has(s.id);
+                  const dateRangeText = s.startDate === s.endDate ? s.startDate : `${s.startDate} 〜 ${s.endDate}`;
+                  return `
+                    <div style="background: #ffffff; border: 1px solid #fcd34d; border-radius: 6px; padding: 6px 10px;">
+                      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
+                        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                          <button type="button" class="biz-toggle-demo-session" data-session-id="${safeEscAnalytics(s.id)}" style="background:none; border:none; padding:0; cursor:pointer; font-weight:800; color:#92400e; font-size:0.76rem;">
+                            ${sOpen ? '▼' : '▶'} ${safeEscAnalytics(dateRangeText)}（${safeEscAnalytics(s.prefecture)} / ${s.days}日間・${s.itemCount}件）
+                          </button>
+                          <strong style="font-family:monospace; color:#b45309; font-size:0.82rem;">${fmtYenAnalytics(s.totalAmount)}</strong>
+                          <span style="font-size:0.69rem; color:#78350f;">
+                            移動/高速/燃料 ${fmtYenAnalytics(s.transitAmount)} ・ 宿泊 ${fmtYenAnalytics(s.lodgingAmount)} ・ 飲食 ${fmtYenAnalytics(s.mealAmount)}
+                          </span>
+                        </div>
+                        <button type="button" class="btn btn-secondary btn-xs biz-jump-demo-trip-btn" data-start="${safeEscAnalytics(s.startDate)}" data-end="${safeEscAnalytics(s.endDate)}" data-region="${safeEscAnalytics(s.region)}" style="font-size: 0.69rem; background: #eff6ff; border-color: #93c5fd; color: #1d4ed8; font-weight: 700;">
+                          📈 後追い売上を確認 →
+                        </button>
+                      </div>
+                      ${sOpen ? `
+                        <div style="margin-top: 6px; max-height: 220px; overflow-y: auto; border-top: 1px dashed #fde68a; padding-top: 6px;">
+                          <table style="width: 100%; border-collapse: collapse; font-size: 0.71rem;">
+                            <thead>
+                              <tr style="background: #fef3c7; color: #78350f;">
+                                <th style="padding: 4px 6px; text-align: left;">日付</th>
+                                <th style="padding: 4px 6px; text-align: left;">区分</th>
+                                <th style="padding: 4px 6px; text-align: left;">帰属根拠</th>
+                                <th style="padding: 4px 6px; text-align: left;">支払先・摘要（科目）</th>
+                                <th style="padding: 4px 6px; text-align: right;">金額</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              ${s.items.map(ex => `
+                                <tr style="border-bottom: 1px solid #fef3c7;">
+                                  <td style="padding: 4px 6px; white-space: nowrap;">${safeEscAnalytics(ex.date)}</td>
+                                  <td style="padding: 4px 6px; white-space: nowrap;">${roleLabelMap[ex.role] || 'その他'}</td>
+                                  <td style="padding: 4px 6px; white-space: nowrap; color: #64748b;">${safeEscAnalytics(ex.attributionReason || '')}</td>
+                                  <td style="padding: 4px 6px;">${safeEscAnalytics(ex.payee)}${ex.note ? ` <span style="color:#64748b;">(${safeEscAnalytics(ex.note)})</span>` : ''} <span style="color:#94a3b8;">[${safeEscAnalytics(ex.category)}]</span></td>
+                                  <td style="padding: 4px 6px; text-align: right; font-family: monospace; font-weight: 700; color: #b45309; white-space: nowrap;">${fmtYenAnalytics(ex.amount)}</td>
+                                </tr>
+                              `).join('')}
+                            </tbody>
+                          </table>
+                        </div>
+                      ` : ''}
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            ` : '';
+
+          // セッション外の個別経費がある場合の小サマリー（クリック展開可能）
+          const standaloneKey = `standalone_${g.key}`;
+          const stOpen = bizAnalyticsViewState.expandedDemoSessions.has(standaloneKey);
+          const standaloneHtml = (g.standaloneExpenses && g.standaloneExpenses.length > 0)
+            ? `
+              <div style="padding: 5px 14px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; font-size: 0.71rem; color: #475569;">
+                <button type="button" class="biz-toggle-demo-session" data-session-id="${safeEscAnalytics(standaloneKey)}" style="background:none; border:none; padding:0; cursor:pointer; color:#475569; font-weight:600; font-size:0.71rem;">
+                  ${stOpen ? '▼' : '▶'} その他・日常/個別移動飲食経費（${g.standaloneExpenses.length}件 / ${fmtYenAnalytics(g.standaloneExpenseTotal)}）
+                </button>
+                ${stOpen ? `
+                  <div style="margin-top: 5px; max-height: 180px; overflow-y: auto;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 0.7rem; background: #ffffff; border: 1px solid #e2e8f0;">
+                      <tbody>
+                        ${g.standaloneExpenses.map(ex => `
+                          <tr style="border-bottom: 1px solid #f1f5f9;">
+                            <td style="padding: 3px 6px; white-space: nowrap;">${safeEscAnalytics(ex.date)}</td>
+                            <td style="padding: 3px 6px; white-space: nowrap;">${safeEscAnalytics(ex.category)}</td>
+                            <td style="padding: 3px 6px;">${safeEscAnalytics(ex.payee)}${ex.note ? ` (${safeEscAnalytics(ex.note)})` : ''}</td>
+                            <td style="padding: 3px 6px; text-align: right; font-family: monospace; font-weight: 700; color: #b45309;">${fmtYenAnalytics(ex.amount)}</td>
+                          </tr>
+                        `).join('')}
+                      </tbody>
+                    </table>
+                  </div>
+                ` : ''}
+              </div>
+            ` : '';
 
           return `
-            <tr style="border-bottom: 1px solid #e2e8f0; background: ${isSelectedGeo ? '#eff6ff' : '#ffffff'};">
-              <td style="padding: 8px 6px; font-weight: 700; white-space: nowrap;">
-                <button type="button" class="biz-pick-geo-btn" data-geo-mode="${bizAnalyticsViewState.geoGranularity}" data-geo-key="${safeEscAnalytics(g.key)}" style="background:none; border:none; padding:0; cursor:pointer; font-weight:800; color:${isSelectedGeo ? '#1d4ed8' : '#0f172a'}; text-decoration: underline;">
-                  ${safeEscAnalytics(g.label)}
-                </button>
-                ${bizAnalyticsViewState.geoGranularity === 'prefecture' && g.region !== g.label ? `<div style="font-size:0.66rem; color:#64748b; font-weight:400;">${safeEscAnalytics(g.region)}</div>` : ''}
-              </td>
-              <td style="padding: 8px 6px; text-align: right; white-space: nowrap; font-size: 0.74rem; color: #475569;">${g.clientCount}社 / ${g.docCount}件</td>
-              <td style="padding: 8px 6px; text-align: right; font-family: monospace; font-weight: 700; white-space: nowrap;">${fmtYenAnalytics(g.sales)}</td>
-              <td style="padding: 8px 6px; text-align: right; font-family: monospace; font-weight: 800; color: ${g.grossProfit >= 0 ? '#059669' : '#dc2626'}; white-space: nowrap;">
-                ${fmtYenAnalytics(g.grossProfit)}
-                <div style="font-size:0.66rem; color:#64748b; font-weight:400;">${fmtPctAnalytics(g.grossMarginPct)}</div>
-              </td>
-              <td style="padding: 8px 6px; text-align: right; font-family: monospace; color: #b45309; font-weight: 700; white-space: nowrap;">
-                ${fmtYenAnalytics(g.totalExpense)}
-                <div style="font-size:0.66rem; color:#64748b; font-weight:400;">${g.expenseCount}件</div>
-              </td>
-              <td style="padding: 8px 6px; font-size: 0.7rem; color: #475569; white-space: nowrap;">
-                旅費 ${fmtYenAnalytics(g.travelExpense)} / 車両 ${fmtYenAnalytics(g.vehicleExpense)}<br>交際 ${fmtYenAnalytics(g.entertainExpense)}
-              </td>
-              <td style="padding: 8px 6px; text-align: right; font-family: monospace; font-weight: 800; color: ${g.netContribution >= 0 ? '#047857' : '#dc2626'}; white-space: nowrap;">
-                ${fmtYenAnalytics(g.netContribution)}
-              </td>
-              <td style="padding: 8px 6px; text-align: right; font-family: monospace; white-space: nowrap; color: #334155;">
-                ${g.expenseToSalesPct !== null ? `${g.expenseToSalesPct.toFixed(1)}%` : '未設定 (-)'}
-                <div style="font-size:0.66rem; color:#64748b;">${g.roiMultiple !== null ? `${g.roiMultiple.toFixed(1)}倍` : '-'}</div>
-              </td>
-              <td style="padding: 8px 6px; min-width: 140px;">
-                <div style="display: flex; flex-direction: column; gap: 3px;">
-                  <div style="display:flex; align-items:center; gap:4px;">
-                    <span style="font-size:0.62rem; color:#059669; width:24px;">粗利</span>
-                    <div style="flex:1; height:7px; background:#f1f5f9; border-radius:4px; overflow:hidden;"><div style="width:${gpBarW}%; height:100%; background:#10b981;"></div></div>
+            <div style="background: #ffffff; border: 1.5px solid #cbd5e1; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(15,23,42,0.04);">
+              <!-- 大枠：地域サマリーヘッダー -->
+              <div style="padding: 11px 14px; background: linear-gradient(135deg, #f8fafc, #eff6ff); border-bottom: 1px solid #cbd5e1; display: grid; grid-template-columns: minmax(170px, 1.1fr) repeat(4, minmax(110px, 0.85fr)) minmax(135px, 0.9fr); gap: 10px; align-items: center;">
+                <div>
+                  <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                    <button type="button" class="biz-toggle-region-card" data-region-key="${safeEscAnalytics(g.key)}" style="background:none; border:none; padding:0; cursor:pointer; font-size:0.95rem; font-weight:800; color:#0f172a;">
+                      <span style="color:#2563eb; margin-right:4px;">${isCollapsed ? '▶' : '▼'}</span>🗾 ${safeEscAnalytics(g.label)}
+                    </button>
+                    ${bizAnalyticsViewState.geoGranularity === 'prefecture' && g.region !== g.label ? `<span style="font-size:0.68rem; color:#64748b;">(${safeEscAnalytics(g.region)})</span>` : ''}
                   </div>
-                  <div style="display:flex; align-items:center; gap:4px;">
-                    <span style="font-size:0.62rem; color:#d97706; width:24px;">経費</span>
-                    <div style="flex:1; height:7px; background:#f1f5f9; border-radius:4px; overflow:hidden;"><div style="width:${expBarW}%; height:100%; background:#f59e0b;"></div></div>
+                  <div style="font-size: 0.7rem; color: #475569; margin-top: 2px;">
+                    販売店 <strong>${g.clientCount}社</strong> / 伝票 <strong>${g.docCount}件</strong>
+                    ${g.demoSessions.length > 0 ? ` / <span style="color:#b45309; font-weight:700;">デモ遠征 ${g.demoSessions.length}回</span>` : ''}
                   </div>
                 </div>
-              </td>
-            </tr>
+                <div style="text-align: right;">
+                  <div style="font-size: 0.66rem; color: #64748b; font-weight: 700;">地域売上高(税抜)</div>
+                  <div style="font-size: 0.92rem; font-weight: 800; color: #0f172a; font-family: monospace;">${fmtYenAnalytics(g.sales)}</div>
+                  <div style="font-size: 0.66rem; color: #64748b;">原価 ${fmtYenAnalytics(g.cogs)}</div>
+                </div>
+                <div style="text-align: right;">
+                  <div style="font-size: 0.66rem; color: #64748b; font-weight: 700;">粗利額 / 粗利率</div>
+                  <div style="font-size: 0.92rem; font-weight: 800; color: ${g.grossProfit >= 0 ? '#059669' : '#dc2626'}; font-family: monospace;">${fmtYenAnalytics(g.grossProfit)}</div>
+                  <div style="font-size: 0.66rem; color: #059669; font-weight: 700;">${fmtPctAnalytics(g.grossMarginPct)}</div>
+                </div>
+                <div style="text-align: right;">
+                  <div style="font-size: 0.66rem; color: #92400e; font-weight: 700;">デモ・移動経費 (${g.expenseCount}件)</div>
+                  <div style="font-size: 0.92rem; font-weight: 800; color: #b45309; font-family: monospace;">${fmtYenAnalytics(g.totalExpense)}</div>
+                  <div style="font-size: 0.64rem; color: #78350f;">移動${fmtYenAnalytics(g.transitExpense)} / 宿${fmtYenAnalytics(g.lodgingExpense)} / 食${fmtYenAnalytics(g.mealExpense)}</div>
+                </div>
+                <div style="text-align: right;">
+                  <div style="font-size: 0.66rem; color: #5b21b6; font-weight: 700;">経費差引貢献益</div>
+                  <div style="font-size: 0.92rem; font-weight: 800; color: ${g.netContribution >= 0 ? '#047857' : '#dc2626'}; font-family: monospace;">${fmtYenAnalytics(g.netContribution)}</div>
+                  <div style="font-size: 0.66rem; color: #64748b;">${g.expenseToSalesPct !== null ? `経費率 ${g.expenseToSalesPct.toFixed(1)}%` : '経費率 -'}${g.roiMultiple !== null ? ` (${g.roiMultiple.toFixed(1)}倍)` : ''}</div>
+                </div>
+                <div>
+                  <div style="display: flex; flex-direction: column; gap: 4px;">
+                    <div style="display:flex; align-items:center; gap:4px;">
+                      <span style="font-size:0.63rem; color:#059669; width:24px; font-weight:700;">粗利</span>
+                      <div style="flex:1; height:8px; background:#e2e8f0; border-radius:4px; overflow:hidden;"><div style="width:${gpBarW}%; height:100%; background:#10b981;"></div></div>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:4px;">
+                      <span style="font-size:0.63rem; color:#d97706; width:24px; font-weight:700;">経費</span>
+                      <div style="flex:1; height:8px; background:#e2e8f0; border-radius:4px; overflow:hidden;"><div style="width:${expBarW}%; height:100%; background:#f59e0b;"></div></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              ${!isCollapsed ? `
+                ${demoSessionsHtml}
+                ${standaloneHtml}
+                <!-- 直下：この地域の各販売店（取引先）一覧 -->
+                <div style="overflow-x: auto;">
+                  <table class="acc-table" style="width: 100%; border-collapse: collapse; font-size: 0.76rem;">
+                    <thead style="background: #f1f5f9; color: #475569;">
+                      <tr style="border-bottom: 1px solid #e2e8f0;">
+                        <th style="padding: 6px 8px; text-align: left;">販売店（取引先名）</th>
+                        <th style="padding: 6px 6px; text-align: right;">売上高(税抜)</th>
+                        <th style="padding: 6px 6px; text-align: right;">売上原価</th>
+                        <th style="padding: 6px 6px; text-align: right;">粗利額</th>
+                        <th style="padding: 6px 6px; text-align: right;">粗利率</th>
+                        <th style="padding: 6px 6px; text-align: right;">件数 / 数量</th>
+                        <th style="padding: 6px 6px; text-align: left;">最終取引日</th>
+                        <th style="padding: 6px 6px; text-align: left;">エンドユーザー / 展開先</th>
+                      </tr>
+                    </thead>
+                    <tbody>${renderClientRowsForGroup(g.clients)}</tbody>
+                  </table>
+                </div>
+              ` : ''}
+            </div>
           `;
         }).join('');
 
-    // --- Section 3: 出張期間と「直後〜後追い」売上の連動確認 ---
+    // --- Section 2: 出張（デモ）期間と「直後〜後追い」売上の連動確認 ---
     const ti = data.tripImpact;
     const candidateOptionsHtml = [
-      `<option value="">-- 経費発生期間から自動抽出された出張候補（${data.tripCandidates.length}件） --</option>`,
+      `<option value="">-- 自動検出されたデモ出張期間（${data.tripCandidates.length}件） --</option>`,
       ...data.tripCandidates.map(c => {
         const selected = (c.startDate === ti.tripStart && c.endDate === ti.tripEnd) ? ' selected' : '';
         return `<option value="${safeEscAnalytics(c.startDate)}|${safeEscAnalytics(c.endDate)}|${safeEscAnalytics(c.primaryRegion)}"${selected}>${safeEscAnalytics(c.label)}</option>`;
@@ -651,15 +783,15 @@ function renderBusinessAnalyticsView(period = null) {
     ].join('');
 
     const clientFilterOptionsHtml = [
-      `<option value="all"${bizAnalyticsViewState.tripClient === 'all' ? ' selected' : ''}>取引先: すべて</option>`,
+      `<option value="all"${bizAnalyticsViewState.tripClient === 'all' ? ' selected' : ''}>販売店: すべて</option>`,
       ...data.availableClients.map(cn => `<option value="${safeEscAnalytics(cn)}"${bizAnalyticsViewState.tripClient === cn ? ' selected' : ''}>${safeEscAnalytics(cn)}</option>`)
     ].join('');
 
     const timelineRowsHtml = ti.timelineDocs.length === 0
-      ? `<tr><td colspan="8" style="padding: 20px; text-align: center; color: #94a3b8;">指定された出張期間および後追い期間（${ti.followUpDays}日間）に該当する売上伝票はありません。</td></tr>`
+      ? `<tr><td colspan="8" style="padding: 20px; text-align: center; color: #94a3b8;">指定されたデモ出張期間および後追い期間（${ti.followUpDays}日間）に該当する売上伝票はありません。</td></tr>`
       : ti.timelineDocs.map(d => {
           const phaseBadge = d.phase === 'during'
-            ? `<span style="background:#dbeafe; color:#1d4ed8; border:1px solid #93c5fd; padding:1px 6px; border-radius:9999px; font-size:0.68rem; font-weight:700;">出張期間中</span>`
+            ? `<span style="background:#dbeafe; color:#1d4ed8; border:1px solid #93c5fd; padding:1px 6px; border-radius:9999px; font-size:0.68rem; font-weight:700;">デモ期間中</span>`
             : `<span style="background:#ecfdf5; color:#047857; border:1px solid #86efac; padding:1px 6px; border-radius:9999px; font-size:0.68rem; font-weight:700;">終了後 +${d.daysAfterTrip}日</span>`;
           return `
             <tr style="border-bottom: 1px solid #e2e8f0;">
@@ -676,19 +808,18 @@ function renderBusinessAnalyticsView(period = null) {
         }).join('');
 
     const tripExpRowsHtml = ti.tripExpenses.length === 0
-      ? `<tr><td colspan="5" style="padding: 16px; text-align: center; color: #94a3b8;">該当する出張期間内の移動・デモ関連経費はありません。</td></tr>`
+      ? `<tr><td colspan="5" style="padding: 16px; text-align: center; color: #94a3b8;">該当するデモ出張期間内の経費明細はありません。</td></tr>`
       : ti.tripExpenses.map(e => `
           <tr style="border-bottom: 1px solid #f1f5f9;">
             <td style="padding: 6px; white-space: nowrap;">${safeEscAnalytics(e.date)}</td>
-            <td style="padding: 6px; white-space: nowrap;"><span style="background:#fef3c7; color:#92400e; padding:1px 6px; border-radius:4px; font-size:0.68rem; font-weight:700;">${safeEscAnalytics(e.category)}</span></td>
-            <td style="padding: 6px; white-space: nowrap; font-size: 0.72rem; color: #475569;">${safeEscAnalytics(e.prefecture)}</td>
-            <td style="padding: 6px; font-size: 0.74rem;">${safeEscAnalytics(e.payee)}${e.note ? ` <span style="color:#64748b;">(${safeEscAnalytics(e.note)})</span>` : ''}</td>
+            <td style="padding: 6px; white-space: nowrap;"><span style="background:#fef3c7; color:#92400e; padding:1px 6px; border-radius:4px; font-size:0.67rem; font-weight:700;">${roleLabelMap[e.role] || safeEscAnalytics(e.category)}</span></td>
+            <td style="padding: 6px; white-space: nowrap; font-size: 0.71rem; color: #475569;">${safeEscAnalytics(e.attributionReason || e.prefecture)}</td>
+            <td style="padding: 6px; font-size: 0.73rem;">${safeEscAnalytics(e.payee)}${e.note ? ` <span style="color:#64748b;">(${safeEscAnalytics(e.note)})</span>` : ''}</td>
             <td style="padding: 6px; text-align: right; font-family: monospace; font-weight: 700; color: #b45309; white-space: nowrap;">${fmtYenAnalytics(e.amount)}</td>
           </tr>
         `).join('');
 
-    const showClients = bizAnalyticsViewState.activeSubTab === 'all' || bizAnalyticsViewState.activeSubTab === 'clients';
-    const showRegions = bizAnalyticsViewState.activeSubTab === 'all' || bizAnalyticsViewState.activeSubTab === 'regions';
+    const showRegionClients = bizAnalyticsViewState.activeSubTab === 'all' || bizAnalyticsViewState.activeSubTab === 'region_clients';
     const showTrips = bizAnalyticsViewState.activeSubTab === 'all' || bizAnalyticsViewState.activeSubTab === 'trips';
 
     const subTabBtn = (key, label) => {
@@ -708,9 +839,9 @@ function renderBusinessAnalyticsView(period = null) {
         <!-- ヘッダー＆サブビュー切替 -->
         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
           <div>
-            <h3 style="margin: 0; font-size: 1.02rem; font-weight: 800; color: #0f172a;">🗺️ 出張・地域・取引先 統合分析ビュー</h3>
+            <h3 style="margin: 0; font-size: 1.02rem; font-weight: 800; color: #0f172a;">🗺️ 地域別デモ経費・販売店・出張後追い 統合分析ビュー</h3>
             <p style="margin: 2px 0 0 0; font-size: 0.75rem; color: #64748b;">
-              集計対象期間: <strong style="color:#0369a1;">${safeEscAnalytics(periodBadgeText)}</strong>（上部グローバル期間と連動 / 出張後追い分析は期間外の売上も横断追跡）
+              集計期間: <strong style="color:#0369a1;">${safeEscAnalytics(periodBadgeText)}</strong> / ある地域に集中した経費期間をデモ出張として自動検出し、往復の高速・航空・電車・燃料・宿泊・飲食まで地域別に自動帰属
             </p>
           </div>
           <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
@@ -719,10 +850,9 @@ function renderBusinessAnalyticsView(period = null) {
               ¥0伝票（デモ機・寄贈等）を含める
             </label>
             <div style="display: flex; gap: 4px; flex-wrap: wrap;">
-              ${subTabBtn('all', 'すべて一覧')}
-              ${subTabBtn('clients', '🏢 取引先別')}
-              ${subTabBtn('regions', '🗾 地域・経費バランス')}
-              ${subTabBtn('trips', '🚄 出張・後追い売上')}
+              ${subTabBtn('all', 'すべて表示')}
+              ${subTabBtn('region_clients', '🗾 地域別×販売店')}
+              ${subTabBtn('trips', '🚄 デモ出張・後追い売上')}
             </div>
           </div>
         </div>
@@ -740,23 +870,23 @@ function renderBusinessAnalyticsView(period = null) {
             <div style="font-size:0.7rem; color:#059669; font-weight:700;">粗利率 ${fmtPctAnalytics(data.kpi.grossMarginPct)}</div>
           </div>
           <div style="background:#ffffff; border:1px solid #e2e8f0; border-left:4px solid #f59e0b; border-radius:8px; padding:12px;">
-            <div style="font-size:0.72rem; color:#64748b; font-weight:700;">移動・デモ関連経費</div>
+            <div style="font-size:0.72rem; color:#64748b; font-weight:700;">デモ・移動関連経費</div>
             <div style="font-size:1.25rem; font-weight:800; color:#b45309; font-family:monospace; margin-top:2px;">${fmtYenAnalytics(data.kpi.totalTravelDemoExpense)}</div>
-            <div style="font-size:0.7rem; color:#64748b;">旅費・車両・交際費 計 ${data.kpi.travelDemoExpenseCount}件</div>
+            <div style="font-size:0.7rem; color:#64748b;">デモ遠征 ${data.kpi.demoSessionCount}回検出 / 全 ${data.kpi.travelDemoExpenseCount}件</div>
           </div>
           <div style="background:#ffffff; border:1px solid #e2e8f0; border-left:4px solid #7c3aed; border-radius:8px; padding:12px;">
-            <div style="font-size:0.72rem; color:#64748b; font-weight:700;">移動経費控除後 貢献益</div>
+            <div style="font-size:0.72rem; color:#64748b; font-weight:700;">経費控除後 貢献益</div>
             <div style="font-size:1.25rem; font-weight:800; color:${data.kpi.netAfterTravelExpense >= 0 ? '#5b21b6' : '#dc2626'}; font-family:monospace; margin-top:2px;">${fmtYenAnalytics(data.kpi.netAfterTravelExpense)}</div>
-            <div style="font-size:0.7rem; color:#64748b;">粗利 − 移動/デモ関連経費</div>
+            <div style="font-size:0.7rem; color:#64748b;">粗利 − デモ/移動関連経費</div>
           </div>
           <div style="background:#ffffff; border:1px solid #e2e8f0; border-left:4px solid #0891b2; border-radius:8px; padding:12px;">
-            <div style="font-size:0.72rem; color:#64748b; font-weight:700;">取引先数 / リピート</div>
+            <div style="font-size:0.72rem; color:#64748b; font-weight:700;">販売店数 / リピート</div>
             <div style="font-size:1.25rem; font-weight:800; color:#0e7490; margin-top:2px;">${data.kpi.clientCount}社 <small style="font-size:0.75rem; color:#64748b;">(リピート ${data.kpi.repeatClientCount}社)</small></div>
-            <div style="font-size:0.7rem; color:#64748b;">2回以上取引のある顧客数</div>
+            <div style="font-size:0.7rem; color:#64748b;">2回以上取引のある販売店数</div>
           </div>
         </div>
 
-        <!-- 共通エリア・取引先連動フィルタバー -->
+        <!-- 共通エリア・販売店連動フィルタバー -->
         <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
           <span style="font-size: 0.76rem; font-weight: 700; color: #334155;">🎯 連動絞込:</span>
           <select class="form-select biz-filter-region" style="font-size: 0.78rem; width: auto;">${regionFilterOptionsHtml}</select>
@@ -765,88 +895,39 @@ function renderBusinessAnalyticsView(period = null) {
           ${hasGeoOrClientFilter ? `<button type="button" class="btn btn-secondary btn-xs biz-clear-scope-btn" style="font-size: 0.74rem; color: #dc2626; border-color: #fca5a5;">✕ 絞込解除</button>` : ''}
         </div>
 
-        ${showClients ? `
-        <!-- ① 取引先別 売上・粗利サマリー -->
-        <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden;">
-          <div style="padding: 12px 14px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+        ${showRegionClients ? `
+        <!-- ① 地域別（大枠）売上・デモ経費バランス ＋ 直下 各販売店サマリー -->
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px;">
             <div>
-              <strong style="font-size: 0.9rem; color: #0f172a;">① 取引先別 売上・粗利サマリー（${filteredClients.length}社）</strong>
-              <span style="font-size: 0.72rem; color: #64748b; margin-left: 8px;">※取引先名をクリックすると複数回取引・エンドユーザー展開の内訳を展開できます</span>
+              <strong style="font-size: 0.92rem; color: #0f172a;">① 地域別 売上・デモ経費 ＆ 販売店サマリー（${filteredGeoGroups.length}エリア）</strong>
+              <span style="font-size: 0.72rem; color: #64748b; margin-left: 8px;">大枠で地域ごとの売上・粗利・デモ経費を表示し、直下に各販売店とデモ出張明細を一覧表示</span>
             </div>
-            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-              <input type="text" class="form-input biz-client-search" value="${safeEscAnalytics(bizAnalyticsViewState.clientSearch)}" placeholder="🔍 取引先・エンドユーザー検索..." style="font-size: 0.78rem; width: 200px; padding: 4px 8px;">
-              <select class="form-select biz-client-sort" style="font-size: 0.78rem; width: auto; padding: 4px 8px;">
-                <option value="sales_desc"${bizAnalyticsViewState.clientSortBy === 'sales_desc' ? ' selected' : ''}>売上高 高い順</option>
-                <option value="gp_desc"${bizAnalyticsViewState.clientSortBy === 'gp_desc' ? ' selected' : ''}>粗利額 高い順</option>
-                <option value="margin_desc"${bizAnalyticsViewState.clientSortBy === 'margin_desc' ? ' selected' : ''}>粗利率 高い順</option>
-                <option value="count_desc"${bizAnalyticsViewState.clientSortBy === 'count_desc' ? ' selected' : ''}>伝票件数 多い順</option>
-                <option value="last_desc"${bizAnalyticsViewState.clientSortBy === 'last_desc' ? ' selected' : ''}>最終取引日 新しい順</option>
+            <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+              <button type="button" class="biz-geo-mode-btn" data-mode="region" style="padding: 4px 10px; border-radius: 6px; font-size: 0.74rem; font-weight: 700; cursor: pointer; border: 1px solid ${bizAnalyticsViewState.geoGranularity === 'region' ? '#2563eb' : '#cbd5e1'}; background: ${bizAnalyticsViewState.geoGranularity === 'region' ? '#eff6ff' : '#ffffff'}; color: ${bizAnalyticsViewState.geoGranularity === 'region' ? '#1d4ed8' : '#475569'};">地方エリア別</button>
+              <button type="button" class="biz-geo-mode-btn" data-mode="prefecture" style="padding: 4px 10px; border-radius: 6px; font-size: 0.74rem; font-weight: 700; cursor: pointer; border: 1px solid ${bizAnalyticsViewState.geoGranularity === 'prefecture' ? '#2563eb' : '#cbd5e1'}; background: ${bizAnalyticsViewState.geoGranularity === 'prefecture' ? '#eff6ff' : '#ffffff'}; color: ${bizAnalyticsViewState.geoGranularity === 'prefecture' ? '#1d4ed8' : '#475569'};">都道府県別</button>
+              <input type="text" class="form-input biz-client-search" value="${safeEscAnalytics(bizAnalyticsViewState.clientSearch)}" placeholder="🔍 地域・販売店・EU検索..." style="font-size: 0.76rem; width: 185px; padding: 4px 8px;">
+              <select class="form-select biz-client-sort" style="font-size: 0.76rem; width: auto; padding: 4px 8px;">
+                <option value="sales_desc"${bizAnalyticsViewState.clientSortBy === 'sales_desc' ? ' selected' : ''}>販売店: 売上高順</option>
+                <option value="gp_desc"${bizAnalyticsViewState.clientSortBy === 'gp_desc' ? ' selected' : ''}>販売店: 粗利額順</option>
+                <option value="margin_desc"${bizAnalyticsViewState.clientSortBy === 'margin_desc' ? ' selected' : ''}>販売店: 粗利率順</option>
+                <option value="count_desc"${bizAnalyticsViewState.clientSortBy === 'count_desc' ? ' selected' : ''}>販売店: 件数順</option>
+                <option value="last_desc"${bizAnalyticsViewState.clientSortBy === 'last_desc' ? ' selected' : ''}>販売店: 最終取引日順</option>
               </select>
             </div>
           </div>
-          <div style="overflow-x: auto;">
-            <table class="acc-table" style="width: 100%; border-collapse: collapse; font-size: 0.78rem;">
-              <thead style="background: #f1f5f9; color: #334155;">
-                <tr style="border-bottom: 1px solid #cbd5e1;">
-                  <th style="padding: 8px 6px; text-align: left;">取引先名</th>
-                  <th style="padding: 8px 6px; text-align: left;">エリア / 都道府県</th>
-                  <th style="padding: 8px 6px; text-align: right;">売上高(税抜)</th>
-                  <th style="padding: 8px 6px; text-align: right;">売上原価</th>
-                  <th style="padding: 8px 6px; text-align: right;">粗利額</th>
-                  <th style="padding: 8px 6px; text-align: right;">粗利率</th>
-                  <th style="padding: 8px 6px; text-align: right;">件数 / 数量</th>
-                  <th style="padding: 8px 6px; text-align: left;">最終取引日</th>
-                  <th style="padding: 8px 6px; text-align: left;">エンドユーザー / 展開先</th>
-                </tr>
-              </thead>
-              <tbody>${clientRowsHtml}</tbody>
-            </table>
-          </div>
-        </div>
-        ` : ''}
-
-        ${showRegions ? `
-        <!-- ② 地域（エリア・都道府県）別 売上・経費バランス -->
-        <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden;">
-          <div style="padding: 12px 14px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-            <div>
-              <strong style="font-size: 0.9rem; color: #0f172a;">② 地域（エリア・都道府県）別 売上・経費バランス</strong>
-              <span style="font-size: 0.72rem; color: #64748b; margin-left: 8px;">※地域名をクリックすると取引先一覧・出張後追い分析をその地域へ連動絞り込みします</span>
-            </div>
-            <div style="display: flex; gap: 4px;">
-              <button type="button" class="biz-geo-mode-btn" data-mode="region" style="padding: 4px 10px; border-radius: 6px; font-size: 0.74rem; font-weight: 700; cursor: pointer; border: 1px solid ${bizAnalyticsViewState.geoGranularity === 'region' ? '#2563eb' : '#cbd5e1'}; background: ${bizAnalyticsViewState.geoGranularity === 'region' ? '#eff6ff' : '#ffffff'}; color: ${bizAnalyticsViewState.geoGranularity === 'region' ? '#1d4ed8' : '#475569'};">地方エリア別</button>
-              <button type="button" class="biz-geo-mode-btn" data-mode="prefecture" style="padding: 4px 10px; border-radius: 6px; font-size: 0.74rem; font-weight: 700; cursor: pointer; border: 1px solid ${bizAnalyticsViewState.geoGranularity === 'prefecture' ? '#2563eb' : '#cbd5e1'}; background: ${bizAnalyticsViewState.geoGranularity === 'prefecture' ? '#eff6ff' : '#ffffff'}; color: ${bizAnalyticsViewState.geoGranularity === 'prefecture' ? '#1d4ed8' : '#475569'};">都道府県別</button>
-            </div>
-          </div>
-          <div style="overflow-x: auto;">
-            <table class="acc-table" style="width: 100%; border-collapse: collapse; font-size: 0.78rem;">
-              <thead style="background: #f1f5f9; color: #334155;">
-                <tr style="border-bottom: 1px solid #cbd5e1;">
-                  <th style="padding: 8px 6px; text-align: left;">${bizAnalyticsViewState.geoGranularity === 'prefecture' ? '都道府県' : '地方エリア'}</th>
-                  <th style="padding: 8px 6px; text-align: right;">取引先 / 伝票</th>
-                  <th style="padding: 8px 6px; text-align: right;">売上高(税抜)</th>
-                  <th style="padding: 8px 6px; text-align: right;">粗利額 / 率</th>
-                  <th style="padding: 8px 6px; text-align: right;">移動/デモ経費</th>
-                  <th style="padding: 8px 6px; text-align: left;">経費内訳（旅費/車両/交際）</th>
-                  <th style="padding: 8px 6px; text-align: right;">経費差引貢献益</th>
-                  <th style="padding: 8px 6px; text-align: right;">経費率 / 回収倍率</th>
-                  <th style="padding: 8px 6px; text-align: left;">粗利 vs 経費バランス</th>
-                </tr>
-              </thead>
-              <tbody>${geoRowsHtml}</tbody>
-            </table>
-          </div>
+          ${regionClientCardsHtml}
         </div>
         ` : ''}
 
         ${showTrips ? `
-        <!-- ③ 出張期間と「直後〜後追い」売上の連動確認 -->
-        <div style="background: #ffffff; border: 1.5px solid #bfdbfe; border-radius: 10px; overflow: hidden;">
+        <!-- ② デモ出張期間と「直後〜後追い」売上の連動確認 -->
+        <div id="bizTripFollowUpSection" style="background: #ffffff; border: 1.5px solid #bfdbfe; border-radius: 10px; overflow: hidden;">
           <div style="padding: 12px 14px; background: linear-gradient(135deg, #eff6ff, #f8fafc); border-bottom: 1px solid #bfdbfe;">
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
               <div>
-                <strong style="font-size: 0.92rem; color: #1e3a8a;">③ 出張期間と「直後〜後追い」売上の連動確認</strong>
-                <span style="font-size: 0.72rem; color: #475569; margin-left: 8px;">出張期間中の売上と終了後 N 日間の後追い累計売上・粗利を出張経費と対比</span>
+                <strong style="font-size: 0.92rem; color: #1e3a8a;">② デモ出張期間と「直後〜後追い」売上の連動確認</strong>
+                <span style="font-size: 0.72rem; color: #475569; margin-left: 8px;">デモ期間中の往復移動・宿泊・飲食経費と、期間中＋終了後 N 日間の累計売上・粗利を対比</span>
               </div>
               <div style="display: flex; gap: 4px; align-items: center; flex-wrap: wrap;">
                 ${followUpPresetBtn(30)}
@@ -858,11 +939,11 @@ function renderBusinessAnalyticsView(period = null) {
 
             <!-- 出張期間＆後追い日数コントロール -->
             <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
-              <select class="form-select biz-trip-candidate-select" style="font-size: 0.78rem; max-width: 380px;">
+              <select class="form-select biz-trip-candidate-select" style="font-size: 0.78rem; max-width: 420px;">
                 ${candidateOptionsHtml}
               </select>
               <div style="display: inline-flex; align-items: center; gap: 4px; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 3px 8px;">
-                <span style="font-size: 0.72rem; color: #475569; font-weight: 700;">出張期間:</span>
+                <span style="font-size: 0.72rem; color: #475569; font-weight: 700;">デモ期間:</span>
                 <input type="date" class="biz-trip-start-input" value="${safeEscAnalytics(ti.tripStart)}" style="border:none; font-size:0.78rem; outline:none;">
                 <span style="color:#64748b;">〜</span>
                 <input type="date" class="biz-trip-end-input" value="${safeEscAnalytics(ti.tripEnd)}" style="border:none; font-size:0.78rem; outline:none;">
@@ -879,14 +960,14 @@ function renderBusinessAnalyticsView(period = null) {
           <div style="padding: 14px; display: flex; flex-direction: column; gap: 12px;">
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px;">
               <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 12px;">
-                <div style="font-size: 0.72rem; font-weight: 700; color: #92400e;">🎫 出張期間中の関連経費（${ti.tripDays}日間 / ${ti.tripExpenseCount}件）</div>
+                <div style="font-size: 0.72rem; font-weight: 700; color: #92400e;">🎫 デモ出張 関連経費計（${ti.tripDays}日間 / ${ti.tripExpenseCount}件）</div>
                 <div style="font-size: 1.3rem; font-weight: 800; color: #b45309; font-family: monospace; margin-top: 3px;">${fmtYenAnalytics(ti.tripExpenseTotal)}</div>
                 <div style="font-size: 0.69rem; color: #78350f; margin-top: 4px;">
-                  旅費 ${fmtYenAnalytics(ti.tripExpenseBreakdown.travel)} / 車両 ${fmtYenAnalytics(ti.tripExpenseBreakdown.vehicle)} / 交際 ${fmtYenAnalytics(ti.tripExpenseBreakdown.entertain)}
+                  移動/高速/燃料 ${fmtYenAnalytics(ti.tripExpenseBreakdown.transit)} / 宿泊 ${fmtYenAnalytics(ti.tripExpenseBreakdown.lodging)} / 飲食 ${fmtYenAnalytics(ti.tripExpenseBreakdown.meal)}
                 </div>
               </div>
               <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 12px;">
-                <div style="font-size: 0.72rem; font-weight: 700; color: #1e40af;">📍 出張期間中の売上・粗利（${ti.during.docCount}件）</div>
+                <div style="font-size: 0.72rem; font-weight: 700; color: #1e40af;">📍 デモ期間中の売上・粗利（${ti.during.docCount}件）</div>
                 <div style="font-size: 1.3rem; font-weight: 800; color: #1d4ed8; font-family: monospace; margin-top: 3px;">${fmtYenAnalytics(ti.during.sales)}</div>
                 <div style="font-size: 0.72rem; color: #1e3a8a; margin-top: 4px;">粗利: <strong>${fmtYenAnalytics(ti.during.grossProfit)}</strong>（原価 ${fmtYenAnalytics(ti.during.cogs)}）</div>
               </div>
@@ -909,7 +990,7 @@ function renderBusinessAnalyticsView(period = null) {
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 12px;">
               <div style="border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
                 <div style="padding: 8px 12px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; font-size: 0.8rem; font-weight: 700; color: #0f172a;">
-                  📄 連動売上タイムライン（出張中＋終了後 ${ti.followUpDays}日 / ${ti.timelineDocs.length}件）
+                  📄 連動売上タイムライン（デモ中＋終了後 ${ti.followUpDays}日 / ${ti.timelineDocs.length}件）
                 </div>
                 <div style="max-height: 290px; overflow-y: auto;">
                   <table class="acc-table" style="width: 100%; border-collapse: collapse; font-size: 0.74rem;">
@@ -918,7 +999,7 @@ function renderBusinessAnalyticsView(period = null) {
                         <th style="padding: 6px; text-align: left;">区分</th>
                         <th style="padding: 6px; text-align: left;">日付</th>
                         <th style="padding: 6px; text-align: left;">伝票番号</th>
-                        <th style="padding: 6px; text-align: left;">取引先</th>
+                        <th style="padding: 6px; text-align: left;">販売店</th>
                         <th style="padding: 6px; text-align: left;">都道府県</th>
                         <th style="padding: 6px; text-align: left;">案件 / EU</th>
                         <th style="padding: 6px; text-align: right;">売上</th>
@@ -932,15 +1013,15 @@ function renderBusinessAnalyticsView(period = null) {
 
               <div style="border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
                 <div style="padding: 8px 12px; background: #fffbeb; border-bottom: 1px solid #fde68a; font-size: 0.8rem; font-weight: 700; color: #92400e;">
-                  🧾 対象出張期間の移動・デモ関連経費明細（${ti.tripExpenses.length}件）
+                  🧾 対象デモ期間の移動・高速・航空・電車・宿泊・飲食明細（${ti.tripExpenses.length}件）
                 </div>
                 <div style="max-height: 290px; overflow-y: auto;">
                   <table class="acc-table" style="width: 100%; border-collapse: collapse; font-size: 0.74rem;">
                     <thead style="position: sticky; top: 0; background: #fef3c7;">
                       <tr style="border-bottom: 1px solid #fde68a;">
                         <th style="padding: 6px; text-align: left;">日付</th>
-                        <th style="padding: 6px; text-align: left;">科目</th>
-                        <th style="padding: 6px; text-align: left;">推定地</th>
+                        <th style="padding: 6px; text-align: left;">区分</th>
+                        <th style="padding: 6px; text-align: left;">帰属</th>
                         <th style="padding: 6px; text-align: left;">支払先・摘要</th>
                         <th style="padding: 6px; text-align: right;">金額</th>
                       </tr>
@@ -957,8 +1038,8 @@ function renderBusinessAnalyticsView(period = null) {
     `;
 
     console.log('【統合分析ビュー】描画完了', {
-      clients: filteredClients.length,
-      geoRows: geoRows.length,
+      geoGroups: filteredGeoGroups.length,
+      demoSessions: data.demoSessions.length,
       tripStart: ti.tripStart,
       tripEnd: ti.tripEnd,
       timelineDocs: ti.timelineDocs.length
@@ -1005,6 +1086,47 @@ document.addEventListener('click', (e) => {
     bizAnalyticsViewState.activeSubTab = subTabBtn.dataset.subtab || 'all';
     console.log('【統合分析ビュー】サブタブ切替:', bizAnalyticsViewState.activeSubTab);
     renderBusinessAnalyticsView();
+    return;
+  }
+
+  // 統合分析：地域大枠カードの開閉トグル
+  const toggleRegionBtn = target.closest('.biz-toggle-region-card');
+  if (toggleRegionBtn) {
+    const key = toggleRegionBtn.dataset.regionKey;
+    if (key) {
+      if (bizAnalyticsViewState.collapsedRegions.has(key)) bizAnalyticsViewState.collapsedRegions.delete(key);
+      else bizAnalyticsViewState.collapsedRegions.add(key);
+      console.log('【統合分析ビュー】地域カード開閉トグル:', key);
+      renderBusinessAnalyticsView();
+    }
+    return;
+  }
+
+  // 統合分析：デモ出張セッション明細の展開トグル
+  const toggleSessBtn = target.closest('.biz-toggle-demo-session');
+  if (toggleSessBtn) {
+    const sid = toggleSessBtn.dataset.sessionId;
+    if (sid) {
+      if (bizAnalyticsViewState.expandedDemoSessions.has(sid)) bizAnalyticsViewState.expandedDemoSessions.delete(sid);
+      else bizAnalyticsViewState.expandedDemoSessions.add(sid);
+      console.log('【統合分析ビュー】デモ出張明細展開トグル:', sid);
+      renderBusinessAnalyticsView();
+    }
+    return;
+  }
+
+  // 統合分析：地域カード内のデモ出張から②後追い売上分析へジャンプ連動
+  const jumpTripBtn = target.closest('.biz-jump-demo-trip-btn');
+  if (jumpTripBtn) {
+    bizAnalyticsViewState.tripStart = jumpTripBtn.dataset.start || '';
+    bizAnalyticsViewState.tripEnd = jumpTripBtn.dataset.end || '';
+    bizAnalyticsViewState.tripRegion = jumpTripBtn.dataset.region || 'all';
+    bizAnalyticsViewState.tripPrefecture = 'all';
+    bizAnalyticsViewState.initializedTripDefault = true;
+    console.log('【統合分析ビュー】デモ出張から後追い分析へジャンプ:', { start: bizAnalyticsViewState.tripStart, end: bizAnalyticsViewState.tripEnd, region: bizAnalyticsViewState.tripRegion });
+    renderBusinessAnalyticsView();
+    const sec = document.getElementById('bizTripFollowUpSection');
+    if (sec && typeof sec.scrollIntoView === 'function') sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
     return;
   }
 
@@ -1109,11 +1231,15 @@ document.addEventListener('change', (e) => {
   } else if (target.classList.contains('biz-trip-candidate-select')) {
     const val = String(target.value || '');
     if (val.includes('|')) {
-      const [s, en] = val.split('|');
+      const [s, en, reg] = val.split('|');
       bizAnalyticsViewState.tripStart = s || '';
       bizAnalyticsViewState.tripEnd = en || '';
+      if (reg && reg !== '未設定') {
+        bizAnalyticsViewState.tripRegion = reg;
+        bizAnalyticsViewState.tripPrefecture = 'all';
+      }
       bizAnalyticsViewState.initializedTripDefault = true;
-      console.log('【統合分析ビュー】出張候補期間を選択:', { start: s, end: en });
+      console.log('【統合分析ビュー】デモ出張候補期間を選択:', { start: s, end: en, region: reg });
       renderBusinessAnalyticsView();
     }
   } else if (target.classList.contains('biz-trip-start-input')) {

@@ -30,33 +30,33 @@ export const REGION_ORDER = [
 ];
 
 const PREF_GEO_TABLE = [
-  { pref: '北海道', region: '北海道', zipRanges: [[1, 99]], keywords: ['北海道', '札幌', '新千歳', '函館', '旭川', '帯広', '釧路', '北見', '苫小牧', '千歳'] },
+  { pref: '北海道', region: '北海道', zipRanges: [[1, 99]], keywords: ['北海道', '札幌', '新千歳', '函館', '旭川', '帯広', '釧路', '北見', '苫小牧', '千歳', '岩見沢'] },
   { pref: '青森県', region: '東北', zipRanges: [[30, 39]], keywords: ['青森県', '青森市', '八戸', '弘前'] },
-  { pref: '岩手県', region: '東北', zipRanges: [[20, 29]], keywords: ['岩手県', '盛岡', '花巻', '一関'] },
-  { pref: '宮城県', region: '東北', zipRanges: [[980, 989]], keywords: ['宮城県', '仙台', '石巻', '大崎'] },
+  { pref: '岩手県', region: '東北', zipRanges: [[20, 29]], keywords: ['岩手県', '盛岡', '矢巾', '花巻', '一関', '前沢', '北上', '奥州'] },
+  { pref: '宮城県', region: '東北', zipRanges: [[980, 989]], keywords: ['宮城県', '仙台', '石巻', '大崎', '長者原'] },
   { pref: '秋田県', region: '東北', zipRanges: [[10, 19]], keywords: ['秋田県', '秋田市', '横手'] },
   { pref: '山形県', region: '東北', zipRanges: [[990, 999]], keywords: ['山形県', '山形市', '米沢', '鶴岡', '酒田'] },
-  { pref: '福島県', region: '東北', zipRanges: [[960, 979]], keywords: ['福島県', '福島市', '郡山', 'いわき', '会津若松'] },
-  { pref: '茨城県', region: '関東', zipRanges: [[300, 319]], keywords: ['茨城県', '水戸', 'つくば', '日立', '土浦'] },
-  { pref: '栃木県', region: '関東', zipRanges: [[320, 329]], keywords: ['栃木県', '宇都宮', '小山', '足利', '佐野', '那須'] },
-  { pref: '群馬県', region: '関東', zipRanges: [[370, 379]], keywords: ['群馬県', '前橋', '高崎', '太田', '伊勢崎', '桐生', '渋川', '館林'] },
-  { pref: '埼玉県', region: '関東', zipRanges: [[330, 369]], keywords: ['埼玉県', 'さいたま', '川口', '大宮', '浦和', '川越', '熊谷', '深谷', '所沢', '春日部', '越谷', '本庄'] },
+  { pref: '福島県', region: '東北', zipRanges: [[960, 979]], keywords: ['福島県', '福島市', '郡山', 'いわき', '会津若松', '国見SA', '安達太良'] },
+  { pref: '茨城県', region: '関東', zipRanges: [[300, 319]], keywords: ['茨城県', '水戸', 'つくば', '日立', '土浦', '守谷'] },
+  { pref: '栃木県', region: '関東', zipRanges: [[320, 329]], keywords: ['栃木県', '宇都宮', '小山', '足利', '佐野', '那須', '上河内'] },
+  { pref: '群馬県', region: '関東', zipRanges: [[370, 379]], keywords: ['群馬県', '前橋', '高崎', '太田', '伊勢崎', '桐生', '渋川', '館林', '玉村', '藤岡', '波志江', '上里', '横川'] },
+  { pref: '埼玉県', region: '関東', zipRanges: [[330, 369]], keywords: ['埼玉県', 'さいたま', '川口', '大宮', '浦和', '川越', '熊谷', '深谷', '所沢', '春日部', '越谷', '本庄', '東松山', '寄居', '蓮田', '羽生'] },
   { pref: '千葉県', region: '関東', zipRanges: [[260, 299]], keywords: ['千葉県', '千葉市', '船橋', '柏', '松戸', '市川', '成田', '幕張', '木更津'] },
   { pref: '東京都', region: '関東', zipRanges: [[100, 208]], keywords: ['東京都', '羽田空港', '羽田', '東京駅', '品川', '新宿', '渋谷', '池袋', '銀座', '丸の内', '八王子', '立川', '町田', '足立区', '港区', '千代田区', '中央区', '江東区', '大田区', '世田谷区'] },
-  { pref: '神奈川県', region: '関東', zipRanges: [[210, 259]], keywords: ['神奈川県', '横浜', '川崎', '相模原', '藤沢', '厚木', '小田原', '横須賀', '新横浜'] },
+  { pref: '神奈川県', region: '関東', zipRanges: [[210, 259]], keywords: ['神奈川県', '横浜', '川崎', '相模原', '藤沢', '厚木', '小田原', '横須賀', '新横浜', '海老名'] },
   { pref: '新潟県', region: '中部', zipRanges: [[940, 959]], keywords: ['新潟県', '新潟市', '長岡', '上越', '三条'] },
   { pref: '富山県', region: '中部', zipRanges: [[930, 939]], keywords: ['富山県', '富山市', '高岡'] },
   { pref: '石川県', region: '中部', zipRanges: [[920, 929]], keywords: ['石川県', '金沢', '小松', '白山'] },
   { pref: '福井県', region: '中部', zipRanges: [[910, 919]], keywords: ['福井県', '福井市', '敦賀'] },
-  { pref: '山梨県', region: '中部', zipRanges: [[400, 409]], keywords: ['山梨県', '甲府', '富士吉田'] },
-  { pref: '長野県', region: '中部', zipRanges: [[380, 399]], keywords: ['長野県', '長野市', '松本', '上田', '千曲', '軽井沢', '飯田', '佐久'] },
-  { pref: '岐阜県', region: '中部', zipRanges: [[500, 509]], keywords: ['岐阜県', '岐阜市', '大垣', '高山', '各務原', '多治見'] },
-  { pref: '静岡県', region: '中部', zipRanges: [[410, 439]], keywords: ['静岡県', '静岡市', '浜松', '沼津', '富士市', '熱海', '三島'] },
-  { pref: '愛知県', region: '中部', zipRanges: [[440, 498]], keywords: ['愛知県', '名古屋', '中部国際空港', 'セントレア', '豊田', '岡崎', '一宮', '豊橋', '春日井', '刈谷'] },
-  { pref: '三重県', region: '近畿', zipRanges: [[510, 519]], keywords: ['三重県', '津市', '四日市', '鈴鹿', '桑名', '伊勢'] },
-  { pref: '滋賀県', region: '近畿', zipRanges: [[520, 529]], keywords: ['滋賀県', '大津', '草津', '彦根', '長浜'] },
+  { pref: '山梨県', region: '中部', zipRanges: [[400, 409]], keywords: ['山梨県', '甲府', '富士吉田', '談合坂', '双葉SA'] },
+  { pref: '長野県', region: '中部', zipRanges: [[380, 399]], keywords: ['長野県', '長野市', '松本', '上田', '千曲', '軽井沢', '飯田', '佐久', '小諸', '長和町', '諏訪', '駒ヶ岳'] },
+  { pref: '岐阜県', region: '中部', zipRanges: [[500, 509]], keywords: ['岐阜県', '岐阜市', '大垣', '高山', '各務原', '多治見', '恵那峡', '養老'] },
+  { pref: '静岡県', region: '中部', zipRanges: [[410, 439]], keywords: ['静岡県', '静岡市', '浜松', '沼津', '富士市', '熱海', '三島', '足柄', '駿河湾沼津'] },
+  { pref: '愛知県', region: '中部', zipRanges: [[440, 498]], keywords: ['愛知県', '名古屋', '中部国際空港', 'セントレア', '豊田', '岡崎', '一宮', '尾張一宮', '豊橋', '春日井', '刈谷'] },
+  { pref: '三重県', region: '近畿', zipRanges: [[510, 519]], keywords: ['三重県', '津市', '四日市', '鈴鹿', '桑名', '伊勢市', '伊勢神宮', '御在所'] },
+  { pref: '滋賀県', region: '近畿', zipRanges: [[520, 529]], keywords: ['滋賀県', '大津', '草津', '彦根', '長浜', '黒丸PA', '多賀SA'] },
   { pref: '京都府', region: '近畿', zipRanges: [[600, 629]], keywords: ['京都府', '京都市', '京都駅', '宇治', '舞鶴', '福知山'] },
-  { pref: '大阪府', region: '近畿', zipRanges: [[530, 599]], keywords: ['大阪府', '大阪市', '新大阪', '伊丹空港', '関西国際空港', '関西空港', '関空', '梅田', '難波', '堺市', '東大阪', '豊中', '吹田', '枚方'] },
+  { pref: '大阪府', region: '近畿', zipRanges: [[530, 599]], keywords: ['大阪府', '大阪市', '新大阪', '伊丹空港', '大阪伊丹', '関西国際空港', '関西空港', '関空', '梅田', '難波', '堺市', '東大阪', '豊中', '服部西', '吹田', '枚方', '北関西'] },
   { pref: '兵庫県', region: '近畿', zipRanges: [[650, 679]], keywords: ['兵庫県', '神戸', '姫路', '尼崎', '西宮', '明石', '加古川', '伊丹市'] },
   { pref: '奈良県', region: '近畿', zipRanges: [[630, 639]], keywords: ['奈良県', '奈良市', '橿原', '生駒'] },
   { pref: '和歌山県', region: '近畿', zipRanges: [[640, 649]], keywords: ['和歌山県', '和歌山市', '田辺'] },
@@ -89,6 +89,93 @@ export function isTravelDemoExpenseCategory(category) {
   if (!c) return false;
   return TRAVEL_DEMO_EXPENSE_CATEGORIES.some(k => c.includes(k)) ||
     /旅費|交通|出張|車両|ガソリン|高速|駐車|宿泊|交際/.test(c);
+}
+
+/**
+ * 科目名に関わらずデモ・出張時の移動・宿泊・飲食に該当する経費かを汎用判定
+ * （例：消耗品費として登録された高速PAでの食事代・移動中飲食・宿泊・航空/鉄道等も取り込む）
+ */
+export function isDemoTripRelevantExpense(expense) {
+  if (!expense) return false;
+  const cat = String(expense.category || '').trim();
+  const text = `${expense.payee || ''} ${expense.note || ''} ${expense.memo || ''}`;
+  // 明らかにオフィス事務・通信・宅配・書籍等の定常費は除外
+  if (/通信費|新聞図書費|地代家賃|水道光熱費|支払手数料|荷造運賃|租税公課|保険料/.test(cat)) return false;
+  if (isTravelDemoExpenseCategory(cat)) return true;
+  // 消耗品費・雑費等に入っていても、食事・宿泊・高速・航空・電車・駐車・PA/SAなら出張実費として対象化
+  return /食事|飲食|弁当|ホテル|宿泊|高速|通行料|ETC|航空|飛行機|JAL|ANA|新幹線|鉄道|JR|電車|タクシー|駐車|ガソリン|給油|パーキングエリア|サービスエリア|PA|SA/i.test(text);
+}
+
+/**
+ * 経費の役割分類（移動・高速・航空・電車・燃料 / 宿泊 / 飲食・交際 / その他）
+ */
+export function classifyExpenseRole(expense) {
+  const cat = String((expense && expense.category) || '').trim();
+  const text = `${(expense && expense.payee) || ''} ${(expense && expense.note) || ''}`;
+  // 駐車場代はホテル併設駐車場であっても移動・交通（transit）へ分類
+  if (/駐車|パーキング(?!エリア)|タイムズ|パラカ/i.test(text)) {
+    return 'transit';
+  }
+  if (/ホテル|宿泊|東横INN|東横イン|ルートイン|ワシントン|Expedia|温泉|旅館|ビジネスイン|チェックイン/i.test(text)) {
+    return 'lodging';
+  }
+  if (/NEXCO|高速|通行|ETC|航空|飛行機|JAL|ANA|スカイマーク|ピーチ|新幹線|JR|鉄道|電車|乗車|タクシー|ガソリン|給油|ENEOS|apollo|Enejet|洗車|レンタカー/i.test(text) || cat.includes('旅費') || cat.includes('車両')) {
+    return 'transit';
+  }
+  if (/飲食|食事|会食|弁当|カフェ|コーヒー|ラーメン|焼肉|鳥メロ|手土産|飲料|セブン|LAWSON|FamilyMart|ミニストップ|ガスト|マクドナルド|魚べい/i.test(text) || cat.includes('交際') || cat.includes('会議')) {
+    return 'meal';
+  }
+  return 'other';
+}
+
+/**
+ * 高速道路PA/SA/JCT等の「移動途中の経由地」かどうかを汎用判定
+ */
+function isTransitWaypointText(text) {
+  const s = String(text || '').normalize('NFKC');
+  return /(?:PA|SA|JCT|パーキングエリア|サービスエリア|高速|NEXCO|通行料金|ETC通行|上り|下り)/i.test(s);
+}
+
+/**
+ * 宿泊・空港・遠征拠点など「目的地アンカー」としての強さを判定
+ */
+function isStrongDestinationAnchor(exp) {
+  const text = `${exp.payee || ''} ${exp.note || ''}`;
+  if (isTransitWaypointText(text) && !/空港|ホテル|宿泊|東横|ルートイン|ワシントン/i.test(text)) {
+    return false;
+  }
+  return /ホテル|宿泊|東横INN|東横イン|ルートイン|ワシントン|空港|温泉|駅前|北口|南口|会食|飲食|食事|給油|駐車|タイムズ/i.test(text) || !isTransitWaypointText(text);
+}
+
+// 最長キーワード優先ルックアップテーブル（例: 「東松山」が「松山」より、「伊勢崎」が「伊勢」より先にマッチ）
+const SORTED_GEO_KEYWORDS = PREF_GEO_TABLE
+  .flatMap(row => row.keywords.map(kw => ({ kw, pref: row.pref, region: row.region })))
+  .sort((a, b) => b.kw.length - a.kw.length);
+
+/**
+ * 高速道路の「出発IC-到着IC」表記がある場合、本拠地以外の到着側地名を優先抽出する
+ */
+function resolveExpenseGeoWithHome(expense, homePrefecture = '') {
+  const text = `${expense.payee || ''} ${expense.note || ''} ${expense.memo || ''} ${expense.location || ''}`.normalize('NFKC');
+  // 長いキーワードから順にマッチし、既に消費した文字位置の短い部分一致を防止
+  const matched = [];
+  let remaining = text;
+  for (const entry of SORTED_GEO_KEYWORDS) {
+    if (entry.kw && remaining.includes(entry.kw)) {
+      if (!matched.some(m => m.pref === entry.pref)) {
+        matched.push({ pref: entry.pref, region: entry.region });
+      }
+      remaining = remaining.split(entry.kw).join(' ');
+    }
+  }
+  if (matched.length > 0) {
+    const nonHome = homePrefecture ? matched.find(m => m.pref !== homePrefecture) : null;
+    if (nonHome) {
+      return { prefecture: nonHome.pref, region: nonHome.region, source: 'text_non_home' };
+    }
+    return { prefecture: matched[0].pref, region: matched[0].region, source: 'text_keyword' };
+  }
+  return resolveGeoLocation({ text });
 }
 
 /**
@@ -733,86 +820,197 @@ export function buildLotCostAnalytics({
 // ==========================================================================
 
 /**
- * 経費データから出張候補期間（旅費交通費等が近接発生した期間クラスタ）を動的抽出する
- * （特定日付や特定地域のハードコード禁止）
+ * 経費データから「ある地域にある期間集中したデモ出張セッション」を動的検出し、
+ * 往復の高速・飛行機・電車・タクシー・駐車・ガソリン・宿泊・飲食をすべてそのデモ遠征地域へ自動帰属させる
+ * （特定企業名・特定日付・特定金額のハードコード禁止）
  */
-export function extractTripPeriodCandidates(expenses = [], maxGapDays = 2) {
-  const safeExp = Array.isArray(expenses) ? expenses : [];
-  const travelRows = safeExp
-    .filter(e => e && e.date && isTravelDemoExpenseCategory(e.category))
-    .map(e => {
-      const geo = resolveGeoLocation({
-        text: `${e.payee || ''} ${e.note || ''} ${e.memo || ''} ${e.location || ''}`
+export function buildDemoTripSessions(normalizedExpenses = [], homePrefecture = '', homeRegion = '') {
+  const items = (Array.isArray(normalizedExpenses) ? normalizedExpenses : [])
+    .filter(e => e && parseYmdToUtcMs(e.date) !== null)
+    .map(e => ({ ...e }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  if (items.length === 0) return { sessions: [], attributedExpenses: items };
+
+  // 1. 本拠地以外の「目的地アンカー（宿泊・空港・現地滞在店舗・非経由地）」を抽出
+  const anchors = items.filter(e =>
+    e.rawPrefecture &&
+    e.rawPrefecture !== '未設定' &&
+    e.rawPrefecture !== homePrefecture &&
+    isStrongDestinationAnchor(e)
+  );
+
+  // 2. 同一地域（または隣接都道府県の同一地方）で連続（間隔2日以内）しているアンカーをセッション化
+  const rawSessions = [];
+  anchors.forEach(a => {
+    const existing = rawSessions.find(s =>
+      s.region === a.rawRegion &&
+      Math.abs(diffDaysYmd(s.endDate, a.date) ?? 999) <= 2
+    );
+    if (existing) {
+      if (a.date < existing.startDate) existing.startDate = a.date;
+      if (a.date > existing.endDate) existing.endDate = a.date;
+      existing.anchorItems.push(a);
+      existing.prefCounts.set(a.rawPrefecture, (existing.prefCounts.get(a.rawPrefecture) || 0) + 1);
+    } else {
+      const pm = new Map();
+      pm.set(a.rawPrefecture, 1);
+      rawSessions.push({
+        startDate: a.date,
+        endDate: a.date,
+        region: a.rawRegion,
+        prefCounts: pm,
+        anchorItems: [a]
       });
+    }
+  });
+
+  // 各セッションの強度（宿泊/空港/現地複数件）を評価し、同日に強い遠征セッションがある場合の単発経由セッションを統合除外
+  const scoredRaw = rawSessions.map(s => {
+    const hasLodgingOrAirport = s.anchorItems.some(a =>
+      a.role === 'lodging' || /ホテル|宿泊|東横|ルートイン|ワシントン|空港|新幹線|航空/i.test(`${a.payee} ${a.note}`)
+    );
+    const nonWaypointCount = s.anchorItems.filter(a => !isTransitWaypointText(`${a.payee} ${a.note}`)).length;
+    const daySpan = (diffDaysYmd(s.startDate, s.endDate) || 0) + 1;
+    const score = (hasLodgingOrAirport ? 10 : 0) + nonWaypointCount * 2 + (daySpan > 1 ? 4 : 0);
+    return { ...s, hasLodgingOrAirport, nonWaypointCount, daySpan, score };
+  });
+
+  // 同日・重複期間に強い遠征目的地（宿泊/空港/複数日）が存在する単発経由候補は除外（往路/復路経由地として強いセッションへ吸収）
+  const filteredRaw = scoredRaw.filter(s => {
+    if (s.hasLodgingOrAirport || s.daySpan >= 2) return true;
+    const dominatedByStronger = scoredRaw.some(other =>
+      other !== s &&
+      other.score >= s.score + 4 &&
+      s.startDate >= other.startDate &&
+      s.endDate <= other.endDate
+    );
+    return !dominatedByStronger;
+  }).sort((a, b) => a.startDate.localeCompare(b.startDate));
+
+  // 各セッションの主たる目的地都道府県を確定し、遠征先の復路翌日（高速・PA/SA・航空・タクシー等）を自動包含
+  const sessions = filteredRaw.map((s, idx) => {
+    const lodgingAnchor = s.anchorItems.find(a =>
+      a.role === 'lodging' || /ホテル|宿泊|東横|ルートイン|ワシントン|空港/i.test(`${a.payee} ${a.note}`)
+    );
+    const topPref = lodgingAnchor
+      ? lodgingAnchor.rawPrefecture
+      : (Array.from(s.prefCounts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || '未設定');
+
+    const nextSession = filteredRaw[idx + 1];
+    let extEnd = s.endDate;
+    const nextDay = addDaysYmd(s.endDate, 1);
+    const hasReturnTransitNextDay = items.some(e =>
+      e.date === nextDay &&
+      (!nextSession || nextDay < nextSession.startDate) &&
+      /NEXCO|高速|通行|ETC|PA|SA|航空|飛行機|新幹線|タクシー/i.test(`${e.payee} ${e.note}`)
+    );
+    if (hasReturnTransitNextDay && s.region !== homeRegion) {
+      extEnd = nextDay;
+    }
+
+    const sessionDaySum = items
+      .filter(e => e.date >= s.startDate && e.date <= extEnd)
+      .reduce((acc, e) => acc + e.amount, 0);
+    const isValidSession = s.hasLodgingOrAirport || s.nonWaypointCount >= 2 || s.startDate !== extEnd || sessionDaySum >= 5000;
+
+    return {
+      id: `demo_trip_${idx}_${s.startDate}_${extEnd}`,
+      startDate: s.startDate,
+      endDate: extEnd,
+      anchorStart: s.startDate,
+      anchorEnd: s.endDate,
+      region: s.region,
+      prefecture: topPref,
+      isValid: isValidSession,
+      items: []
+    };
+  }).filter(s => s.isValid);
+
+  // 3. 全経費を最も適切なデモ出張セッションへ自動帰属（二重帰属なし）
+  items.forEach(e => {
+    // すでにセッション期間 [startDate, endDate] に含まれるか確認
+    const matchedSessions = sessions.filter(s => e.date >= s.startDate && e.date <= s.endDate);
+    if (matchedSessions.length > 0) {
+      // 複数セッションが同日に重なる場合は地域一致を優先
+      const chosen = matchedSessions.find(s => s.region === e.rawRegion) || matchedSessions[0];
+      // 遠征セッション期間中の移動・高速・航空・電車・宿泊・飲食・経由地PA/SA・往路/復路出発前給油等はすべてそのデモ出張費へ帰属
+      e.region = chosen.region;
+      e.prefecture = chosen.prefecture;
+      e.demoSessionId = chosen.id;
+      e.attributionReason = (e.rawRegion === chosen.region)
+        ? '現地経費'
+        : (e.rawPrefecture === homePrefecture ? '往路/復路（発着移動）' : (e.rawPrefecture === '未設定' ? 'デモ期間中の移動/宿泊/飲食' : '経由地（往路/復路）'));
+      chosen.items.push(e);
+      return;
+    }
+
+    // セッションに該当しない経費は個別推定地をそのまま採用
+    e.region = e.rawRegion;
+    e.prefecture = e.rawPrefecture;
+    e.demoSessionId = '';
+    e.attributionReason = '個別経費';
+  });
+
+  // セッション集計メタを構築
+  const finalizedSessions = sessions.map(s => {
+    const totalAmount = Math.round(s.items.reduce((sum, x) => sum + x.amount, 0));
+    const transitAmount = Math.round(s.items.filter(x => x.role === 'transit').reduce((sum, x) => sum + x.amount, 0));
+    const lodgingAmount = Math.round(s.items.filter(x => x.role === 'lodging').reduce((sum, x) => sum + x.amount, 0));
+    const mealAmount = Math.round(s.items.filter(x => x.role === 'meal').reduce((sum, x) => sum + x.amount, 0));
+    const otherAmount = Math.max(0, totalAmount - transitAmount - lodgingAmount - mealAmount);
+    const days = (diffDaysYmd(s.startDate, s.endDate) || 0) + 1;
+    const dateLabel = s.startDate === s.endDate ? s.startDate : `${s.startDate} 〜 ${s.endDate}`;
+    return {
+      id: s.id,
+      startDate: s.startDate,
+      endDate: s.endDate,
+      days,
+      region: s.region,
+      prefecture: s.prefecture,
+      itemCount: s.items.length,
+      totalAmount,
+      transitAmount,
+      lodgingAmount,
+      mealAmount,
+      otherAmount,
+      items: s.items,
+      primaryRegion: s.region,
+      primaryPrefecture: s.prefecture,
+      label: `${dateLabel}（${s.region}・${s.prefecture} / ${s.items.length}件・¥${totalAmount.toLocaleString()}）`
+    };
+  }).filter(s => s.itemCount > 0)
+    .sort((a, b) => b.startDate.localeCompare(a.startDate));
+
+  return { sessions: finalizedSessions, attributedExpenses: items };
+}
+
+/**
+ * 経費データから出張候補期間を動的抽出する（デモ出張セッションエンジンへ委譲）
+ */
+export function extractTripPeriodCandidates(expenses = [], homePrefecture = '', homeRegion = '') {
+  const safeExp = Array.isArray(expenses) ? expenses : [];
+  const norm = safeExp
+    .filter(e => e && e.date && isDemoTripRelevantExpense(e) && (Number(e.amount) || 0) !== 0)
+    .map(e => {
+      const geo = resolveExpenseGeoWithHome(e, homePrefecture);
       return {
         id: e.id || '',
+        source: 'expense',
         date: String(e.date).slice(0, 10),
-        amount: Number(e.amount) || 0,
-        category: String(e.category || ''),
-        payee: String(e.payee || ''),
-        note: String(e.note || ''),
+        amount: Math.round(Number(e.amount) || 0),
+        category: String(e.category || 'その他'),
+        role: classifyExpenseRole(e),
+        payee: String(e.payee || '').trim() || '未設定',
+        note: String(e.note || '').trim(),
+        claimant: String(e.claimant || '').trim(),
+        rawRegion: geo.region,
+        rawPrefecture: geo.prefecture,
         region: geo.region,
         prefecture: geo.prefecture
       };
-    })
-    .filter(e => parseYmdToUtcMs(e.date) !== null)
-    .sort((a, b) => a.date.localeCompare(b.date));
-
-  if (travelRows.length === 0) return [];
-
-  const clusters = [];
-  let cur = null;
-
-  travelRows.forEach(row => {
-    if (!cur) {
-      cur = { startDate: row.date, endDate: row.date, items: [row] };
-      return;
-    }
-    const gap = diffDaysYmd(cur.endDate, row.date);
-    if (gap !== null && gap <= maxGapDays) {
-      cur.endDate = row.date;
-      cur.items.push(row);
-    } else {
-      clusters.push(cur);
-      cur = { startDate: row.date, endDate: row.date, items: [row] };
-    }
-  });
-  if (cur) clusters.push(cur);
-
-  // 旅費交通費を含むクラスタ、または複数日・複数件のクラスタを優先提示
-  return clusters
-    .map((cl, idx) => {
-      const totalAmount = cl.items.reduce((s, x) => s + x.amount, 0);
-      const travelCount = cl.items.filter(x => String(x.category).includes('旅費')).length;
-      const prefCounts = new Map();
-      const regionCounts = new Map();
-      cl.items.forEach(x => {
-        if (x.prefecture && x.prefecture !== '未設定') {
-          prefCounts.set(x.prefecture, (prefCounts.get(x.prefecture) || 0) + 1);
-        }
-        if (x.region && x.region !== '未設定') {
-          regionCounts.set(x.region, (regionCounts.get(x.region) || 0) + 1);
-        }
-      });
-      const topPref = Array.from(prefCounts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || '未設定';
-      const topRegion = Array.from(regionCounts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || '未設定';
-      const days = (diffDaysYmd(cl.startDate, cl.endDate) || 0) + 1;
-      const dateLabel = cl.startDate === cl.endDate ? cl.startDate : `${cl.startDate} 〜 ${cl.endDate}`;
-      return {
-        id: `trip_${idx}_${cl.startDate}_${cl.endDate}`,
-        startDate: cl.startDate,
-        endDate: cl.endDate,
-        days,
-        itemCount: cl.items.length,
-        travelCount,
-        totalAmount,
-        primaryPrefecture: topPref,
-        primaryRegion: topRegion,
-        label: `${dateLabel}（${topPref !== '未設定' ? topPref : 'エリア未設定'} / ${cl.items.length}件・¥${Math.round(totalAmount).toLocaleString()}）`
-      };
-    })
-    .filter(c => c.travelCount > 0 || c.itemCount >= 2)
-    .sort((a, b) => b.startDate.localeCompare(a.startDate));
+    });
+  return buildDemoTripSessions(norm, homePrefecture, homeRegion).sessions;
 }
 
 /**
@@ -998,28 +1196,44 @@ export function buildBusinessAnalytics({
     };
   }).sort((a, b) => b.sales - a.sales);
 
+  // 自社本拠地都道府県・エリアを伝票の issuer（発行元住所）から動的に取得（ハードコード禁止）
+  let homePrefecture = '';
+  let homeRegion = '';
+  for (const rawDoc of safeDocs) {
+    const inner = (rawDoc && rawDoc.fullDoc) ? rawDoc.fullDoc : (rawDoc || {});
+    const iss = inner.issuer || (rawDoc && rawDoc.issuer);
+    if (iss && (iss.address || iss.zip)) {
+      const hGeo = resolveGeoLocation({ address: iss.address || '', zip: iss.zip || '' });
+      if (hGeo.prefecture && hGeo.prefecture !== '未設定') {
+        homePrefecture = hGeo.prefecture;
+        homeRegion = hGeo.region;
+        break;
+      }
+    }
+  }
+
   // ------------------------------------------------------------------------
-  // (B) 移動・デモ関連経費の正規化（expenses + manual_journals の該当勘定科目）
+  // (B) 移動・デモ・出張関連経費の正規化 ＆ 集中期間デモ出張セッション自動帰属
   // ------------------------------------------------------------------------
-  const allTravelExpenses = [];
+  const rawRelevantExpenses = [];
   safeExpenses.forEach(e => {
-    if (!e) return;
-    if (!isTravelDemoExpenseCategory(e.category)) return;
+    if (!e || !isDemoTripRelevantExpense(e)) return;
     const dt = String(e.date || '').slice(0, 10);
     const amount = Number(e.amount) || 0;
     if (amount === 0) return;
-    const geo = resolveGeoLocation({
-      text: `${e.payee || ''} ${e.note || ''} ${e.memo || ''} ${e.location || ''}`
-    });
-    allTravelExpenses.push({
+    const geo = resolveExpenseGeoWithHome(e, homePrefecture);
+    rawRelevantExpenses.push({
       id: e.id || '',
       source: 'expense',
       date: dt,
       category: String(e.category || 'その他'),
+      role: classifyExpenseRole(e),
       payee: String(e.payee || '').trim() || '未設定',
       note: String(e.note || '').trim(),
       claimant: String(e.claimant || '').trim(),
       amount: Math.round(amount),
+      rawRegion: geo.region,
+      rawPrefecture: geo.prefecture,
       region: geo.region,
       prefecture: geo.prefecture
     });
@@ -1034,21 +1248,30 @@ export function buildBusinessAnalytics({
       if (!ln || !isTravelDemoExpenseCategory(ln.accountName)) return;
       const amount = Number(ln.amount) || 0;
       if (amount === 0) return;
-      const geo = resolveGeoLocation({ text: `${desc} ${ln.subAccount || ''}` });
-      allTravelExpenses.push({
+      const pseudoExp = { category: ln.accountName, payee: ln.subAccount || '振替仕訳', note: desc };
+      const geo = resolveExpenseGeoWithHome(pseudoExp, homePrefecture);
+      rawRelevantExpenses.push({
         id: `${j.id || 'jnl'}_${idx}`,
         source: 'journal',
         date: dt,
         category: String(ln.accountName || ''),
+        role: classifyExpenseRole(pseudoExp),
         payee: String(ln.subAccount || '振替仕訳'),
         note: desc,
         claimant: '',
         amount: Math.round(amount),
+        rawRegion: geo.region,
+        rawPrefecture: geo.prefecture,
         region: geo.region,
         prefecture: geo.prefecture
       });
     });
   });
+
+  // 全期間ベースでデモ出張セッションを検出し、往路・現地・復路の移動/高速/航空/電車/宿泊/飲食を目的地地域へ帰属
+  const demoSessionResult = buildDemoTripSessions(rawRelevantExpenses, homePrefecture, homeRegion);
+  const allTravelExpenses = demoSessionResult.attributedExpenses;
+  const allDemoSessions = demoSessionResult.sessions;
 
   const scopedTravelExpenses = allTravelExpenses.filter(e => {
     if (periodStart || periodEnd) {
@@ -1057,7 +1280,14 @@ export function buildBusinessAnalytics({
     return true;
   });
 
-  // 地域別 / 都道府県別 集計ビルダー
+  const scopedDemoSessions = allDemoSessions.filter(s => {
+    if (periodStart || periodEnd) {
+      return isDateInRange(s.startDate, periodStart, periodEnd) || isDateInRange(s.endDate, periodStart, periodEnd);
+    }
+    return true;
+  });
+
+  // 地域別 / 都道府県別 集計ビルダー（直下に販売店一覧・デモ出張セッション・個別経費も内包！）
   const aggregateGeoBuckets = (mode) => {
     const map = new Map();
     const getOrCreate = (key, region, prefecture) => {
@@ -1073,10 +1303,18 @@ export function buildBusinessAnalytics({
           grossMarginPct: null,
           docCount: 0,
           clientNamesSet: new Set(),
+          clients: [],
+          demoSessions: [],
+          standaloneExpenses: [],
+          demoSessionExpenseTotal: 0,
+          standaloneExpenseTotal: 0,
+          transitExpense: 0,
+          lodgingExpense: 0,
+          mealExpense: 0,
+          otherDemoExpense: 0,
           travelExpense: 0,
           vehicleExpense: 0,
           entertainExpense: 0,
-          otherDemoExpense: 0,
           totalExpense: 0,
           expenseCount: 0,
           netContribution: 0,
@@ -1087,14 +1325,21 @@ export function buildBusinessAnalytics({
       return map.get(key);
     };
 
-    scopedDocs.forEach(d => {
-      const key = mode === 'region' ? d.region : d.prefecture;
-      const b = getOrCreate(key, d.region, d.prefecture);
-      b.sales += d.sales;
-      b.cogs += d.cogs;
-      b.grossProfit += d.grossProfit;
-      b.docCount += 1;
-      b.clientNamesSet.add(d.clientName);
+    clientSummary.forEach(c => {
+      const key = mode === 'region' ? c.region : c.prefecture;
+      const b = getOrCreate(key, c.region, c.prefecture);
+      b.sales += c.sales;
+      b.cogs += c.cogs;
+      b.grossProfit += c.grossProfit;
+      b.docCount += c.docCount;
+      b.clientNamesSet.add(c.clientName);
+      b.clients.push(c);
+    });
+
+    scopedDemoSessions.forEach(s => {
+      const key = mode === 'region' ? s.region : s.prefecture;
+      const b = getOrCreate(key, s.region, s.prefecture);
+      b.demoSessions.push(s);
     });
 
     scopedTravelExpenses.forEach(e => {
@@ -1102,10 +1347,20 @@ export function buildBusinessAnalytics({
       const b = getOrCreate(key, e.region, e.prefecture);
       b.totalExpense += e.amount;
       b.expenseCount += 1;
+      if (e.demoSessionId) {
+        b.demoSessionExpenseTotal += e.amount;
+      } else {
+        b.standaloneExpenseTotal += e.amount;
+        b.standaloneExpenses.push(e);
+      }
+      if (e.role === 'transit') b.transitExpense += e.amount;
+      else if (e.role === 'lodging') b.lodgingExpense += e.amount;
+      else if (e.role === 'meal') b.mealExpense += e.amount;
+      else b.otherDemoExpense += e.amount;
+
       if (e.category.includes('旅費') || e.category.includes('交通')) b.travelExpense += e.amount;
       else if (e.category.includes('車両')) b.vehicleExpense += e.amount;
       else if (e.category.includes('交際') || e.category.includes('会議')) b.entertainExpense += e.amount;
-      else b.otherDemoExpense += e.amount;
     });
 
     const list = Array.from(map.values()).map(b => {
@@ -1113,11 +1368,14 @@ export function buildBusinessAnalytics({
       b.cogs = Math.round(b.cogs);
       b.grossProfit = Math.round(b.grossProfit);
       b.totalExpense = Math.round(b.totalExpense);
+      b.demoSessionExpenseTotal = Math.round(b.demoSessionExpenseTotal);
+      b.standaloneExpenseTotal = Math.round(b.standaloneExpenseTotal);
       b.netContribution = b.grossProfit - b.totalExpense;
       b.grossMarginPct = b.sales > 0 ? Math.round((b.grossProfit / b.sales) * 1000) / 10 : null;
       b.expenseToSalesPct = b.sales > 0 ? Math.round((b.totalExpense / b.sales) * 1000) / 10 : null;
       b.roiMultiple = b.totalExpense > 0 ? Math.round((b.sales / b.totalExpense) * 10) / 10 : null;
       b.clientCount = b.clientNamesSet.size;
+      b.standaloneExpenses.sort((a, b2) => b2.date.localeCompare(a.date));
       delete b.clientNamesSet;
       return b;
     });
@@ -1140,9 +1398,9 @@ export function buildBusinessAnalytics({
   // ------------------------------------------------------------------------
   // (C) 出張期間と「直後〜後追い」売上の連動分析
   // ------------------------------------------------------------------------
-  const tripCandidates = extractTripPeriodCandidates(safeExpenses, 2);
+  const tripCandidates = allDemoSessions;
 
-  // 未指定時は最新の出張候補をデフォルト提案（存在しない場合は空で安全に0表示）
+  // 未指定時は最新のデモ出張候補をデフォルト提案（存在しない場合は空で安全に0表示）
   let effectiveTripStart = String(tripStart || '').slice(0, 10);
   let effectiveTripEnd = String(tripEnd || '').slice(0, 10);
   if (!effectiveTripStart && !effectiveTripEnd && tripCandidates.length > 0) {
@@ -1214,10 +1472,13 @@ export function buildBusinessAnalytics({
 
   const tripExpenseTotal = Math.round(tripExpenses.reduce((s, e) => s + e.amount, 0));
   const tripExpenseBreakdown = {
+    transit: Math.round(tripExpenses.filter(e => e.role === 'transit').reduce((s, e) => s + e.amount, 0)),
+    lodging: Math.round(tripExpenses.filter(e => e.role === 'lodging').reduce((s, e) => s + e.amount, 0)),
+    meal: Math.round(tripExpenses.filter(e => e.role === 'meal').reduce((s, e) => s + e.amount, 0)),
+    other: Math.round(tripExpenses.filter(e => e.role === 'other').reduce((s, e) => s + e.amount, 0)),
     travel: Math.round(tripExpenses.filter(e => e.category.includes('旅費') || e.category.includes('交通')).reduce((s, e) => s + e.amount, 0)),
     vehicle: Math.round(tripExpenses.filter(e => e.category.includes('車両')).reduce((s, e) => s + e.amount, 0)),
-    entertain: Math.round(tripExpenses.filter(e => e.category.includes('交際') || e.category.includes('会議')).reduce((s, e) => s + e.amount, 0)),
-    other: Math.round(tripExpenses.filter(e => !e.category.includes('旅費') && !e.category.includes('交通') && !e.category.includes('車両') && !e.category.includes('交際') && !e.category.includes('会議')).reduce((s, e) => s + e.amount, 0))
+    entertain: Math.round(tripExpenses.filter(e => e.category.includes('交際') || e.category.includes('会議')).reduce((s, e) => s + e.amount, 0))
   };
 
   const tripImpact = {
@@ -1247,6 +1508,8 @@ export function buildBusinessAnalytics({
   const totalTravelDemoExpense = Math.round(scopedTravelExpenses.reduce((s, e) => s + e.amount, 0));
 
   return {
+    homePrefecture,
+    homeRegion,
     kpi: {
       totalSales,
       totalCogs,
@@ -1257,11 +1520,13 @@ export function buildBusinessAnalytics({
       docCount: scopedDocs.length,
       totalTravelDemoExpense,
       travelDemoExpenseCount: scopedTravelExpenses.length,
+      demoSessionCount: scopedDemoSessions.length,
       netAfterTravelExpense: totalGrossProfit - totalTravelDemoExpense
     },
     clientSummary,
     regionSummary,
     prefectureSummary,
+    demoSessions: scopedDemoSessions,
     tripCandidates,
     tripImpact,
     availableRegions: Array.from(new Set([...regionSummary.map(r => r.key)])),
