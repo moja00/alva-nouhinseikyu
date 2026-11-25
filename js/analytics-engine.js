@@ -92,18 +92,32 @@ export function isTravelDemoExpenseCategory(category) {
 }
 
 /**
+ * 遠征デモ出張の現地・移動経費ではなく、本社固定インフラ／配送等の共通事務費かを判定
+ * （※経費合計からは除外せず全件計上するが、遠征先のデモ出張セッションへ誤吸収されないよう保護する）
+ */
+function isFixedOfficeOverhead(expense) {
+  if (!expense) return false;
+  const cat = String(expense.category || '').trim();
+  const text = `${expense.payee || ''} ${expense.note || ''}`;
+  if (/NTTファイナンス|お名前\.com|レンタルサーバー|ドメイン|電話料金|通信費支払|レターパック|切手|ヤマト運輸|宅配便|書籍|プリンター|リングファイル|ステッカー台紙/i.test(text)) {
+    return true;
+  }
+  if (/通信費|新聞図書費|地代家賃|水道光熱費|荷造運賃|租税公課|保険料/.test(cat)) {
+    return true;
+  }
+  return false;
+}
+
+/**
  * 科目名に関わらずデモ・出張時の移動・宿泊・飲食に該当する経費かを汎用判定
- * （例：消耗品費として登録された高速PAでの食事代・移動中飲食・宿泊・航空/鉄道等も取り込む）
  */
 export function isDemoTripRelevantExpense(expense) {
   if (!expense) return false;
+  if (isFixedOfficeOverhead(expense)) return false;
   const cat = String(expense.category || '').trim();
   const text = `${expense.payee || ''} ${expense.note || ''} ${expense.memo || ''}`;
-  // 明らかにオフィス事務・通信・宅配・書籍等の定常費は除外
-  if (/通信費|新聞図書費|地代家賃|水道光熱費|支払手数料|荷造運賃|租税公課|保険料/.test(cat)) return false;
   if (isTravelDemoExpenseCategory(cat)) return true;
-  // 消耗品費・雑費等に入っていても、食事・宿泊・高速・航空・電車・駐車・PA/SAなら出張実費として対象化
-  return /食事|飲食|弁当|ホテル|宿泊|高速|通行料|ETC|航空|飛行機|JAL|ANA|新幹線|鉄道|JR|電車|タクシー|駐車|ガソリン|給油|パーキングエリア|サービスエリア|PA|SA/i.test(text);
+  return /食事|飲食|弁当|ホテル|宿泊|高速|通行料|ETC|航空|飛行機|JAL|ANA|新幹線|鉄道|JR|電車|タクシー|駐車|ガソリン|給油|車両|パーキングエリア|サービスエリア|PA|SA/i.test(text);
 }
 
 /**
@@ -832,8 +846,9 @@ export function buildDemoTripSessions(normalizedExpenses = [], homePrefecture = 
 
   if (items.length === 0) return { sessions: [], attributedExpenses: items };
 
-  // 1. 本拠地以外の「目的地アンカー（宿泊・空港・現地滞在店舗・非経由地）」を抽出
+  // 1. 本拠地以外の「目的地アンカー（宿泊・空港・現地滞在店舗・非経由地、本社固定費は除く）」を抽出
   const anchors = items.filter(e =>
+    !e.isFixedOverhead &&
     e.rawPrefecture &&
     e.rawPrefecture !== '未設定' &&
     e.rawPrefecture !== homePrefecture &&
@@ -929,6 +944,15 @@ export function buildDemoTripSessions(normalizedExpenses = [], homePrefecture = 
 
   // 3. 全経費を最も適切なデモ出張セッションへ自動帰属（二重帰属なし）
   items.forEach(e => {
+    // 本社固定インフラ・宅配・郵便等は遠征デモ出張へ誤吸収させず個別推定地（または未設定）に留める
+    if (e.isFixedOverhead) {
+      e.region = e.rawRegion;
+      e.prefecture = e.rawPrefecture;
+      e.demoSessionId = '';
+      e.attributionReason = (e.rawRegion !== '未設定') ? '現地経費（一般）' : '共通・本社等';
+      return;
+    }
+
     // すでにセッション期間 [startDate, endDate] に含まれるか確認
     const matchedSessions = sessions.filter(s => e.date >= s.startDate && e.date <= s.endDate);
     if (matchedSessions.length > 0) {
@@ -945,11 +969,35 @@ export function buildDemoTripSessions(normalizedExpenses = [], homePrefecture = 
       return;
     }
 
-    // セッションに該当しない経費は個別推定地をそのまま採用
+    // セッションに該当しない経費は個別推定地を仮設定（後段で同日領収書からの移動費推測を実施）
     e.region = e.rawRegion;
     e.prefecture = e.rawPrefecture;
     e.demoSessionId = '';
-    e.attributionReason = '個別経費';
+    e.attributionReason = (e.rawRegion !== '未設定') ? '現地経費' : '未設定';
+  });
+
+  // 3.5. セッション外の「地域未設定の移動費（高速・駐車・給油・電車等）や飲食」を、同日の領収書行動履歴から自動推測
+  const dayGeoMap = new Map();
+  items.forEach(e => {
+    if (e.demoSessionId || e.isFixedOverhead) return;
+    if (e.region && e.region !== '未設定') {
+      if (!dayGeoMap.has(e.date)) dayGeoMap.set(e.date, []);
+      dayGeoMap.get(e.date).push({ region: e.region, prefecture: e.prefecture });
+    }
+  });
+  items.forEach(e => {
+    if (e.demoSessionId || e.isFixedOverhead) return;
+    if (e.region !== '未設定') return;
+    if (e.role !== 'transit' && e.role !== 'meal' && e.role !== 'lodging') return;
+    const sameDayGeos = dayGeoMap.get(e.date);
+    if (sameDayGeos && sameDayGeos.length > 0) {
+      // 同日に非本拠地の地域があればそちら（外出先）、なければ最頻出地域へ推測帰属
+      const nonHome = homePrefecture ? sameDayGeos.find(g => g.prefecture !== homePrefecture) : null;
+      const picked = nonHome || sameDayGeos[0];
+      e.region = picked.region;
+      e.prefecture = picked.prefecture;
+      e.attributionReason = '同日領収書から推測';
+    }
   });
 
   // セッション集計メタを構築
@@ -1213,21 +1261,23 @@ export function buildBusinessAnalytics({
   }
 
   // ------------------------------------------------------------------------
-  // (B) 移動・デモ・出張関連経費の正規化 ＆ 集中期間デモ出張セッション自動帰属
+  // (B) 全経費の正規化 ＆ 地域・移動費（領収書内容・デモ集中期間）自動帰属
   // ------------------------------------------------------------------------
   const rawRelevantExpenses = [];
   safeExpenses.forEach(e => {
-    if (!e || !isDemoTripRelevantExpense(e)) return;
+    if (!e) return;
     const dt = String(e.date || '').slice(0, 10);
     const amount = Number(e.amount) || 0;
     if (amount === 0) return;
     const geo = resolveExpenseGeoWithHome(e, homePrefecture);
+    const fixedOverhead = isFixedOfficeOverhead(e);
     rawRelevantExpenses.push({
       id: e.id || '',
       source: 'expense',
       date: dt,
       category: String(e.category || 'その他'),
-      role: classifyExpenseRole(e),
+      role: fixedOverhead ? 'other' : classifyExpenseRole(e),
+      isFixedOverhead: fixedOverhead,
       payee: String(e.payee || '').trim() || '未設定',
       note: String(e.note || '').trim(),
       claimant: String(e.claimant || '').trim(),
@@ -1256,6 +1306,7 @@ export function buildBusinessAnalytics({
         date: dt,
         category: String(ln.accountName || ''),
         role: classifyExpenseRole(pseudoExp),
+        isFixedOverhead: false,
         payee: String(ln.subAccount || '振替仕訳'),
         note: desc,
         claimant: '',
