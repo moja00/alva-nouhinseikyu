@@ -15656,6 +15656,23 @@ function renderAll(options = {}) {
 // Page 1: COMMERCIAL INVOICE / Page 2: PACKING LIST / Page 3: RECEIPT
 // ==========================================================================
 
+const DEFAULT_EN_EXPORT_REMARK = 'All bank charges outside Japan are to be borne by the buyer.';
+
+function isDefaultJapaneseRemark(text) {
+  const s = String(text || '').trim();
+  if (!s) return true;
+  if (s === DEFAULT_EN_EXPORT_REMARK) return false;
+  // 日本語の定型デフォルト備考（振込手数料案内等）のみ自動切替対象とする
+  const hasJapanese = /[\u3040-\u30ff\u4e00-\u9faf]/.test(s);
+  if (!hasJapanese) return false;
+  return (
+    s.includes('お振込手数料は貴社にてご負担') ||
+    s.includes('振込手数料は貴社にてご負担') ||
+    s === '下記の通り御請求申し上げます。' ||
+    s === 'ご不明な点がございましたらお気軽にお問い合わせください。'
+  );
+}
+
 function ensureExportMeta(doc) {
   if (!doc) return {};
   if (!doc.exportMeta || typeof doc.exportMeta !== 'object') {
@@ -15695,7 +15712,13 @@ function syncExportSettingsFormFromDoc() {
   if (panel) panel.style.display = (lang === 'en') ? 'flex' : 'none';
 
   const meta = ensureExportMeta(currentDoc);
-  const setVal = (id, val) => { const el = document.getElementById(id); if (el && el.value !== String(val ?? '')) el.value = String(val ?? ''); };
+  const setVal = (id, val) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (document.activeElement === el) return;
+    const strVal = String(val ?? '');
+    if (el.value !== strVal) el.value = strVal;
+  };
   setVal('expCurrency', meta.currency || 'USD');
   setVal('expExchangeRate', meta.exchangeRate || '');
   setVal('expIncoterm', meta.incoterm || 'FOB');
@@ -15729,8 +15752,18 @@ window.setDocLanguage = function (lang = 'ja') {
   console.log('【帳票言語切替】実行開始', { from: currentDoc.docLanguage || 'ja', to: targetLang });
   currentDoc.docLanguage = targetLang;
   const meta = ensureExportMeta(currentDoc);
+  const notesEl = document.getElementById('inputNotes');
 
   if (targetLang === 'en') {
+    // 備考が未入力または日本語のデフォルト定型文であれば英語定型文へ自動切替（手動編集時は尊重）
+    if (isDefaultJapaneseRemark(currentDoc.notes)) {
+      if ((currentDoc.notes || '').trim()) {
+        meta.savedJaNotes = currentDoc.notes;
+      }
+      currentDoc.notes = DEFAULT_EN_EXPORT_REMARK;
+      if (notesEl) notesEl.value = DEFAULT_EN_EXPORT_REMARK;
+    }
+
     // 海外モード選択時：デフォルト税率を 0%（輸出免税）に設定し、マスタに英語表記があれば自動引用
     const itemMasters = typeof getItemMasterList === 'function' ? getItemMasterList(false) : [];
     (currentDoc.items || []).forEach(it => {
@@ -15747,6 +15780,12 @@ window.setDocLanguage = function (lang = 'ja') {
       }
     });
     if (typeof renderItemInputCards === 'function') renderItemInputCards();
+  } else {
+    // 日本語モードに戻した時、英語デフォルト文言のままなら退避していた日本語備考を復元
+    if ((currentDoc.notes || '').trim() === DEFAULT_EN_EXPORT_REMARK && meta.savedJaNotes) {
+      currentDoc.notes = meta.savedJaNotes;
+      if (notesEl) notesEl.value = meta.savedJaNotes;
+    }
   }
 
   syncExportSettingsFormFromDoc();
@@ -15788,15 +15827,23 @@ function buildEnglishExportDocumentsHtml(doc, totals) {
   const faxEN = faxRaw.startsWith('0') ? '+81-' + faxRaw.slice(1) : faxRaw;
   const emailEN = doc.issuer?.email || masterIssuer.email || '';
 
+  // 電子角印はテキストと一切重ならないよう署名欄の専用枠に配置する
   const showStamp = doc.issuer?.showStamp !== false;
   const stampSrc = doc.issuer?.stampDataUrl || masterIssuer.stampDataUrl || '';
-  const stampHtml = (showStamp && stampSrc)
-    ? `<img src="${stampSrc}" alt="Stamp" style="position: absolute; right: 6px; top: 4px; width: 52px; height: 52px; opacity: 0.75; pointer-events: none;">`
+  const signatureStampHtml = (showStamp && stampSrc)
+    ? `<img src="${stampSrc}" alt="Company Stamp" style="width: 48px; height: 48px; object-fit: contain; opacity: 0.82; flex-shrink: 0; pointer-events: none;">`
     : '';
 
   const tradeTermsText = [meta.incoterm || '', meta.incotermPlace || ''].map(s => String(s).trim()).filter(Boolean).join(' ') || 'To be agreed';
   const paymentTermsText = (meta.paymentTerms || '').trim() || '100% T/T in advance';
-  const bankInfoText = (meta.bankInfoEn || '').trim() || (masterIssuer.bankInfoEn || '').trim() || (doc.issuer?.bankInfo || '').trim();
+  // 海外銀行情報のみを参照（日本語の国内口座情報にはフォールバックしない）
+  const bankInfoText = (meta.bankInfoEn || '').trim() || (masterIssuer.bankInfoEn || '').trim();
+
+  // 備考欄：デフォルト日本語文言が残っている場合は英語定型文を出力、手動編集内容はそのまま尊重
+  const rawNotes = (doc.notes || '').trim();
+  const resolvedEnNotes = (!rawNotes || isDefaultJapaneseRemark(rawNotes))
+    ? DEFAULT_EN_EXPORT_REMARK
+    : rawNotes;
 
   // 明細計算（外貨時は小数2桁対応）
   const items = Array.isArray(doc.items) ? doc.items : [];
@@ -15845,12 +15892,12 @@ function buildEnglishExportDocumentsHtml(doc, totals) {
   const totalPages = isEstimate ? 1 : 3;
   const page1Title = isEstimate ? 'QUOTATION' : 'COMMERCIAL INVOICE';
 
-  // 共通ヘッダー・宛先ブロックビルダー
+  // 共通ヘッダー・宛先ブロックビルダー（印影は宛先・住所に重ねない）
   const buildEnHeaderAndParties = (docTitle, rightMetaRowsHtml) => `
-    <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #233b6c; padding-bottom: 10px; margin-bottom: 14px;">
-      <div>${typeof getPoAlvaLogoSvg === 'function' ? getPoAlvaLogoSvg() : `<div style="font-size:18px; font-weight:800; color:#233b6c;">${escapeHtml(companyEN)}</div>`}</div>
-      <div style="text-align: right;">
-        <div style="font-size: 21px; font-weight: 800; color: #233b6c; letter-spacing: 1.2px; line-height: 1.1; margin-bottom: 6px;">${docTitle}</div>
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; border-bottom: 3px solid #233b6c; padding-bottom: 10px; margin-bottom: 14px;">
+      <div style="flex-shrink: 0;">${typeof getPoAlvaLogoSvg === 'function' ? getPoAlvaLogoSvg() : `<div style="font-size:18px; font-weight:800; color:#233b6c;">${escapeHtml(companyEN)}</div>`}</div>
+      <div style="text-align: right; padding-right: 4px; min-width: 225px;">
+        <div style="font-size: 20px; font-weight: 800; color: #233b6c; letter-spacing: 1px; line-height: 1.15; margin-bottom: 6px; white-space: nowrap;">${docTitle}</div>
         <table style="border-collapse: collapse; font-size: 10.5px; margin-left: auto;">
           ${rightMetaRowsHtml}
         </table>
@@ -15860,7 +15907,7 @@ function buildEnglishExportDocumentsHtml(doc, totals) {
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px;">
       <div style="border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden;">
         <div style="background: #233b6c; color: #ffffff; font-size: 10px; font-weight: 700; letter-spacing: 0.7px; padding: 4px 10px;">BILL TO / CONSIGNEE</div>
-        <div style="padding: 8px 10px; font-size: 11px; line-height: 1.55;">
+        <div style="padding: 9px 11px; font-size: 11px; line-height: 1.55;">
           <div style="font-size: 13px; font-weight: 800; color: #0f172a; margin-bottom: 3px;">${escapeHtml(billToName)}</div>
           ${billToAddr ? `<div style="color: #334155;">${escapeHtml(billToAddr)}${billToZip && !billToAddr.includes(billToZip) ? ` ${escapeHtml(billToZip)}` : ''}</div>` : ''}
           ${billToContact ? `<div style="color: #334155; margin-top: 2px;"><strong>Attn:</strong> ${escapeHtml(billToContact)}</div>` : ''}
@@ -15868,10 +15915,9 @@ function buildEnglishExportDocumentsHtml(doc, totals) {
         </div>
       </div>
 
-      <div style="border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden; position: relative;">
+      <div style="border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden;">
         <div style="background: #334155; color: #ffffff; font-size: 10px; font-weight: 700; letter-spacing: 0.7px; padding: 4px 10px;">SHIPPER / EXPORTER</div>
-        <div style="padding: 8px 10px; font-size: 11px; line-height: 1.55; position: relative;">
-          ${stampHtml}
+        <div style="padding: 9px 11px; font-size: 11px; line-height: 1.55;">
           <div style="font-size: 13px; font-weight: 800; color: #0f172a; margin-bottom: 3px;">${escapeHtml(companyEN)}</div>
           <div style="color: #334155;">${escapeHtml(addressEN)}</div>
           <div style="color: #475569; font-family: monospace; margin-top: 2px;">TEL: ${escapeHtml(telEN)} / FAX: ${escapeHtml(faxEN)}</div>
@@ -15881,20 +15927,33 @@ function buildEnglishExportDocumentsHtml(doc, totals) {
     </div>
   `;
 
+  // 共通署名ブロック（電子角印を署名欄の右側に独立配置し、テキストと一切重ねない）
+  const buildEnSignatureBlock = (labelPrefix) => `
+    <div style="margin-top: 22px; display: flex; justify-content: flex-end;">
+      <div style="display: flex; align-items: flex-end; gap: 14px;">
+        <div style="width: 245px; font-size: 10.5px; color: #334155;">
+          <div style="font-weight: 700; color: #0f172a; margin-bottom: 28px;">${escapeHtml(labelPrefix)}: ${escapeHtml(companyEN)}</div>
+          <div style="border-top: 1px solid #334155; padding-top: 4px; font-size: 9.5px; color: #64748b;">Authorized Signature</div>
+        </div>
+        ${signatureStampHtml}
+      </div>
+    </div>
+  `;
+
   // -------------------------------------------------------------------------
   // Page 1: COMMERCIAL INVOICE (or QUOTATION)
   // -------------------------------------------------------------------------
   const invRowsHtml = normalizedItems.map(it => `
     <tr>
-      <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: center; font-family: monospace; font-size: 10.5px;">${escapeHtml(it.sku)}</td>
-      <td style="border: 1px solid #cbd5e1; padding: 6px 8px; text-align: left; font-size: 11px;">
+      <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: center; font-family: monospace; font-size: 10.5px; word-break: break-word;">${escapeHtml(it.sku)}</td>
+      <td style="border: 1px solid #cbd5e1; padding: 6px 8px; text-align: left; font-size: 11px; word-break: break-word;">
         <div style="font-weight: 600;">${escapeHtml(it.description)}</div>
         ${it.sn ? `<div style="font-size: 9.5px; color: #475569; font-family: monospace; margin-top: 2px;">S/N: ${escapeHtml(it.sn)}</div>` : ''}
       </td>
-      <td style="border: 1px solid #cbd5e1; padding: 6px 6px; text-align: right; font-family: monospace; font-size: 11px;">${it.qty ? it.qty.toLocaleString('en-US') : ''}</td>
-      <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: center; font-size: 10.5px; color: #475569;">${it.qty ? escapeHtml(it.unitEn) : ''}</td>
-      <td style="border: 1px solid #cbd5e1; padding: 6px 6px; text-align: right; font-family: monospace; font-size: 11px;">${formatPoMoney(it.unitPrice, currency)}</td>
-      <td style="border: 1px solid #cbd5e1; padding: 6px 8px; text-align: right; font-family: monospace; font-weight: 700; font-size: 11px;">${formatPoMoney(it.amount, currency)}</td>
+      <td style="border: 1px solid #cbd5e1; padding: 6px 6px; text-align: right; font-family: monospace; font-size: 11px; white-space: nowrap;">${it.qty ? it.qty.toLocaleString('en-US') : ''}</td>
+      <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: center; font-size: 10.5px; color: #475569; white-space: nowrap;">${it.qty ? escapeHtml(it.unitEn) : ''}</td>
+      <td style="border: 1px solid #cbd5e1; padding: 6px 6px; text-align: right; font-family: monospace; font-size: 11px; white-space: nowrap;">${formatPoMoney(it.unitPrice, currency)}</td>
+      <td style="border: 1px solid #cbd5e1; padding: 6px 8px; text-align: right; font-family: monospace; font-weight: 700; font-size: 11px; white-space: nowrap;">${formatPoMoney(it.amount, currency)}</td>
     </tr>
   `).join('');
 
@@ -15912,18 +15971,18 @@ function buildEnglishExportDocumentsHtml(doc, totals) {
     </div>
     <article class="invoice-sheet" id="enCommercialInvoiceSheet" data-sheet-page="1" style="font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', sans-serif;">
       ${buildEnHeaderAndParties(page1Title, `
-        <tr><td style="padding: 2px 8px 2px 0; color: #64748b; font-weight: 700;">${isEstimate ? 'Quotation No.:' : 'Invoice No.:'}</td><td style="font-family: monospace; font-weight: 800; color: #0f172a;">${escapeHtml(docNo)}</td></tr>
-        <tr><td style="padding: 2px 8px 2px 0; color: #64748b; font-weight: 700;">Date:</td><td style="font-family: monospace;">${escapeHtml(issueDateEn)}</td></tr>
-        ${dueDateEn ? `<tr><td style="padding: 2px 8px 2px 0; color: #64748b; font-weight: 700;">${isEstimate ? 'Valid Until:' : 'Due Date:'}</td><td style="font-family: monospace;">${escapeHtml(dueDateEn)}</td></tr>` : ''}
-        <tr><td style="padding: 2px 8px 2px 0; color: #64748b; font-weight: 700;">Currency:</td><td style="font-family: monospace; font-weight: 700; color: #0369a1;">${escapeHtml(currency)}</td></tr>
+        <tr><td style="padding: 2px 10px 2px 0; color: #64748b; font-weight: 700; white-space: nowrap; text-align: right;">${isEstimate ? 'Quotation No.:' : 'Invoice No.:'}</td><td style="padding: 2px 4px 2px 0; font-family: monospace; font-weight: 800; color: #0f172a; white-space: nowrap; text-align: right;">${escapeHtml(docNo)}</td></tr>
+        <tr><td style="padding: 2px 10px 2px 0; color: #64748b; font-weight: 700; white-space: nowrap; text-align: right;">Date:</td><td style="padding: 2px 4px 2px 0; font-family: monospace; white-space: nowrap; text-align: right;">${escapeHtml(issueDateEn)}</td></tr>
+        ${dueDateEn ? `<tr><td style="padding: 2px 10px 2px 0; color: #64748b; font-weight: 700; white-space: nowrap; text-align: right;">${isEstimate ? 'Valid Until:' : 'Due Date:'}</td><td style="padding: 2px 4px 2px 0; font-family: monospace; white-space: nowrap; text-align: right;">${escapeHtml(dueDateEn)}</td></tr>` : ''}
+        <tr><td style="padding: 2px 10px 2px 0; color: #64748b; font-weight: 700; white-space: nowrap; text-align: right;">Currency:</td><td style="padding: 2px 4px 2px 0; font-family: monospace; font-weight: 700; color: #0369a1; white-space: nowrap; text-align: right;">${escapeHtml(currency)}</td></tr>
       `)}
 
       <table style="width: 100%; border-collapse: collapse; margin-bottom: 14px; font-size: 10.5px;">
         <thead>
           <tr style="background: #f1f5f9; color: #334155;">
-            <th style="border: 1px solid #cbd5e1; padding: 4px 8px; text-align: left; width: 34%;">Trade Terms (Incoterms)</th>
-            <th style="border: 1px solid #cbd5e1; padding: 4px 8px; text-align: left; width: 40%;">Payment Terms</th>
-            <th style="border: 1px solid #cbd5e1; padding: 4px 8px; text-align: left; width: 26%;">Country of Origin</th>
+            <th style="border: 1px solid #cbd5e1; padding: 5px 8px; text-align: left; width: 34%;">Trade Terms (Incoterms)</th>
+            <th style="border: 1px solid #cbd5e1; padding: 5px 8px; text-align: left; width: 40%;">Payment Terms</th>
+            <th style="border: 1px solid #cbd5e1; padding: 5px 8px; text-align: left; width: 26%;">Country of Origin</th>
           </tr>
         </thead>
         <tbody>
@@ -15935,19 +15994,19 @@ function buildEnglishExportDocumentsHtml(doc, totals) {
         </tbody>
       </table>
 
-      <table style="width: 100%; border-collapse: collapse; margin-bottom: 14px;">
+      <table style="width: 100%; table-layout: fixed; border-collapse: collapse; margin-bottom: 14px;">
         <thead>
-          <tr style="background: #233b6c; color: #ffffff; font-size: 10.5px;">
-            <th style="border: 1px solid #233b6c; padding: 6px 4px; width: 15%; text-align: center;">Item No.</th>
-            <th style="border: 1px solid #233b6c; padding: 6px 8px; width: 37%; text-align: left;">Description</th>
+          <tr style="background: #233b6c; color: #ffffff; font-size: 10px;">
+            <th style="border: 1px solid #233b6c; padding: 6px 4px; width: 14%; text-align: center;">Item No.</th>
+            <th style="border: 1px solid #233b6c; padding: 6px 8px; width: 36%; text-align: left;">Description</th>
             <th style="border: 1px solid #233b6c; padding: 6px 6px; width: 9%; text-align: right;">Qty</th>
             <th style="border: 1px solid #233b6c; padding: 6px 4px; width: 9%; text-align: center;">Unit</th>
-            <th style="border: 1px solid #233b6c; padding: 6px 6px; width: 14%; text-align: right;">Unit Price</th>
-            <th style="border: 1px solid #233b6c; padding: 6px 8px; width: 16%; text-align: right;">Amount (${escapeHtml(currency)})</th>
+            <th style="border: 1px solid #233b6c; padding: 6px 6px; width: 15%; text-align: right;">Unit Price</th>
+            <th style="border: 1px solid #233b6c; padding: 6px 8px; width: 17%; text-align: right;">Amount (${escapeHtml(currency)})</th>
           </tr>
         </thead>
         <tbody>
-          ${invRowsHtml || '<tr><td colspan="6" style="border:1px solid #cbd5e1; padding:16px; text-align:center; color:#94a3b8;">No items</td></tr>'}
+          ${invRowsHtml || '<tr><td colspan="6" style="border:1px solid #cbd5e1; padding:36px 12px; height:90px; vertical-align:middle; text-align:center; color:#94a3b8; font-size:11px;">No items</td></tr>'}
           <tr>
             <td colspan="4" style="border: none;"></td>
             <td style="border: 1px solid #cbd5e1; background: #f8fafc; padding: 5px 8px; text-align: right; font-size: 10.5px; font-weight: 700; color: #475569;">Subtotal</td>
@@ -15956,32 +16015,28 @@ function buildEnglishExportDocumentsHtml(doc, totals) {
           ${taxRowEnHtml}
           <tr>
             <td colspan="4" style="border: none;"></td>
-            <td style="border: 1px solid #233b6c; background: #233b6c; color: #ffffff; padding: 6px 8px; text-align: right; font-size: 11px; font-weight: 800;">TOTAL (${escapeHtml(currency)})</td>
-            <td style="border: 1px solid #233b6c; background: #eff6ff; color: #1e3a8a; padding: 6px 8px; text-align: right; font-family: monospace; font-size: 13px; font-weight: 800;">${escapeHtml(currency)} ${formatPoMoney(grandTotal, currency)}</td>
+            <td style="border: 1px solid #233b6c; background: #233b6c; color: #ffffff; padding: 6px 8px; text-align: right; font-size: 11px; font-weight: 800; white-space: nowrap;">TOTAL (${escapeHtml(currency)})</td>
+            <td style="border: 1px solid #233b6c; background: #eff6ff; color: #1e3a8a; padding: 6px 8px; text-align: right; font-family: monospace; font-size: 12.5px; font-weight: 800; white-space: nowrap;">${escapeHtml(currency)} ${formatPoMoney(grandTotal, currency)}</td>
           </tr>
         </tbody>
       </table>
 
-      ${bankInfoText ? `
-        <div style="border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; background: #f8fafc;">
-          <div style="font-size: 10px; font-weight: 800; color: #1e3a8a; letter-spacing: 0.5px; margin-bottom: 3px;">BANK INFORMATION (REMITTANCE DETAILS)</div>
-          <div style="font-size: 10.5px; line-height: 1.5; white-space: pre-line; color: #0f172a;">${escapeHtml(bankInfoText)}</div>
-        </div>
-      ` : ''}
+      <div style="border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; background: #f8fafc;">
+        <div style="font-size: 10px; font-weight: 800; color: #1e3a8a; letter-spacing: 0.5px; margin-bottom: 3px;">BANK INFORMATION (REMITTANCE DETAILS)</div>
+        ${bankInfoText
+          ? `<div style="font-size: 10.5px; line-height: 1.5; white-space: pre-line; color: #0f172a;">${escapeHtml(bankInfoText)}</div>`
+          : `<div style="font-size: 10px; line-height: 1.5; color: #94a3b8; font-style: italic;">Remittance details to be advised separately.</div>`
+        }
+      </div>
 
-      ${doc.notes ? `
+      ${resolvedEnNotes ? `
         <div style="border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; margin-bottom: 14px;">
           <div style="font-size: 10px; font-weight: 800; color: #475569; margin-bottom: 3px;">REMARKS</div>
-          <div style="font-size: 10.5px; line-height: 1.5; white-space: pre-line; color: #0f172a;">${escapeHtml(doc.notes)}</div>
+          <div style="font-size: 10.5px; line-height: 1.5; white-space: pre-line; color: #0f172a;">${escapeHtml(resolvedEnNotes)}</div>
         </div>
       ` : ''}
 
-      <div style="margin-top: 22px; display: flex; justify-content: flex-end;">
-        <div style="width: 260px; font-size: 10.5px; color: #334155;">
-          <div style="font-weight: 700; color: #0f172a; margin-bottom: 28px;">Signed by: ${escapeHtml(companyEN)}</div>
-          <div style="border-top: 1px solid #334155; padding-top: 4px; font-size: 9.5px; color: #64748b;">Authorized Signature</div>
-        </div>
-      </div>
+      ${buildEnSignatureBlock('Signed by')}
     </article>
   `;
 
@@ -15999,17 +16054,17 @@ function buildEnglishExportDocumentsHtml(doc, totals) {
 
   const packingRowsHtml = normalizedItems.map((it, idx) => `
     <tr>
-      <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: center; font-family: monospace; font-size: 10.5px;">${escapeHtml(it.sku)}</td>
-      <td style="border: 1px solid #cbd5e1; padding: 6px 8px; text-align: left; font-size: 11px;">
+      <td style="border: 1px solid #cbd5e1; padding: 6px 4px; text-align: center; font-family: monospace; font-size: 10px; word-break: break-word;">${escapeHtml(it.sku)}</td>
+      <td style="border: 1px solid #cbd5e1; padding: 6px 7px; text-align: left; font-size: 10.5px; word-break: break-word;">
         <div style="font-weight: 600;">${escapeHtml(it.description)}</div>
-        ${it.sn ? `<div style="font-size: 9.5px; color: #475569; font-family: monospace; margin-top: 2px;">S/N: ${escapeHtml(it.sn)}</div>` : ''}
+        ${it.sn ? `<div style="font-size: 9px; color: #475569; font-family: monospace; margin-top: 2px;">S/N: ${escapeHtml(it.sn)}</div>` : ''}
       </td>
-      <td style="border: 1px solid #cbd5e1; padding: 6px 6px; text-align: right; font-family: monospace; font-weight: 700; font-size: 11px;">${it.qty ? it.qty.toLocaleString('en-US') : ''}</td>
-      <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: center; font-size: 10.5px; color: #475569;">${it.qty ? escapeHtml(it.unitEn) : ''}</td>
-      <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: center; font-size: 10.5px;">${idx === 0 ? escapeHtml(cartonsVal) : '-'}</td>
-      <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: right; font-family: monospace; font-size: 10.5px;">${idx === 0 ? escapeHtml(netWeightVal) : '-'}</td>
-      <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: right; font-family: monospace; font-size: 10.5px;">${idx === 0 ? escapeHtml(grossWeightVal) : '-'}</td>
-      <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: center; font-size: 10px;">${idx === 0 ? escapeHtml(dimsVal) : '-'}</td>
+      <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: right; font-family: monospace; font-weight: 700; font-size: 10.5px; white-space: nowrap;">${it.qty ? it.qty.toLocaleString('en-US') : ''}</td>
+      <td style="border: 1px solid #cbd5e1; padding: 6px 4px; text-align: center; font-size: 10px; color: #475569; white-space: nowrap;">${it.qty ? escapeHtml(it.unitEn) : ''}</td>
+      <td style="border: 1px solid #cbd5e1; padding: 6px 4px; text-align: center; font-size: 10px; word-break: break-word;">${idx === 0 ? escapeHtml(cartonsVal) : '-'}</td>
+      <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: right; font-family: monospace; font-size: 10px; white-space: nowrap;">${idx === 0 ? escapeHtml(netWeightVal) : '-'}</td>
+      <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: right; font-family: monospace; font-size: 10px; white-space: nowrap;">${idx === 0 ? escapeHtml(grossWeightVal) : '-'}</td>
+      <td style="border: 1px solid #cbd5e1; padding: 6px 4px; text-align: center; font-size: 9.5px; word-break: break-word;">${idx === 0 ? escapeHtml(dimsVal) : '-'}</td>
     </tr>
   `).join('');
 
@@ -16019,34 +16074,34 @@ function buildEnglishExportDocumentsHtml(doc, totals) {
     </div>
     <article class="invoice-sheet invoice-sheet-page" id="enPackingListSheet" data-sheet-page="2" style="font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', sans-serif;">
       ${buildEnHeaderAndParties('PACKING LIST', `
-        <tr><td style="padding: 2px 8px 2px 0; color: #64748b; font-weight: 700;">Ref. Invoice No.:</td><td style="font-family: monospace; font-weight: 800; color: #0f172a;">${escapeHtml(docNo)}</td></tr>
-        <tr><td style="padding: 2px 8px 2px 0; color: #64748b; font-weight: 700;">Date:</td><td style="font-family: monospace;">${escapeHtml(issueDateEn)}</td></tr>
-        <tr><td style="padding: 2px 8px 2px 0; color: #64748b; font-weight: 700;">Country of Origin:</td><td style="font-weight: 700;">JAPAN</td></tr>
+        <tr><td style="padding: 2px 10px 2px 0; color: #64748b; font-weight: 700; white-space: nowrap; text-align: right;">Ref. Invoice No.:</td><td style="padding: 2px 4px 2px 0; font-family: monospace; font-weight: 800; color: #0f172a; white-space: nowrap; text-align: right;">${escapeHtml(docNo)}</td></tr>
+        <tr><td style="padding: 2px 10px 2px 0; color: #64748b; font-weight: 700; white-space: nowrap; text-align: right;">Date:</td><td style="padding: 2px 4px 2px 0; font-family: monospace; white-space: nowrap; text-align: right;">${escapeHtml(issueDateEn)}</td></tr>
+        <tr><td style="padding: 2px 10px 2px 0; color: #64748b; font-weight: 700; white-space: nowrap; text-align: right;">Country of Origin:</td><td style="padding: 2px 4px 2px 0; font-weight: 700; white-space: nowrap; text-align: right;">JAPAN</td></tr>
       `)}
 
-      <table style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">
+      <table style="width: 100%; table-layout: fixed; border-collapse: collapse; margin-bottom: 16px;">
         <thead>
-          <tr style="background: #233b6c; color: #ffffff; font-size: 10px;">
-            <th style="border: 1px solid #233b6c; padding: 6px 4px; width: 12%; text-align: center;">Item No.</th>
-            <th style="border: 1px solid #233b6c; padding: 6px 6px; width: 29%; text-align: left;">Description</th>
-            <th style="border: 1px solid #233b6c; padding: 6px 4px; width: 7%; text-align: right;">Qty</th>
-            <th style="border: 1px solid #233b6c; padding: 6px 4px; width: 7%; text-align: center;">Unit</th>
-            <th style="border: 1px solid #233b6c; padding: 6px 4px; width: 12%; text-align: center;">Cartons / Pkg</th>
-            <th style="border: 1px solid #233b6c; padding: 6px 4px; width: 10%; text-align: right;">Net Wt</th>
-            <th style="border: 1px solid #233b6c; padding: 6px 4px; width: 10%; text-align: right;">Gross Wt</th>
-            <th style="border: 1px solid #233b6c; padding: 6px 4px; width: 13%; text-align: center;">Dimensions</th>
+          <tr style="background: #233b6c; color: #ffffff; font-size: 9.5px; line-height: 1.25;">
+            <th style="border: 1px solid #233b6c; padding: 7px 4px; width: 11%; text-align: center;">Item No.</th>
+            <th style="border: 1px solid #233b6c; padding: 7px 7px; width: 27%; text-align: left;">Description</th>
+            <th style="border: 1px solid #233b6c; padding: 7px 4px; width: 7%; text-align: right;">Qty</th>
+            <th style="border: 1px solid #233b6c; padding: 7px 4px; width: 7%; text-align: center;">Unit</th>
+            <th style="border: 1px solid #233b6c; padding: 7px 4px; width: 13%; text-align: center;">Cartons /<br>Pkg</th>
+            <th style="border: 1px solid #233b6c; padding: 7px 4px; width: 10%; text-align: right;">Net Wt</th>
+            <th style="border: 1px solid #233b6c; padding: 7px 4px; width: 10%; text-align: right;">Gross Wt</th>
+            <th style="border: 1px solid #233b6c; padding: 7px 4px; width: 15%; text-align: center;">Dimensions</th>
           </tr>
         </thead>
         <tbody>
-          ${packingRowsHtml || '<tr><td colspan="8" style="border:1px solid #cbd5e1; padding:16px; text-align:center; color:#94a3b8;">No items</td></tr>'}
-          <tr style="background: #f1f5f9; font-weight: 800; font-size: 10.5px;">
+          ${packingRowsHtml || '<tr><td colspan="8" style="border:1px solid #cbd5e1; padding:36px 12px; height:90px; vertical-align:middle; text-align:center; color:#94a3b8; font-size:11px;">No items</td></tr>'}
+          <tr style="background: #f1f5f9; font-weight: 800; font-size: 10px;">
             <td colspan="2" style="border: 1px solid #cbd5e1; padding: 6px 8px; text-align: right;">TOTAL SUMMARY</td>
-            <td style="border: 1px solid #cbd5e1; padding: 6px 6px; text-align: right; font-family: monospace;">${totalQty.toLocaleString('en-US')}</td>
+            <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: right; font-family: monospace; white-space: nowrap;">${totalQty.toLocaleString('en-US')}</td>
             <td style="border: 1px solid #cbd5e1; padding: 6px 4px; text-align: center;">-</td>
-            <td style="border: 1px solid #cbd5e1; padding: 6px 4px; text-align: center;">${escapeHtml(cartonsVal)}</td>
-            <td style="border: 1px solid #cbd5e1; padding: 6px 4px; text-align: right; font-family: monospace;">${escapeHtml(netWeightVal)}</td>
-            <td style="border: 1px solid #cbd5e1; padding: 6px 4px; text-align: right; font-family: monospace;">${escapeHtml(grossWeightVal)}</td>
-            <td style="border: 1px solid #cbd5e1; padding: 6px 4px; text-align: center;">${escapeHtml(dimsVal)}</td>
+            <td style="border: 1px solid #cbd5e1; padding: 6px 4px; text-align: center; word-break: break-word;">${escapeHtml(cartonsVal)}</td>
+            <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: right; font-family: monospace; white-space: nowrap;">${escapeHtml(netWeightVal)}</td>
+            <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: right; font-family: monospace; white-space: nowrap;">${escapeHtml(grossWeightVal)}</td>
+            <td style="border: 1px solid #cbd5e1; padding: 6px 4px; text-align: center; word-break: break-word;">${escapeHtml(dimsVal)}</td>
           </tr>
         </tbody>
       </table>
@@ -16055,12 +16110,7 @@ function buildEnglishExportDocumentsHtml(doc, totals) {
         <strong>DECLARATION:</strong> We certify that the goods described above have been packed in accordance with export standards and are of Japanese origin unless otherwise stated.
       </div>
 
-      <div style="margin-top: 22px; display: flex; justify-content: flex-end;">
-        <div style="width: 260px; font-size: 10.5px; color: #334155;">
-          <div style="font-weight: 700; color: #0f172a; margin-bottom: 28px;">Shipper: ${escapeHtml(companyEN)}</div>
-          <div style="border-top: 1px solid #334155; padding-top: 4px; font-size: 9.5px; color: #64748b;">Authorized Signature</div>
-        </div>
-      </div>
+      ${buildEnSignatureBlock('Shipper')}
     </article>
   `;
 
@@ -16072,12 +16122,12 @@ function buildEnglishExportDocumentsHtml(doc, totals) {
       <span>🧾</span> Page 3 / 3 【RECEIPT】
     </div>
     <article class="invoice-sheet invoice-sheet-page" id="enReceiptSheet" data-sheet-page="3" style="font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', sans-serif;">
-      <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #233b6c; padding-bottom: 12px; margin-bottom: 22px;">
-        <div>${typeof getPoAlvaLogoSvg === 'function' ? getPoAlvaLogoSvg() : `<div style="font-size:18px; font-weight:800; color:#233b6c;">${escapeHtml(companyEN)}</div>`}</div>
-        <div style="text-align: right;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; border-bottom: 3px solid #233b6c; padding-bottom: 12px; margin-bottom: 22px;">
+        <div style="flex-shrink: 0;">${typeof getPoAlvaLogoSvg === 'function' ? getPoAlvaLogoSvg() : `<div style="font-size:18px; font-weight:800; color:#233b6c;">${escapeHtml(companyEN)}</div>`}</div>
+        <div style="text-align: right; padding-right: 6px; min-width: 220px;">
           <div style="font-size: 24px; font-weight: 800; color: #233b6c; letter-spacing: 2px; margin-bottom: 6px;">RECEIPT</div>
-          <div style="font-size: 11px; color: #475569;">Receipt No.: <strong style="font-family: monospace; color: #0f172a;">REC-${escapeHtml(docNo)}</strong></div>
-          <div style="font-size: 11px; color: #475569;">Date: <strong style="font-family: monospace; color: #0f172a;">${escapeHtml(issueDateEn)}</strong></div>
+          <div style="font-size: 11px; color: #475569; line-height: 1.6; white-space: nowrap;">Receipt No.: <strong style="font-family: monospace; color: #0f172a;">REC-${escapeHtml(docNo)}</strong></div>
+          <div style="font-size: 11px; color: #475569; line-height: 1.6; white-space: nowrap;">Date: <strong style="font-family: monospace; color: #0f172a;">${escapeHtml(issueDateEn)}</strong></div>
         </div>
       </div>
 
@@ -16100,16 +16150,18 @@ function buildEnglishExportDocumentsHtml(doc, totals) {
         <div style="margin-top: 6px; color: #475569; font-size: 11px;">We hereby acknowledge receipt of the above sum in full settlement.</div>
       </div>
 
-      <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 32px;">
-        <div style="font-size: 11px; line-height: 1.6; color: #334155; position: relative; padding-right: 64px;">
-          ${stampHtml}
+      <div style="display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-top: 32px;">
+        <div style="font-size: 11px; line-height: 1.6; color: #334155;">
           <div style="font-size: 13px; font-weight: 800; color: #0f172a;">${escapeHtml(companyEN)}</div>
           <div>${escapeHtml(addressEN)}</div>
           <div style="font-family: monospace;">TEL: ${escapeHtml(telEN)} / FAX: ${escapeHtml(faxEN)}</div>
         </div>
-        <div style="width: 240px; font-size: 10.5px; color: #334155;">
-          <div style="margin-bottom: 30px; font-weight: 700; color: #0f172a;">Issued By: ${escapeHtml(companyEN)}</div>
-          <div style="border-top: 1px solid #334155; padding-top: 4px; font-size: 9.5px; color: #64748b;">Authorized Signature</div>
+        <div style="display: flex; align-items: flex-end; gap: 14px; flex-shrink: 0;">
+          <div style="width: 220px; font-size: 10.5px; color: #334155;">
+            <div style="margin-bottom: 28px; font-weight: 700; color: #0f172a;">Issued By: ${escapeHtml(companyEN)}</div>
+            <div style="border-top: 1px solid #334155; padding-top: 4px; font-size: 9.5px; color: #64748b;">Authorized Signature</div>
+          </div>
+          ${signatureStampHtml}
         </div>
       </div>
     </article>
@@ -16165,6 +16217,7 @@ function renderEnglishExportSheets(totals, enContainer) {
       }
     }
     meta[fieldMap[id]] = val;
+    console.log('【海外輸出設定変更】反映完了', { field: fieldMap[id], length: String(val).length });
     if (id === 'expBankInfoEn') {
       try { localStorage.setItem('alva_export_bank_info_en', val); } catch (err) { }
     }
