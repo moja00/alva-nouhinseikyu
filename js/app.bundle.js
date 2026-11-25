@@ -17440,16 +17440,35 @@ function renderItemInputCards() {
           <input type="text" class="form-input item-input-name" placeholder="品名・項目名（例: DP-5000 ベーシックセット など）" value="${escapeHtml(item.name || '')}" style="font-weight: 600; font-size: 0.95rem;">
         </div>
         ${currentDoc && currentDoc.docLanguage === 'en' ? `
-          <div style="display: flex; flex-direction: column; gap: 4px; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 6px; padding: 6px 7px;">
+          <div style="display: flex; flex-direction: column; gap: 6px; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 6px; padding: 7px 8px;">
+            <div style="font-size: 0.66rem; font-weight: 800; color: #0369a1;">🌐 海外輸出用（英語表記・HSコード・行別梱包）</div>
             <div style="display: grid; grid-template-columns: 1.6fr 0.6fr 0.8fr; gap: 5px;">
-              <input type="text" class="form-input item-input-name-en" data-index="${index}" placeholder="🌐 英語商品名 (Description EN)" value="${escapeHtml(item.nameEn || '')}" style="font-size: 0.76rem; padding: 3px 6px;">
-              <input type="text" class="form-input item-input-unit-en" data-index="${index}" placeholder="Unit (Pcs)" value="${escapeHtml(item.unitEn || '')}" style="font-size: 0.76rem; padding: 3px 6px;">
-              <input type="text" class="form-input item-input-hs-code" data-index="${index}" placeholder="HS Code (8467.19)" value="${escapeHtml(item.hsCode || '')}" style="font-size: 0.76rem; font-family: monospace; padding: 3px 6px;">
+              <div>
+                <label style="font-size: 0.62rem; font-weight: 700; color: #334155; display: block; margin-bottom: 2px;">英語商品名 (Description)</label>
+                <input type="text" class="form-input item-input-name-en" data-index="${index}" placeholder="Description EN" value="${escapeHtml(item.nameEn || '')}" style="font-size: 0.76rem; padding: 3px 6px;">
+              </div>
+              <div>
+                <label style="font-size: 0.62rem; font-weight: 700; color: #334155; display: block; margin-bottom: 2px;">英語単位</label>
+                <input type="text" class="form-input item-input-unit-en" data-index="${index}" placeholder="Pcs" value="${escapeHtml(item.unitEn || '')}" style="font-size: 0.76rem; padding: 3px 6px;">
+              </div>
+              <div>
+                <label style="font-size: 0.62rem; font-weight: 700; color: #334155; display: block; margin-bottom: 2px;">HSコード</label>
+                <input type="text" class="form-input item-input-hs-code" data-index="${index}" placeholder="8467.19" value="${escapeHtml(item.hsCode || '')}" style="font-size: 0.76rem; font-family: monospace; padding: 3px 6px;">
+              </div>
             </div>
             <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px;">
-              <input type="text" class="form-input item-input-carton-no" data-index="${index}" placeholder="📦 C/t (例: 9 Ctn.)" value="${escapeHtml(item.cartonNo || '')}" style="font-size: 0.74rem; padding: 3px 6px;">
-              <input type="text" inputmode="decimal" class="form-input item-input-net-weight" data-index="${index}" placeholder="N/W (kg) 例: 185" value="${escapeHtml(item.netWeight || '')}" style="font-size: 0.74rem; font-family: monospace; padding: 3px 6px;">
-              <input type="text" inputmode="decimal" class="form-input item-input-gross-weight" data-index="${index}" placeholder="G/W (kg) 例: 209" value="${escapeHtml(item.grossWeight || '')}" style="font-size: 0.74rem; font-family: monospace; padding: 3px 6px;">
+              <div>
+                <label style="font-size: 0.62rem; font-weight: 700; color: #334155; display: block; margin-bottom: 2px;">カートン数 (C/t)</label>
+                <input type="text" class="form-input item-input-carton-no" data-index="${index}" placeholder="例: 9 Ctn." value="${escapeHtml(item.cartonNo || '')}" style="font-size: 0.74rem; padding: 3px 6px;">
+              </div>
+              <div>
+                <label style="font-size: 0.62rem; font-weight: 700; color: #334155; display: block; margin-bottom: 2px;">正味重量 N/W (kg)</label>
+                <input type="text" inputmode="decimal" class="form-input item-input-net-weight" data-index="${index}" placeholder="例: 185" value="${escapeHtml(item.netWeight || '')}" style="font-size: 0.74rem; font-family: monospace; padding: 3px 6px;">
+              </div>
+              <div>
+                <label style="font-size: 0.62rem; font-weight: 700; color: #334155; display: block; margin-bottom: 2px;">総重量 G/W (kg)</label>
+                <input type="text" inputmode="decimal" class="form-input item-input-gross-weight" data-index="${index}" placeholder="例: 209" value="${escapeHtml(item.grossWeight || '')}" style="font-size: 0.74rem; font-family: monospace; padding: 3px 6px;">
+              </div>
             </div>
           </div>
         ` : ''}
