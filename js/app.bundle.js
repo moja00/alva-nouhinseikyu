@@ -25636,6 +25636,22 @@ function clearLotReceiptImage() {
   if (DOM.lotReceiptDropNotice) DOM.lotReceiptDropNotice.style.display = 'block';
 }
 
+let activeLotReceiptTempMime = '';
+let activeLotReceiptTempName = '';
+
+function isPdfReceiptSource(src, mimeType, fileName) {
+  const s = String(src || '').toLowerCase();
+  const m = String(mimeType || '').toLowerCase();
+  const f = String(fileName || '').toLowerCase();
+  return (
+    m === 'application/pdf' ||
+    s.startsWith('data:application/pdf') ||
+    s.includes('type=pdf') ||
+    s.endsWith('.pdf') ||
+    f.endsWith('.pdf')
+  );
+}
+
 function openLotReceiptManageModal(lotId) {
   const lotList = getInventoryLotList();
   const lot = lotList.find(l => l.id === lotId);
@@ -25645,9 +25661,11 @@ function openLotReceiptManageModal(lotId) {
   }
   activeLotForReceipt = lot;
   activeLotReceiptTempUrl = lot.receiptImage || lot.receiptDataUrl || '';
+  activeLotReceiptTempMime = lot.receiptMimeType || (isPdfReceiptSource(activeLotReceiptTempUrl, '', lot.receiptFileName) ? 'application/pdf' : '');
+  activeLotReceiptTempName = lot.receiptFileName || '';
   activeLotReceiptRotation = 0;
 
-  if (DOM.lotReceiptModalTitle) DOM.lotReceiptModalTitle.textContent = `ロット証憑・領収書画像の管理: ${lot.lotNumber || ''}`;
+  if (DOM.lotReceiptModalTitle) DOM.lotReceiptModalTitle.textContent = `ロット証憑・領収書の管理: ${lot.lotNumber || ''}`;
   if (DOM.lotReceiptModalSub) DOM.lotReceiptModalSub.textContent = `品目: ${lot.itemName || ''} (数量: ${lot.quantity || 0} 台 / 入荷日: ${lot.arrivalDate || '-'})`;
 
   updateLotReceiptModalView();
@@ -25661,8 +25679,12 @@ function openLotReceiptManageModal(lotId) {
 function closeLotReceiptManageModal() {
   activeLotForReceipt = null;
   activeLotReceiptTempUrl = '';
+  activeLotReceiptTempMime = '';
+  activeLotReceiptTempName = '';
   activeLotReceiptRotation = 0;
   if (DOM.lotReceiptModalFileInput) DOM.lotReceiptModalFileInput.value = '';
+  const pdfEl = document.getElementById('lotReceiptModalPdf');
+  if (pdfEl) { pdfEl.src = ''; pdfEl.style.display = 'none'; }
   if (DOM.lotReceiptManageModal) {
     DOM.lotReceiptManageModal.classList.remove('active');
     DOM.lotReceiptManageModal.style.display = 'none';
@@ -25671,27 +25693,57 @@ function closeLotReceiptManageModal() {
 
 function updateLotReceiptModalView() {
   if (!DOM.lotReceiptModalImage || !DOM.lotReceiptModalEmpty) return;
+  const pdfEl = document.getElementById('lotReceiptModalPdf');
+  const openTabBtn = document.getElementById('btnLotReceiptModalOpenNewTab');
+
   if (activeLotReceiptTempUrl) {
-    DOM.lotReceiptModalImage.src = activeLotReceiptTempUrl;
-    DOM.lotReceiptModalImage.style.transform = `rotate(${activeLotReceiptRotation}deg)`;
-    DOM.lotReceiptModalImage.style.display = 'block';
+    const isPdf = isPdfReceiptSource(activeLotReceiptTempUrl, activeLotReceiptTempMime, activeLotReceiptTempName);
+    if (isPdf && pdfEl) {
+      DOM.lotReceiptModalImage.src = '';
+      DOM.lotReceiptModalImage.style.display = 'none';
+      pdfEl.src = activeLotReceiptTempUrl;
+      pdfEl.style.display = 'block';
+      if (DOM.btnLotReceiptModalRotate) DOM.btnLotReceiptModalRotate.style.display = 'none';
+    } else {
+      if (pdfEl) { pdfEl.src = ''; pdfEl.style.display = 'none'; }
+      DOM.lotReceiptModalImage.src = activeLotReceiptTempUrl;
+      DOM.lotReceiptModalImage.style.transform = `rotate(${activeLotReceiptRotation}deg)`;
+      DOM.lotReceiptModalImage.style.display = 'block';
+      if (DOM.btnLotReceiptModalRotate) DOM.btnLotReceiptModalRotate.style.display = 'inline-block';
+    }
     DOM.lotReceiptModalEmpty.style.display = 'none';
-    if (DOM.btnLotReceiptModalRotate) DOM.btnLotReceiptModalRotate.style.display = 'inline-block';
     if (DOM.btnLotReceiptModalDelete) DOM.btnLotReceiptModalDelete.style.display = 'inline-block';
+    if (openTabBtn) {
+      if (!activeLotReceiptTempUrl.startsWith('data:')) {
+        openTabBtn.href = activeLotReceiptTempUrl;
+        openTabBtn.style.display = 'inline-flex';
+      } else {
+        openTabBtn.style.display = 'none';
+      }
+    }
   } else {
     DOM.lotReceiptModalImage.src = '';
     DOM.lotReceiptModalImage.style.display = 'none';
+    if (pdfEl) { pdfEl.src = ''; pdfEl.style.display = 'none'; }
     DOM.lotReceiptModalEmpty.style.display = 'block';
     if (DOM.btnLotReceiptModalRotate) DOM.btnLotReceiptModalRotate.style.display = 'none';
     if (DOM.btnLotReceiptModalDelete) DOM.btnLotReceiptModalDelete.style.display = 'none';
+    if (openTabBtn) openTabBtn.style.display = 'none';
   }
 }
 
 async function handleLotReceiptModalFileSelect(file) {
   if (!file) return;
+  const MAX_BYTES = 10 * 1024 * 1024; // 10MB 上限
+  if (file.size > MAX_BYTES) {
+    showToast(`ファイルサイズが大きすぎます（最大10MBまで / 選択: ${(file.size / (1024 * 1024)).toFixed(1)}MB）`, 'danger');
+    return;
+  }
   try {
+    console.log('【ロット証憑選択】読込開始', { name: file.name, type: file.type, size: file.size });
     let dataUrl = '';
-    if (typeof compressReceiptImage === 'function' && file.type.startsWith('image/')) {
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+    if (!isPdf && typeof compressReceiptImage === 'function' && file.type.startsWith('image/')) {
       dataUrl = await compressReceiptImage(file);
     } else {
       dataUrl = await new Promise((resolve, reject) => {
@@ -25702,12 +25754,16 @@ async function handleLotReceiptModalFileSelect(file) {
       });
     }
     activeLotReceiptTempUrl = dataUrl;
+    activeLotReceiptTempMime = isPdf ? 'application/pdf' : (file.type || 'image/jpeg');
+    activeLotReceiptTempName = file.name || '';
     activeLotReceiptRotation = 0;
     updateLotReceiptModalView();
-    showToast('新しい画像を読み込みました。「画像を保存・更新」をクリックして確定してください。', 'info');
+    showToast(isPdf
+      ? `PDF証憑「${file.name}」を読み込みました。「保存・更新」をクリックしてクラウド保存を確定してください。`
+      : '新しい画像を読み込みました。「画像を保存・更新」をクリックして確定してください。', 'info');
   } catch (err) {
     console.error('handleLotReceiptModalFileSelect error:', err);
-    showToast('画像読み込みに失敗しました', 'danger');
+    showToast('ファイルの読み込みに失敗しました', 'danger');
   }
 }
 
@@ -25719,8 +25775,10 @@ function rotateLotReceiptModalImage() {
 }
 
 function deleteLotReceiptModalImage() {
-  if (!confirm('このロットの証憑画像を削除しますか？')) return;
+  if (!confirm('このロットの証憑ファイル（画像・PDF）を削除しますか？')) return;
   activeLotReceiptTempUrl = '';
+  activeLotReceiptTempMime = '';
+  activeLotReceiptTempName = '';
   activeLotReceiptRotation = 0;
   updateLotReceiptModalView();
 }
@@ -25728,29 +25786,75 @@ function deleteLotReceiptModalImage() {
 async function saveLotReceiptModalImage() {
   if (!activeLotForReceipt) return;
   const targetLot = activeLotForReceipt;
-  targetLot.receiptImage = activeLotReceiptTempUrl;
-  targetLot.receiptDataUrl = activeLotReceiptTempUrl;
+  const saveBtn = DOM.btnSaveLotReceiptModal;
+  const origText = saveBtn ? saveBtn.textContent : '';
+  console.log('【ロット証憑保存】実行開始', {
+    lotId: targetLot.id,
+    lotNumber: targetLot.lotNumber,
+    hasDataUrl: Boolean(activeLotReceiptTempUrl && activeLotReceiptTempUrl.startsWith('data:')),
+    mimeType: activeLotReceiptTempMime
+  });
 
-  // サーバー保存エンドポイントがあれば非同期で永続化
-  if (typeof fetch !== 'undefined' && activeLotReceiptTempUrl && activeLotReceiptTempUrl.startsWith('data:image/')) {
-    (window.apiFetch || fetch)('save-receipt', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: targetLot.id, image: activeLotReceiptTempUrl })
-    }).then(res => res.json()).then(resData => {
-      if (resData && resData.url) {
-        targetLot.receiptImage = resData.url;
-        targetLot.receiptDataUrl = resData.url;
-        saveInventoryLot(targetLot);
-        renderInventoryLotTable();
+  try {
+    if (saveBtn) {
+      saveBtn.disabled = true;
+      saveBtn.textContent = '⏳ クラウド保存中...';
+    }
+
+    // 1. 新規ファイル（data:image/... または data:application/pdf;...）は先に Cloud Storage へアップロードして URL を取得
+    if (activeLotReceiptTempUrl && activeLotReceiptTempUrl.startsWith('data:')) {
+      const isPdf = isPdfReceiptSource(activeLotReceiptTempUrl, activeLotReceiptTempMime, activeLotReceiptTempName);
+      const res = await (window.apiFetch || fetch)('save-receipt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: targetLot.id,
+          image: activeLotReceiptTempUrl,
+          mimeType: isPdf ? 'application/pdf' : 'image/jpeg'
+        })
+      });
+      const resData = await res.json().catch(() => ({}));
+      if (!res.ok || !resData || !resData.url) {
+        throw new Error(resData.error || `アップロード失敗 (HTTP ${res.status})`);
       }
-    }).catch(e => console.warn('save-receipt upload error:', e));
-  }
+      targetLot.receiptImage = resData.url;
+      delete targetLot.receiptDataUrl;
+      targetLot.receiptMimeType = resData.mimeType || (isPdf ? 'application/pdf' : 'image/jpeg');
+      if (activeLotReceiptTempName) targetLot.receiptFileName = activeLotReceiptTempName;
+      console.log('【ロット証憑保存】GCSアップロード完了', { url: resData.url, mimeType: targetLot.receiptMimeType });
+    } else if (!activeLotReceiptTempUrl) {
+      // 削除された場合
+      const prevUrl = targetLot.receiptImage || '';
+      targetLot.receiptImage = '';
+      delete targetLot.receiptDataUrl;
+      targetLot.receiptMimeType = '';
+      targetLot.receiptFileName = '';
+      if (prevUrl) {
+        (window.apiFetch || fetch)('delete-receipt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: targetLot.id, receiptUrl: prevUrl })
+        }).catch(e => console.warn('delete-receipt warning:', e));
+      }
+    } else {
+      // 既存URLのまま更新（重複フィールドのみ掃除）
+      targetLot.receiptImage = activeLotReceiptTempUrl;
+      delete targetLot.receiptDataUrl;
+    }
 
-  saveInventoryLot(targetLot);
-  renderInventoryLotTable();
-  closeLotReceiptManageModal();
-  showToast(`ロット「${targetLot.lotNumber}」の証憑画像を更新・保存しました！`, 'success');
+    saveInventoryLot(targetLot);
+    renderInventoryLotTable();
+    closeLotReceiptManageModal();
+    showToast(`ロット「${targetLot.lotNumber}」の証憑をクラウド保存しました！`, 'success');
+  } catch (err) {
+    console.error('【ロット証憑保存】エラー:', err);
+    showToast(`証憑の保存に失敗しました: ${err.message || err}`, 'danger');
+  } finally {
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = origText;
+    }
+  }
 }
 
 window.openLotReceiptManageModal = openLotReceiptManageModal;
@@ -26422,19 +26526,29 @@ function openLotDetailModal(lotId) {
     `;
   }
 
-  // 領収書プレビュー
+  // 領収書・PDF証憑プレビュー
   let receiptSectionHtml = '';
   if (lot.receiptImage || lot.receiptDataUrl) {
     const imgSrc = lot.receiptImage || lot.receiptDataUrl;
+    const isPdf = isPdfReceiptSource(imgSrc, lot.receiptMimeType, lot.receiptFileName);
     receiptSectionHtml = `
       <div style="margin-top: 14px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px;">
-        <div style="font-size: 0.8rem; font-weight: 700; color: #0f172a; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
-          <span>🖼️ 添付領収書・インボイス証憑</span>
-          <button type="button" class="btn btn-xs btn-outline-primary" onclick="window.openLotReceiptModal('${escapeHtml(lot.id)}')">差替・拡大表示</button>
+        <div style="font-size: 0.8rem; font-weight: 700; color: #0f172a; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+          <span>${isPdf ? '📄 添付インボイス・証憑（PDF）' : '🖼️ 添付領収書・インボイス証憑'}</span>
+          <div style="display: flex; gap: 6px;">
+            ${isPdf && !imgSrc.startsWith('data:') ? `<a href="${escapeHtml(imgSrc)}" target="_blank" rel="noopener noreferrer" class="btn btn-xs btn-secondary" style="text-decoration: none;">↗ 別タブで開く</a>` : ''}
+            <button type="button" class="btn btn-xs btn-outline-primary" onclick="window.openLotReceiptModal('${escapeHtml(lot.id)}')">差替・拡大表示</button>
+          </div>
         </div>
-        <div style="max-height: 240px; overflow: hidden; border-radius: 6px; border: 1px solid #cbd5e1; display: flex; justify-content: center; background: #f8fafc; cursor: pointer;" onclick="window.openLotReceiptModal('${escapeHtml(lot.id)}')">
-          <img src="${imgSrc}" alt="領収書" style="max-height: 240px; max-width: 100%; object-fit: contain;">
-        </div>
+        ${isPdf ? `
+          <div style="border-radius: 6px; border: 1px solid #cbd5e1; overflow: hidden; background: #f8fafc;">
+            <iframe src="${escapeHtml(imgSrc)}" title="PDF証憑" style="width: 100%; height: 280px; border: none; display: block;"></iframe>
+          </div>
+        ` : `
+          <div style="max-height: 240px; overflow: hidden; border-radius: 6px; border: 1px solid #cbd5e1; display: flex; justify-content: center; background: #f8fafc; cursor: pointer;" onclick="window.openLotReceiptModal('${escapeHtml(lot.id)}')">
+            <img src="${imgSrc}" alt="領収書" style="max-height: 240px; max-width: 100%; object-fit: contain;">
+          </div>
+        `}
       </div>
     `;
   }
@@ -28797,7 +28911,7 @@ function submitInventoryLotStockIn() {
     creditAccount: creditAccountRaw,
     payerType,
     payerName: payerType === 'other' ? payerName : '会社直接',
-    receiptImage: currentLotReceiptDataUrl || '',
+    receiptImage: (currentLotReceiptDataUrl && currentLotReceiptDataUrl.startsWith('data:')) ? '' : (currentLotReceiptDataUrl || ''),
     receiptFileName: currentLotReceiptFileName || '',
     arrivalDate
   };
@@ -28818,16 +28932,19 @@ function submitInventoryLotStockIn() {
     currentSourcePurchaseOrderId = null;
   }
 
-  // 領収書画像があればサーバーsave-receiptにも非同期アップロード
-  if (typeof fetch !== 'undefined' && currentLotReceiptDataUrl && currentLotReceiptDataUrl.startsWith('data:image/')) {
+  // 領収書画像・PDF証憑があればサーバーsave-receiptへアップロードしてURLのみ保存（localStorage/Firestore肥大化防止）
+  if (typeof fetch !== 'undefined' && currentLotReceiptDataUrl && currentLotReceiptDataUrl.startsWith('data:')) {
+    const pendingDataUrl = currentLotReceiptDataUrl;
+    const pendingIsPdf = isPdfReceiptSource(pendingDataUrl, '', currentLotReceiptFileName);
     (window.apiFetch || fetch)('save-receipt', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: lotId, image: currentLotReceiptDataUrl })
+      body: JSON.stringify({ id: lotId, image: pendingDataUrl, mimeType: pendingIsPdf ? 'application/pdf' : 'image/jpeg' })
     }).then(res => res.json()).then(resData => {
       if (resData && resData.url) {
         lotData.receiptImage = resData.url;
-        lotData.receiptDataUrl = resData.url;
+        delete lotData.receiptDataUrl;
+        lotData.receiptMimeType = resData.mimeType || (pendingIsPdf ? 'application/pdf' : 'image/jpeg');
         saveInventoryLot(lotData);
         renderInventoryLotTable();
       }

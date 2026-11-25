@@ -1317,22 +1317,40 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
         if clean_path.startswith('/api/receipt/'):
             receipt_id = clean_path[len('/api/receipt/'):].strip()
             clean_id = re.sub(r'[^a-zA-Z0-9_\-]', '', receipt_id)
+            prefer_pdf = 'type=pdf' in (self.path or '').lower()
             try:
-                blob = bucket.blob(f"receipts/{clean_id}.jpg")
-                if blob.exists():
-                    img_bytes = blob.download_as_bytes()
-                    self.send_response(200)
-                    self.send_header('Content-Type', 'image/jpeg')
-                    self.send_header('Content-Disposition', 'inline; filename="receipt.jpg"')
-                    self.end_headers()
-                    self.wfile.write(img_bytes)
-                    return
-                for ext in ['.jpg', '.jpeg', '.png', '.webp']:
+                gcs_candidates = (
+                    [(f"receipts/{clean_id}.pdf", 'application/pdf', f"{clean_id}.pdf"),
+                     (f"receipts/{clean_id}.jpg", 'image/jpeg', f"{clean_id}.jpg")]
+                    if prefer_pdf else
+                    [(f"receipts/{clean_id}.jpg", 'image/jpeg', f"{clean_id}.jpg"),
+                     (f"receipts/{clean_id}.pdf", 'application/pdf', f"{clean_id}.pdf")]
+                )
+                if bucket:
+                    for blob_name, mime_type, disp_name in gcs_candidates:
+                        blob = bucket.blob(blob_name)
+                        if blob.exists():
+                            file_bytes = blob.download_as_bytes()
+                            self.send_response(200)
+                            self.send_header('Content-Type', mime_type)
+                            self.send_header('Content-Disposition', f'inline; filename="{disp_name}"')
+                            self.end_headers()
+                            self.wfile.write(file_bytes)
+                            return
+                local_candidates = [
+                    ('.pdf', 'application/pdf'),
+                    ('.jpg', 'image/jpeg'),
+                    ('.jpeg', 'image/jpeg'),
+                    ('.png', 'image/png'),
+                    ('.webp', 'image/webp')
+                ]
+                for ext, mime_type in local_candidates:
                     candidate = os.path.join(RECEIPTS_DIR, f"{clean_id}{ext}")
                     if os.path.exists(candidate):
                         with open(candidate, 'rb') as f:
                             self.send_response(200)
-                            self.send_header('Content-Type', 'image/jpeg')
+                            self.send_header('Content-Type', mime_type)
+                            self.send_header('Content-Disposition', f'inline; filename="{clean_id}{ext}"')
                             self.end_headers()
                             self.wfile.write(f.read())
                         return
@@ -1829,27 +1847,54 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
                 self.wfile.write(json.dumps({"error": f"サーバーエラー: {str(e)}"}).encode('utf-8'))
             return
 
-        # 領収書写真の安全保管API (Storage)
+        # 領収書写真・PDF証憑の安全保管API (Storage)
         if self.path == '/api/save-receipt':
             content_length = int(self.headers.get('Content-Length', 0))
             post_data = self.rfile.read(content_length).decode('utf-8')
             try:
                 data = json.loads(post_data)
                 receipt_id = data.get('id', '')
-                image_data = data.get('image', '')
+                image_data = data.get('image', '') or data.get('dataUrl', '')
                 if not receipt_id or not image_data: raise ValueError("ID/Image missing")
 
                 clean_id = re.sub(r'[^a-zA-Z0-9_\-]', '', receipt_id)
+                is_pdf = 'application/pdf' in image_data[:80].lower() or str(data.get('mimeType', '')).lower() == 'application/pdf'
                 b64_img = image_data
                 if ',' in image_data: _, b64_img = image_data.split(',', 1)
-                
-                blob = bucket.blob(f"receipts/{clean_id}.jpg")
-                blob.upload_from_string(base64.b64decode(b64_img), content_type='image/jpeg')
+                raw_bytes = base64.b64decode(b64_img)
 
+                if len(raw_bytes) > 12 * 1024 * 1024:
+                    raise ValueError("File size exceeds 12MB limit")
+
+                target_ext = '.pdf' if is_pdf else '.jpg'
+                other_ext = '.jpg' if is_pdf else '.pdf'
+                content_type = 'application/pdf' if is_pdf else 'image/jpeg'
+
+                if bucket:
+                    blob = bucket.blob(f"receipts/{clean_id}{target_ext}")
+                    blob.upload_from_string(raw_bytes, content_type=content_type)
+                    # 差し替え時に古い別拡張子ファイルが残らないようクリーンアップ
+                    try:
+                        old_blob = bucket.blob(f"receipts/{clean_id}{other_ext}")
+                        if old_blob.exists():
+                            old_blob.delete()
+                    except Exception:
+                        pass
+                else:
+                    os.makedirs(RECEIPTS_DIR, exist_ok=True)
+                    with open(os.path.join(RECEIPTS_DIR, f"{clean_id}{target_ext}"), 'wb') as f:
+                        f.write(raw_bytes)
+
+                url_suffix = '?type=pdf' if is_pdf else ''
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json; charset=utf-8')
                 self.end_headers()
-                self.wfile.write(json.dumps({"success": True, "id": clean_id, "url": f"/api/receipt/{clean_id}"}).encode('utf-8'))
+                self.wfile.write(json.dumps({
+                    "success": True,
+                    "id": clean_id,
+                    "mimeType": content_type,
+                    "url": f"/api/receipt/{clean_id}{url_suffix}"
+                }).encode('utf-8'))
             except Exception as e:
                 self.send_response(500)
                 self.send_header('Content-Type', 'application/json; charset=utf-8')
@@ -1857,7 +1902,7 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
                 self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
             return
 
-        # 領収書写真の削除API (Storage)
+        # 領収書写真・PDF証憑の削除API (Storage)
         if self.path == '/api/delete-receipt':
             content_length = int(self.headers.get('Content-Length', 0))
             post_data = self.rfile.read(content_length).decode('utf-8')
@@ -1873,13 +1918,14 @@ class BillCraftHandler(http.server.SimpleHTTPRequestHandler):
                 deleted = []
                 if bucket:
                     for cid in target_ids:
-                        try:
-                            blob = bucket.blob(f"receipts/{cid}.jpg")
-                            if blob.exists():
-                                blob.delete()
-                                deleted.append(cid)
-                        except Exception as e_blob:
-                            print(f"[Storage 写真削除警告 (cid: {cid})]: {e_blob}")
+                        for ext in ['.jpg', '.pdf']:
+                            try:
+                                blob = bucket.blob(f"receipts/{cid}{ext}")
+                                if blob.exists():
+                                    blob.delete()
+                                    deleted.append(f"{cid}{ext}")
+                            except Exception as e_blob:
+                                print(f"[Storage 証憑削除警告 (cid: {cid}{ext})]: {e_blob}")
 
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json; charset=utf-8')
