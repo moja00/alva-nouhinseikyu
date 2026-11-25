@@ -1181,6 +1181,7 @@ function buildUnifiedJournals(arg1 = {}, arg2 = [], arg3 = [], arg4 = null, arg5
       description: `${expenseCat}: ${exp.note || ''}${payee}${claimantTag}`.trim(),
       sourceType: 'expense',
       sourceId: exp.id,
+      receiptImage: exp.receiptImage || exp.receiptDataUrl || '',
       debitLines,
       creditLines: [{ accountCode: creditCode, accountName: creditName, subAccount: creditSubAccount || method, amount: amountInc, taxType: 'out_of_scope', invoiceType: 'none' }],
       totalDebit: amountInc,
@@ -1316,6 +1317,9 @@ function buildUnifiedJournals(arg1 = {}, arg2 = [], arg3 = [], arg4 = null, arg5
       description: jnl.description || '振替伝票',
       sourceType: jnl.sourceType || 'manual',
       sourceId: jnl.sourceId || '',
+      receiptImage: jnl.receiptImage || '',
+      receiptMimeType: jnl.receiptMimeType || '',
+      receiptFileName: jnl.receiptFileName || '',
       debitLines: finalDebitLines,
       creditLines: finalCreditLines,
       totalDebit: val.totalDebit,
@@ -25843,6 +25847,7 @@ async function saveLotReceiptModalImage() {
     }
 
     saveInventoryLot(targetLot);
+    syncLotReceiptToAccountingJournal(targetLot);
     renderInventoryLotTable();
     closeLotReceiptManageModal();
     showToast(`ロット「${targetLot.lotNumber}」の証憑をクラウド保存しました！`, 'success');
@@ -25854,6 +25859,27 @@ async function saveLotReceiptModalImage() {
       saveBtn.disabled = false;
       saveBtn.textContent = origText;
     }
+  }
+}
+
+function syncLotReceiptToAccountingJournal(lot) {
+  if (!lot || !lot.id || typeof getManualJournals !== 'function' || typeof saveManualJournal !== 'function') return;
+  try {
+    const journals = getManualJournals() || [];
+    const targetJnl = journals.find(j => j && (
+      j.id === `jnl_lot_${lot.id}` ||
+      (j.sourceType === 'inventory_lot' && j.sourceId === lot.id)
+    ));
+    if (targetJnl) {
+      targetJnl.receiptImage = lot.receiptImage || '';
+      targetJnl.receiptMimeType = lot.receiptMimeType || '';
+      targetJnl.receiptFileName = lot.receiptFileName || '';
+      saveManualJournal(targetJnl);
+      if (typeof renderAccountingJournals === 'function') renderAccountingJournals();
+      console.log('【ロット証憑→財務会計仕訳同期】完了', { journalId: targetJnl.id, receiptImage: targetJnl.receiptImage });
+    }
+  } catch (err) {
+    console.warn('syncLotReceiptToAccountingJournal warning:', err);
   }
 }
 
@@ -26738,6 +26764,25 @@ function openEditInventoryLotModal(lotId) {
   if (DOM.lotInputDate) DOM.lotInputDate.value = lot.arrivalDate || '';
   if (DOM.lotInputSupplier) DOM.lotInputSupplier.value = lot.supplier || '';
   if (DOM.lotInputStorageLocation) DOM.lotInputStorageLocation.value = lot.storageLocation || '';
+
+  // 登録済み証憑（PDF / 画像）のURL・メタ情報を復元（編集保存時に消失しないよう保護）
+  const existingReceipt = lot.receiptImage || lot.receiptDataUrl || '';
+  currentLotReceiptDataUrl = existingReceipt;
+  currentLotReceiptFileName = lot.receiptFileName || '';
+  if (existingReceipt && DOM.lotReceiptPreviewWrap) {
+    DOM.lotReceiptPreviewWrap.style.display = 'flex';
+    if (DOM.lotReceiptImagePreview) {
+      if (isPdfReceiptSource(existingReceipt, lot.receiptMimeType, lot.receiptFileName)) {
+        DOM.lotReceiptImagePreview.style.display = 'none';
+      } else {
+        DOM.lotReceiptImagePreview.src = existingReceipt;
+        DOM.lotReceiptImagePreview.style.display = 'block';
+      }
+    }
+    if (DOM.lotReceiptFileNameDisplay) {
+      DOM.lotReceiptFileNameDisplay.textContent = lot.receiptFileName || (isPdfReceiptSource(existingReceipt, lot.receiptMimeType, '') ? '登録済みPDF証憑' : '登録済み証憑画像');
+    }
+  }
 
   // 仕入区分
   const isImport = lot.procurementType === 'import';
@@ -28912,6 +28957,7 @@ function submitInventoryLotStockIn() {
     payerType,
     payerName: payerType === 'other' ? payerName : '会社直接',
     receiptImage: (currentLotReceiptDataUrl && currentLotReceiptDataUrl.startsWith('data:')) ? '' : (currentLotReceiptDataUrl || ''),
+    receiptMimeType: isPdfReceiptSource(currentLotReceiptDataUrl, '', currentLotReceiptFileName) ? 'application/pdf' : (currentLotReceiptDataUrl ? 'image/jpeg' : ''),
     receiptFileName: currentLotReceiptFileName || '',
     arrivalDate
   };
@@ -28946,6 +28992,7 @@ function submitInventoryLotStockIn() {
         delete lotData.receiptDataUrl;
         lotData.receiptMimeType = resData.mimeType || (pendingIsPdf ? 'application/pdf' : 'image/jpeg');
         saveInventoryLot(lotData);
+        syncLotReceiptToAccountingJournal(lotData);
         renderInventoryLotTable();
       }
     }).catch(e => console.warn('save-receipt upload error:', e));
@@ -29298,7 +29345,9 @@ function submitInventoryLotStockIn() {
       description: `混載ロット入庫・仕入計上: ${lotNumber} (${itemNamesSummary})`,
       sourceType: 'inventory_lot',
       sourceId: lotId,
-      receiptImage: currentLotReceiptDataUrl || '',
+      receiptImage: lotData.receiptImage || '',
+      receiptMimeType: lotData.receiptMimeType || '',
+      receiptFileName: lotData.receiptFileName || '',
       debitLines,
       creditLines,
       totalDebit: grandTotal,
@@ -34361,6 +34410,37 @@ window.__previewExpenseReceipt = function (id) {
 // 複式簿記仕訳帳・財務諸表・総勘定元帳 コントローラー
 // ==========================================================================
 
+window.openAccountingReceiptPreview = function (url, title = '証憑プレビュー', lotId = '') {
+  console.log('【財務会計 証憑プレビュー】オープン', { url, title, lotId });
+  if (lotId && typeof openLotReceiptManageModal === 'function') {
+    openLotReceiptManageModal(lotId);
+    return;
+  }
+  if (!url) {
+    showToast('証憑ファイルが登録されていません', 'warning');
+    return;
+  }
+  // サーバー配信URL（PDF・画像とも）は別タブでネイティブプレビュー表示
+  if (!url.startsWith('data:')) {
+    window.open(url, '_blank', 'noopener,noreferrer');
+    return;
+  }
+  // data: URL の場合は Blob URL に変換して安全に別タブ表示
+  try {
+    const parts = url.split(',');
+    const mimeMatch = parts[0].match(/data:([^;]+);/);
+    const mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
+    const bin = atob(parts[1] || '');
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    const blobUrl = URL.createObjectURL(new Blob([arr], { type: mime }));
+    window.open(blobUrl, '_blank', 'noopener,noreferrer');
+  } catch (err) {
+    console.error('openAccountingReceiptPreview error:', err);
+    showToast('証憑プレビューを開けませんでした', 'danger');
+  }
+};
+
 function renderAccountingJournals(periodFilter = currentAccGlobalPeriod) {
   const tbody = document.getElementById('accJournalTableBody');
   if (!tbody) return;
@@ -34369,7 +34449,9 @@ function renderAccountingJournals(periodFilter = currentAccGlobalPeriod) {
   const expenses = getExpenseList();
   const manualJournals = (typeof getManualJournals === 'function') ? getManualJournals() : [];
   const payrollRecords = (typeof getPayrollRecords === 'function') ? getPayrollRecords() : [];
-  const accountMaster = (typeof getAccountMasterList === 'function') ? getAccountMasterList() : [];
+  const lotList = (typeof getInventoryLotList === 'function') ? getInventoryLotList() : [];
+  const lotById = new Map();
+  lotList.forEach(l => { if (l && l.id) lotById.set(l.id, l); });
 
   const unifiedJournals = buildUnifiedJournals(invoices, expenses, manualJournals, payrollRecords, periodFilter);
 
@@ -34380,27 +34462,49 @@ function renderAccountingJournals(periodFilter = currentAccGlobalPeriod) {
 
   let html = '';
   unifiedJournals.forEach((j, jIdx) => {
-    const isManual = (j.sourceType === 'manual' || j.sourceType === 'reconcile');
+    const isManual = (j.sourceType === 'manual' || j.sourceType === 'reconcile' || j.sourceType === 'reconciliation');
+    const isLot = (j.sourceType === 'inventory_lot');
     const debLines = j.debitLines || [{ accountName: j.debitAccount, subAccount: '', amount: j.debitAmount, taxType: 'taxable_10', invoiceType: 'qualified' }];
     const credLines = j.creditLines || [{ accountName: j.creditAccount, subAccount: '', amount: j.creditAmount, taxType: 'taxable_10', invoiceType: 'qualified' }];
     const maxLines = Math.max(debLines.length, credLines.length);
 
     let typeBadge = '<span class="badge" style="background:#e0e7ff; color:#3730a3; font-size:10px;">売上</span>';
-    if (j.sourceType === 'receipt') {
+    if (j.sourceType === 'receipt' || j.sourceType === 'invoice_receipt') {
       typeBadge = '<span class="badge" style="background:#dcfce7; color:#166534; font-size:10px;">入金</span>';
+    } else if (j.sourceType === 'sales_cogs') {
+      typeBadge = '<span class="badge" style="background:#f1f5f9; color:#475569; font-size:10px;">売上原価</span>';
+    } else if (j.sourceType === 'inventory_lot') {
+      typeBadge = '<span class="badge" style="background:#ccfbf1; color:#0f766e; font-size:10px;">仕入ロット</span>';
     } else if (j.sourceType === 'expense') {
       typeBadge = '<span class="badge" style="background:#fef3c7; color:#92400e; font-size:10px;">経費</span>';
     } else if (j.sourceType === 'payroll') {
       typeBadge = '<span class="badge" style="background:#e0f2fe; color:#0369a1; font-size:10px;">給与</span>';
-    } else if (j.sourceType === 'reconcile') {
+    } else if (j.sourceType === 'reconcile' || j.sourceType === 'reconciliation') {
       typeBadge = '<span class="badge" style="background:#fae8ff; color:#86198f; font-size:10px;">消込複合</span>';
     } else if (j.sourceType === 'manual') {
       typeBadge = '<span class="badge" style="background:#f1f5f9; color:#334155; font-size:10px;">振替伝票</span>';
     }
 
+    // 証憑（PDF・画像）リンク解決：ロット由来なら最新ロットマスタからもリアルタイム参照
+    const linkedLot = isLot ? (lotById.get(j.sourceId) || lotList.find(l => l && l.lotNumber === j.entryNumber)) : null;
+    const resolvedReceiptUrl = (linkedLot && (linkedLot.receiptImage || linkedLot.receiptDataUrl)) || j.receiptImage || '';
+    const resolvedMime = (linkedLot && linkedLot.receiptMimeType) || j.receiptMimeType || '';
+    const resolvedFileName = (linkedLot && linkedLot.receiptFileName) || j.receiptFileName || '';
+    const resolvedIsPdf = resolvedReceiptUrl && isPdfReceiptSource(resolvedReceiptUrl, resolvedMime, resolvedFileName);
+
+    let receiptBtnHtml = '';
+    if (resolvedReceiptUrl) {
+      const lotIdArg = linkedLot ? linkedLot.id : '';
+      const label = resolvedIsPdf ? '📄 PDF' : '🖼️ 証憑';
+      receiptBtnHtml = `<button type="button" class="btn btn-xs" style="padding: 1px 6px; font-size: 10px; font-weight: 700; background: ${resolvedIsPdf ? '#eff6ff' : '#ecfdf5'}; color: ${resolvedIsPdf ? '#1d4ed8' : '#047857'}; border: 1px solid ${resolvedIsPdf ? '#93c5fd' : '#86efac'}; border-radius: 4px; cursor: pointer; white-space: nowrap;" onclick="window.openAccountingReceiptPreview('${escapeHtml(resolvedReceiptUrl)}', '${escapeHtml(j.entryNumber || j.description || '')}', '${escapeHtml(lotIdArg)}')" title="添付された証憑（PDF・画像）を表示">${label}</button>`;
+    } else if (linkedLot) {
+      receiptBtnHtml = `<button type="button" class="btn btn-xs" style="padding: 1px 6px; font-size: 10px; background: #f8fafc; color: #64748b; border: 1px solid #cbd5e1; border-radius: 4px; cursor: pointer; white-space: nowrap;" onclick="window.openLotReceiptManageModal('${escapeHtml(linkedLot.id)}')" title="この仕入ロットに証憑を追加">＋証憑</button>`;
+    }
+
     const deleteBtn = isManual
       ? `<button type="button" class="btn btn-outline-danger btn-xs" style="padding: 1px 6px; font-size: 10px;" onclick="window.deleteManualJournalFromUI('${j.id}')">削除</button>`
-      : '-';
+      : '';
+    const actionCellHtml = [receiptBtnHtml, deleteBtn].filter(Boolean).join(' ') || '-';
 
     for (let i = 0; i < maxLines; i++) {
       const deb = debLines[i] || { accountName: '', subAccount: '', amount: '' };
@@ -34435,7 +34539,7 @@ function renderAccountingJournals(periodFilter = currentAccGlobalPeriod) {
             ${isFirst ? `<span title="${taxLabel}">${invoiceLabel}</span>` : ''}
           </td>
           <td style="text-align: center;">${isFirst ? typeBadge : ''}</td>
-          <td style="text-align: center;">${isFirst ? deleteBtn : ''}</td>
+          <td style="text-align: center;">${isFirst ? actionCellHtml : ''}</td>
         </tr>
       `;
     }
