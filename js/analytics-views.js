@@ -125,13 +125,17 @@ function renderLotCostAnalyticsView(targetContainerId = null) {
       return true;
     });
 
-    // フィルタ後のKPI再集計
-    const fTotalLanded = filteredRows.reduce((s, r) => s + r.totalLandedCost, 0);
-    const fTotalAlloc = filteredRows.reduce((s, r) => s + r.totalAllocatedCost, 0);
-    const fTotalQty = filteredRows.reduce((s, r) => s + r.qty, 0);
-    const fLotCount = new Set(filteredRows.map(r => r.lotNumber)).size;
+    // フィルタ後のKPI再集計（全品目表示時は合成セット行を除外して実入庫総額の二重計上を防止）
+    const kpiSourceRows = lotCostViewState.itemFilter === 'all'
+      ? filteredRows.filter(r => !r.isAssembledFromComponents)
+      : filteredRows;
+    const fAssembledCount = filteredRows.filter(r => r.isAssembledFromComponents).length;
+    const fTotalLanded = kpiSourceRows.reduce((s, r) => s + r.totalLandedCost, 0);
+    const fTotalAlloc = kpiSourceRows.reduce((s, r) => s + r.totalAllocatedCost, 0);
+    const fTotalQty = kpiSourceRows.reduce((s, r) => s + r.qty, 0);
+    const fLotCount = new Set(kpiSourceRows.map(r => r.lotNumber)).size;
     const fAllocRatio = fTotalLanded > 0 ? Math.round((fTotalAlloc / fTotalLanded) * 1000) / 10 : 0;
-    const fRefRows = filteredRows.filter(r => r.costRatioPct !== null && r.refSalesPrice > 0);
+    const fRefRows = kpiSourceRows.filter(r => r.costRatioPct !== null && r.refSalesPrice > 0);
     const fRefSales = fRefRows.reduce((s, r) => s + r.refSalesPrice * r.qty, 0);
     const fRefCost = fRefRows.reduce((s, r) => s + r.totalLandedCost, 0);
     const fAvgCostRatio = fRefSales > 0 ? Math.round((fRefCost / fRefSales) * 1000) / 10 : null;
@@ -156,8 +160,10 @@ function renderLotCostAnalyticsView(targetContainerId = null) {
 
           const barsHtml = t.points.map(pt => {
             const totalPct = Math.max(6, Math.round((pt.landedUnitCost / maxBarVal) * 100));
+            const compCost = Number(pt.componentUnitCost) || 0;
             const basePct = pt.landedUnitCost > 0 ? Math.min(100, Math.round((pt.baseUnitCost / pt.landedUnitCost) * 100)) : 100;
-            const allocPct = Math.max(0, 100 - basePct);
+            const allocPct = pt.landedUnitCost > 0 ? Math.min(Math.max(0, 100 - basePct), Math.round((pt.allocatedUnitCost / pt.landedUnitCost) * 100)) : 0;
+            const compPct = compCost > 0 ? Math.max(0, 100 - basePct - allocPct) : 0;
             let deltaTag = '<span style="color:#94a3b8; font-size:0.68rem;">初回</span>';
             if (pt.prevDelta !== null) {
               const isUp = pt.prevDelta > 0;
@@ -170,10 +176,17 @@ function renderLotCostAnalyticsView(targetContainerId = null) {
             const fxLabel = pt.procurementType === 'import' && pt.exchangeRate > 0
               ? `${safeEscAnalytics(pt.foreignCurrency)} @${pt.exchangeRate}`
               : (pt.procurementType === 'domestic' ? '国内仕入' : '輸入仕入');
+            const compLots = Array.from(new Set((pt.componentBreakdown || []).map(c => c.lotNumber).filter(Boolean)));
+            const compDetailText = (pt.componentBreakdown || [])
+              .map(c => `${c.sku || c.name}×${c.qty}(${fmtYenAnalytics(c.subtotal)})`)
+              .join(' + ');
+            const assembledTag = pt.isAssembledFromComponents
+              ? `<span style="display:inline-block; background:#ecfdf5; color:#047857; border:1px solid #86efac; font-size:0.62rem; font-weight:700; padding:0 5px; border-radius:4px; margin-left:4px;">🧩 組立</span>`
+              : '';
             return `
-              <div style="display: grid; grid-template-columns: 155px 1fr 120px 125px; gap: 8px; align-items: center; padding: 5px 0; border-bottom: 1px dashed #e2e8f0; font-size: 0.75rem;">
+              <div style="display: grid; grid-template-columns: 165px 1fr 120px 125px; gap: 8px; align-items: center; padding: 5px 0; border-bottom: 1px dashed #e2e8f0; font-size: 0.75rem;">
                 <div>
-                  <div style="font-weight: 700; color: #1e293b; font-family: monospace;">${safeEscAnalytics(pt.lotNumber)}</div>
+                  <div style="font-weight: 700; color: #1e293b; font-family: monospace;">${safeEscAnalytics(pt.lotNumber)}${assembledTag}</div>
                   <div style="font-size: 0.67rem; color: #64748b;">${safeEscAnalytics(pt.arrivalDate || '未設定 (-)')} / ${pt.qty}${safeEscAnalytics(t.unit)} / ${fxLabel}</div>
                 </div>
                 <div>
@@ -181,10 +194,11 @@ function renderLotCostAnalyticsView(targetContainerId = null) {
                     <div style="width: ${totalPct}%; display: flex; height: 100%; transition: width 0.25s;">
                       <div style="width: ${basePct}%; background: #3b82f6; height: 100%;" title="本体単価: ${fmtYenAnalytics(pt.baseUnitCost)}"></div>
                       <div style="width: ${allocPct}%; background: #f59e0b; height: 100%;" title="諸掛按分単価: ${fmtYenAnalytics(pt.allocatedUnitCost)}"></div>
+                      ${compPct > 0 ? `<div style="width: ${compPct}%; background: #10b981; height: 100%;" title="組合せ部品原価: ${safeEscAnalytics(compDetailText)}"></div>` : ''}
                     </div>
                   </div>
                   <div style="font-size: 0.65rem; color: #64748b; margin-top: 2px;">
-                    本体 ${fmtYenAnalytics(pt.baseUnitCost)} ＋ 諸掛 ${fmtYenAnalytics(pt.allocatedUnitCost)}
+                    本体 ${fmtYenAnalytics(pt.baseUnitCost)} ＋ 諸掛 ${fmtYenAnalytics(pt.allocatedUnitCost)}${compCost > 0 ? ` ＋ <span style="color:#047857; font-weight:700;">部品 ${fmtYenAnalytics(compCost)}</span> <span style="color:#94a3b8;">(${safeEscAnalytics(compLots.join(', '))})</span>` : ''}
                   </div>
                 </div>
                 <div style="text-align: right;">
@@ -243,8 +257,12 @@ function renderLotCostAnalyticsView(targetContainerId = null) {
             ? `<span style="font-size:0.7rem; color:#334155;">計${r.serialStats.total}<br><small style="color:#059669;">在庫${r.serialStats.inStock}</small> / <small style="color:#64748b;">出${r.serialStats.shipped}</small></span>`
             : `<span style="color:#94a3b8; font-size:0.72rem;">-</span>`;
 
+          const compInfoHtml = r.isAssembledFromComponents
+            ? `<div style="font-size: 0.65rem; color: #047857; margin-top: 2px;">🧩 組立セット（${safeEscAnalytics((r.componentBreakdown || []).map(c => `${c.sku || c.name}×${c.qty}[${c.lotNumber}]`).join(' + '))}）</div>`
+            : '';
+
           return `
-            <tr style="border-bottom: 1px solid #e2e8f0;">
+            <tr style="border-bottom: 1px solid #e2e8f0;${r.isAssembledFromComponents ? ' background: #f0fdf4;' : ''}">
               <td style="padding: 8px 6px; font-family: monospace; font-weight: 700; color: #1e293b; white-space: nowrap;">
                 ${safeEscAnalytics(r.lotNumber)}
                 <div style="font-size: 0.68rem; color: #64748b; font-weight: 400;">${safeEscAnalytics(r.supplier)}</div>
@@ -256,6 +274,7 @@ function renderLotCostAnalyticsView(targetContainerId = null) {
               <td style="padding: 8px 6px;">
                 ${r.sku ? `<span style="background:#1e293b; color:#fff; font-family:monospace; font-size:0.66rem; padding:1px 5px; border-radius:3px; margin-right:4px;">${safeEscAnalytics(r.sku)}</span>` : ''}
                 <span style="font-weight: 600; color: #0f172a;">${safeEscAnalytics(r.itemName)}</span>
+                ${compInfoHtml}
               </td>
               <td style="padding: 8px 6px; text-align: right; font-weight: 700; white-space: nowrap;">${r.qty} <small style="color:#64748b; font-weight:400;">${safeEscAnalytics(r.unit)}</small></td>
               <td style="padding: 8px 6px; text-align: right; font-family: monospace; color: #475569; white-space: nowrap;">
@@ -264,7 +283,7 @@ function renderLotCostAnalyticsView(targetContainerId = null) {
               <td style="padding: 8px 6px; text-align: right; font-family: monospace; color: #1d4ed8; white-space: nowrap;">${fmtYenAnalytics(r.baseUnitCost)}</td>
               <td style="padding: 8px 6px; text-align: right; font-family: monospace; color: #b45309; white-space: nowrap;">
                 +${fmtYenAnalytics(r.allocatedUnitCost)}
-                <div style="font-size: 0.66rem; color: #94a3b8;">(${r.allocatedRatioPct.toFixed(1)}%)</div>
+                ${r.componentUnitCost > 0 ? `<div style="font-size: 0.66rem; color: #047857; font-weight: 700;">+部品 ${fmtYenAnalytics(r.componentUnitCost)}</div>` : `<div style="font-size: 0.66rem; color: #94a3b8;">(${r.allocatedRatioPct.toFixed(1)}%)</div>`}
               </td>
               <td style="padding: 8px 6px; text-align: right; font-family: monospace; font-weight: 800; color: #0f172a; white-space: nowrap; background: #f8fafc;">
                 ${fmtYenAnalytics(r.landedUnitCost)}
@@ -294,9 +313,10 @@ function renderLotCostAnalyticsView(targetContainerId = null) {
               入荷ロット台帳・商品マスタ・シリアル台帳・確定伝票からリアルタイム集計（本体単価＋諸掛按分＝確定実原価、前回ロット比と原価率を比較）
             </p>
           </div>
-          <div style="display: flex; align-items: center; gap: 12px; font-size: 0.72rem; color: #475569;">
+          <div style="display: flex; align-items: center; gap: 12px; font-size: 0.72rem; color: #475569; flex-wrap: wrap;">
             <span><span style="display:inline-block; width:10px; height:10px; background:#3b82f6; border-radius:2px; margin-right:4px;"></span>本体仕入単価</span>
             <span><span style="display:inline-block; width:10px; height:10px; background:#f59e0b; border-radius:2px; margin-right:4px;"></span>諸掛按分単価</span>
+            <span><span style="display:inline-block; width:10px; height:10px; background:#10b981; border-radius:2px; margin-right:4px;"></span>直近入庫 組合せ部品原価（BOM）</span>
           </div>
         </div>
 
@@ -304,7 +324,7 @@ function renderLotCostAnalyticsView(targetContainerId = null) {
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(175px, 1fr)); gap: 10px;">
           <div style="background: #ffffff; border: 1px solid #e2e8f0; border-left: 4px solid #2563eb; border-radius: 8px; padding: 12px;">
             <div style="font-size: 0.72rem; color: #64748b; font-weight: 700;">対象ロット / 明細数</div>
-            <div style="font-size: 1.3rem; font-weight: 800; color: #0f172a; margin-top: 2px;">${fLotCount} <small style="font-size:0.75rem; color:#64748b;">ロット (${filteredRows.length}行)</small></div>
+            <div style="font-size: 1.3rem; font-weight: 800; color: #0f172a; margin-top: 2px;">${fLotCount} <small style="font-size:0.75rem; color:#64748b;">ロット (${kpiSourceRows.length}行${fAssembledCount > 0 && lotCostViewState.itemFilter === 'all' ? `＋組立${fAssembledCount}` : ''})</small></div>
             <div style="font-size: 0.7rem; color: #64748b; margin-top: 2px;">総入荷数量: ${fTotalQty.toLocaleString()}</div>
           </div>
           <div style="background: #ffffff; border: 1px solid #e2e8f0; border-left: 4px solid #059669; border-radius: 8px; padding: 12px;">

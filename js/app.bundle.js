@@ -13935,6 +13935,7 @@ function buildLotCostAnalytics({
         foreignSubtotal,
         baseUnitCost,
         allocatedUnitCost,
+        componentUnitCost: 0,
         landedUnitCost,
         totalLandedCost,
         totalAllocatedCost,
@@ -13944,6 +13945,9 @@ function buildLotCostAnalytics({
         costRatioPct,
         estGrossMarginPerUnit,
         serialStats: snStat,
+        isAssembledFromComponents: false,
+        componentBreakdown: [],
+        sourceMainItemName: '',
         // 推移比較（後段で埋める）
         prevUnitCost: null,
         prevDelta: null,
@@ -13951,6 +13955,154 @@ function buildLotCostAnalytics({
         itemMinCost: landedUnitCost,
         itemMaxCost: landedUnitCost,
         itemAvgCost: landedUnitCost
+      });
+    });
+  });
+
+  // BOM（セット品構成）に基づく本体単体ロット → セット品合成原価行の動的生成
+  // （例：本体単体ロットに直近入庫の付帯部品原価を合算し、販売単位のセット品原価推移にも並べて比較可能にする）
+  const baseRowsSnapshot = [...rows];
+  const bundleMasters = safeInv.filter(inv => inv && inv.type === 'bundle' && Array.isArray(inv.bundleItems) && inv.bundleItems.length >= 2);
+
+  const findNearestComponentLotRow = (comp, targetDate) => {
+    const compInvId = String(comp.inventoryId || '').trim();
+    const role = String(comp.role || '').toLowerCase();
+    const compNameNorm = normalizeLookupName(comp.name || '');
+
+    // 1. inventoryId 完全一致の入庫ロットを優先
+    let candidates = baseRowsSnapshot.filter(r => r.itemId === compInvId && r.landedUnitCost > 0);
+
+    // 2. 直接の入庫ロットが無い場合は同一ロール（バッテリー・充電器等）の単品入庫ロットから動的検索
+    if (candidates.length === 0) {
+      candidates = baseRowsSnapshot.filter(r => {
+        if (r.landedUnitCost <= 0) return false;
+        const rn = normalizeLookupName(r.itemName);
+        if (rn.includes('セット')) return false;
+        if (role === 'battery' || compNameNorm.includes('バッテリー') || compNameNorm.includes('電池')) {
+          return rn.includes('バッテリー') || rn.includes('電池');
+        }
+        if (role === 'charger' || compNameNorm.includes('充電器')) {
+          return rn.includes('充電器');
+        }
+        return compNameNorm && rn === compNameNorm;
+      });
+    }
+
+    if (candidates.length > 0) {
+      // 本体入荷日に最も近い（日付差の絶対値が最小な）直近入庫ロットを選定。同点時は新しい入荷日を優先
+      const sorted = [...candidates].sort((a, b) => {
+        const da = (targetDate && a.arrivalDate) ? Math.abs(diffDaysYmd(targetDate, a.arrivalDate) ?? 999999) : 999999;
+        const db = (targetDate && b.arrivalDate) ? Math.abs(diffDaysYmd(targetDate, b.arrivalDate) ?? 999999) : 999999;
+        if (da !== db) return da - db;
+        return (b.arrivalDate || '').localeCompare(a.arrivalDate || '');
+      });
+      const picked = sorted[0];
+      return {
+        unitCost: picked.landedUnitCost,
+        lotNumber: picked.lotNumber,
+        arrivalDate: picked.arrivalDate,
+        itemName: picked.itemName,
+        sku: picked.sku,
+        source: 'lot'
+      };
+    }
+
+    // 3. ロット履歴が1件も無い場合は在庫マスタの標準原価へ安全フォールバック
+    const invFallback = invById.get(compInvId);
+    if (invFallback && Number(invFallback.unitCost) > 0) {
+      return {
+        unitCost: Math.round(Number(invFallback.unitCost)),
+        lotNumber: 'マスタ標準',
+        arrivalDate: invFallback.lastInDate || '',
+        itemName: invFallback.name || comp.name || '',
+        sku: invFallback.sku || '',
+        source: 'master'
+      };
+    }
+    return null;
+  };
+
+  bundleMasters.forEach(bundleInv => {
+    const bom = bundleInv.bundleItems;
+    const mainComp = bom.find(c => c && c.role === 'main') || bom[0];
+    const subComps = bom.filter(c => c && c !== mainComp && Number(c.qty) > 0);
+    if (!mainComp || !mainComp.inventoryId || subComps.length === 0) return;
+
+    const bundleMeta = resolveMasterRef(bundleInv.id, bundleInv.name, bundleInv.sku);
+    const mainRows = baseRowsSnapshot.filter(r => r.itemId === String(mainComp.inventoryId));
+
+    mainRows.forEach((mr, mIdx) => {
+      const breakdown = [];
+      let extraUnitCost = 0;
+      subComps.forEach(sc => {
+        const compQty = Math.max(1, Number(sc.qty) || 1);
+        const found = findNearestComponentLotRow(sc, mr.arrivalDate);
+        const uCost = found ? found.unitCost : 0;
+        const subTotal = uCost * compQty;
+        extraUnitCost += subTotal;
+        breakdown.push({
+          role: sc.role || 'part',
+          name: (found && found.itemName) || sc.name || '構成部品',
+          sku: (found && found.sku) || '',
+          qty: compQty,
+          unitCost: uCost,
+          subtotal: subTotal,
+          lotNumber: found ? found.lotNumber : '未設定',
+          arrivalDate: found ? found.arrivalDate : ''
+        });
+      });
+
+      const assembledUnitCost = mr.landedUnitCost + extraUnitCost;
+      const assembledTotalCost = assembledUnitCost * mr.qty;
+      const assembledAllocRatioPct = assembledUnitCost > 0
+        ? Math.round((mr.allocatedUnitCost / assembledUnitCost) * 1000) / 10
+        : 0;
+      const refPrice = bundleMeta.refSalesPrice;
+      const costRatioPct = (refPrice && refPrice > 0 && assembledUnitCost > 0)
+        ? Math.round((assembledUnitCost / refPrice) * 1000) / 10
+        : null;
+      const estGrossMarginPerUnit = (refPrice && refPrice > 0)
+        ? (refPrice - assembledUnitCost)
+        : null;
+
+      rows.push({
+        rowKey: `${mr.rowKey}_assembled_${bundleInv.id}_${mIdx}`,
+        lotId: mr.lotId,
+        lotNumber: mr.lotNumber,
+        arrivalDate: mr.arrivalDate,
+        procurementType: mr.procurementType,
+        supplier: mr.supplier,
+        foreignCurrency: mr.foreignCurrency,
+        exchangeRate: mr.exchangeRate,
+        itemId: bundleMeta.canonicalItemId,
+        itemName: bundleMeta.canonicalName,
+        sku: bundleMeta.sku,
+        category: bundleMeta.category,
+        unit: bundleMeta.unit || 'セット',
+        qty: mr.qty,
+        foreignPrice: mr.foreignPrice,
+        foreignSubtotal: mr.foreignSubtotal,
+        baseUnitCost: mr.baseUnitCost,
+        allocatedUnitCost: mr.allocatedUnitCost,
+        componentUnitCost: extraUnitCost,
+        landedUnitCost: assembledUnitCost,
+        totalLandedCost: assembledTotalCost,
+        totalAllocatedCost: mr.totalAllocatedCost,
+        allocatedRatioPct: assembledAllocRatioPct,
+        refSalesPrice: refPrice,
+        refSalesSource: bundleMeta.refSalesSource,
+        costRatioPct,
+        estGrossMarginPerUnit,
+        serialStats: mr.serialStats,
+        isAssembledFromComponents: true,
+        componentBreakdown: breakdown,
+        sourceMainItemName: mr.sku ? `${mr.sku} ${mr.itemName}` : mr.itemName,
+        prevUnitCost: null,
+        prevDelta: null,
+        prevDeltaPct: null,
+        itemMinCost: assembledUnitCost,
+        itemMaxCost: assembledUnitCost,
+        itemAvgCost: assembledUnitCost
       });
     });
   });
@@ -13969,7 +14121,8 @@ function buildLotCostAnalytics({
       const da = a.arrivalDate || '';
       const db = b.arrivalDate || '';
       if (da !== db) return da.localeCompare(db);
-      return a.lotNumber.localeCompare(b.lotNumber);
+      if (a.lotNumber !== b.lotNumber) return a.lotNumber.localeCompare(b.lotNumber);
+      return (a.isAssembledFromComponents ? 1 : 0) - (b.isAssembledFromComponents ? 1 : 0);
     });
 
     const validCosts = list.map(r => r.landedUnitCost).filter(c => c > 0);
@@ -14023,10 +14176,14 @@ function buildLotCostAnalytics({
         qty: r.qty,
         baseUnitCost: r.baseUnitCost,
         allocatedUnitCost: r.allocatedUnitCost,
+        componentUnitCost: r.componentUnitCost || 0,
         landedUnitCost: r.landedUnitCost,
         prevDelta: r.prevDelta,
         prevDeltaPct: r.prevDeltaPct,
-        costRatioPct: r.costRatioPct
+        costRatioPct: r.costRatioPct,
+        isAssembledFromComponents: !!r.isAssembledFromComponents,
+        componentBreakdown: r.componentBreakdown || [],
+        sourceMainItemName: r.sourceMainItemName || ''
       }))
     });
   });
@@ -14039,14 +14196,16 @@ function buildLotCostAnalytics({
     return b.totalCost - a.totalCost;
   });
 
-  // 全体サマリーKPI
-  const totalLandedAmount = rows.reduce((s, r) => s + r.totalLandedCost, 0);
-  const totalAllocatedAmount = rows.reduce((s, r) => s + r.totalAllocatedCost, 0);
-  const totalQuantity = rows.reduce((s, r) => s + r.qty, 0);
+  // 全体サマリーKPI（合成セット行は二重計上防止のため実入庫行のみで総額・数量を集計）
+  const actualRows = rows.filter(r => !r.isAssembledFromComponents);
+  const assembledRowsCount = rows.length - actualRows.length;
+  const totalLandedAmount = actualRows.reduce((s, r) => s + r.totalLandedCost, 0);
+  const totalAllocatedAmount = actualRows.reduce((s, r) => s + r.totalAllocatedCost, 0);
+  const totalQuantity = actualRows.reduce((s, r) => s + r.qty, 0);
   const avgAllocatedRatioPct = totalLandedAmount > 0
     ? Math.round((totalAllocatedAmount / totalLandedAmount) * 1000) / 10
     : 0;
-  const rowsWithCostRatio = rows.filter(r => r.costRatioPct !== null);
+  const rowsWithCostRatio = actualRows.filter(r => r.costRatioPct !== null);
   const weightedRefSales = rowsWithCostRatio.reduce((s, r) => s + (r.refSalesPrice * r.qty), 0);
   const weightedRefCost = rowsWithCostRatio.reduce((s, r) => s + r.totalLandedCost, 0);
   const avgCostRatioPct = weightedRefSales > 0
@@ -14058,7 +14217,8 @@ function buildLotCostAnalytics({
   return {
     summary: {
       lotCount: lotSet.size,
-      rowCount: rows.length,
+      rowCount: actualRows.length,
+      assembledRowCount: assembledRowsCount,
       itemCount: itemTrends.length,
       totalQuantity,
       totalLandedAmount,
@@ -40236,13 +40396,17 @@ function renderLotCostAnalyticsView(targetContainerId = null) {
       return true;
     });
 
-    // フィルタ後のKPI再集計
-    const fTotalLanded = filteredRows.reduce((s, r) => s + r.totalLandedCost, 0);
-    const fTotalAlloc = filteredRows.reduce((s, r) => s + r.totalAllocatedCost, 0);
-    const fTotalQty = filteredRows.reduce((s, r) => s + r.qty, 0);
-    const fLotCount = new Set(filteredRows.map(r => r.lotNumber)).size;
+    // フィルタ後のKPI再集計（全品目表示時は合成セット行を除外して実入庫総額の二重計上を防止）
+    const kpiSourceRows = lotCostViewState.itemFilter === 'all'
+      ? filteredRows.filter(r => !r.isAssembledFromComponents)
+      : filteredRows;
+    const fAssembledCount = filteredRows.filter(r => r.isAssembledFromComponents).length;
+    const fTotalLanded = kpiSourceRows.reduce((s, r) => s + r.totalLandedCost, 0);
+    const fTotalAlloc = kpiSourceRows.reduce((s, r) => s + r.totalAllocatedCost, 0);
+    const fTotalQty = kpiSourceRows.reduce((s, r) => s + r.qty, 0);
+    const fLotCount = new Set(kpiSourceRows.map(r => r.lotNumber)).size;
     const fAllocRatio = fTotalLanded > 0 ? Math.round((fTotalAlloc / fTotalLanded) * 1000) / 10 : 0;
-    const fRefRows = filteredRows.filter(r => r.costRatioPct !== null && r.refSalesPrice > 0);
+    const fRefRows = kpiSourceRows.filter(r => r.costRatioPct !== null && r.refSalesPrice > 0);
     const fRefSales = fRefRows.reduce((s, r) => s + r.refSalesPrice * r.qty, 0);
     const fRefCost = fRefRows.reduce((s, r) => s + r.totalLandedCost, 0);
     const fAvgCostRatio = fRefSales > 0 ? Math.round((fRefCost / fRefSales) * 1000) / 10 : null;
@@ -40267,8 +40431,10 @@ function renderLotCostAnalyticsView(targetContainerId = null) {
 
           const barsHtml = t.points.map(pt => {
             const totalPct = Math.max(6, Math.round((pt.landedUnitCost / maxBarVal) * 100));
+            const compCost = Number(pt.componentUnitCost) || 0;
             const basePct = pt.landedUnitCost > 0 ? Math.min(100, Math.round((pt.baseUnitCost / pt.landedUnitCost) * 100)) : 100;
-            const allocPct = Math.max(0, 100 - basePct);
+            const allocPct = pt.landedUnitCost > 0 ? Math.min(Math.max(0, 100 - basePct), Math.round((pt.allocatedUnitCost / pt.landedUnitCost) * 100)) : 0;
+            const compPct = compCost > 0 ? Math.max(0, 100 - basePct - allocPct) : 0;
             let deltaTag = '<span style="color:#94a3b8; font-size:0.68rem;">初回</span>';
             if (pt.prevDelta !== null) {
               const isUp = pt.prevDelta > 0;
@@ -40281,10 +40447,17 @@ function renderLotCostAnalyticsView(targetContainerId = null) {
             const fxLabel = pt.procurementType === 'import' && pt.exchangeRate > 0
               ? `${safeEscAnalytics(pt.foreignCurrency)} @${pt.exchangeRate}`
               : (pt.procurementType === 'domestic' ? '国内仕入' : '輸入仕入');
+            const compLots = Array.from(new Set((pt.componentBreakdown || []).map(c => c.lotNumber).filter(Boolean)));
+            const compDetailText = (pt.componentBreakdown || [])
+              .map(c => `${c.sku || c.name}×${c.qty}(${fmtYenAnalytics(c.subtotal)})`)
+              .join(' + ');
+            const assembledTag = pt.isAssembledFromComponents
+              ? `<span style="display:inline-block; background:#ecfdf5; color:#047857; border:1px solid #86efac; font-size:0.62rem; font-weight:700; padding:0 5px; border-radius:4px; margin-left:4px;">🧩 組立</span>`
+              : '';
             return `
-              <div style="display: grid; grid-template-columns: 155px 1fr 120px 125px; gap: 8px; align-items: center; padding: 5px 0; border-bottom: 1px dashed #e2e8f0; font-size: 0.75rem;">
+              <div style="display: grid; grid-template-columns: 165px 1fr 120px 125px; gap: 8px; align-items: center; padding: 5px 0; border-bottom: 1px dashed #e2e8f0; font-size: 0.75rem;">
                 <div>
-                  <div style="font-weight: 700; color: #1e293b; font-family: monospace;">${safeEscAnalytics(pt.lotNumber)}</div>
+                  <div style="font-weight: 700; color: #1e293b; font-family: monospace;">${safeEscAnalytics(pt.lotNumber)}${assembledTag}</div>
                   <div style="font-size: 0.67rem; color: #64748b;">${safeEscAnalytics(pt.arrivalDate || '未設定 (-)')} / ${pt.qty}${safeEscAnalytics(t.unit)} / ${fxLabel}</div>
                 </div>
                 <div>
@@ -40292,10 +40465,11 @@ function renderLotCostAnalyticsView(targetContainerId = null) {
                     <div style="width: ${totalPct}%; display: flex; height: 100%; transition: width 0.25s;">
                       <div style="width: ${basePct}%; background: #3b82f6; height: 100%;" title="本体単価: ${fmtYenAnalytics(pt.baseUnitCost)}"></div>
                       <div style="width: ${allocPct}%; background: #f59e0b; height: 100%;" title="諸掛按分単価: ${fmtYenAnalytics(pt.allocatedUnitCost)}"></div>
+                      ${compPct > 0 ? `<div style="width: ${compPct}%; background: #10b981; height: 100%;" title="組合せ部品原価: ${safeEscAnalytics(compDetailText)}"></div>` : ''}
                     </div>
                   </div>
                   <div style="font-size: 0.65rem; color: #64748b; margin-top: 2px;">
-                    本体 ${fmtYenAnalytics(pt.baseUnitCost)} ＋ 諸掛 ${fmtYenAnalytics(pt.allocatedUnitCost)}
+                    本体 ${fmtYenAnalytics(pt.baseUnitCost)} ＋ 諸掛 ${fmtYenAnalytics(pt.allocatedUnitCost)}${compCost > 0 ? ` ＋ <span style="color:#047857; font-weight:700;">部品 ${fmtYenAnalytics(compCost)}</span> <span style="color:#94a3b8;">(${safeEscAnalytics(compLots.join(', '))})</span>` : ''}
                   </div>
                 </div>
                 <div style="text-align: right;">
@@ -40354,8 +40528,12 @@ function renderLotCostAnalyticsView(targetContainerId = null) {
             ? `<span style="font-size:0.7rem; color:#334155;">計${r.serialStats.total}<br><small style="color:#059669;">在庫${r.serialStats.inStock}</small> / <small style="color:#64748b;">出${r.serialStats.shipped}</small></span>`
             : `<span style="color:#94a3b8; font-size:0.72rem;">-</span>`;
 
+          const compInfoHtml = r.isAssembledFromComponents
+            ? `<div style="font-size: 0.65rem; color: #047857; margin-top: 2px;">🧩 組立セット（${safeEscAnalytics((r.componentBreakdown || []).map(c => `${c.sku || c.name}×${c.qty}[${c.lotNumber}]`).join(' + '))}）</div>`
+            : '';
+
           return `
-            <tr style="border-bottom: 1px solid #e2e8f0;">
+            <tr style="border-bottom: 1px solid #e2e8f0;${r.isAssembledFromComponents ? ' background: #f0fdf4;' : ''}">
               <td style="padding: 8px 6px; font-family: monospace; font-weight: 700; color: #1e293b; white-space: nowrap;">
                 ${safeEscAnalytics(r.lotNumber)}
                 <div style="font-size: 0.68rem; color: #64748b; font-weight: 400;">${safeEscAnalytics(r.supplier)}</div>
@@ -40367,6 +40545,7 @@ function renderLotCostAnalyticsView(targetContainerId = null) {
               <td style="padding: 8px 6px;">
                 ${r.sku ? `<span style="background:#1e293b; color:#fff; font-family:monospace; font-size:0.66rem; padding:1px 5px; border-radius:3px; margin-right:4px;">${safeEscAnalytics(r.sku)}</span>` : ''}
                 <span style="font-weight: 600; color: #0f172a;">${safeEscAnalytics(r.itemName)}</span>
+                ${compInfoHtml}
               </td>
               <td style="padding: 8px 6px; text-align: right; font-weight: 700; white-space: nowrap;">${r.qty} <small style="color:#64748b; font-weight:400;">${safeEscAnalytics(r.unit)}</small></td>
               <td style="padding: 8px 6px; text-align: right; font-family: monospace; color: #475569; white-space: nowrap;">
@@ -40375,7 +40554,7 @@ function renderLotCostAnalyticsView(targetContainerId = null) {
               <td style="padding: 8px 6px; text-align: right; font-family: monospace; color: #1d4ed8; white-space: nowrap;">${fmtYenAnalytics(r.baseUnitCost)}</td>
               <td style="padding: 8px 6px; text-align: right; font-family: monospace; color: #b45309; white-space: nowrap;">
                 +${fmtYenAnalytics(r.allocatedUnitCost)}
-                <div style="font-size: 0.66rem; color: #94a3b8;">(${r.allocatedRatioPct.toFixed(1)}%)</div>
+                ${r.componentUnitCost > 0 ? `<div style="font-size: 0.66rem; color: #047857; font-weight: 700;">+部品 ${fmtYenAnalytics(r.componentUnitCost)}</div>` : `<div style="font-size: 0.66rem; color: #94a3b8;">(${r.allocatedRatioPct.toFixed(1)}%)</div>`}
               </td>
               <td style="padding: 8px 6px; text-align: right; font-family: monospace; font-weight: 800; color: #0f172a; white-space: nowrap; background: #f8fafc;">
                 ${fmtYenAnalytics(r.landedUnitCost)}
@@ -40405,9 +40584,10 @@ function renderLotCostAnalyticsView(targetContainerId = null) {
               入荷ロット台帳・商品マスタ・シリアル台帳・確定伝票からリアルタイム集計（本体単価＋諸掛按分＝確定実原価、前回ロット比と原価率を比較）
             </p>
           </div>
-          <div style="display: flex; align-items: center; gap: 12px; font-size: 0.72rem; color: #475569;">
+          <div style="display: flex; align-items: center; gap: 12px; font-size: 0.72rem; color: #475569; flex-wrap: wrap;">
             <span><span style="display:inline-block; width:10px; height:10px; background:#3b82f6; border-radius:2px; margin-right:4px;"></span>本体仕入単価</span>
             <span><span style="display:inline-block; width:10px; height:10px; background:#f59e0b; border-radius:2px; margin-right:4px;"></span>諸掛按分単価</span>
+            <span><span style="display:inline-block; width:10px; height:10px; background:#10b981; border-radius:2px; margin-right:4px;"></span>直近入庫 組合せ部品原価（BOM）</span>
           </div>
         </div>
 
@@ -40415,7 +40595,7 @@ function renderLotCostAnalyticsView(targetContainerId = null) {
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(175px, 1fr)); gap: 10px;">
           <div style="background: #ffffff; border: 1px solid #e2e8f0; border-left: 4px solid #2563eb; border-radius: 8px; padding: 12px;">
             <div style="font-size: 0.72rem; color: #64748b; font-weight: 700;">対象ロット / 明細数</div>
-            <div style="font-size: 1.3rem; font-weight: 800; color: #0f172a; margin-top: 2px;">${fLotCount} <small style="font-size:0.75rem; color:#64748b;">ロット (${filteredRows.length}行)</small></div>
+            <div style="font-size: 1.3rem; font-weight: 800; color: #0f172a; margin-top: 2px;">${fLotCount} <small style="font-size:0.75rem; color:#64748b;">ロット (${kpiSourceRows.length}行${fAssembledCount > 0 && lotCostViewState.itemFilter === 'all' ? `＋組立${fAssembledCount}` : ''})</small></div>
             <div style="font-size: 0.7rem; color: #64748b; margin-top: 2px;">総入荷数量: ${fTotalQty.toLocaleString()}</div>
           </div>
           <div style="background: #ffffff; border: 1px solid #e2e8f0; border-left: 4px solid #059669; border-radius: 8px; padding: 12px;">

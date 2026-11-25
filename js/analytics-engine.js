@@ -425,6 +425,7 @@ export function buildLotCostAnalytics({
         foreignSubtotal,
         baseUnitCost,
         allocatedUnitCost,
+        componentUnitCost: 0,
         landedUnitCost,
         totalLandedCost,
         totalAllocatedCost,
@@ -434,6 +435,9 @@ export function buildLotCostAnalytics({
         costRatioPct,
         estGrossMarginPerUnit,
         serialStats: snStat,
+        isAssembledFromComponents: false,
+        componentBreakdown: [],
+        sourceMainItemName: '',
         // 推移比較（後段で埋める）
         prevUnitCost: null,
         prevDelta: null,
@@ -441,6 +445,154 @@ export function buildLotCostAnalytics({
         itemMinCost: landedUnitCost,
         itemMaxCost: landedUnitCost,
         itemAvgCost: landedUnitCost
+      });
+    });
+  });
+
+  // BOM（セット品構成）に基づく本体単体ロット → セット品合成原価行の動的生成
+  // （例：本体単体ロットに直近入庫の付帯部品原価を合算し、販売単位のセット品原価推移にも並べて比較可能にする）
+  const baseRowsSnapshot = [...rows];
+  const bundleMasters = safeInv.filter(inv => inv && inv.type === 'bundle' && Array.isArray(inv.bundleItems) && inv.bundleItems.length >= 2);
+
+  const findNearestComponentLotRow = (comp, targetDate) => {
+    const compInvId = String(comp.inventoryId || '').trim();
+    const role = String(comp.role || '').toLowerCase();
+    const compNameNorm = normalizeLookupName(comp.name || '');
+
+    // 1. inventoryId 完全一致の入庫ロットを優先
+    let candidates = baseRowsSnapshot.filter(r => r.itemId === compInvId && r.landedUnitCost > 0);
+
+    // 2. 直接の入庫ロットが無い場合は同一ロール（バッテリー・充電器等）の単品入庫ロットから動的検索
+    if (candidates.length === 0) {
+      candidates = baseRowsSnapshot.filter(r => {
+        if (r.landedUnitCost <= 0) return false;
+        const rn = normalizeLookupName(r.itemName);
+        if (rn.includes('セット')) return false;
+        if (role === 'battery' || compNameNorm.includes('バッテリー') || compNameNorm.includes('電池')) {
+          return rn.includes('バッテリー') || rn.includes('電池');
+        }
+        if (role === 'charger' || compNameNorm.includes('充電器')) {
+          return rn.includes('充電器');
+        }
+        return compNameNorm && rn === compNameNorm;
+      });
+    }
+
+    if (candidates.length > 0) {
+      // 本体入荷日に最も近い（日付差の絶対値が最小な）直近入庫ロットを選定。同点時は新しい入荷日を優先
+      const sorted = [...candidates].sort((a, b) => {
+        const da = (targetDate && a.arrivalDate) ? Math.abs(diffDaysYmd(targetDate, a.arrivalDate) ?? 999999) : 999999;
+        const db = (targetDate && b.arrivalDate) ? Math.abs(diffDaysYmd(targetDate, b.arrivalDate) ?? 999999) : 999999;
+        if (da !== db) return da - db;
+        return (b.arrivalDate || '').localeCompare(a.arrivalDate || '');
+      });
+      const picked = sorted[0];
+      return {
+        unitCost: picked.landedUnitCost,
+        lotNumber: picked.lotNumber,
+        arrivalDate: picked.arrivalDate,
+        itemName: picked.itemName,
+        sku: picked.sku,
+        source: 'lot'
+      };
+    }
+
+    // 3. ロット履歴が1件も無い場合は在庫マスタの標準原価へ安全フォールバック
+    const invFallback = invById.get(compInvId);
+    if (invFallback && Number(invFallback.unitCost) > 0) {
+      return {
+        unitCost: Math.round(Number(invFallback.unitCost)),
+        lotNumber: 'マスタ標準',
+        arrivalDate: invFallback.lastInDate || '',
+        itemName: invFallback.name || comp.name || '',
+        sku: invFallback.sku || '',
+        source: 'master'
+      };
+    }
+    return null;
+  };
+
+  bundleMasters.forEach(bundleInv => {
+    const bom = bundleInv.bundleItems;
+    const mainComp = bom.find(c => c && c.role === 'main') || bom[0];
+    const subComps = bom.filter(c => c && c !== mainComp && Number(c.qty) > 0);
+    if (!mainComp || !mainComp.inventoryId || subComps.length === 0) return;
+
+    const bundleMeta = resolveMasterRef(bundleInv.id, bundleInv.name, bundleInv.sku);
+    const mainRows = baseRowsSnapshot.filter(r => r.itemId === String(mainComp.inventoryId));
+
+    mainRows.forEach((mr, mIdx) => {
+      const breakdown = [];
+      let extraUnitCost = 0;
+      subComps.forEach(sc => {
+        const compQty = Math.max(1, Number(sc.qty) || 1);
+        const found = findNearestComponentLotRow(sc, mr.arrivalDate);
+        const uCost = found ? found.unitCost : 0;
+        const subTotal = uCost * compQty;
+        extraUnitCost += subTotal;
+        breakdown.push({
+          role: sc.role || 'part',
+          name: (found && found.itemName) || sc.name || '構成部品',
+          sku: (found && found.sku) || '',
+          qty: compQty,
+          unitCost: uCost,
+          subtotal: subTotal,
+          lotNumber: found ? found.lotNumber : '未設定',
+          arrivalDate: found ? found.arrivalDate : ''
+        });
+      });
+
+      const assembledUnitCost = mr.landedUnitCost + extraUnitCost;
+      const assembledTotalCost = assembledUnitCost * mr.qty;
+      const assembledAllocRatioPct = assembledUnitCost > 0
+        ? Math.round((mr.allocatedUnitCost / assembledUnitCost) * 1000) / 10
+        : 0;
+      const refPrice = bundleMeta.refSalesPrice;
+      const costRatioPct = (refPrice && refPrice > 0 && assembledUnitCost > 0)
+        ? Math.round((assembledUnitCost / refPrice) * 1000) / 10
+        : null;
+      const estGrossMarginPerUnit = (refPrice && refPrice > 0)
+        ? (refPrice - assembledUnitCost)
+        : null;
+
+      rows.push({
+        rowKey: `${mr.rowKey}_assembled_${bundleInv.id}_${mIdx}`,
+        lotId: mr.lotId,
+        lotNumber: mr.lotNumber,
+        arrivalDate: mr.arrivalDate,
+        procurementType: mr.procurementType,
+        supplier: mr.supplier,
+        foreignCurrency: mr.foreignCurrency,
+        exchangeRate: mr.exchangeRate,
+        itemId: bundleMeta.canonicalItemId,
+        itemName: bundleMeta.canonicalName,
+        sku: bundleMeta.sku,
+        category: bundleMeta.category,
+        unit: bundleMeta.unit || 'セット',
+        qty: mr.qty,
+        foreignPrice: mr.foreignPrice,
+        foreignSubtotal: mr.foreignSubtotal,
+        baseUnitCost: mr.baseUnitCost,
+        allocatedUnitCost: mr.allocatedUnitCost,
+        componentUnitCost: extraUnitCost,
+        landedUnitCost: assembledUnitCost,
+        totalLandedCost: assembledTotalCost,
+        totalAllocatedCost: mr.totalAllocatedCost,
+        allocatedRatioPct: assembledAllocRatioPct,
+        refSalesPrice: refPrice,
+        refSalesSource: bundleMeta.refSalesSource,
+        costRatioPct,
+        estGrossMarginPerUnit,
+        serialStats: mr.serialStats,
+        isAssembledFromComponents: true,
+        componentBreakdown: breakdown,
+        sourceMainItemName: mr.sku ? `${mr.sku} ${mr.itemName}` : mr.itemName,
+        prevUnitCost: null,
+        prevDelta: null,
+        prevDeltaPct: null,
+        itemMinCost: assembledUnitCost,
+        itemMaxCost: assembledUnitCost,
+        itemAvgCost: assembledUnitCost
       });
     });
   });
@@ -459,7 +611,8 @@ export function buildLotCostAnalytics({
       const da = a.arrivalDate || '';
       const db = b.arrivalDate || '';
       if (da !== db) return da.localeCompare(db);
-      return a.lotNumber.localeCompare(b.lotNumber);
+      if (a.lotNumber !== b.lotNumber) return a.lotNumber.localeCompare(b.lotNumber);
+      return (a.isAssembledFromComponents ? 1 : 0) - (b.isAssembledFromComponents ? 1 : 0);
     });
 
     const validCosts = list.map(r => r.landedUnitCost).filter(c => c > 0);
@@ -513,10 +666,14 @@ export function buildLotCostAnalytics({
         qty: r.qty,
         baseUnitCost: r.baseUnitCost,
         allocatedUnitCost: r.allocatedUnitCost,
+        componentUnitCost: r.componentUnitCost || 0,
         landedUnitCost: r.landedUnitCost,
         prevDelta: r.prevDelta,
         prevDeltaPct: r.prevDeltaPct,
-        costRatioPct: r.costRatioPct
+        costRatioPct: r.costRatioPct,
+        isAssembledFromComponents: !!r.isAssembledFromComponents,
+        componentBreakdown: r.componentBreakdown || [],
+        sourceMainItemName: r.sourceMainItemName || ''
       }))
     });
   });
@@ -529,14 +686,16 @@ export function buildLotCostAnalytics({
     return b.totalCost - a.totalCost;
   });
 
-  // 全体サマリーKPI
-  const totalLandedAmount = rows.reduce((s, r) => s + r.totalLandedCost, 0);
-  const totalAllocatedAmount = rows.reduce((s, r) => s + r.totalAllocatedCost, 0);
-  const totalQuantity = rows.reduce((s, r) => s + r.qty, 0);
+  // 全体サマリーKPI（合成セット行は二重計上防止のため実入庫行のみで総額・数量を集計）
+  const actualRows = rows.filter(r => !r.isAssembledFromComponents);
+  const assembledRowsCount = rows.length - actualRows.length;
+  const totalLandedAmount = actualRows.reduce((s, r) => s + r.totalLandedCost, 0);
+  const totalAllocatedAmount = actualRows.reduce((s, r) => s + r.totalAllocatedCost, 0);
+  const totalQuantity = actualRows.reduce((s, r) => s + r.qty, 0);
   const avgAllocatedRatioPct = totalLandedAmount > 0
     ? Math.round((totalAllocatedAmount / totalLandedAmount) * 1000) / 10
     : 0;
-  const rowsWithCostRatio = rows.filter(r => r.costRatioPct !== null);
+  const rowsWithCostRatio = actualRows.filter(r => r.costRatioPct !== null);
   const weightedRefSales = rowsWithCostRatio.reduce((s, r) => s + (r.refSalesPrice * r.qty), 0);
   const weightedRefCost = rowsWithCostRatio.reduce((s, r) => s + r.totalLandedCost, 0);
   const avgCostRatioPct = weightedRefSales > 0
@@ -548,7 +707,8 @@ export function buildLotCostAnalytics({
   return {
     summary: {
       lotCount: lotSet.size,
-      rowCount: rows.length,
+      rowCount: actualRows.length,
+      assembledRowCount: assembledRowsCount,
       itemCount: itemTrends.length,
       totalQuantity,
       totalLandedAmount,
