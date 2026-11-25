@@ -343,7 +343,7 @@
           style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
           <span
-            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.25-all-menus-no-backflow</span>
+            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.25-export-packing-detail-marks</span>
         </div>
       </div>
 
@@ -552,12 +552,27 @@
 
             <!-- 梱包情報（Packing List用・任意） -->
             <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 8px;">
-              <div style="font-size: 0.68rem; font-weight: 800; color: #475569; margin-bottom: 4px;">📦 Packing List 梱包・パレット情報（任意）</div>
-              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
-                <input type="text" id="expCartons" class="form-input" placeholder="C/ No. / Cartons (例: 1 Pallet (24 Ctns.))" style="font-size: 0.74rem; padding: 3px 6px;">
-                <input type="text" id="expDimensions" class="form-input" placeholder="PALLET SIZE (例: 1100x1100x860mm)" style="font-size: 0.74rem; padding: 3px 6px;">
-                <input type="text" inputmode="decimal" id="expNetWeight" class="form-input" placeholder="N/ Weight (kg)" style="font-size: 0.74rem; padding: 3px 6px; font-family: monospace;">
-                <input type="text" inputmode="decimal" id="expGrossWeight" class="form-input" placeholder="G/ Weight (kg)" style="font-size: 0.74rem; padding: 3px 6px; font-family: monospace;">
+              <div style="font-size: 0.68rem; font-weight: 800; color: #475569; margin-bottom: 4px;">📦 Packing List 梱包・パレット・容積・荷印（任意）</div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 5px;">
+                <input type="text" id="expCartons" class="form-input" placeholder="総梱包数 (例: 1 Pallet (24 Ctns.))" style="font-size: 0.74rem; padding: 3px 6px;">
+                <input type="text" id="expDimensions" class="form-input" placeholder="PALLET SIZE (例: 1100mm x 1100mm x 860mm)" style="font-size: 0.74rem; padding: 3px 6px;">
+                <input type="text" inputmode="decimal" id="expNetWeight" class="form-input" placeholder="総 N/ Weight (kg) ※行別入力時は自動合算" style="font-size: 0.74rem; padding: 3px 6px; font-family: monospace;">
+                <input type="text" inputmode="decimal" id="expGrossWeight" class="form-input" placeholder="総 G/ Weight (kg) ※行別入力時は自動合算" style="font-size: 0.74rem; padding: 3px 6px; font-family: monospace;">
+                <input type="text" inputmode="decimal" id="expPalletWeight" class="form-input" placeholder="パレット風袋重量 (kg) 例: 10" style="font-size: 0.74rem; padding: 3px 6px; font-family: monospace;">
+                <input type="text" id="expMeasurement" class="form-input" placeholder="容積 / Measurement (例: 1.04 M3)" style="font-size: 0.74rem; padding: 3px 6px; font-family: monospace;">
+              </div>
+              <div>
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 4px; margin-bottom: 3px;">
+                  <label style="font-size: 0.64rem; font-weight: 700; color: #475569; margin: 0;">SHIPPING MARKS（シッピングマーク / 荷印枠）</label>
+                  <button type="button" id="btnInsertShippingMarks"
+                    style="font-size: 0.64rem; font-weight: 700; padding: 1px 6px; border-radius: 4px; border: 1px solid #93c5fd; background: #eff6ff; color: #1d4ed8; cursor: pointer;"
+                    title="宛先社名・原産国から荷印テンプレートを自動生成">
+                    ＋ 荷印を自動生成
+                  </button>
+                </div>
+                <textarea id="expShippingMarks" class="form-input" rows="3"
+                  placeholder="例:&#10;Buyer Name&#10;PORT / CITY&#10;P/No. 1&#10;MADE IN JAPAN"
+                  style="font-size: 0.73rem; line-height: 1.35; padding: 4px 6px; font-family: monospace;"></textarea>
               </div>
             </div>
 
@@ -5839,7 +5854,7 @@
           <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             <h2 class="view-screen-title" style="margin: 0;">勤怠管理・退勤タイムカード</h2>
             <span
-              style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.25-all-menus-no-backflow</span>
+              style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.25-export-packing-detail-marks</span>
           </div>
           <span class="view-screen-subtitle">休憩1時間自動控除・ワンタップ出退勤打刻・月次出勤簿・打刻漏れ修正</span>
         </div>
@@ -7953,7 +7968,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261125_all_menus_no_backflow"></script>
+  <script src="js/app.bundle.js?v=20261125_export_packing_detail_marks"></script>
 </body>
 
 </html>

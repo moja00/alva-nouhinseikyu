@@ -15621,7 +15621,10 @@ function ensureExportMeta(doc) {
       cartons: '',
       netWeight: '',
       grossWeight: '',
+      palletWeight: '',
       dimensions: '',
+      measurement: '',
+      shippingMarks: '',
       bankInfoEn: savedBankEn
     };
   } else {
@@ -15632,6 +15635,9 @@ function ensureExportMeta(doc) {
     if (doc.exportMeta.vessel === undefined) doc.exportMeta.vessel = '';
     if (doc.exportMeta.countryOfOrigin === undefined) doc.exportMeta.countryOfOrigin = 'JAPAN';
     if (doc.exportMeta.freight === undefined) doc.exportMeta.freight = '';
+    if (doc.exportMeta.palletWeight === undefined) doc.exportMeta.palletWeight = '';
+    if (doc.exportMeta.measurement === undefined) doc.exportMeta.measurement = '';
+    if (doc.exportMeta.shippingMarks === undefined) doc.exportMeta.shippingMarks = '';
   }
   return doc.exportMeta;
 }
@@ -15695,7 +15701,10 @@ function syncExportSettingsFormFromDoc() {
   setVal('expCartons', meta.cartons || '');
   setVal('expNetWeight', meta.netWeight || '');
   setVal('expGrossWeight', meta.grossWeight || '');
+  setVal('expPalletWeight', meta.palletWeight || '');
   setVal('expDimensions', meta.dimensions || '');
+  setVal('expMeasurement', meta.measurement || '');
+  setVal('expShippingMarks', meta.shippingMarks || '');
   setVal('expBankInfoEn', meta.bankInfoEn || '');
 
   // 円換算ヒント更新
@@ -15859,6 +15868,9 @@ function buildEnglishExportDocumentsHtml(doc, totals) {
       unitPrice: price,
       amount: lineAmt,
       sn: snDisp,
+      cartonNo: (it.cartonNo != null ? String(it.cartonNo).trim() : ''),
+      netWeight: (it.netWeight != null ? String(it.netWeight).trim() : ''),
+      grossWeight: (it.grossWeight != null ? String(it.grossWeight).trim() : ''),
       note: (it.note || '').trim()
     };
   });
@@ -16058,14 +16070,47 @@ function buildEnglishExportDocumentsHtml(doc, totals) {
   }
 
   // -------------------------------------------------------------------------
-  // Page 2: PACKING LIST（単価・金額欄なし、数量・HSコード・梱包・パレット情報専用）
+  // Page 2: PACKING LIST（単価・金額欄なし、数量・HSコード・行別梱包・パレット風袋・容積・荷印対応）
   // -------------------------------------------------------------------------
-  const cartonsVal = (meta.cartons || '').trim() || '-';
-  const netWeightVal = (meta.netWeight || '').trim() ? `${meta.netWeight} kg` : '-';
-  const grossWeightVal = (meta.grossWeight || '').trim() ? `${meta.grossWeight} kg` : '-';
-  const dimsVal = (meta.dimensions || '').trim() || '-';
+  const formatWeightVal = (raw) => {
+    if (raw === '' || raw === null || raw === undefined) return '-';
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return escapeHtml(String(raw));
+    const rounded = Math.round(n * 100) / 100;
+    return `${rounded.toLocaleString('en-US')} kg`;
+  };
 
-  const packingRowsHtml = normalizedItems.map((it, idx) => `
+  const hasPerItemPacking = normalizedItems.some(it => it.cartonNo || it.netWeight !== '' || it.grossWeight !== '');
+  const palletTareNum = Number(meta.palletWeight) || 0;
+  const cartonsSummaryVal = (meta.cartons || '').trim() || '-';
+  const dimsVal = (meta.dimensions || '').trim();
+  const measurementVal = (meta.measurement || '').trim();
+  const shippingMarksText = (meta.shippingMarks || '').trim();
+
+  // 行別重量が入力されていれば自動合算（＋パレット風袋重量）、未入力時は全体欄をフォールバック
+  const sumItemNet = normalizedItems.reduce((s, it) => s + (Number(it.netWeight) || 0), 0);
+  const sumItemGross = normalizedItems.reduce((s, it) => s + (Number(it.grossWeight) || 0), 0);
+  const hasItemNetWeights = normalizedItems.some(it => it.netWeight !== '' && Number.isFinite(Number(it.netWeight)));
+  const hasItemGrossWeights = normalizedItems.some(it => it.grossWeight !== '' && Number.isFinite(Number(it.grossWeight)));
+
+  const totalNetWeightDisp = hasItemNetWeights
+    ? formatWeightVal(sumItemNet)
+    : ((meta.netWeight || '').trim() ? formatWeightVal(meta.netWeight) : '-');
+  const totalGrossWeightDisp = hasItemGrossWeights
+    ? formatWeightVal(sumItemGross + palletTareNum)
+    : ((meta.grossWeight || '').trim() ? formatWeightVal(meta.grossWeight) : (palletTareNum > 0 ? formatWeightVal(palletTareNum) : '-'));
+
+  const dimsAndMeasHtml = [
+    dimsVal ? escapeHtml(dimsVal) : '',
+    measurementVal ? `<div style="font-size: 9px; color: #0369a1; font-weight: 700; margin-top: 2px;">${escapeHtml(measurementVal)}</div>` : ''
+  ].filter(Boolean).join('') || '-';
+
+  const packingRowsHtml = normalizedItems.map((it, idx) => {
+    const rowCtn = hasPerItemPacking ? (it.cartonNo ? escapeHtml(it.cartonNo) : '') : (idx === 0 ? escapeHtml(cartonsSummaryVal) : '-');
+    const rowNw = hasPerItemPacking ? (it.netWeight !== '' ? formatWeightVal(it.netWeight) : '-') : (idx === 0 ? totalNetWeightDisp : '-');
+    const rowGw = hasPerItemPacking ? (it.grossWeight !== '' ? formatWeightVal(it.grossWeight) : '-') : (idx === 0 ? totalGrossWeightDisp : '-');
+    const rowDim = idx === 0 ? dimsAndMeasHtml : '-';
+    return `
     <tr>
       <td style="border: 1px solid #cbd5e1; padding: 6px 4px; text-align: center; font-family: monospace; font-size: 10px; word-break: break-word;">${escapeHtml(it.sku)}</td>
       <td style="border: 1px solid #cbd5e1; padding: 6px 7px; text-align: left; font-size: 10.5px; word-break: break-word;">
@@ -16075,15 +16120,47 @@ function buildEnglishExportDocumentsHtml(doc, totals) {
       </td>
       <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: right; font-family: monospace; font-weight: 700; font-size: 10.5px; white-space: nowrap;">${it.qty ? it.qty.toLocaleString('en-US') : ''}</td>
       <td style="border: 1px solid #cbd5e1; padding: 6px 4px; text-align: center; font-size: 10px; color: #475569; white-space: nowrap;">${it.qty ? escapeHtml(it.unitEn) : ''}</td>
-      <td style="border: 1px solid #cbd5e1; padding: 6px 4px; text-align: center; font-size: 10px; word-break: break-word;">${idx === 0 ? escapeHtml(cartonsVal) : '-'}</td>
-      <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: right; font-family: monospace; font-size: 10px; white-space: nowrap;">${idx === 0 ? escapeHtml(netWeightVal) : '-'}</td>
-      <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: right; font-family: monospace; font-size: 10px; white-space: nowrap;">${idx === 0 ? escapeHtml(grossWeightVal) : '-'}</td>
-      <td style="border: 1px solid #cbd5e1; padding: 6px 4px; text-align: center; font-size: 9.5px; word-break: break-word;">${idx === 0 ? escapeHtml(dimsVal) : '-'}</td>
+      <td style="border: 1px solid #cbd5e1; padding: 6px 4px; text-align: center; font-size: 10px; font-weight: ${it.cartonNo ? '700' : '400'}; word-break: break-word;">${rowCtn}</td>
+      <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: right; font-family: monospace; font-size: 10px; white-space: nowrap;">${rowNw}</td>
+      <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: right; font-family: monospace; font-size: 10px; white-space: nowrap;">${rowGw}</td>
+      <td style="border: 1px solid #cbd5e1; padding: 6px 4px; text-align: center; font-size: 9.5px; word-break: break-word;">${rowDim}</td>
     </tr>
-  `).join('');
+  `;
+  }).join('');
+
+  // パレット風袋重量が入力されている場合、Pallet 行を自動追加
+  const palletRowHtml = palletTareNum > 0 ? `
+    <tr style="background: #fafafa;">
+      <td style="border: 1px solid #cbd5e1; padding: 5px 4px; text-align: center; font-size: 10px; color: #64748b;">-</td>
+      <td style="border: 1px solid #cbd5e1; padding: 5px 7px; text-align: left; font-size: 10px; font-weight: 700; color: #475569;">Pallet (Tare Weight)</td>
+      <td style="border: 1px solid #cbd5e1; padding: 5px 5px; text-align: right; font-size: 10px; color: #64748b;">-</td>
+      <td style="border: 1px solid #cbd5e1; padding: 5px 4px; text-align: center; font-size: 10px; color: #64748b;">-</td>
+      <td style="border: 1px solid #cbd5e1; padding: 5px 4px; text-align: center; font-size: 10px; color: #64748b;">-</td>
+      <td style="border: 1px solid #cbd5e1; padding: 5px 5px; text-align: right; font-family: monospace; font-size: 10px; color: #64748b;">-</td>
+      <td style="border: 1px solid #cbd5e1; padding: 5px 5px; text-align: right; font-family: monospace; font-size: 10px; font-weight: 700; white-space: nowrap;">${formatWeightVal(palletTareNum)}</td>
+      <td style="border: 1px solid #cbd5e1; padding: 5px 4px; text-align: center; font-size: 9.5px; color: #64748b;">-</td>
+    </tr>
+  ` : '';
 
   // Packing List 用の備考（代行出荷注記など、銀行手数料単文以外の手動・追加備考がある場合に表示）
   const packingRemarksText = (resolvedEnNotes && resolvedEnNotes !== DEFAULT_EN_EXPORT_REMARK) ? resolvedEnNotes : '';
+
+  // Packing List 最下部（左：シッピングマーク荷印枠、右：署名欄＋電子角印）
+  const packingFooterHtml = shippingMarksText ? `
+    <div style="margin-top: 18px; display: flex; justify-content: space-between; align-items: flex-end; gap: 16px;">
+      <div style="border: 2px solid #0f172a; padding: 10px 18px; min-width: 195px; max-width: 280px; text-align: center; background: #ffffff;">
+        <div style="font-size: 8.5px; font-weight: 700; color: #64748b; letter-spacing: 0.8px; margin-bottom: 4px; border-bottom: 1px dashed #cbd5e1; padding-bottom: 2px;">SHIPPING MARKS</div>
+        <div style="font-size: 12px; font-weight: 800; line-height: 1.5; color: #0f172a; white-space: pre-line; font-family: 'Helvetica Neue', Arial, sans-serif;">${escapeHtml(shippingMarksText)}</div>
+      </div>
+      <div style="display: flex; align-items: flex-end; gap: 14px; flex-shrink: 0;">
+        <div style="width: 235px; font-size: 10.5px; color: #334155;">
+          <div style="font-weight: 700; color: #0f172a; margin-bottom: 28px;">Shipper: ${escapeHtml(companyEN)}</div>
+          <div style="border-top: 1px solid #334155; padding-top: 4px; font-size: 9.5px; color: #64748b;">Authorized Signature</div>
+        </div>
+        ${signatureStampHtml}
+      </div>
+    </div>
+  ` : buildEnSignatureBlock('Shipper');
 
   const page2Html = `
     <div class="sheet-page-indicator no-print" data-sheet-page="2" style="margin-top: 28px; margin-bottom: 8px; font-size: 0.8rem; font-weight: 700; color: #047857; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 4px 12px; border-radius: 6px; display: inline-flex; align-items: center; gap: 6px;">
@@ -16117,7 +16194,7 @@ function buildEnglishExportDocumentsHtml(doc, totals) {
         </tbody>
       </table>
 
-      <table style="width: 100%; table-layout: fixed; border-collapse: collapse; margin-bottom: 14px;">
+      <table style="width: 100%; table-layout: fixed; border-collapse: collapse; margin-bottom: 12px;">
         <thead>
           <tr style="background: #233b6c; color: #ffffff; font-size: 9.5px; line-height: 1.25;">
             <th style="border: 1px solid #233b6c; padding: 7px 4px; width: 11%; text-align: center;">Item No.</th>
@@ -16127,22 +16204,30 @@ function buildEnglishExportDocumentsHtml(doc, totals) {
             <th style="border: 1px solid #233b6c; padding: 7px 4px; width: 13%; text-align: center;">C/ No. /<br>Cartons</th>
             <th style="border: 1px solid #233b6c; padding: 7px 4px; width: 10%; text-align: right;">N/ Weight</th>
             <th style="border: 1px solid #233b6c; padding: 7px 4px; width: 10%; text-align: right;">G/ Weight</th>
-            <th style="border: 1px solid #233b6c; padding: 7px 4px; width: 16%; text-align: center;">PALLET SIZE /<br>Dimensions</th>
+            <th style="border: 1px solid #233b6c; padding: 7px 4px; width: 16%; text-align: center;">PALLET SIZE /<br>M3</th>
           </tr>
         </thead>
         <tbody>
           ${packingRowsHtml || '<tr><td colspan="8" style="border:1px solid #cbd5e1; padding:36px 12px; height:90px; vertical-align:middle; text-align:center; color:#94a3b8; font-size:11px;">No items</td></tr>'}
+          ${palletRowHtml}
           <tr style="background: #f1f5f9; font-weight: 800; font-size: 10px;">
             <td colspan="2" style="border: 1px solid #cbd5e1; padding: 6px 8px; text-align: right;">TOTAL SUMMARY</td>
             <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: right; font-family: monospace; white-space: nowrap;">${totalQty.toLocaleString('en-US')}</td>
             <td style="border: 1px solid #cbd5e1; padding: 6px 4px; text-align: center;">-</td>
-            <td style="border: 1px solid #cbd5e1; padding: 6px 4px; text-align: center; word-break: break-word;">${escapeHtml(cartonsVal)}</td>
-            <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: right; font-family: monospace; white-space: nowrap;">${escapeHtml(netWeightVal)}</td>
-            <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: right; font-family: monospace; white-space: nowrap;">${escapeHtml(grossWeightVal)}</td>
-            <td style="border: 1px solid #cbd5e1; padding: 6px 4px; text-align: center; word-break: break-word;">${escapeHtml(dimsVal)}</td>
+            <td style="border: 1px solid #cbd5e1; padding: 6px 4px; text-align: center; word-break: break-word;">${escapeHtml(cartonsSummaryVal)}</td>
+            <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: right; font-family: monospace; white-space: nowrap;">${totalNetWeightDisp}</td>
+            <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: right; font-family: monospace; white-space: nowrap;">${totalGrossWeightDisp}</td>
+            <td style="border: 1px solid #cbd5e1; padding: 6px 4px; text-align: center; word-break: break-word;">${dimsAndMeasHtml}</td>
           </tr>
         </tbody>
       </table>
+
+      ${(dimsVal || measurementVal) ? `
+        <div style="font-size: 10px; color: #334155; margin-bottom: 8px; display: flex; flex-wrap: wrap; gap: 14px;">
+          ${dimsVal ? `<span><strong>PALLET SIZE:</strong> ${escapeHtml(dimsVal)}</span>` : ''}
+          ${measurementVal ? `<span><strong>MEASUREMENT:</strong> ${escapeHtml(measurementVal)}</span>` : ''}
+        </div>
+      ` : ''}
 
       ${packingRemarksText ? `
         <div style="border: 1px solid #cbd5e1; border-radius: 6px; padding: 7px 12px; margin-bottom: 10px;">
@@ -16151,11 +16236,11 @@ function buildEnglishExportDocumentsHtml(doc, totals) {
         </div>
       ` : ''}
 
-      <div style="border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; margin-bottom: 16px; background: #f8fafc; font-size: 10.5px; color: #334155;">
+      <div style="border: 1px solid #cbd5e1; border-radius: 6px; padding: 7px 12px; margin-bottom: 10px; background: #f8fafc; font-size: 10px; color: #334155;">
         <strong>DECLARATION:</strong> We certify that the goods described above have been packed in accordance with export standards and are of ${escapeHtml(countryOfOriginText)} origin unless otherwise stated.
       </div>
 
-      ${buildEnSignatureBlock('Shipper')}
+      ${packingFooterHtml}
     </article>
   `;
 
@@ -16253,7 +16338,10 @@ function renderEnglishExportSheets(totals, enContainer) {
     expCartons: 'cartons',
     expNetWeight: 'netWeight',
     expGrossWeight: 'grossWeight',
+    expPalletWeight: 'palletWeight',
     expDimensions: 'dimensions',
+    expMeasurement: 'measurement',
+    expShippingMarks: 'shippingMarks',
     expBankInfoEn: 'bankInfoEn'
   };
   const handler = (e) => {
@@ -16273,17 +16361,30 @@ function renderEnglishExportSheets(totals, enContainer) {
       return;
     }
 
-    // 明細カード内の英語表記・HSコード直接編集
+    // 明細カード内の英語表記・HSコード・行別梱包（C/t・N/W・G/W）直接編集
     if (target.classList && (
       target.classList.contains('item-input-name-en') ||
       target.classList.contains('item-input-unit-en') ||
-      target.classList.contains('item-input-hs-code')
+      target.classList.contains('item-input-hs-code') ||
+      target.classList.contains('item-input-carton-no') ||
+      target.classList.contains('item-input-net-weight') ||
+      target.classList.contains('item-input-gross-weight')
     )) {
       const idx = Number(target.dataset.index);
       if (!Number.isNaN(idx) && currentDoc.items && currentDoc.items[idx]) {
-        if (target.classList.contains('item-input-name-en')) currentDoc.items[idx].nameEn = target.value;
-        if (target.classList.contains('item-input-unit-en')) currentDoc.items[idx].unitEn = target.value;
-        if (target.classList.contains('item-input-hs-code')) currentDoc.items[idx].hsCode = target.value;
+        let v = target.value;
+        if (target.classList.contains('item-input-net-weight') || target.classList.contains('item-input-gross-weight')) {
+          if (!e.isComposing && typeof normalizePoHalfWidthNumberStr === 'function') {
+            const norm = normalizePoHalfWidthNumberStr(v, true);
+            if (v !== norm) { v = norm; target.value = norm; }
+          }
+        }
+        if (target.classList.contains('item-input-name-en')) currentDoc.items[idx].nameEn = v;
+        if (target.classList.contains('item-input-unit-en')) currentDoc.items[idx].unitEn = v;
+        if (target.classList.contains('item-input-hs-code')) currentDoc.items[idx].hsCode = v;
+        if (target.classList.contains('item-input-carton-no')) currentDoc.items[idx].cartonNo = v;
+        if (target.classList.contains('item-input-net-weight')) currentDoc.items[idx].netWeight = v;
+        if (target.classList.contains('item-input-gross-weight')) currentDoc.items[idx].grossWeight = v;
         renderAll();
       }
       return;
@@ -16292,7 +16393,7 @@ function renderEnglishExportSheets(totals, enContainer) {
     if (!id || !fieldMap[id]) return;
     const meta = ensureExportMeta(currentDoc);
     let val = target.value;
-    if (id === 'expExchangeRate' || id === 'expNetWeight' || id === 'expGrossWeight') {
+    if (id === 'expExchangeRate' || id === 'expNetWeight' || id === 'expGrossWeight' || id === 'expPalletWeight') {
       if (!e.isComposing && typeof normalizePoHalfWidthNumberStr === 'function') {
         const norm = normalizePoHalfWidthNumberStr(val, true);
         if (val !== norm) { val = norm; target.value = norm; }
@@ -16306,13 +16407,29 @@ function renderEnglishExportSheets(totals, enContainer) {
     renderAll();
   };
 
-  // Remarks プリセット挿入ボタン（イベント委譲）
+  // Remarks / Shipping Marks プリセット挿入ボタン（イベント委譲）
   document.addEventListener('click', (e) => {
     const btnOnBehalf = e.target && e.target.closest ? e.target.closest('#btnInsertOnBehalfRemark') : null;
     const btnBankCharge = e.target && e.target.closest ? e.target.closest('#btnInsertBankChargeRemark') : null;
-    if (!currentDoc || (!btnOnBehalf && !btnBankCharge)) return;
+    const btnMarks = e.target && e.target.closest ? e.target.closest('#btnInsertShippingMarks') : null;
+    if (!currentDoc || (!btnOnBehalf && !btnBankCharge && !btnMarks)) return;
 
     const meta = ensureExportMeta(currentDoc);
+
+    if (btnMarks) {
+      const clients = typeof getClientMasterList === 'function' ? getClientMasterList() : [];
+      const matched = clients.find(c => c && ((currentDoc.client?.id && c.id === currentDoc.client.id) || (c.name && currentDoc.client?.name && c.name.trim() === currentDoc.client.name.trim())));
+      const buyerLine = (matched && matched.nameEn) || currentDoc.client?.nameEn || currentDoc.client?.name || 'CONSIGNEE';
+      const placeLine = (meta.incotermPlace || meta.shipmentTo || meta.shipmentFrom || 'JAPAN').split(',')[0].trim().toUpperCase();
+      const originLine = `MADE IN ${(meta.countryOfOrigin || 'JAPAN').trim().toUpperCase()}`;
+      meta.shippingMarks = `${buyerLine}\n${placeLine}\nP/No. 1\n${originLine}`;
+      const marksEl = document.getElementById('expShippingMarks');
+      if (marksEl) marksEl.value = meta.shippingMarks;
+      console.log('【海外輸出荷印生成】完了', { shippingMarks: meta.shippingMarks });
+      renderAll();
+      return;
+    }
+
     const masterIssuer = typeof loadIssuerProfile === 'function' ? (loadIssuerProfile() || {}) : {};
     const companyEN = (masterIssuer.companyNameEn || 'ALVA WORKS CORP.').trim();
     let snippet = '';
@@ -17323,10 +17440,17 @@ function renderItemInputCards() {
           <input type="text" class="form-input item-input-name" placeholder="品名・項目名（例: DP-5000 ベーシックセット など）" value="${escapeHtml(item.name || '')}" style="font-weight: 600; font-size: 0.95rem;">
         </div>
         ${currentDoc && currentDoc.docLanguage === 'en' ? `
-          <div style="display: grid; grid-template-columns: 1.6fr 0.6fr 0.8fr; gap: 5px; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 6px; padding: 5px 7px;">
-            <input type="text" class="form-input item-input-name-en" data-index="${index}" placeholder="🌐 英語商品名 (Description EN)" value="${escapeHtml(item.nameEn || '')}" style="font-size: 0.76rem; padding: 3px 6px;">
-            <input type="text" class="form-input item-input-unit-en" data-index="${index}" placeholder="Unit (Sets)" value="${escapeHtml(item.unitEn || '')}" style="font-size: 0.76rem; padding: 3px 6px;">
-            <input type="text" class="form-input item-input-hs-code" data-index="${index}" placeholder="HS Code (例: 8467.19)" value="${escapeHtml(item.hsCode || '')}" style="font-size: 0.76rem; font-family: monospace; padding: 3px 6px;">
+          <div style="display: flex; flex-direction: column; gap: 4px; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 6px; padding: 6px 7px;">
+            <div style="display: grid; grid-template-columns: 1.6fr 0.6fr 0.8fr; gap: 5px;">
+              <input type="text" class="form-input item-input-name-en" data-index="${index}" placeholder="🌐 英語商品名 (Description EN)" value="${escapeHtml(item.nameEn || '')}" style="font-size: 0.76rem; padding: 3px 6px;">
+              <input type="text" class="form-input item-input-unit-en" data-index="${index}" placeholder="Unit (Pcs)" value="${escapeHtml(item.unitEn || '')}" style="font-size: 0.76rem; padding: 3px 6px;">
+              <input type="text" class="form-input item-input-hs-code" data-index="${index}" placeholder="HS Code (8467.19)" value="${escapeHtml(item.hsCode || '')}" style="font-size: 0.76rem; font-family: monospace; padding: 3px 6px;">
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px;">
+              <input type="text" class="form-input item-input-carton-no" data-index="${index}" placeholder="📦 C/t (例: 9 Ctn.)" value="${escapeHtml(item.cartonNo || '')}" style="font-size: 0.74rem; padding: 3px 6px;">
+              <input type="text" inputmode="decimal" class="form-input item-input-net-weight" data-index="${index}" placeholder="N/W (kg) 例: 185" value="${escapeHtml(item.netWeight || '')}" style="font-size: 0.74rem; font-family: monospace; padding: 3px 6px;">
+              <input type="text" inputmode="decimal" class="form-input item-input-gross-weight" data-index="${index}" placeholder="G/W (kg) 例: 209" value="${escapeHtml(item.grossWeight || '')}" style="font-size: 0.74rem; font-family: monospace; padding: 3px 6px;">
+            </div>
           </div>
         ` : ''}
         <div style="position: relative;">
