@@ -40675,7 +40675,7 @@ const bizAnalyticsViewState = {
   expandedClients: new Set(),
   expandedDemoSessions: new Set(),
   expandedRegions: new Set(),
-  geoGranularity: 'region', // 'region' | 'prefecture'
+  geoGranularity: 'region', // 'region' | 'prefecture' | 'client'
   tripStart: '',
   tripEnd: '',
   followUpDays: 60,
@@ -41240,11 +41240,11 @@ function renderBusinessAnalyticsView(period = null) {
         ` : '';
 
         return `
-          <tr style="border-bottom: 1px solid #f1f5f9;">
+          <tr class="biz-toggle-client-detail" data-client-key="${safeEscAnalytics(c.clientKey)}" title="クリックで売上品目・伝票明細を開閉" style="border-bottom: 1px solid #f1f5f9; cursor: pointer;">
             <td style="padding: 7px 8px;">
-              <button type="button" class="biz-toggle-client-detail" data-client-key="${safeEscAnalytics(c.clientKey)}" style="background: none; border: none; padding: 0; cursor: pointer; text-align: left; font-weight: 700; color: #0f172a; font-size: 0.78rem;">
+              <span style="font-weight: 700; color: #0f172a; font-size: 0.78rem;">
                 <span style="display:inline-block; width:14px; color:#2563eb;">${isOpen ? '▼' : '▶'}</span>${safeEscAnalytics(c.clientName)}
-              </button>${repeatBadge}
+              </span>${repeatBadge}
               <span style="font-size:0.68rem; color:#64748b; margin-left:6px;">(${safeEscAnalytics(c.prefecture)})</span>
             </td>
             <td style="padding: 7px 6px; text-align: right; font-family: monospace; font-weight: 700; color: #0f172a; white-space: nowrap;">${fmtYenAnalytics(c.sales)}</td>
@@ -41447,6 +41447,192 @@ function renderBusinessAnalyticsView(period = null) {
           `;
         }).join('');
 
+    // --- 販売店別（全地域横断）売上集計ビューHTML ---
+    const isClientRankingMode = bizAnalyticsViewState.geoGranularity === 'client';
+    let clientRankingHtml = '';
+    if (isClientRankingMode) {
+      const flatClients = sortClientList(
+        (data.clientSummary || []).filter(c => {
+          if (bizAnalyticsViewState.tripRegion !== 'all' && c.region !== bizAnalyticsViewState.tripRegion) return false;
+          if (bizAnalyticsViewState.tripPrefecture !== 'all' && c.prefecture !== bizAnalyticsViewState.tripPrefecture) return false;
+          if (bizAnalyticsViewState.tripClient !== 'all' && c.clientName !== bizAnalyticsViewState.tripClient) return false;
+          if (!clientQ) return true;
+          const hay = `${c.clientName} ${c.region} ${c.prefecture} ${c.endUsers.join(' ')} ${c.titles.join(' ')} ${(c.soldItemSummary || []).map(s => s.name).join(' ')}`.toLowerCase();
+          return hay.includes(clientQ);
+        })
+      );
+
+      const sumSales = flatClients.reduce((s, c) => s + c.sales, 0);
+      const sumCogs = flatClients.reduce((s, c) => s + c.cogs, 0);
+      const sumGp = flatClients.reduce((s, c) => s + c.grossProfit, 0);
+      const sumDocs = flatClients.reduce((s, c) => s + c.docCount, 0);
+      const sumQty = flatClients.reduce((s, c) => s + c.totalQty, 0);
+      const sumMarginPct = sumSales > 0 ? Math.round((sumGp / sumSales) * 1000) / 10 : null;
+      const maxClientScale = Math.max(1, ...flatClients.map(c => Math.max(c.sales, c.grossProfit)));
+
+      const flatRowsHtml = flatClients.length === 0
+        ? `<tr><td colspan="10" style="padding: 24px; text-align: center; color: #94a3b8;">対象条件の販売店売上データがありません。</td></tr>`
+        : flatClients.map((c, idx) => {
+            const isOpen = bizAnalyticsViewState.expandedClients.has(c.clientKey);
+            const sharePct = sumSales > 0 ? Math.round((c.sales / sumSales) * 1000) / 10 : 0;
+            const cSalesW = Math.min(100, Math.max(0, Math.round((Math.max(0, c.sales) / maxClientScale) * 100)));
+            const cGpW = Math.min(cSalesW || 100, Math.max(0, Math.round((Math.max(0, c.grossProfit) / maxClientScale) * 100)));
+            const cExtW = Math.max(0, cSalesW - cGpW);
+            const repeatBadge = c.isRepeat
+              ? `<span style="background:#dbeafe; color:#1d4ed8; font-size:0.64rem; font-weight:700; padding:1px 6px; border-radius:9999px; margin-left:4px;">リピート ${c.docCount}回</span>`
+              : '';
+            const rankColor = idx === 0 ? '#b45309' : (idx === 1 ? '#475569' : (idx === 2 ? '#9a3412' : '#64748b'));
+            const rankBg = idx === 0 ? '#fef3c7' : (idx === 1 ? '#f1f5f9' : (idx === 2 ? '#ffedd5' : '#f8fafc'));
+            const euHtml = c.endUsers.length > 0
+              ? c.endUsers.slice(0, 3).map(eu => `<span style="display:inline-block; background:#f0fdf4; color:#166534; border:1px solid #bbf7d0; font-size:0.65rem; padding:1px 5px; border-radius:4px; margin:1px 2px 1px 0;">${safeEscAnalytics(eu)}</span>`).join('') +
+                (c.endUsers.length > 3 ? `<span style="font-size:0.65rem; color:#64748b;"> +${c.endUsers.length - 3}</span>` : '')
+              : `<span style="color:#94a3b8; font-size:0.7rem;">-</span>`;
+
+            const soldChipsHtml = (c.soldItemSummary && c.soldItemSummary.length > 0)
+              ? `<div style="display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px;">
+                  ${c.soldItemSummary.map(si => `<span style="display:inline-flex; align-items:center; gap:4px; background:#eff6ff; color:#1e40af; border:1px solid #bfdbfe; padding:2px 7px; border-radius:9999px; font-size:0.68rem; font-weight:700;">📦 ${safeEscAnalytics(si.name)} <span style="color:#1d4ed8;">×${si.qty}${safeEscAnalytics(si.unit)}</span></span>`).join('')}
+                </div>`
+              : '';
+
+            const detailRowHtml = isOpen ? `
+              <tr style="background: #f8fafc;">
+                <td colspan="10" style="padding: 8px 14px; border-bottom: 1.5px solid #cbd5e1;">
+                  <div style="font-size: 0.73rem; font-weight: 700; color: #334155; margin-bottom: 5px;">
+                    📂 「${safeEscAnalytics(c.clientName)}」売上品目・取引履歴詳細（計 ${c.docs.length} 件 / 初回 ${safeEscAnalytics(c.firstDate || '-')} 〜 最終 ${safeEscAnalytics(c.lastDate || '-')}）
+                  </div>
+                  ${soldChipsHtml}
+                  <table style="width: 100%; border-collapse: collapse; font-size: 0.72rem; background: #ffffff; border: 1px solid #e2e8f0;">
+                    <thead>
+                      <tr style="background: #f1f5f9; color: #475569; border-bottom: 1px solid #cbd5e1;">
+                        <th style="padding: 5px 6px; text-align: left;">発行日</th>
+                        <th style="padding: 5px 6px; text-align: left;">伝票番号</th>
+                        <th style="padding: 5px 6px; text-align: left;">売上品目（数量・金額・S/N） / 件名・EU</th>
+                        <th style="padding: 5px 6px; text-align: right;">数量</th>
+                        <th style="padding: 5px 6px; text-align: right;">売上(税抜)</th>
+                        <th style="padding: 5px 6px; text-align: right;">原価</th>
+                        <th style="padding: 5px 6px; text-align: right;">粗利額</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${c.docs.map(d => {
+                        const itemsListHtml = (d.lineItems && d.lineItems.length > 0)
+                          ? `<div style="display: flex; flex-direction: column; gap: 2px;">
+                              ${d.lineItems.map(li => `
+                                <div style="display: flex; justify-content: space-between; gap: 8px; font-size: 0.71rem; color: ${li.isDiscount ? '#64748b' : '#0f172a'};">
+                                  <span>
+                                    ${li.isDiscount ? '➖' : '•'} <strong>${safeEscAnalytics(li.name)}</strong>
+                                    <span style="color:#475569;">× ${li.qty}${safeEscAnalytics(li.unit)}</span>
+                                    ${li.serialNumber ? `<span style="margin-left:4px; font-family:monospace; font-size:0.65rem; background:#f1f5f9; color:#334155; padding:0 4px; border-radius:3px;">S/N:${safeEscAnalytics(li.serialNumber)}</span>` : ''}
+                                  </span>
+                                  <span style="font-family: monospace; white-space: nowrap; color: ${li.isDiscount ? '#dc2626' : '#334155'};">${fmtYenAnalytics(li.amount)}</span>
+                                </div>
+                              `).join('')}
+                            </div>`
+                          : `<span style="color:#94a3b8;">品目明細なし</span>`;
+                        const metaNoteHtml = (d.title || (d.endUsers && d.endUsers.length > 0))
+                          ? `<div style="font-size: 0.66rem; color: #64748b; margin-top: 3px;">
+                              ${d.title ? `件名: ${safeEscAnalytics(d.title)}` : ''}
+                              ${d.endUsers.length > 0 ? `<span style="margin-left:6px; color:#15803d; font-weight:700;">[EU: ${safeEscAnalytics(d.endUsers.join(', '))}]</span>` : ''}
+                            </div>`
+                          : '';
+                        return `
+                          <tr style="border-bottom: 1px solid #f1f5f9;">
+                            <td style="padding: 6px; white-space: nowrap; vertical-align: top;">${safeEscAnalytics(d.issueDate || '-')}</td>
+                            <td style="padding: 6px; font-family: monospace; white-space: nowrap; vertical-align: top;">${safeEscAnalytics(d.docNumber)}</td>
+                            <td style="padding: 6px; vertical-align: top;">${itemsListHtml}${metaNoteHtml}</td>
+                            <td style="padding: 6px; text-align: right; vertical-align: top;">${d.totalQty}</td>
+                            <td style="padding: 6px; text-align: right; font-family: monospace; font-weight: 700; vertical-align: top;">${fmtYenAnalytics(d.sales)}</td>
+                            <td style="padding: 6px; text-align: right; font-family: monospace; color: #64748b; vertical-align: top;">${fmtYenAnalytics(d.cogs)}</td>
+                            <td style="padding: 6px; text-align: right; font-family: monospace; font-weight: 700; color: ${d.grossProfit >= 0 ? '#059669' : '#dc2626'}; vertical-align: top;">${fmtYenAnalytics(d.grossProfit)}</td>
+                          </tr>
+                        `;
+                      }).join('')}
+                    </tbody>
+                  </table>
+                </td>
+              </tr>
+            ` : '';
+
+            return `
+              <tr class="biz-toggle-client-detail" data-client-key="${safeEscAnalytics(c.clientKey)}" title="クリックで売上品目・伝票明細を開閉" style="border-bottom: 1px solid #e2e8f0; cursor: pointer;">
+                <td style="padding: 8px 6px; text-align: center; white-space: nowrap;">
+                  <span style="display:inline-block; min-width:24px; padding:1px 6px; border-radius:9999px; font-size:0.7rem; font-weight:800; background:${rankBg}; color:${rankColor};">${idx + 1}</span>
+                </td>
+                <td style="padding: 8px 6px;">
+                  <span style="font-weight: 700; color: #0f172a; font-size: 0.79rem;">
+                    <span style="display:inline-block; width:14px; color:#2563eb;">${isOpen ? '▼' : '▶'}</span>${safeEscAnalytics(c.clientName)}
+                  </span>${repeatBadge}
+                </td>
+                <td style="padding: 8px 6px; white-space: nowrap; font-size: 0.72rem; color: #475569;">
+                  <span style="background:#f1f5f9; padding:1px 6px; border-radius:4px;">${safeEscAnalytics(c.region)}</span>
+                  <span style="margin-left:3px; color:#64748b;">${safeEscAnalytics(c.prefecture)}</span>
+                </td>
+                <td style="padding: 8px 6px; text-align: right; font-family: monospace; font-weight: 800; color: #0f172a; white-space: nowrap;">
+                  ${fmtYenAnalytics(c.sales)}
+                  <div style="font-size:0.65rem; color:#64748b; font-weight:400;">構成比 ${sharePct.toFixed(1)}%</div>
+                </td>
+                <td style="padding: 8px 6px; text-align: right; font-family: monospace; color: #64748b; white-space: nowrap;">${fmtYenAnalytics(c.cogs)}</td>
+                <td style="padding: 8px 6px; text-align: right; font-family: monospace; font-weight: 800; color: ${c.grossProfit >= 0 ? '#059669' : '#dc2626'}; white-space: nowrap;">${fmtYenAnalytics(c.grossProfit)}</td>
+                <td style="padding: 8px 6px; text-align: right; font-family: monospace; font-weight: 700; color: #334155; white-space: nowrap;">${fmtPctAnalytics(c.grossMarginPct)}</td>
+                <td style="padding: 8px 6px; text-align: right; white-space: nowrap; font-size: 0.74rem;"><strong>${c.docCount}件</strong> / ${c.totalQty}点</td>
+                <td style="padding: 8px 6px; white-space: nowrap; font-size: 0.73rem; color: #475569;">${safeEscAnalytics(c.lastDate || '-')}</td>
+                <td style="padding: 8px 6px; min-width: 130px;">
+                  <div style="height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden; display: flex;" title="粗利額: ${fmtYenAnalytics(c.grossProfit)} / 売上高(税抜): ${fmtYenAnalytics(c.sales)}">
+                    <div style="width:${cGpW}%; height:100%; background:#10b981;"></div>
+                    ${cExtW > 0 ? `<div style="width:${cExtW}%; height:100%; background:#93c5fd;"></div>` : ''}
+                  </div>
+                  <div style="margin-top: 3px;">${euHtml}</div>
+                </td>
+              </tr>
+              ${detailRowHtml}
+            `;
+          }).join('');
+
+      clientRankingHtml = `
+        <div style="background: #ffffff; border: 1.5px solid #cbd5e1; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(15,23,42,0.04);">
+          <div style="padding: 10px 14px; background: linear-gradient(135deg, #f8fafc, #eff6ff); border-bottom: 1px solid #cbd5e1; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+            <strong style="font-size: 0.9rem; color: #0f172a;">🏢 販売店別 売上・粗利集計（全 ${flatClients.length} 社 / 行クリックで売上品目明細を展開）</strong>
+            <span style="font-size: 0.72rem; color: #475569;">
+              <span style="display:inline-block; width:9px; height:9px; background:#10b981; border-radius:2px; margin-right:3px;"></span>粗利
+              <span style="display:inline-block; width:9px; height:9px; background:#93c5fd; border-radius:2px; margin:0 3px 0 8px;"></span>売上高（延長）
+            </span>
+          </div>
+          <div style="overflow-x: auto;">
+            <table class="acc-table" style="width: 100%; border-collapse: collapse; font-size: 0.77rem;">
+              <thead style="background: #f1f5f9; color: #334155;">
+                <tr style="border-bottom: 1px solid #cbd5e1;">
+                  <th style="padding: 8px 6px; text-align: center; width: 42px;">順位</th>
+                  <th style="padding: 8px 6px; text-align: left;">販売店（取引先名）</th>
+                  <th style="padding: 8px 6px; text-align: left;">エリア / 都道府県</th>
+                  <th style="padding: 8px 6px; text-align: right;">売上高(税抜) / 構成比</th>
+                  <th style="padding: 8px 6px; text-align: right;">売上原価</th>
+                  <th style="padding: 8px 6px; text-align: right;">粗利額</th>
+                  <th style="padding: 8px 6px; text-align: right;">粗利率</th>
+                  <th style="padding: 8px 6px; text-align: right;">件数 / 数量</th>
+                  <th style="padding: 8px 6px; text-align: left;">最終取引日</th>
+                  <th style="padding: 8px 6px; text-align: left;">粗利・売上 / EU</th>
+                </tr>
+              </thead>
+              <tbody>${flatRowsHtml}</tbody>
+              ${flatClients.length > 0 ? `
+                <tfoot>
+                  <tr style="background: #f8fafc; border-top: 2px solid #94a3b8; font-weight: 800;">
+                    <td colspan="3" style="padding: 9px 10px; color: #0f172a;">合計（${flatClients.length}社）</td>
+                    <td style="padding: 9px 6px; text-align: right; font-family: monospace; color: #0f172a;">${fmtYenAnalytics(sumSales)}</td>
+                    <td style="padding: 9px 6px; text-align: right; font-family: monospace; color: #475569;">${fmtYenAnalytics(sumCogs)}</td>
+                    <td style="padding: 9px 6px; text-align: right; font-family: monospace; color: ${sumGp >= 0 ? '#047857' : '#dc2626'};">${fmtYenAnalytics(sumGp)}</td>
+                    <td style="padding: 9px 6px; text-align: right; font-family: monospace; color: #0f172a;">${fmtPctAnalytics(sumMarginPct)}</td>
+                    <td style="padding: 9px 6px; text-align: right; white-space: nowrap;">${sumDocs}件 / ${sumQty}点</td>
+                    <td colspan="2" style="padding: 9px 6px;"></td>
+                  </tr>
+                </tfoot>
+              ` : ''}
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
     const regionFilterOptionsHtml = [
       `<option value="all"${bizAnalyticsViewState.tripRegion === 'all' ? ' selected' : ''}>エリア: すべて</option>`,
       ...data.availableRegions.map(r => `<option value="${safeEscAnalytics(r)}"${bizAnalyticsViewState.tripRegion === r ? ' selected' : ''}>${safeEscAnalytics(r === '未設定' ? '未設定（共通・本社等）' : r)}</option>`)
@@ -41516,15 +41702,18 @@ function renderBusinessAnalyticsView(period = null) {
           <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
             <button type="button" class="biz-geo-mode-btn" data-mode="region" style="padding: 4px 10px; border-radius: 6px; font-size: 0.74rem; font-weight: 700; cursor: pointer; border: 1px solid ${bizAnalyticsViewState.geoGranularity === 'region' ? '#2563eb' : '#cbd5e1'}; background: ${bizAnalyticsViewState.geoGranularity === 'region' ? '#eff6ff' : '#ffffff'}; color: ${bizAnalyticsViewState.geoGranularity === 'region' ? '#1d4ed8' : '#475569'};">地方エリア別</button>
             <button type="button" class="biz-geo-mode-btn" data-mode="prefecture" style="padding: 4px 10px; border-radius: 6px; font-size: 0.74rem; font-weight: 700; cursor: pointer; border: 1px solid ${bizAnalyticsViewState.geoGranularity === 'prefecture' ? '#2563eb' : '#cbd5e1'}; background: ${bizAnalyticsViewState.geoGranularity === 'prefecture' ? '#eff6ff' : '#ffffff'}; color: ${bizAnalyticsViewState.geoGranularity === 'prefecture' ? '#1d4ed8' : '#475569'};">都道府県別</button>
+            <button type="button" class="biz-geo-mode-btn" data-mode="client" style="padding: 4px 10px; border-radius: 6px; font-size: 0.74rem; font-weight: 700; cursor: pointer; border: 1px solid ${bizAnalyticsViewState.geoGranularity === 'client' ? '#2563eb' : '#cbd5e1'}; background: ${bizAnalyticsViewState.geoGranularity === 'client' ? '#eff6ff' : '#ffffff'}; color: ${bizAnalyticsViewState.geoGranularity === 'client' ? '#1d4ed8' : '#475569'};">🏢 販売店別集計</button>
             <select class="form-select biz-filter-region" style="font-size: 0.76rem; width: auto; padding: 4px 8px;">${regionFilterOptionsHtml}</select>
             <select class="form-select biz-filter-pref" style="font-size: 0.76rem; width: auto; padding: 4px 8px;">${prefFilterOptionsHtml}</select>
             <select class="form-select biz-filter-client" style="font-size: 0.76rem; width: auto; max-width: 220px; padding: 4px 8px;">${clientFilterOptionsHtml}</select>
             ${hasGeoOrClientFilter ? `<button type="button" class="btn btn-secondary btn-xs biz-clear-scope-btn" style="font-size: 0.73rem; color: #dc2626; border-color: #fca5a5;">✕ 解除</button>` : ''}
           </div>
           <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
-            <button type="button" class="btn btn-secondary btn-xs biz-expand-all-regions-btn" style="font-size: 0.72rem; padding: 4px 8px;">すべて展開</button>
-            <button type="button" class="btn btn-secondary btn-xs biz-collapse-all-regions-btn" style="font-size: 0.72rem; padding: 4px 8px;">すべて閉じる</button>
-            <input type="text" class="form-input biz-client-search" value="${safeEscAnalytics(bizAnalyticsViewState.clientSearch)}" placeholder="🔍 地域・販売店・EU検索..." style="font-size: 0.76rem; width: 185px; padding: 4px 8px;">
+            ${!isClientRankingMode ? `
+              <button type="button" class="btn btn-secondary btn-xs biz-expand-all-regions-btn" style="font-size: 0.72rem; padding: 4px 8px;">すべて展開</button>
+              <button type="button" class="btn btn-secondary btn-xs biz-collapse-all-regions-btn" style="font-size: 0.72rem; padding: 4px 8px;">すべて閉じる</button>
+            ` : ''}
+            <input type="text" class="form-input biz-client-search" value="${safeEscAnalytics(bizAnalyticsViewState.clientSearch)}" placeholder="🔍 地域・販売店・品目検索..." style="font-size: 0.76rem; width: 185px; padding: 4px 8px;">
             <select class="form-select biz-client-sort" style="font-size: 0.76rem; width: auto; padding: 4px 8px;">
               <option value="sales_desc"${bizAnalyticsViewState.clientSortBy === 'sales_desc' ? ' selected' : ''}>販売店: 売上高順</option>
               <option value="gp_desc"${bizAnalyticsViewState.clientSortBy === 'gp_desc' ? ' selected' : ''}>販売店: 粗利額順</option>
@@ -41535,9 +41724,9 @@ function renderBusinessAnalyticsView(period = null) {
           </div>
         </div>
 
-        <!-- 地域別（大枠）売上・全経費バランス ＋ 直下 各販売店サマリー -->
+        <!-- 地域別（大枠）または 販売店別（全地域横断）売上集計 -->
         <div style="display: flex; flex-direction: column; gap: 12px;">
-          ${regionClientCardsHtml}
+          ${isClientRankingMode ? clientRankingHtml : regionClientCardsHtml}
         </div>
       </div>
     `;
@@ -41650,11 +41839,12 @@ document.addEventListener('click', (e) => {
     return;
   }
 
-  // 統合分析：地域粒度切替（地方エリア / 都道府県）
+  // 統合分析：表示粒度切替（地方エリア / 都道府県 / 販売店別集計）
   const geoModeBtn = target.closest('.biz-geo-mode-btn');
   if (geoModeBtn) {
-    bizAnalyticsViewState.geoGranularity = geoModeBtn.dataset.mode === 'prefecture' ? 'prefecture' : 'region';
-    console.log('【統合分析ビュー】地域表示粒度切替:', bizAnalyticsViewState.geoGranularity);
+    const mode = geoModeBtn.dataset.mode;
+    bizAnalyticsViewState.geoGranularity = (mode === 'prefecture' || mode === 'client') ? mode : 'region';
+    console.log('【地域別売上・経費分析ビュー】表示モード切替:', bizAnalyticsViewState.geoGranularity);
     renderBusinessAnalyticsView();
     return;
   }
