@@ -10427,36 +10427,36 @@ async function syncInventoryLotsWithServer() {
     const localLots = getInventoryLotList();
 
     if (serverLots && Array.isArray(serverLots)) {
-      const lotMap = new Map();
-      serverLots.forEach(l => {
-        if (!l) return;
-        const key = l.id || l.lotNumber;
-        if (key) lotMap.set(key, l);
-      });
+      // サーバー（Firestore）を正（Source of Truth）とし、他端末やサーバー側で削除・統合されたロットが
+      // ローカルキャッシュから逆流復活しないように完全上書き同期する
+      // ※ サーバー側が空（初回移行時など）かつローカルに未同期データがある場合のみローカルを保持
+      let resolvedLots = [];
+      let needsUpload = false;
+      if (serverLots.length > 0 || localLots.length === 0) {
+        const lotMap = new Map();
+        serverLots.forEach(l => {
+          if (!l) return;
+          const key = l.id || l.lotNumber;
+          if (key) lotMap.set(key, l);
+        });
+        resolvedLots = Array.from(lotMap.values());
+      } else {
+        resolvedLots = [...localLots];
+        needsUpload = true;
+      }
 
-      let hasLocalOnly = false;
-      localLots.forEach(l => {
-        if (!l) return;
-        const key = l.id || l.lotNumber;
-        if (key && !lotMap.has(key)) {
-          lotMap.set(key, l);
-          hasLocalOnly = true;
-        }
-      });
-
-      const mergedLots = Array.from(lotMap.values());
-      mergedLots.sort((a, b) => {
+      resolvedLots.sort((a, b) => {
         const dateA = a.arrivalDate || a.date || (a.createdAt ? a.createdAt.split('T')[0] : '') || '';
         const dateB = b.arrivalDate || b.date || (b.createdAt ? b.createdAt.split('T')[0] : '') || '';
         return dateB.localeCompare(dateA);
       });
 
-      localStorageSetItemOnly(KEYS.INVENTORY_LOTS, JSON.stringify(mergedLots));
-      if (hasLocalOnly) {
-        saveServerInventoryLots(mergedLots).catch(() => { });
+      localStorageSetItemOnly(KEYS.INVENTORY_LOTS, JSON.stringify(resolvedLots));
+      if (needsUpload) {
+        saveServerInventoryLots(resolvedLots).catch(() => { });
       }
-      console.log(`[ロット同期完了] 全 ${mergedLots.length} 件の入荷ロットをサーバー・ローカルで完全同期しました`);
-      return mergedLots;
+      console.log(`[ロット同期完了] 全 ${resolvedLots.length} 件の入荷ロットをサーバー正で完全同期しました`);
+      return resolvedLots;
     }
   } catch (err) {
     console.warn('syncInventoryLotsWithServer error:', err);
