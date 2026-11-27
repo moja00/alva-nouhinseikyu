@@ -615,7 +615,7 @@ export function buildUnifiedJournals(arg1 = {}, arg2 = [], arg3 = [], arg4 = nul
     if (!isDateInPeriod(date, periodFilter)) return;
 
     const grossSalary = Number(pay.totalGross ?? pay.grossSalary ?? pay.totalPayment ?? pay.grossPay ?? pay.total ?? 0);
-    const calcTaxSoc = (Number(pay.incomeTax) || 0) + (Number(pay.residentTax) || 0) + (Number(pay.totalSocialInsurance) || 0);
+    const calcTaxSoc = (Number(pay.incomeTax) || 0) + (Number(pay.residentTax) || 0) + (Number(pay.totalSocialInsurance) || 0) + (Number(pay.mutualAid) || 0);
     const dedRaw = pay.totalDeductions ?? pay.deductionsTotal ?? pay.totalDeduction ?? pay.taxTotal;
     const deductions = (dedRaw !== undefined && dedRaw !== null) ? Number(dedRaw) : calcTaxSoc;
     const netRaw = pay.netPay ?? pay.netPayment ?? pay.netSalary;

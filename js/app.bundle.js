@@ -1209,7 +1209,7 @@ function buildUnifiedJournals(arg1 = {}, arg2 = [], arg3 = [], arg4 = null, arg5
     if (!isDateInPeriod(date, periodFilter)) return;
 
     const grossSalary = Number(pay.totalGross ?? pay.grossSalary ?? pay.totalPayment ?? pay.grossPay ?? pay.total ?? 0);
-    const calcTaxSoc = (Number(pay.incomeTax) || 0) + (Number(pay.residentTax) || 0) + (Number(pay.totalSocialInsurance) || 0);
+    const calcTaxSoc = (Number(pay.incomeTax) || 0) + (Number(pay.residentTax) || 0) + (Number(pay.totalSocialInsurance) || 0) + (Number(pay.mutualAid) || 0);
     const dedRaw = pay.totalDeductions ?? pay.deductionsTotal ?? pay.totalDeduction ?? pay.taxTotal;
     const deductions = (dedRaw !== undefined && dedRaw !== null) ? Number(dedRaw) : calcTaxSoc;
     const netRaw = pay.netPay ?? pay.netPayment ?? pay.netSalary;
@@ -3094,7 +3094,7 @@ const SOCIAL_INSURANCE_PREFECTURES = {
  * @param {number} rate 労働者負担率（一般事業: 0.006）
  * @returns {number} 控除額（円）
  */
-function calculateEmploymentInsurance(grossAmount = 0, rate = 0.006) {
+function calculateEmploymentInsurance(grossAmount = 0, rate = 0.0055) {
   const gross = Math.max(0, Number(grossAmount) || 0);
   const raw = gross * Number(rate);
   const fraction = raw - Math.floor(raw);
@@ -3541,8 +3541,8 @@ function calculatePayrollRecord(baseRecord = {}, settings = {}) {
     if (s.useFixedEmploymentInsurance) {
       r.employmentInsurance = Number(s.employmentInsuranceFixed) || 1100;
     } else {
-      // 賃金総額 × 雇用保険料率（一般事業: 6/1,000 = 0.006、法定端数処理: 50銭以下切捨て50銭超切上げ）
-      const rate = Number(s.employmentInsuranceRate) || 0.006;
+      // 賃金総額 × 雇用保険料率（一般事業: 5.5/1,000 = 0.0055、法定端数処理: 50銭以下切捨て50銭超切上げ）
+      const rate = Number(s.employmentInsuranceRate) || 0.0055;
       r.employmentInsurance = calculateEmploymentInsurance(r.totalGross, rate);
     }
   } else {
@@ -41532,6 +41532,8 @@ function handlePrintAttendanceSheet() {
 
 let currentPayrollMonth = '2026-09';
 let currentPayrollRecord = null;
+let currentPayrollIsSavedRecord = false;
+let currentPayrollRecomputeConfirmed = false;
 let payrollListenersInitialized = false;
 
 function initPayroll() {
@@ -41583,22 +41585,24 @@ function setupPayrollEventListeners() {
   // 勤怠から自動読込
   DOM.btnPayrollImportAttendance?.addEventListener('click', handleImportAttendanceToPayroll);
 
-  // 育児休業コントロールのイベントリスナー
-  DOM.checkPayIsChildcare?.addEventListener('change', () => {
+  // 育児休業コントロールのイベントリスナー（保存済みレコード保護確認付き）
+  const handleChildcareRuleToggle = () => {
+    if (!confirmOverwriteIfSavedPayroll('育休連動・日割り・社会保険免除設定の変更に伴う再計算')) {
+      loadPayrollRecordForMonth(currentPayrollMonth);
+      return;
+    }
     recalculatePayrollWithChildcareRules();
-  });
-  DOM.checkPayExemptSocial?.addEventListener('change', () => {
-    recalculatePayrollWithChildcareRules();
-  });
+  };
+
+  DOM.checkPayIsChildcare?.addEventListener('change', handleChildcareRuleToggle);
+  DOM.checkPayExemptSocial?.addEventListener('change', handleChildcareRuleToggle);
   DOM.selectPayDailyWageType?.addEventListener('change', (e) => {
     if (DOM.wrapperPayDailyWageUnit) {
       DOM.wrapperPayDailyWageUnit.style.display = e.target.value === 'fixedDaily' ? 'inline-flex' : 'none';
     }
-    recalculatePayrollWithChildcareRules();
+    handleChildcareRuleToggle();
   });
-  DOM.inputPayDailyWageUnit?.addEventListener('input', () => {
-    recalculatePayrollWithChildcareRules();
-  });
+  DOM.inputPayDailyWageUnit?.addEventListener('input', handleChildcareRuleToggle);
 
   // 保存ボタン
   DOM.btnPayrollSave?.addEventListener('click', handleSavePayrollRecord);
@@ -41646,6 +41650,14 @@ function setupPayrollEventListeners() {
   // 会計連携ボタン
   DOM.btnPayrollSyncToAccounting?.addEventListener('click', handleSyncPayrollToAccounting);
 
+  // 支給・社保入力時は雇用保険・源泉所得税も連動再計算（控除欄自身の直接編集は手入力値を尊重）
+  const autoRecalcTriggerIds = new Set([
+    'payWorkDaysActual', 'payBaseSalary', 'payAllowanceExecutive', 'payAllowanceQualification',
+    'payAllowanceHousing', 'payAllowanceFamily', 'payOvertimePay', 'payAllowanceCommuteNonTax',
+    'payAllowanceNonTaxOther', 'payMidnightPay', 'payHolidayPay',
+    'payHealthInsurance', 'payWelfarePension', 'payWelfarePensionFund', 'payNursingInsurance'
+  ]);
+
   // 表内inputの変更イベント（リアルタイム再計算）
   const payrollInputs = [
     'payWorkDaysStandard', 'payWorkDaysActual', 'payWorkHoursStandard', 'payAbsenceDays',
@@ -41660,18 +41672,85 @@ function setupPayrollEventListeners() {
   payrollInputs.forEach(id => {
     const el = document.getElementById(id);
     if (el) {
-      el.addEventListener('input', (e) => {
+      el.addEventListener('input', () => {
         // 出勤日数または遅刻早退時間が変更された場合、労働時間（出勤日数×7 - 遅刻早退時間）を自動連動再計算
         if (id === 'payWorkDaysActual' || id === 'payLateEarlyHours') {
           syncWorkHoursFromDaysAndLateEarly();
         }
         // 出勤日数が変更され、育休モードの場合は日割り基本給を自動連動再計算
         if (id === 'payWorkDaysActual' && DOM.checkPayIsChildcare?.checked) {
-          syncBaseSalaryFromWorkDays();
+          if (confirmOverwriteIfSavedPayroll('出勤日数の変更に伴う日割り基本給・控除の再計算')) {
+            syncBaseSalaryFromWorkDays();
+          } else {
+            loadPayrollRecordForMonth(currentPayrollMonth);
+            return;
+          }
+        }
+        if (autoRecalcTriggerIds.has(id)) {
+          recalculatePayrollDeductionsFromForm();
         }
         handlePayrollFormInputChange();
       });
     }
+  });
+}
+
+function confirmOverwriteIfSavedPayroll(actionLabel = '再計算') {
+  if (!currentPayrollIsSavedRecord || currentPayrollRecomputeConfirmed) {
+    return true;
+  }
+  const ok = confirm(
+    `${currentPayrollMonth} はすでに保存済みの給与明細データが存在します。\n` +
+    `「${actionLabel}」を実行すると現在の数値が再計算値で書き換わります（保存ボタンを押すまでは確定されません）。\n\n続行しますか？`
+  );
+  if (ok) {
+    currentPayrollRecomputeConfirmed = true;
+  }
+  return ok;
+}
+
+function recalculatePayrollDeductionsFromForm() {
+  const settings = getPayrollSettings();
+  const getNum = (id) => Number(document.getElementById(id)?.value) || 0;
+  const setVal = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.value = val;
+  };
+
+  const taxable = getNum('payBaseSalary') + getNum('payOvertimePay') + getNum('payAllowanceExecutive')
+    + getNum('payAllowanceQualification') + getNum('payAllowanceHousing') + getNum('payAllowanceFamily')
+    + getNum('payMidnightPay') + getNum('payHolidayPay');
+  const gross = taxable + getNum('payAllowanceCommuteNonTax') + getNum('payAllowanceNonTaxOther');
+
+  // 1. 雇用保険料の統一再計算（calculateEmploymentInsurance使用：50銭以下切捨・50銭超切上）
+  const empType = DOM.settingPayEmploymentType?.value || (settings.useFixedEmploymentInsurance ? 'fixed' : 'rate');
+  let empIns = 0;
+  if (empType === 'fixed') {
+    empIns = Math.round(Number(settings.employmentInsuranceFixed) || 1156);
+  } else {
+    const rate = Number(DOM.settingPayEmploymentRate?.value) || Number(settings.employmentInsuranceRate) || 0.0055;
+    empIns = calculateEmploymentInsurance(gross, rate);
+  }
+  setVal('payEmploymentInsurance', empIns);
+
+  // 2. 課税対象額から源泉所得税を連動再計算
+  const totalSocialInsurance = getNum('payHealthInsurance')
+    + getNum('payWelfarePension')
+    + getNum('payWelfarePensionFund')
+    + getNum('payNursingInsurance')
+    + empIns;
+  const taxableIncome = Math.max(0, taxable - totalSocialInsurance);
+  const incTax = calculateIncomeTax(taxableIncome, Number(settings.dependentsCount) || 0);
+  setVal('payIncomeTax', incTax);
+
+  console.log('【給与控除連動再計算】完了', {
+    targetMonth: currentPayrollMonth,
+    gross,
+    taxable,
+    totalSocialInsurance,
+    taxableIncome,
+    employmentInsurance: empIns,
+    incomeTax: incTax
   });
 }
 
@@ -41745,26 +41824,10 @@ function recalculatePayrollWithChildcareRules() {
     setVal('payWelfarePensionFund', 0);
   }
 
-  // 3. 雇用保険料の自動計算（総支給額連動）
-  const getNum = (id) => Number(document.getElementById(id)?.value) || 0;
-  const taxable = getNum('payBaseSalary') + getNum('payOvertimePay') + getNum('payAllowanceExecutive')
-    + getNum('payAllowanceQualification') + getNum('payAllowanceHousing') + getNum('payAllowanceFamily')
-    + getNum('payMidnightPay') + getNum('payHolidayPay');
-  const gross = taxable + getNum('payAllowanceCommuteNonTax') + getNum('payAllowanceNonTaxOther');
+  // 3. 雇用保険料・源泉所得税の統一連動再計算
+  recalculatePayrollDeductionsFromForm();
 
-  const empType = DOM.settingPayEmploymentType?.value || (settings.useFixedEmploymentInsurance ? 'fixed' : 'rate');
-  if (empType === 'fixed') {
-    setVal('payEmploymentInsurance', settings.employmentInsuranceFixed || 1156);
-  } else {
-    const rate = Number(DOM.settingPayEmploymentRate?.value) || settings.employmentInsuranceRate || 0.0055;
-    // 50銭超過切り上げ（通貨の単位及び貨幣の発行等に関する法律第3条）
-    setVal('payEmploymentInsurance', Math.round(gross * rate));
-  }
-
-  // 4. 全体再計算
-  currentPayrollRecord = getPayrollRecordFromForm();
-  // 所得税を自動算出
-  setVal('payIncomeTax', currentPayrollRecord.incomeTax);
+  // 4. 全体集計再反映
   currentPayrollRecord = getPayrollRecordFromForm();
   updatePayrollSummaryDisplays(currentPayrollRecord);
 }
@@ -41795,15 +41858,23 @@ function loadPayrollRecordForMonth(ymStr) {
   let existing = getPayrollRecordByMonth(ymStr);
 
   if (existing) {
+    // 保存済み月次データは過去の取り込み値・確定実績をそのまま保護して表示（自動再計算で上書きしない）
+    currentPayrollIsSavedRecord = true;
+    currentPayrollRecomputeConfirmed = false;
     currentPayrollRecord = { ...existing };
+    console.log('【給与計算】保存済み月次レコード読込（実績値保護）', { targetMonth: ymStr, totalGross: existing.totalGross, netPay: existing.netPay });
   } else {
-    // 既存レコードがない場合は、勤怠データと設定から自動算出
+    // 未保存月の新規作成時のみ前月勤務分の勤怠データと設定から自動算出
+    currentPayrollIsSavedRecord = false;
+    currentPayrollRecomputeConfirmed = false;
     const attList = getAttendanceList();
-    const attSummary = extractAttendanceForPayroll(attList, ymStr);
+    const workMonth = getPreviousMonthStr(ymStr);
+    const attSummary = extractAttendanceForPayroll(attList, workMonth);
     currentPayrollRecord = calculatePayrollRecord({
-      targetMonth: ymStr,
-      ...attSummary
+      ...attSummary,
+      targetMonth: ymStr
     }, settings);
+    console.log('【給与計算】未保存月の自動算出（前月勤怠基準）', { targetMonth: ymStr, workMonth, workDaysActual: attSummary.workDaysActual });
   }
 
   // UIフォームへセット
@@ -41821,7 +41892,8 @@ function populatePayrollRecordToForm(r) {
   const targetYm = r.targetMonth || currentPayrollMonth;
   if (DOM.dispCurrentPayrollTitle) {
     const [y, m] = targetYm.split('-');
-    DOM.dispCurrentPayrollTitle.textContent = `${y}年${parseInt(m, 10)}月度 （${r.empName || '宮崎真輔'} 様）`;
+    const savedTag = currentPayrollIsSavedRecord ? ' [保存済]' : ' [未保存・試算]';
+    DOM.dispCurrentPayrollTitle.textContent = `${y}年${parseInt(m, 10)}月度 （${r.empName || '宮崎真輔'} 様）${savedTag}`;
   }
   if (DOM.dispPayrollWorkPeriodBadge) {
     const periodInfo = getWorkPeriodLabel(targetYm);
@@ -41859,12 +41931,15 @@ function populatePayrollRecordToForm(r) {
   setVal('payWorkDaysActual', r.workDaysActual);
   setVal('payLateEarlyHours', r.lateEarlyHours);
 
-  // 労働時間は出勤日数と遅刻早退時間から算出（所定7時間/日: 出勤日数 × 7 - 遅刻早退時間）
+  // 保存済みの労働時間がある場合は上書きせずそのまま表示し、未設定時のみ算出値を補完
   const actualDays = Number(r.workDaysActual) || 0;
   const lateEarlyHours = Number(r.lateEarlyHours) || 0;
   const dailyHours = (Number(payrollSettings.monthlyStandardHours) || 140) / (Number(payrollSettings.monthlyStandardDays) || 20);
   const calcWorkHours = Math.max(0, Math.round((actualDays * dailyHours - lateEarlyHours) * 100) / 100);
-  setVal('payWorkHoursStandard', calcWorkHours);
+  const resolvedWorkHours = (r.workHoursStandard !== undefined && r.workHoursStandard !== null && r.workHoursStandard !== '')
+    ? r.workHoursStandard
+    : calcWorkHours;
+  setVal('payWorkHoursStandard', resolvedWorkHours);
 
   setVal('payAbsenceDays', r.absenceDays);
   setVal('payHolidayWorkDays', r.holidayWorkDays);
@@ -42001,6 +42076,10 @@ function updatePayrollSummaryDisplays(r) {
 
 function handleImportAttendanceToPayroll() {
   console.log("【勤怠情報読込】実行開始");
+  if (!confirmOverwriteIfSavedPayroll('前月勤怠から自動読込・再計算')) {
+    console.log("【勤怠情報読込】ユーザーキャンセルにより保存済みデータを保護しました");
+    return;
+  }
   const attList = getAttendanceList();
   // 当給与明細（発行月）に対応する「前月勤務分」の勤怠を集計（末日締め翌月10日払い）
   const workMonth = getPreviousMonthStr(currentPayrollMonth);
@@ -42043,6 +42122,10 @@ function handleSavePayrollRecord() {
   currentPayrollRecord = getPayrollRecordFromForm();
   const saved = savePayrollRecord(currentPayrollRecord);
   if (saved) {
+    currentPayrollIsSavedRecord = true;
+    currentPayrollRecomputeConfirmed = false;
+    populatePayrollRecordToForm(saved);
+    updatePayrollSummaryDisplays(saved);
     showToast(`${currentPayrollMonth} の給与明細データを保存しました（ファイル同期完了）`, 'success');
     renderPayrollHistoryTable();
   } else {
@@ -42112,10 +42195,15 @@ function handleSavePayrollSettingsFromForm() {
   };
 
   savePayrollSettings(updated);
-  showToast('給与・保険料の基本設定を保存しました！', 'success');
+  const hasSavedCurrent = Boolean(getPayrollRecordByMonth(currentPayrollMonth));
+  if (hasSavedCurrent) {
+    showToast('給与・保険料の基本設定を保存しました（表示中の保存済み明細は実績保護のため上書きされません）', 'success');
+  } else {
+    showToast('給与・保険料の基本設定を保存しました！', 'success');
+  }
   if (DOM.payrollSettingsCard) DOM.payrollSettingsCard.style.display = 'none';
 
-  // 現在の明細に設定値を反映して再計算
+  // 未保存月の場合は新設定で自動再計算、保存済み月の場合は既存実績を維持して再表示
   loadPayrollRecordForMonth(currentPayrollMonth);
 }
 
@@ -42356,21 +42444,25 @@ function handleSyncPayrollToAccounting(targetMonthOpt = null) {
 
   const [y, m] = ym.split('-');
   const ymText = `${y}年${parseInt(m, 10)}月度`;
-  const gross = Number(r.totalGross) || 0;
-  const incomeTax = Number(r.incomeTax) || 0;
-  const socialInsurance = Number(r.totalSocialInsurance) || 0;
-  const residentTax = Number(r.residentTax) || 0;
-  const deposit = incomeTax + socialInsurance + residentTax; // 預り金（源泉所得税 ＋ 住民税 ＋ 社会保険本人負担分）
-  const net = Number(r.netPay) || (gross - deposit); // 普通預金（差引手取）
+  const gross = Math.round(Number(r.totalGross) || 0);
+  const incomeTax = Math.round(Number(r.incomeTax) || 0);
+  const socialInsurance = Math.round(Number(r.totalSocialInsurance) || 0);
+  const residentTax = Math.round(Number(r.residentTax) || 0);
+  const mutualAid = Math.round(Number(r.mutualAid) || 0);
+  const calcDeposit = incomeTax + socialInsurance + residentTax + mutualAid; // 預り金（源泉所得税 ＋ 住民税 ＋ 社会保険本人負担分 ＋ 共済費）
+  const recordedDed = (r.totalDeductions !== undefined && r.totalDeductions !== null) ? Math.round(Number(r.totalDeductions) || 0) : calcDeposit;
+  const deposit = recordedDed === calcDeposit ? calcDeposit : recordedDed;
+  const net = gross - deposit; // 借方と貸方の合計一致を絶対保証
 
   const existingManuals = typeof getManualJournals === 'function' ? getManualJournals() : [];
   const existingPayrollJnl = existingManuals.find(j => j && j.sourceType === 'payroll' && String(j.sourceId || '') === `payroll_${ym}`);
   const actionLabel = existingPayrollJnl ? '【上書き更新】既に計上済みの同月給与仕訳を上書き更新しますか？' : `${ymText} の給与明細（総支給額 ¥${formatPayrollCurrency(gross)}）を財務会計に複合仕訳として反映しますか？`;
 
+  const depositDetailLabel = mutualAid > 0 ? '源泉税・住民税・社保・共済費控除' : '源泉税・住民税・社保控除';
   const msg = `【財務会計への給与仕訳計上】\n` +
     `${actionLabel}\n\n` +
     `【借方】給料手当: ¥${formatPayrollCurrency(gross)}\n` +
-    `【貸方】預り金（源泉税・住民税・社保控除）: ¥${formatPayrollCurrency(deposit)}\n` +
+    `【貸方】預り金（${depositDetailLabel}）: ¥${formatPayrollCurrency(deposit)}\n` +
     `【貸方】普通預金（差引支給額）: ¥${formatPayrollCurrency(net)}`;
 
   if (!confirm(msg)) return;
@@ -42378,8 +42470,9 @@ function handleSyncPayrollToAccounting(targetMonthOpt = null) {
   const creditLines = [];
   if (deposit > 0) {
     creditLines.push({
+      accountCode: '214',
       accountName: '預り金',
-      subAccount: '源泉税・社保控除',
+      subAccount: depositDetailLabel,
       amount: deposit,
       taxType: 'out_of_scope',
       invoiceType: 'none'
@@ -42387,6 +42480,7 @@ function handleSyncPayrollToAccounting(targetMonthOpt = null) {
   }
   if (net > 0) {
     creditLines.push({
+      accountCode: '102',
       accountName: '普通預金',
       subAccount: '給与振込',
       amount: net,
@@ -42396,6 +42490,7 @@ function handleSyncPayrollToAccounting(targetMonthOpt = null) {
   }
   if (creditLines.length === 0) {
     creditLines.push({
+      accountCode: '102',
       accountName: '普通預金',
       subAccount: '給与振込',
       amount: gross,
@@ -42413,6 +42508,7 @@ function handleSyncPayrollToAccounting(targetMonthOpt = null) {
     sourceId: `payroll_${ym}`, // ★ 排他制御キー
     debitLines: [
       {
+        accountCode: '602',
         accountName: '給料手当',
         subAccount: r.empName || '役員・従業員',
         amount: gross,
@@ -43322,7 +43418,7 @@ function renderLotCostAnalyticsView(targetContainerId = null) {
     filteredRows = [...filteredRows].sort((a, b) => {
       switch (lotCostViewState.sortBy) {
         case 'date_asc':
-          return (a.arrivalDate || '').localeCompare(b.arrivalDate || '') || a.lotNumber.localeCompare(b.lotNumber);
+          return String(a?.arrivalDate ?? '').localeCompare(String(b?.arrivalDate ?? '')) || String(a?.lotNumber ?? '').localeCompare(String(b?.lotNumber ?? ''));
         case 'cost_desc':
           return b.landedUnitCost - a.landedUnitCost;
         case 'cost_asc':
@@ -43333,7 +43429,7 @@ function renderLotCostAnalyticsView(targetContainerId = null) {
           return Math.abs(b.prevDelta || 0) - Math.abs(a.prevDelta || 0);
         case 'date_desc':
         default:
-          return (b.arrivalDate || '').localeCompare(a.arrivalDate || '') || b.lotNumber.localeCompare(a.lotNumber);
+          return String(b?.arrivalDate ?? '').localeCompare(String(a?.arrivalDate ?? '')) || String(b?.lotNumber ?? '').localeCompare(String(a?.lotNumber ?? ''));
       }
     });
 

@@ -95,7 +95,7 @@ export const SOCIAL_INSURANCE_PREFECTURES = {
  * @param {number} rate 労働者負担率（一般事業: 0.006）
  * @returns {number} 控除額（円）
  */
-export function calculateEmploymentInsurance(grossAmount = 0, rate = 0.006) {
+export function calculateEmploymentInsurance(grossAmount = 0, rate = 0.0055) {
   const gross = Math.max(0, Number(grossAmount) || 0);
   const raw = gross * Number(rate);
   const fraction = raw - Math.floor(raw);
@@ -542,8 +542,8 @@ export function calculatePayrollRecord(baseRecord = {}, settings = {}) {
     if (s.useFixedEmploymentInsurance) {
       r.employmentInsurance = Number(s.employmentInsuranceFixed) || 1100;
     } else {
-      // 賃金総額 × 雇用保険料率（一般事業: 6/1,000 = 0.006、法定端数処理: 50銭以下切捨て50銭超切上げ）
-      const rate = Number(s.employmentInsuranceRate) || 0.006;
+      // 賃金総額 × 雇用保険料率（一般事業: 5.5/1,000 = 0.0055、法定端数処理: 50銭以下切捨て50銭超切上げ）
+      const rate = Number(s.employmentInsuranceRate) || 0.0055;
       r.employmentInsurance = calculateEmploymentInsurance(r.totalGross, rate);
     }
   } else {

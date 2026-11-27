@@ -112,7 +112,7 @@ function renderLotCostAnalyticsView(targetContainerId = null) {
     filteredRows = [...filteredRows].sort((a, b) => {
       switch (lotCostViewState.sortBy) {
         case 'date_asc':
-          return (a.arrivalDate || '').localeCompare(b.arrivalDate || '') || a.lotNumber.localeCompare(b.lotNumber);
+          return String(a?.arrivalDate ?? '').localeCompare(String(b?.arrivalDate ?? '')) || String(a?.lotNumber ?? '').localeCompare(String(b?.lotNumber ?? ''));
         case 'cost_desc':
           return b.landedUnitCost - a.landedUnitCost;
         case 'cost_asc':
@@ -123,7 +123,7 @@ function renderLotCostAnalyticsView(targetContainerId = null) {
           return Math.abs(b.prevDelta || 0) - Math.abs(a.prevDelta || 0);
         case 'date_desc':
         default:
-          return (b.arrivalDate || '').localeCompare(a.arrivalDate || '') || b.lotNumber.localeCompare(a.lotNumber);
+          return String(b?.arrivalDate ?? '').localeCompare(String(a?.arrivalDate ?? '')) || String(b?.lotNumber ?? '').localeCompare(String(a?.lotNumber ?? ''));
       }
     });
 
