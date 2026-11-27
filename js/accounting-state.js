@@ -1473,6 +1473,539 @@ export function exportJournalsToCSV(journals = []) {
   return csvContent;
 }
 
+// ==========================================================================
+// 12. インボイス制度対応 消費税詳細集計・税理士チェック明細エンジン
+// ==========================================================================
+
+/**
+ * 消費税集計サマリーおよび税理士確認用明細一覧を一元算出（カード数値と1円単位で完全一致）
+ * @param {object} params
+ * @returns {{ summary: object, rows: Array<object> }}
+ */
+export function calculateConsumptionTaxDetails({
+  invoices = [],
+  expenses = [],
+  manualJournals = [],
+  payrollRecords = [],
+  periodFilter = 'all'
+} = {}) {
+  const unified = buildUnifiedJournals({ invoices, expenses, manualJournals, payrollRecords, periodFilter });
+
+  // 元伝票・元経費ルックアップ（インボイス番号・税率別本体額・領収書画像・勘定科目名を参照）
+  const invMap = new Map();
+  (invoices || []).forEach(raw => {
+    const norm = normalizeInvoiceDoc(raw);
+    if (norm && norm.id) invMap.set(String(norm.id).trim(), norm);
+  });
+
+  const expMap = new Map();
+  (expenses || []).forEach(exp => {
+    if (exp && exp.id) expMap.set(String(exp.id).trim(), exp);
+  });
+
+  const detectTaxBucket = (taxLine, peerLines) => {
+    const sub = String((taxLine && taxLine.subAccount) || '');
+    if (sub.includes('8')) return 8;
+    if (sub.includes('10')) return 10;
+    const has8 = (peerLines || []).some(l => l && l.taxType === 'taxable_8');
+    const has10 = (peerLines || []).some(l => l && l.taxType === 'taxable_10');
+    return (has8 && !has10) ? 8 : 10;
+  };
+
+  const resolveInvoiceTaxBases = (inv) => {
+    if (!inv) return { base10: 0, base8: 0, baseExempt: 0 };
+    const items = Array.isArray(inv.items) ? inv.items : [];
+    if (items.length === 0) {
+      return inv.tax8 > 0 && inv.tax10 === 0
+        ? { base10: 0, base8: inv.subtotal || 0, baseExempt: 0 }
+        : { base10: inv.subtotal || 0, base8: 0, baseExempt: 0 };
+    }
+    let raw10 = 0;
+    let raw8 = 0;
+    let rawExempt = 0;
+    items.forEach(it => {
+      if (!it) return;
+      const amt = Math.round((Number(it.quantity) || 0) * (Number(it.unitPrice) || 0));
+      const rate = Number(it.taxRate !== undefined ? it.taxRate : 10);
+      if (rate === 8) raw8 += amt;
+      else if (rate === 0) rawExempt += amt;
+      else raw10 += amt;
+    });
+    return { base10: raw10, base8: raw8, baseExempt: rawExempt };
+  };
+
+  const isValidTNumber = (num) => /^T\d{13}$/i.test(String(num || '').trim());
+
+  const classifyInputInvoice = (rawType, invoiceNum, isImportTax) => {
+    if (isImportTax) {
+      return { invoiceType: 'import', label: '輸入許可等 (100%控除)', deductionRate: 1.0, needsCheck: false };
+    }
+    if (isValidTNumber(invoiceNum) || rawType === 'qualified') {
+      return { invoiceType: 'qualified', label: '適格請求書 (100%控除)', deductionRate: 1.0, needsCheck: false };
+    }
+    if (rawType === 'transitional') {
+      return { invoiceType: 'transitional', label: '経過措置 (80%控除)', deductionRate: 0.8, needsCheck: true };
+    }
+    return { invoiceType: 'none', label: 'T番号なし・要確認', deductionRate: 0.0, needsCheck: true };
+  };
+
+  const sourceLabelMap = {
+    invoice_sales: '売上伝票',
+    expense: '経費・領収書',
+    inventory_lot: '輸入/ロット仕入',
+    reconciliation: '入金消込手数料',
+    reconcile: '入金消込手数料',
+    manual: '振替伝票',
+    payroll: '給与仕訳'
+  };
+
+  const rows = [];
+  let outTax10 = 0;
+  let outTax8 = 0;
+  let outBase10 = 0;
+  let outBase8 = 0;
+  let outBaseExempt = 0;
+
+  let inTax10 = 0;
+  let inTax8 = 0;
+  let inBase10 = 0;
+  let inBase8 = 0;
+  let inImportTax = 0;
+  let inDomesticTax10 = 0;
+  let inDomesticTax8 = 0;
+  let inNonTaxableExpenseCount = 0;
+  let inNonTaxableExpenseAmount = 0;
+
+  // インボイス区分別集計（仮払側）
+  let inQualifiedCount = 0;
+  let inQualifiedTax = 0;
+  let inTransitionalCount = 0;
+  let inTransitionalTax = 0;
+  let inImportCount = 0;
+  let inUnverifiedCount = 0;
+  let inUnverifiedTax = 0;
+  let inDeductibleRefTotal = 0;
+
+  const pushRow = (r) => {
+    rows.push(r);
+    if (r.direction === 'output') {
+      if (r.taxBucket === 8) {
+        outTax8 += r.taxAmount;
+        outBase8 += r.taxBaseAmount;
+      } else {
+        outTax10 += r.taxAmount;
+        outBase10 += r.taxBaseAmount;
+      }
+    } else {
+      if (r.taxBucket === 8) {
+        inTax8 += r.taxAmount;
+        inBase8 += r.taxBaseAmount;
+      } else {
+        inTax10 += r.taxAmount;
+        inBase10 += r.taxBaseAmount;
+      }
+      if (r.isImportTax) {
+        inImportTax += r.taxAmount;
+        inImportCount++;
+      } else if (r.taxBucket === 8) {
+        inDomesticTax8 += r.taxAmount;
+      } else {
+        inDomesticTax10 += r.taxAmount;
+      }
+      if (r.invoiceType === 'qualified') {
+        inQualifiedCount++;
+        inQualifiedTax += r.taxAmount;
+      } else if (r.invoiceType === 'transitional') {
+        inTransitionalCount++;
+        inTransitionalTax += r.taxAmount;
+      } else if (!r.isImportTax) {
+        inUnverifiedCount++;
+        inUnverifiedTax += r.taxAmount;
+      }
+      inDeductibleRefTotal += r.deductibleTaxAmount;
+    }
+  };
+
+  unified.forEach(jnl => {
+    const debitLines = jnl.debitLines || [];
+    const creditLines = jnl.creditLines || [];
+    const hasOutTaxLine = creditLines.some(l => l && (l.accountCode === '216' || l.accountName === '仮受消費税'))
+      || debitLines.some(l => l && (l.accountCode === '216' || l.accountName === '仮受消費税'));
+    const hasInTaxLine = debitLines.some(l => l && (l.accountCode === '116' || l.accountName === '仮払消費税'))
+      || creditLines.some(l => l && (l.accountCode === '116' || l.accountName === '仮払消費税'));
+
+    const cleanSrcId = String(jnl.sourceId || '').trim();
+    const inv = jnl.sourceType === 'invoice_sales' ? invMap.get(cleanSrcId) : null;
+    const exp = jnl.sourceType === 'expense' ? expMap.get(cleanSrcId) : null;
+    const invBases = inv ? resolveInvoiceTaxBases(inv) : null;
+    if (invBases && invBases.baseExempt > 0) {
+      outBaseExempt += invBases.baseExempt;
+    }
+    if (exp && !hasInTaxLine) {
+      inNonTaxableExpenseCount++;
+      inNonTaxableExpenseAmount += Number(exp.amount) || 0;
+    }
+
+    const baseReceiptImg = (exp && (exp.receiptImage || exp.receiptDataUrl)) || jnl.receiptImage || '';
+    const srcLabel = sourceLabelMap[jnl.sourceType] || '振替仕訳';
+
+    // 相手側主科目を特定（詳細表示用）
+    const primaryExpDebit = debitLines.find(l => l && l.accountCode !== '116' && l.accountName !== '仮払消費税');
+    const primaryRevCredit = creditLines.find(l => l && l.accountCode !== '216' && l.accountName !== '仮受消費税');
+
+    // 1. 貸方（仮受216加算 ／ 仮払116訂正減算）
+    creditLines.forEach(cl => {
+      if (!cl) return;
+      const rawAmt = Number(cl.amount) || 0;
+      if (cl.accountCode === '216' || cl.accountName === '仮受消費税') {
+        const bucket = detectTaxBucket(cl, creditLines);
+        const baseAmt = invBases
+          ? (bucket === 8 ? invBases.base8 : invBases.base10)
+          : creditLines
+              .filter(l => l && l.accountCode !== '216' && l.accountName !== '仮受消費税' && l.taxType === (bucket === 8 ? 'taxable_8' : 'taxable_10'))
+              .reduce((s, l) => s + (Number(l.amount) || 0), 0);
+        pushRow({
+          id: `${jnl.id}_cr216_${bucket}`,
+          direction: 'output',
+          sign: 1,
+          date: jnl.date || '',
+          entryNumber: jnl.entryNumber || '',
+          sourceType: jnl.sourceType || 'manual',
+          sourceTypeLabel: srcLabel,
+          sourceId: cleanSrcId,
+          accountCode: (primaryRevCredit && primaryRevCredit.accountCode) || '401',
+          accountName: (primaryRevCredit && primaryRevCredit.accountName) || '売上高',
+          subAccount: cl.subAccount || '',
+          counterparty: (inv && inv.clientName) || (primaryRevCredit && primaryRevCredit.subAccount) || '-',
+          description: jnl.description || '',
+          taxBucket: bucket,
+          isImportTax: false,
+          taxCategoryLabel: bucket === 8 ? '課税売上 8%(軽減)' : '課税売上 10%',
+          taxBaseAmount: baseAmt,
+          taxAmount: rawAmt,
+          grossAmount: baseAmt + rawAmt,
+          invoiceNumber: (inv && inv.rawDoc && inv.rawDoc.issuer && inv.rawDoc.issuer.invoiceNumber) || '',
+          invoiceType: 'qualified',
+          invoiceStatusLabel: '適格発行 (自社売上)',
+          deductibleTaxAmount: rawAmt,
+          needsCheck: false,
+          receiptImage: baseReceiptImg
+        });
+      } else if (cl.accountCode === '116' || cl.accountName === '仮払消費税') {
+        const bucket = detectTaxBucket(cl, creditLines);
+        const isImport = String(cl.subAccount || '').includes('輸入');
+        const invNum = (exp && exp.invoiceNumber) || cl.invoiceNumber || '';
+        const invInfo = classifyInputInvoice(cl.invoiceType || (exp && exp.invoiceType), invNum, isImport);
+        const taxAmt = -rawAmt;
+        const baseAmt = exp
+          ? -splitTaxInclusiveAmount(exp.amount, bucket).amountEx
+          : -creditLines
+              .filter(l => l && l.accountCode !== '116' && l.accountName !== '仮払消費税' && l.taxType === (bucket === 8 ? 'taxable_8' : 'taxable_10'))
+              .reduce((s, l) => s + (Number(l.amount) || 0), 0);
+        const dedTax = Math.round(taxAmt * invInfo.deductionRate);
+        pushRow({
+          id: `${jnl.id}_cr116_${bucket}`,
+          direction: 'input',
+          sign: -1,
+          date: jnl.date || '',
+          entryNumber: jnl.entryNumber || '',
+          sourceType: jnl.sourceType || 'manual',
+          sourceTypeLabel: `${srcLabel}(減額)`,
+          sourceId: cleanSrcId,
+          accountCode: (primaryExpDebit && primaryExpDebit.accountCode) || '116',
+          accountName: (primaryExpDebit && primaryExpDebit.accountName) || '仮払消費税(訂正)',
+          subAccount: cl.subAccount || '',
+          counterparty: (exp && exp.payee) || (primaryExpDebit && primaryExpDebit.subAccount) || '-',
+          description: jnl.description || '',
+          taxBucket: bucket,
+          isImportTax: isImport,
+          taxCategoryLabel: isImport ? '輸入消費税(訂正減算)' : (bucket === 8 ? '課税仕入 8%(減額)' : '課税仕入 10%(減額)'),
+          taxBaseAmount: baseAmt,
+          taxAmount: taxAmt,
+          grossAmount: baseAmt + taxAmt,
+          invoiceNumber: invNum,
+          invoiceType: invInfo.invoiceType,
+          invoiceStatusLabel: invInfo.label,
+          deductibleTaxAmount: dedTax,
+          needsCheck: invInfo.needsCheck,
+          receiptImage: baseReceiptImg
+        });
+      }
+    });
+
+    // 2. 借方（仮払116加算 ／ 仮受216返品減算）
+    debitLines.forEach(dl => {
+      if (!dl) return;
+      const rawAmt = Number(dl.amount) || 0;
+      if (dl.accountCode === '116' || dl.accountName === '仮払消費税') {
+        const bucket = detectTaxBucket(dl, debitLines);
+        const isImport = String(dl.subAccount || '').includes('輸入');
+        const invNum = (exp && exp.invoiceNumber) || dl.invoiceNumber || '';
+        const invInfo = classifyInputInvoice(dl.invoiceType || (exp && exp.invoiceType), invNum, isImport);
+        let baseAmt = 0;
+        if (exp) {
+          baseAmt = splitTaxInclusiveAmount(exp.amount, bucket).amountEx;
+        } else if (!isImport) {
+          baseAmt = debitLines
+            .filter(l => l && l.accountCode !== '116' && l.accountName !== '仮払消費税' && l.taxType === (bucket === 8 ? 'taxable_8' : 'taxable_10'))
+            .reduce((s, l) => s + (Number(l.amount) || 0), 0);
+        }
+        const dedTax = Math.floor(rawAmt * invInfo.deductionRate);
+        pushRow({
+          id: `${jnl.id}_db116_${bucket}`,
+          direction: 'input',
+          sign: 1,
+          date: jnl.date || '',
+          entryNumber: jnl.entryNumber || '',
+          sourceType: jnl.sourceType || 'manual',
+          sourceTypeLabel: isImport ? '輸入消費税' : srcLabel,
+          sourceId: cleanSrcId,
+          accountCode: (primaryExpDebit && primaryExpDebit.accountCode) || dl.accountCode || '116',
+          accountName: isImport ? '仮払消費税(輸入分)' : ((primaryExpDebit && primaryExpDebit.accountName) || (exp && exp.category) || '仮払消費税'),
+          subAccount: dl.subAccount || '',
+          counterparty: (exp && exp.payee) || (primaryExpDebit && primaryExpDebit.subAccount) || '-',
+          description: jnl.description || '',
+          taxBucket: bucket,
+          isImportTax: isImport,
+          taxCategoryLabel: isImport ? '輸入消費税(別枠)' : (bucket === 8 ? '課税仕入 8%(軽減)' : '課税仕入 10%'),
+          taxBaseAmount: baseAmt,
+          taxAmount: rawAmt,
+          grossAmount: baseAmt + rawAmt,
+          invoiceNumber: invNum,
+          invoiceType: invInfo.invoiceType,
+          invoiceStatusLabel: invInfo.label,
+          deductibleTaxAmount: dedTax,
+          needsCheck: invInfo.needsCheck,
+          receiptImage: baseReceiptImg
+        });
+      } else if (dl.accountCode === '216' || dl.accountName === '仮受消費税') {
+        const bucket = detectTaxBucket(dl, debitLines);
+        const taxAmt = -rawAmt;
+        const baseAmt = -debitLines
+          .filter(l => l && l.accountCode !== '216' && l.accountName !== '仮受消費税' && l.taxType === (bucket === 8 ? 'taxable_8' : 'taxable_10'))
+          .reduce((s, l) => s + (Number(l.amount) || 0), 0);
+        pushRow({
+          id: `${jnl.id}_db216_${bucket}`,
+          direction: 'output',
+          sign: -1,
+          date: jnl.date || '',
+          entryNumber: jnl.entryNumber || '',
+          sourceType: jnl.sourceType || 'manual',
+          sourceTypeLabel: `${srcLabel}(返品・減額)`,
+          sourceId: cleanSrcId,
+          accountCode: (primaryRevCredit && primaryRevCredit.accountCode) || '401',
+          accountName: (primaryRevCredit && primaryRevCredit.accountName) || '売上返還等',
+          subAccount: dl.subAccount || '',
+          counterparty: (inv && inv.clientName) || '-',
+          description: jnl.description || '',
+          taxBucket: bucket,
+          isImportTax: false,
+          taxCategoryLabel: bucket === 8 ? '課税売上 8%(減額)' : '課税売上 10%(減額)',
+          taxBaseAmount: baseAmt,
+          taxAmount: taxAmt,
+          grossAmount: baseAmt + taxAmt,
+          invoiceNumber: '',
+          invoiceType: 'qualified',
+          invoiceStatusLabel: '売上返還・訂正',
+          deductibleTaxAmount: taxAmt,
+          needsCheck: false,
+          receiptImage: baseReceiptImg
+        });
+      }
+    });
+
+    // 3. 手動振替伝票等で 216 / 116 が未分離の内税仕訳のみフォールバック換算
+    if (!hasOutTaxLine) {
+      creditLines.forEach((cl, idx) => {
+        if (!cl) return;
+        const amt = Number(cl.amount) || 0;
+        const rate = cl.taxType === 'taxable_10' ? 10 : (cl.taxType === 'taxable_8' ? 8 : 0);
+        if (rate > 0) {
+          const { amountEx, taxAmt } = splitTaxInclusiveAmount(amt, rate);
+          pushRow({
+            id: `${jnl.id}_fbOut_${idx}`,
+            direction: 'output',
+            sign: 1,
+            date: jnl.date || '',
+            entryNumber: jnl.entryNumber || '',
+            sourceType: jnl.sourceType || 'manual',
+            sourceTypeLabel: `${srcLabel}(内税換算)`,
+            sourceId: cleanSrcId,
+            accountCode: cl.accountCode || '',
+            accountName: cl.accountName || '売上高',
+            subAccount: cl.subAccount || '',
+            counterparty: cl.subAccount || '-',
+            description: jnl.description || '',
+            taxBucket: rate,
+            isImportTax: false,
+            taxCategoryLabel: rate === 8 ? '課税売上 8%(内税換算)' : '課税売上 10%(内税換算)',
+            taxBaseAmount: amountEx,
+            taxAmount: taxAmt,
+            grossAmount: amt,
+            invoiceNumber: '',
+            invoiceType: 'qualified',
+            invoiceStatusLabel: '適格発行(振替換算)',
+            deductibleTaxAmount: taxAmt,
+            needsCheck: false,
+            receiptImage: baseReceiptImg
+          });
+        }
+      });
+    }
+    if (!hasInTaxLine && jnl.sourceType !== 'inventory_lot' && jnl.sourceType !== 'sales_cogs') {
+      debitLines.forEach((dl, idx) => {
+        if (!dl) return;
+        const amt = Number(dl.amount) || 0;
+        const rate = dl.taxType === 'taxable_10' ? 10 : (dl.taxType === 'taxable_8' ? 8 : 0);
+        if (rate > 0) {
+          const { amountEx, taxAmt } = splitTaxInclusiveAmount(amt, rate);
+          const invNum = dl.invoiceNumber || (exp && exp.invoiceNumber) || '';
+          const invInfo = classifyInputInvoice(dl.invoiceType || (exp && exp.invoiceType), invNum, false);
+          const dedTax = Math.floor(taxAmt * invInfo.deductionRate);
+          pushRow({
+            id: `${jnl.id}_fbIn_${idx}`,
+            direction: 'input',
+            sign: 1,
+            date: jnl.date || '',
+            entryNumber: jnl.entryNumber || '',
+            sourceType: jnl.sourceType || 'manual',
+            sourceTypeLabel: `${srcLabel}(内税換算)`,
+            sourceId: cleanSrcId,
+            accountCode: dl.accountCode || '',
+            accountName: dl.accountName || '',
+            subAccount: dl.subAccount || '',
+            counterparty: (exp && exp.payee) || dl.subAccount || '-',
+            description: jnl.description || '',
+            taxBucket: rate,
+            isImportTax: false,
+            taxCategoryLabel: rate === 8 ? '課税仕入 8%(内税換算)' : '課税仕入 10%(内税換算)',
+            taxBaseAmount: amountEx,
+            taxAmount: taxAmt,
+            grossAmount: amt,
+            invoiceNumber: invNum,
+            invoiceType: invInfo.invoiceType,
+            invoiceStatusLabel: invInfo.label,
+            deductibleTaxAmount: dedTax,
+            needsCheck: invInfo.needsCheck,
+            receiptImage: baseReceiptImg
+          });
+        }
+      });
+    }
+  });
+
+  const totalOutTax = outTax10 + outTax8;
+  const totalInTax = inTax10 + inTax8;
+  const totalOutBase = outBase10 + outBase8;
+  const totalInBase = inBase10 + inBase8;
+  const netPayable = totalOutTax - totalInTax;
+  const netPayableRef = totalOutTax - inDeductibleRefTotal;
+
+  return {
+    summary: {
+      journalCount: unified.length,
+      outTax10,
+      outTax8,
+      totalOutTax,
+      outBase10,
+      outBase8,
+      totalOutBase,
+      outBaseExempt,
+      inTax10,
+      inTax8,
+      totalInTax,
+      inBase10,
+      inBase8,
+      totalInBase,
+      inImportTax,
+      inImportCount,
+      inDomesticTax10,
+      inDomesticTax8,
+      inQualifiedCount,
+      inQualifiedTax,
+      inTransitionalCount,
+      inTransitionalTax,
+      inUnverifiedCount,
+      inUnverifiedTax,
+      inDeductibleRefTotal,
+      inNonTaxableExpenseCount,
+      inNonTaxableExpenseAmount,
+      netPayable,
+      netPayableRef
+    },
+    rows
+  };
+}
+
+/**
+ * 税理士提出用 消費税集計・根拠明細CSVを生成（付表対応サマリー付き）
+ * @param {object} details - calculateConsumptionTaxDetails() の戻り値
+ * @returns {string}
+ */
+export function exportConsumptionTaxCSV(details = { summary: {}, rows: [] }) {
+  const s = details.summary || {};
+  const rows = Array.isArray(details.rows) ? details.rows : [];
+  const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+
+  const headers = [
+    '区分',
+    '取引日',
+    '伝票・仕訳番号',
+    '仕訳種別',
+    '科目コード',
+    '勘定科目',
+    '補助科目',
+    '取引先・支払先',
+    '摘要・内容',
+    '税率区分',
+    '税率(%)',
+    'インボイス登録番号(T番号)',
+    'インボイス区分',
+    '税抜本体金額',
+    '消費税額(帳簿計上)',
+    '控除見込税額(インボイス参考)',
+    '税込金額',
+    '領収書証憑'
+  ];
+
+  const dataLines = rows.map(r => [
+    esc(r.direction === 'output' ? '仮受消費税(売上)' : '仮払消費税(仕入・経費)'),
+    esc(r.date),
+    esc(r.entryNumber),
+    esc(r.sourceTypeLabel),
+    esc(r.accountCode),
+    esc(r.accountName),
+    esc(r.subAccount),
+    esc(r.counterparty),
+    esc(r.description),
+    esc(r.taxCategoryLabel),
+    r.isImportTax ? '輸入' : r.taxBucket,
+    esc(r.invoiceNumber || ''),
+    esc(r.invoiceStatusLabel),
+    r.taxBaseAmount || 0,
+    r.taxAmount || 0,
+    r.deductibleTaxAmount || 0,
+    r.grossAmount || 0,
+    esc(r.receiptImage ? 'あり' : (r.direction === 'output' ? '伝票参照' : 'なし'))
+  ].join(','));
+
+  const summaryBlock = [
+    '',
+    '【税理士申告照合用 サマリー集計】',
+    '項目,税抜本体金額,消費税額(帳簿計上),インボイス参考控除額,件数・備考',
+    `課税売上 10% (仮受),${s.outBase10 || 0},${s.outTax10 || 0},${s.outTax10 || 0},標準税率`,
+    `課税売上 8%軽減 (仮受),${s.outBase8 || 0},${s.outTax8 || 0},${s.outTax8 || 0},軽減税率`,
+    `仮受消費税 合計,${s.totalOutBase || 0},${s.totalOutTax || 0},${s.totalOutTax || 0},非課税売上参考=${s.outBaseExempt || 0}円`,
+    `課税仕入 国内10% (仮払),${s.inBase10 || 0},${s.inDomesticTax10 || 0},-,`,
+    `課税仕入 国内8%軽減 (仮払),${s.inBase8 || 0},${s.inDomesticTax8 || 0},-,`,
+    `輸入消費税 (別枠・仮払),0,${s.inImportTax || 0},${s.inImportTax || 0},${s.inImportCount || 0}件`,
+    `仮払消費税 合計 (帳簿),${s.totalInBase || 0},${s.totalInTax || 0},${s.inDeductibleRefTotal || 0},適格:${s.inQualifiedCount || 0}件 / 経過措置80%:${s.inTransitionalCount || 0}件 / T番号なし要確認:${s.inUnverifiedCount || 0}件`,
+    `差引納付予測額 (帳簿計上基準),-,${s.netPayable || 0},${s.netPayableRef || 0},仮受－仮払`
+  ];
+
+  return [headers.join(','), ...dataLines, ...summaryBlock].join('\r\n');
+}
+
 if (typeof window !== 'undefined') {
   window.buildUnifiedJournals = buildUnifiedJournals;
   window.normalizeInvoiceDoc = normalizeInvoiceDoc;
@@ -1482,4 +2015,6 @@ if (typeof window !== 'undefined') {
   window.calculateBalanceSheet = calculateBalanceSheet;
   window.calculateTrialBalance = calculateTrialBalance;
   window.exportJournalsToCSV = exportJournalsToCSV;
+  window.calculateConsumptionTaxDetails = calculateConsumptionTaxDetails;
+  window.exportConsumptionTaxCSV = exportConsumptionTaxCSV;
 }
