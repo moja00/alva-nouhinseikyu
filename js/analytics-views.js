@@ -182,7 +182,7 @@ function renderLotCostAnalyticsView(targetContainerId = null) {
               const color = isUp ? '#dc2626' : (isDown ? '#059669' : '#64748b');
               const bg = isUp ? '#fef2f2' : (isDown ? '#ecfdf5' : '#f1f5f9');
               const sign = isUp ? '+' : '';
-              deltaTag = `<span style="background:${bg}; color:${color}; padding:1px 5px; border-radius:4px; font-size:0.68rem; font-weight:700;">${sign}${fmtYenAnalytics(pt.prevDelta)} (${sign}${(pt.prevDeltaPct || 0).toFixed(1)}%)</span>`;
+              deltaTag = `<span style="display:inline-block; white-space:nowrap; background:${bg}; color:${color}; padding:1px 5px; border-radius:4px; font-size:0.68rem; font-weight:700;">${sign}${fmtYenAnalytics(pt.prevDelta)} (${sign}${(pt.prevDeltaPct || 0).toFixed(1)}%)</span>`;
             }
             const fxLabel = pt.procurementType === 'import' && pt.exchangeRate > 0
               ? `${safeEscAnalytics(pt.foreignCurrency)} @${pt.exchangeRate}`
@@ -195,12 +195,12 @@ function renderLotCostAnalyticsView(targetContainerId = null) {
               ? `<span style="display:inline-block; background:#ecfdf5; color:#047857; border:1px solid #86efac; font-size:0.62rem; font-weight:700; padding:0 5px; border-radius:4px; margin-left:4px;">🧩 組立</span>`
               : '';
             return `
-              <div style="display: grid; grid-template-columns: 165px 1fr 120px 125px; gap: 8px; align-items: center; padding: 5px 0; border-bottom: 1px dashed #e2e8f0; font-size: 0.75rem;">
-                <div>
-                  <div style="font-weight: 700; color: #1e293b; font-family: monospace;">${safeEscAnalytics(pt.lotNumber)}${assembledTag}</div>
-                  <div style="font-size: 0.67rem; color: #64748b;">${safeEscAnalytics(pt.arrivalDate || '未設定 (-)')} / ${pt.qty}${safeEscAnalytics(t.unit)} / ${fxLabel}</div>
+              <div class="lot-trend-row" style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 0; border-bottom: 1px dashed #e2e8f0; font-size: 0.75rem;">
+                <div style="flex: 1 1 135px; min-width: 130px;">
+                  <div style="font-weight: 700; color: #1e293b; font-family: monospace; word-break: break-word;">${safeEscAnalytics(pt.lotNumber)}${assembledTag}</div>
+                  <div style="font-size: 0.67rem; color: #64748b; line-height: 1.35;">${safeEscAnalytics(pt.arrivalDate || '未設定 (-)')} / ${pt.qty}${safeEscAnalytics(t.unit)} / ${fxLabel}</div>
                 </div>
-                <div>
+                <div style="flex: 1.5 1 150px; min-width: 140px;">
                   <div style="height: 16px; background: #f1f5f9; border-radius: 4px; overflow: hidden; display: flex; width: 100%;">
                     <div style="width: ${totalPct}%; display: flex; height: 100%; transition: width 0.25s;">
                       <div style="width: ${basePct}%; background: #3b82f6; height: 100%;" title="本体単価: ${fmtYenAnalytics(pt.baseUnitCost)}"></div>
@@ -208,21 +208,23 @@ function renderLotCostAnalyticsView(targetContainerId = null) {
                       ${compPct > 0 ? `<div style="width: ${compPct}%; background: #10b981; height: 100%;" title="組合せ部品原価: ${safeEscAnalytics(compDetailText)}"></div>` : ''}
                     </div>
                   </div>
-                  <div style="font-size: 0.65rem; color: #64748b; margin-top: 2px;">
+                  <div style="font-size: 0.65rem; color: #64748b; margin-top: 2px; line-height: 1.35; word-break: break-word;">
                     本体 ${fmtYenAnalytics(pt.baseUnitCost)} ＋ 諸掛 ${fmtYenAnalytics(pt.allocatedUnitCost)}${compCost > 0 ? ` ＋ <span style="color:#047857; font-weight:700;">部品 ${fmtYenAnalytics(compCost)}</span> <span style="color:#94a3b8;">(${safeEscAnalytics(compLots.join(', '))})</span>` : ''}
                   </div>
                 </div>
-                <div style="text-align: right;">
-                  <div style="font-weight: 800; color: #0f172a; font-family: monospace;">${fmtYenAnalytics(pt.landedUnitCost)}</div>
-                  <div style="font-size: 0.67rem; color: #64748b;">原価率 ${fmtPctAnalytics(pt.costRatioPct)}</div>
+                <div style="display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-left: auto; flex: 0 0 auto; max-width: 100%; flex-wrap: wrap;">
+                  <div style="min-width: 70px; text-align: right;">
+                    <div style="font-weight: 800; color: #0f172a; font-family: monospace; white-space: nowrap;">${fmtYenAnalytics(pt.landedUnitCost)}</div>
+                    <div style="font-size: 0.67rem; color: #64748b; white-space: nowrap;">原価率 ${fmtPctAnalytics(pt.costRatioPct)}</div>
+                  </div>
+                  <div style="min-width: 106px; text-align: right;">${deltaTag}</div>
                 </div>
-                <div style="text-align: right;">${deltaTag}</div>
               </div>
             `;
           }).join('');
 
           return `
-            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; box-shadow: 0 1px 2px rgba(0,0,0,0.03);">
+            <div class="lot-trend-card" style="min-width: 0; overflow: hidden; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; box-shadow: 0 1px 2px rgba(0,0,0,0.03);">
               <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; flex-wrap: wrap; margin-bottom: 8px;">
                 <div>
                   <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
@@ -389,7 +391,7 @@ function renderLotCostAnalyticsView(targetContainerId = null) {
         <!-- 品目別 ロット原価推移比較パネル -->
         <div>
           <div style="font-size: 0.84rem; font-weight: 800; color: #1e293b; margin-bottom: 8px;">📈 品目別 ロット間 原価推移・調達条件差の比較</div>
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(460px, 1fr)); gap: 10px;">
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 540px), 1fr)); gap: 10px;">
             ${trendCardsHtml}
           </div>
         </div>
