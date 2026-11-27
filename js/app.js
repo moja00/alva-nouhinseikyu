@@ -19626,8 +19626,52 @@ const taxDetailUiState = {
   tab: 'all', // 'all' | 'output' | 'input' | 'unverified'
   rate: 'all', // 'all' | '10' | '8' | 'import'
   search: '',
+  mode: 'list', // 'list' | 'edit'
+  editingRowId: null,
+  filteredRowIds: [],
+  imgRotation: 0,
+  pendingReceiptDataUrl: null,
+  listScrollTop: 0,
   lastDetails: null
 };
+
+function isEditableTaxDetailRow(r) {
+  if (!r) return false;
+  if (r.sourceType === 'expense' && r.sourceId) return true;
+  if (r.direction === 'input' && r.journalId && !r.isImportTax && ['manual', 'reconciliation', 'reconcile', 'inventory_lot'].includes(r.sourceType)) {
+    return true;
+  }
+  return false;
+}
+
+function normalizeTNumberInput(rawVal) {
+  const half = String(rawVal || '')
+    .replace(/[Ａ-Ｚａ-ｚ０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0))
+    .replace(/[\s\-‐‑–—ー]/g, '')
+    .toUpperCase();
+  if (/^\d{13}$/.test(half)) return `T${half}`;
+  return half;
+}
+
+function isValidTaxTNumber(num) {
+  return /^T\d{13}$/i.test(String(num || '').trim());
+}
+
+function setTaxDetailModalViewMode(mode) {
+  taxDetailUiState.mode = mode === 'edit' ? 'edit' : 'list';
+  const listEl = document.getElementById('taxDetailListStep');
+  const editEl = document.getElementById('taxDetailEditStep');
+  const backBtn = document.getElementById('btnTaxDetailBackToList');
+  const stepNav = document.getElementById('taxDetailStepNav');
+  const csvBtn = document.getElementById('btnExportTaxDetailCSVModal');
+
+  const isEdit = taxDetailUiState.mode === 'edit';
+  if (listEl) listEl.style.display = isEdit ? 'none' : 'flex';
+  if (editEl) editEl.style.display = isEdit ? 'flex' : 'none';
+  if (backBtn) backBtn.style.display = isEdit ? 'inline-flex' : 'none';
+  if (stepNav) stepNav.style.display = isEdit ? 'inline-flex' : 'none';
+  if (csvBtn) csvBtn.style.display = isEdit ? 'none' : 'inline-flex';
+}
 
 function openTaxDetailModal(initialTab = 'all') {
   console.log('【消費税明細】詳細モーダル表示開始', { initialTab, periodFilter: currentAccGlobalPeriod });
@@ -19637,12 +19681,18 @@ function openTaxDetailModal(initialTab = 'all') {
   taxDetailUiState.tab = initialTab || 'all';
   taxDetailUiState.rate = 'all';
   taxDetailUiState.search = '';
+  taxDetailUiState.mode = 'list';
+  taxDetailUiState.editingRowId = null;
+  taxDetailUiState.imgRotation = 0;
+  taxDetailUiState.pendingReceiptDataUrl = null;
+  taxDetailUiState.listScrollTop = 0;
 
   const rateSel = document.getElementById('taxDetailRateFilter');
   const searchInp = document.getElementById('taxDetailSearchInput');
   if (rateSel) rateSel.value = 'all';
   if (searchInp) searchInp.value = '';
 
+  setTaxDetailModalViewMode('list');
   modal.style.display = 'flex';
   modal.classList.add('active');
   renderTaxDetailModalContent();
@@ -19651,10 +19701,30 @@ function openTaxDetailModal(initialTab = 'all') {
 
 function closeTaxDetailModal() {
   const modal = document.getElementById('taxDetailModal');
+  taxDetailUiState.mode = 'list';
+  taxDetailUiState.editingRowId = null;
+  taxDetailUiState.pendingReceiptDataUrl = null;
   if (modal) {
     modal.style.display = 'none';
     modal.classList.remove('active');
   }
+}
+
+function getFilteredTaxDetailRows(details) {
+  const q = taxDetailUiState.search.trim().toLowerCase();
+  return (details?.rows || []).filter(r => {
+    if (taxDetailUiState.tab === 'output' && r.direction !== 'output') return false;
+    if (taxDetailUiState.tab === 'input' && r.direction !== 'input') return false;
+    if (taxDetailUiState.tab === 'unverified' && !r.needsCheck) return false;
+    if (taxDetailUiState.rate === '10' && (r.isImportTax || r.taxBucket !== 10)) return false;
+    if (taxDetailUiState.rate === '8' && (r.isImportTax || r.taxBucket !== 8)) return false;
+    if (taxDetailUiState.rate === 'import' && !r.isImportTax) return false;
+    if (q) {
+      const hay = `${r.date} ${r.entryNumber} ${r.accountName} ${r.subAccount} ${r.counterparty} ${r.description} ${r.invoiceNumber} ${r.invoiceStatusLabel}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
 }
 
 function renderTaxDetailModalContent() {
@@ -19664,13 +19734,17 @@ function renderTaxDetailModalContent() {
 
   const titleEl = document.getElementById('taxDetailModalTitle');
   if (titleEl) {
-    const titleMap = {
-      output: '💰 仮受消費税（課税売上 10% / 8%）明細一覧',
-      input: '💳 仮払消費税（経費・仕入・輸入・T番号確認）明細一覧',
-      unverified: '⚠️ インボイス T番号未登録・要確認 明細一覧',
-      all: '🧾 消費税申告チェック・課税取引 全明細（税理士確認用）'
-    };
-    titleEl.textContent = titleMap[taxDetailUiState.tab] || titleMap.all;
+    if (taxDetailUiState.mode === 'edit') {
+      titleEl.textContent = '🔍 証憑確認・インボイス番号 修正ステップ';
+    } else {
+      const titleMap = {
+        output: '💰 仮受消費税（課税売上 10% / 8%）明細一覧',
+        input: '💳 仮払消費税（経費・仕入・輸入・T番号確認）明細一覧',
+        unverified: '⚠️ インボイス T番号未登録・要確認 明細一覧',
+        all: '🧾 消費税申告チェック・課税取引 全明細（税理士確認用）'
+      };
+      titleEl.textContent = titleMap[taxDetailUiState.tab] || titleMap.all;
+    }
   }
 
   const periodBadge = document.getElementById('taxDetailPeriodBadge');
@@ -19719,20 +19793,20 @@ function renderTaxDetailModalContent() {
   }
 
   // 2. 明細フィルタリング
-  const q = taxDetailUiState.search.trim().toLowerCase();
-  const filteredRows = details.rows.filter(r => {
-    if (taxDetailUiState.tab === 'output' && r.direction !== 'output') return false;
-    if (taxDetailUiState.tab === 'input' && r.direction !== 'input') return false;
-    if (taxDetailUiState.tab === 'unverified' && !r.needsCheck) return false;
-    if (taxDetailUiState.rate === '10' && (r.isImportTax || r.taxBucket !== 10)) return false;
-    if (taxDetailUiState.rate === '8' && (r.isImportTax || r.taxBucket !== 8)) return false;
-    if (taxDetailUiState.rate === 'import' && !r.isImportTax) return false;
-    if (q) {
-      const hay = `${r.date} ${r.entryNumber} ${r.accountName} ${r.subAccount} ${r.counterparty} ${r.description} ${r.invoiceNumber} ${r.invoiceStatusLabel}`.toLowerCase();
-      if (!hay.includes(q)) return false;
+  const filteredRows = getFilteredTaxDetailRows(details);
+  taxDetailUiState.filteredRowIds = filteredRows.map(r => r.id);
+
+  // 「要確認を1件目から証憑確認・修正」ボタンの更新
+  const startVerifyBtn = document.getElementById('btnStartTaxVerifyFlow');
+  if (startVerifyBtn) {
+    const editableNeedsCheck = filteredRows.filter(r => r.needsCheck && isEditableTaxDetailRow(r));
+    if (editableNeedsCheck.length > 0) {
+      startVerifyBtn.style.display = 'inline-flex';
+      startVerifyBtn.textContent = `🚀 要確認を1件目から証憑確認・修正 (${editableNeedsCheck.length}件)`;
+    } else {
+      startVerifyBtn.style.display = 'none';
     }
-    return true;
-  });
+  }
 
   // 3. テーブル描画
   const tbody = document.getElementById('taxDetailTableBody');
@@ -19752,7 +19826,8 @@ function renderTaxDetailModalContent() {
         let invColor = '#047857';
         let invBg = '#ecfdf5';
         if (r.invoiceType === 'transitional') {
-          invColor = '#b45309'; invBg = '#fffbeb';
+          invColor = r.invoiceVerified ? '#0369a1' : '#b45309';
+          invBg = r.invoiceVerified ? '#e0f2fe' : '#fffbeb';
         } else if (r.invoiceType === 'none') {
           invColor = '#b91c1c'; invBg = '#fef2f2';
         } else if (r.isImportTax) {
@@ -19764,15 +19839,26 @@ function renderTaxDetailModalContent() {
           : '';
         const invBadgeHtml = `<span style="display: inline-block; background: ${invBg}; color: ${invColor}; font-weight: 700; padding: 1px 5px; border-radius: 4px; font-size: 0.68rem;">${escapeHtml(r.invoiceStatusLabel)}</span>`;
 
-        let evidenceBtn = '<span style="color: #cbd5e1;">-</span>';
+        const canVerifyEdit = isEditableTaxDetailRow(r);
+        let actionHtml = '<span style="color: #cbd5e1;">-</span>';
         if (r.sourceType === 'invoice_sales' && r.sourceId) {
-          evidenceBtn = `<button type="button" class="btn btn-xs btn-secondary btn-tax-open-invoice" data-doc-id="${escapeHtml(r.sourceId)}" style="padding: 2px 6px; font-size: 0.7rem;">📄 伝票</button>`;
+          actionHtml = `<button type="button" class="btn btn-xs btn-secondary btn-tax-open-invoice" data-doc-id="${escapeHtml(r.sourceId)}" style="padding: 3px 7px; font-size: 0.7rem;">📄 伝票</button>`;
+        } else if (canVerifyEdit) {
+          const editBtnStyle = r.needsCheck
+            ? 'padding: 3px 7px; font-size: 0.7rem; font-weight: 800; background: #ea580c; border-color: #c2410c; color: #fff;'
+            : 'padding: 3px 7px; font-size: 0.7rem; font-weight: 700;';
+          const editLabel = r.needsCheck ? '🔍 確認・修正' : '✏️ 修正';
+          const editBtn = `<button type="button" class="btn btn-xs ${r.needsCheck ? 'btn-primary' : 'btn-outline'} btn-tax-verify-edit" data-tax-row-id="${escapeHtml(r.id)}" style="${editBtnStyle}">${editLabel}</button>`;
+          const recBtn = r.receiptImage
+            ? `<button type="button" class="btn btn-xs btn-secondary btn-tax-open-receipt" data-tax-row-id="${escapeHtml(r.id)}" title="領収書を別枠で拡大表示" style="padding: 3px 6px; font-size: 0.7rem;">📷 証憑</button>`
+            : '';
+          actionHtml = `<div style="display: inline-flex; gap: 4px; align-items: center; justify-content: center; flex-wrap: nowrap;">${editBtn}${recBtn}</div>`;
         } else if (r.receiptImage) {
-          evidenceBtn = `<button type="button" class="btn btn-xs btn-secondary btn-tax-open-receipt" data-tax-row-id="${escapeHtml(r.id)}" style="padding: 2px 6px; font-size: 0.7rem;">📷 証憑</button>`;
+          actionHtml = `<button type="button" class="btn btn-xs btn-secondary btn-tax-open-receipt" data-tax-row-id="${escapeHtml(r.id)}" style="padding: 3px 7px; font-size: 0.7rem;">📷 証憑</button>`;
         }
 
         return `
-          <tr style="border-bottom: 1px solid #e2e8f0; background: ${r.needsCheck ? '#fffdf5' : '#ffffff'};">
+          <tr class="${canVerifyEdit ? 'tax-row-editable' : ''}" data-tax-row-id="${escapeHtml(r.id)}" style="border-bottom: 1px solid #e2e8f0; background: ${r.needsCheck ? '#fffdf5' : '#ffffff'};">
             <td style="padding: 7px 10px; font-family: monospace; white-space: nowrap;">${escapeHtml(r.date)}</td>
             <td style="padding: 7px 10px;">${dirBadge}</td>
             <td style="padding: 7px 10px;">
@@ -19787,12 +19873,12 @@ function renderTaxDetailModalContent() {
               <div style="font-weight: 700; color: #0f172a;">${escapeHtml(r.counterparty)}</div>
               <div style="font-size: 0.7rem; color: #64748b; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(r.description)}">${escapeHtml(r.description)}</div>
             </td>
-            <td style="padding: 7px 10px;">${invNumHtml}${invBadgeHtml}</td>
+            <td style="padding: 7px 10px; ${canVerifyEdit ? 'cursor: pointer;' : ''}" class="${canVerifyEdit ? 'tax-invoice-cell-editable' : ''}" data-tax-row-id="${escapeHtml(r.id)}" title="${canVerifyEdit ? 'クリックして証憑確認・T番号修正へ' : ''}">${invNumHtml}${invBadgeHtml}</td>
             <td style="padding: 7px 10px; text-align: center;">${rateBadge}</td>
             <td style="padding: 7px 10px; text-align: right; font-family: monospace;">${r.taxBaseAmount ? formatCurrency(r.taxBaseAmount) : '-'}</td>
             <td style="padding: 7px 10px; text-align: right; font-family: monospace; font-weight: 800; color: ${r.direction === 'output' ? '#1e40af' : '#c2410c'};">${formatCurrency(r.taxAmount)}</td>
             <td style="padding: 7px 10px; text-align: right; font-family: monospace; color: #334155;">${formatCurrency(r.grossAmount)}</td>
-            <td style="padding: 7px 10px; text-align: center;">${evidenceBtn}</td>
+            <td style="padding: 7px 10px; text-align: center;">${actionHtml}</td>
           </tr>
         `;
       }).join('');
@@ -19801,11 +19887,427 @@ function renderTaxDetailModalContent() {
 
   const footer = document.getElementById('taxDetailFooterSummary');
   if (footer) {
-    const fOut = filteredRows.filter(r => r.direction === 'output').reduce((acc, r) => acc + r.taxAmount, 0);
-    const fIn = filteredRows.filter(r => r.direction === 'input').reduce((acc, r) => acc + r.taxAmount, 0);
-    const fBase = filteredRows.reduce((acc, r) => acc + (r.taxBaseAmount || 0), 0);
-    footer.textContent = `表示: ${filteredRows.length}件 ｜ 税抜本体計: ${formatCurrency(fBase)} ｜ 仮受計: ${formatCurrency(fOut)} ｜ 仮払計: ${formatCurrency(fIn)} ｜ 差引: ${formatCurrency(fOut - fIn)}`;
+    if (taxDetailUiState.mode === 'edit') {
+      footer.textContent = '💡 左の証憑画像で「T + 13桁」の登録番号を確認し、入力して「保存して一覧に戻る」または「保存して次の要確認へ」を押してください。';
+    } else {
+      const fOut = filteredRows.filter(r => r.direction === 'output').reduce((acc, r) => acc + r.taxAmount, 0);
+      const fIn = filteredRows.filter(r => r.direction === 'input').reduce((acc, r) => acc + r.taxAmount, 0);
+      const fBase = filteredRows.reduce((acc, r) => acc + (r.taxBaseAmount || 0), 0);
+      footer.textContent = `表示: ${filteredRows.length}件 ｜ 税抜本体計: ${formatCurrency(fBase)} ｜ 仮受計: ${formatCurrency(fOut)} ｜ 仮払計: ${formatCurrency(fIn)} ｜ 差引: ${formatCurrency(fOut - fIn)}`;
+    }
   }
+
+  if (taxDetailUiState.mode === 'edit' && taxDetailUiState.editingRowId) {
+    renderTaxDetailEditStep();
+  }
+}
+
+function findSuggestedTNumbersForPayee(payeeName, excludeSourceId = '') {
+  const cleanName = String(payeeName || '').trim().toLowerCase();
+  const candidates = new Map();
+  const addCandidate = (tNum, name, sourceLabel) => {
+    const norm = normalizeTNumberInput(tNum);
+    if (!isValidTaxTNumber(norm)) return;
+    if (!candidates.has(norm)) {
+      candidates.set(norm, { invoiceNumber: norm, name: name || '-', sourceLabel });
+    }
+  };
+
+  if (!cleanName || cleanName === '-') return [];
+
+  const allExpenses = typeof getExpenseList === 'function' ? getExpenseList() : [];
+  allExpenses.forEach(exp => {
+    if (!exp || String(exp.id) === String(excludeSourceId)) return;
+    const p = String(exp.payee || '').trim().toLowerCase();
+    if (!p) return;
+    if (p === cleanName || p.includes(cleanName) || cleanName.includes(p)) {
+      addCandidate(exp.invoiceNumber, exp.payee, '過去の経費');
+    }
+  });
+
+  if (typeof getClientMasterList === 'function') {
+    const clients = getClientMasterList(true) || [];
+    clients.forEach(c => {
+      if (!c) return;
+      const cn = String(c.name || '').trim().toLowerCase();
+      if (!cn) return;
+      if (cn === cleanName || cn.includes(cleanName) || cleanName.includes(cn)) {
+        addCandidate(c.invoiceNumber, c.name, '取引先マスタ');
+      }
+    });
+  }
+
+  return Array.from(candidates.values()).slice(0, 5);
+}
+
+function updateTaxEditRealtimePreview() {
+  const tInput = document.getElementById('taxEditInvoiceNumber');
+  const typeSel = document.getElementById('taxEditInvoiceType');
+  const rateSel = document.getElementById('taxEditTaxRate');
+  const amtInp = document.getElementById('taxEditAmount');
+  const statusEl = document.getElementById('taxEditTNumStatus');
+  const previewEl = document.getElementById('taxEditCalcPreview');
+  if (!tInput || !typeSel || !rateSel || !amtInp) return;
+
+  const normalized = normalizeTNumberInput(tInput.value);
+  const validT = isValidTaxTNumber(normalized);
+
+  if (statusEl) {
+    if (!normalized) {
+      statusEl.innerHTML = '<span style="color: #64748b;">ℹ️ 未入力（証憑に T + 13桁 が記載されていれば入力してください）</span>';
+    } else if (validT) {
+      statusEl.innerHTML = `<span style="color: #047857;">✅ 有効なインボイス登録番号です（${escapeHtml(normalized)} / 100%控除）</span>`;
+    } else {
+      const digits = normalized.replace(/\D/g, '').length;
+      statusEl.innerHTML = `<span style="color: #dc2626;">⚠️ 「T + 半角数字13桁」の形式で入力してください（現在数字 ${digits}桁）</span>`;
+    }
+  }
+
+  const gross = Math.max(0, Math.round(Number(amtInp.value) || 0));
+  const rate = Number(rateSel.value) || 0;
+  const split = rate > 0 ? splitTaxInclusiveAmount(gross, rate) : { amountEx: gross, taxAmt: 0 };
+  const invType = validT ? 'qualified' : typeSel.value;
+  const dedRate = invType === 'qualified' ? 1.0 : (invType === 'transitional' ? 0.8 : 0.0);
+  const dedLabel = invType === 'qualified' ? '100%控除' : (invType === 'transitional' ? '経過措置80%控除' : '控除要件要確認');
+  const dedAmt = Math.floor(split.taxAmt * dedRate);
+
+  if (previewEl) {
+    previewEl.textContent = `税込 ${formatCurrency(gross)} → 税抜本体 ${formatCurrency(split.amountEx)} ／ 消費税(${rate}%) ${formatCurrency(split.taxAmt)} ／ ${dedLabel}: ${formatCurrency(dedAmt)}`;
+  }
+}
+
+function getCurrentEditingTaxRowContext() {
+  const details = taxDetailUiState.lastDetails || getCurrentConsumptionTaxDetails(currentAccGlobalPeriod);
+  const filteredRows = getFilteredTaxDetailRows(details);
+  const editableRows = filteredRows.filter(r => isEditableTaxDetailRow(r));
+  const row = details.rows.find(r => r.id === taxDetailUiState.editingRowId) || null;
+  const posInEditable = row ? editableRows.findIndex(r => r.id === row.id) : -1;
+  return { details, filteredRows, editableRows, row, posInEditable };
+}
+
+function openTaxDetailEditStep(rowId) {
+  console.log('【消費税インボイス修正】ステップ開始', { rowId, currentTab: taxDetailUiState.tab });
+  const scrollBox = document.getElementById('taxDetailTableScrollBox');
+  if (scrollBox && taxDetailUiState.mode === 'list') {
+    taxDetailUiState.listScrollTop = scrollBox.scrollTop || 0;
+  }
+  taxDetailUiState.editingRowId = rowId;
+  taxDetailUiState.imgRotation = 0;
+  taxDetailUiState.pendingReceiptDataUrl = null;
+  setTaxDetailModalViewMode('edit');
+  renderTaxDetailModalContent();
+}
+
+function backToTaxDetailList() {
+  console.log('【消費税インボイス修正】一覧へ戻る', { previousRowId: taxDetailUiState.editingRowId });
+  taxDetailUiState.editingRowId = null;
+  taxDetailUiState.pendingReceiptDataUrl = null;
+  taxDetailUiState.imgRotation = 0;
+  setTaxDetailModalViewMode('list');
+  renderTaxDetailModalContent();
+  const scrollBox = document.getElementById('taxDetailTableScrollBox');
+  if (scrollBox && taxDetailUiState.listScrollTop > 0) {
+    requestAnimationFrame(() => { scrollBox.scrollTop = taxDetailUiState.listScrollTop; });
+  }
+}
+
+function renderTaxDetailEditStep() {
+  const { editableRows, row, posInEditable } = getCurrentEditingTaxRowContext();
+  if (!row) {
+    showToast('対象の明細が見つからなくなったため一覧へ戻ります', 'info');
+    backToTaxDetailList();
+    return;
+  }
+
+  const counterEl = document.getElementById('taxEditStepCounter');
+  const prevBtn = document.getElementById('btnTaxEditPrev');
+  const nextBtn = document.getElementById('btnTaxEditNext');
+  const navIdx = posInEditable >= 0 ? posInEditable + 1 : 1;
+  const navTotal = Math.max(editableRows.length, 1);
+  if (counterEl) counterEl.textContent = `${navIdx} / ${navTotal}`;
+  if (prevBtn) prevBtn.disabled = posInEditable <= 0;
+  if (nextBtn) nextBtn.disabled = posInEditable < 0 || posInEditable >= editableRows.length - 1;
+
+  // 経費元データ取得（存在する場合）
+  const allExpenses = typeof getExpenseList === 'function' ? getExpenseList() : [];
+  const exp = row.sourceType === 'expense' ? allExpenses.find(e => String(e.id) === String(row.sourceId)) : null;
+
+  // 上部メタバナー
+  const metaBanner = document.getElementById('taxEditMetaBanner');
+  if (metaBanner) {
+    const statusChip = row.needsCheck
+      ? '<span style="background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; padding: 2px 8px; border-radius: 9999px; font-weight: 800; font-size: 0.74rem;">⚠️ T番号未登録・要確認</span>'
+      : '<span style="background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; padding: 2px 8px; border-radius: 9999px; font-weight: 800; font-size: 0.74rem;">✅ 確認済・適格/経過</span>';
+    metaBanner.innerHTML = `
+      <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+        ${statusChip}
+        <span style="font-family: monospace; font-weight: 800; color: #1e293b;">📅 ${escapeHtml(row.date)}</span>
+        <span style="font-family: monospace; color: #475569; font-weight: 700;">${escapeHtml(row.sourceTypeLabel)} (${escapeHtml(row.entryNumber)})</span>
+        <span style="color: #334155;">科目: <strong>${escapeHtml(row.accountName)}</strong></span>
+      </div>
+      <div style="font-size: 0.74rem; color: #b45309; font-weight: 700;">
+        対象リスト ${navIdx} / ${navTotal} 件目
+      </div>
+    `;
+  }
+
+  // 左ペイン: 証憑画像表示
+  const imgEl = document.getElementById('taxEditReceiptImg');
+  const noRecBox = document.getElementById('taxEditNoReceiptBox');
+  const uploadBar = document.getElementById('taxEditReceiptUploadBar');
+  const zoomBtn = document.getElementById('btnTaxEditFullZoom');
+  const rotBtn = document.getElementById('btnTaxEditRotateImg');
+  const activeImg = taxDetailUiState.pendingReceiptDataUrl || (exp && (exp.receiptImage || exp.receiptDataUrl)) || row.receiptImage || '';
+
+  if (imgEl && noRecBox) {
+    if (activeImg) {
+      imgEl.src = activeImg;
+      imgEl.style.display = 'block';
+      imgEl.style.transform = `rotate(${taxDetailUiState.imgRotation}deg)`;
+      noRecBox.style.display = 'none';
+      if (zoomBtn) zoomBtn.disabled = false;
+      if (rotBtn) rotBtn.disabled = false;
+    } else {
+      imgEl.src = '';
+      imgEl.style.display = 'none';
+      noRecBox.style.display = 'block';
+      if (zoomBtn) zoomBtn.disabled = true;
+      if (rotBtn) rotBtn.disabled = true;
+    }
+  }
+  if (uploadBar) {
+    const lblUpload = document.getElementById('lblTaxEditReceiptUpload');
+    if (lblUpload) lblUpload.style.display = row.sourceType === 'expense' ? 'inline-block' : 'none';
+  }
+
+  // 右ペインフォームへ現在値を反映
+  const payeeInp = document.getElementById('taxEditPayee');
+  const tInp = document.getElementById('taxEditInvoiceNumber');
+  const typeSel = document.getElementById('taxEditInvoiceType');
+  const rateSel = document.getElementById('taxEditTaxRate');
+  const catSel = document.getElementById('taxEditCategory');
+  const amtInp = document.getElementById('taxEditAmount');
+  const noteInp = document.getElementById('taxEditNote');
+  const isExpense = row.sourceType === 'expense' && !!exp;
+
+  if (payeeInp) {
+    payeeInp.value = (exp && exp.payee) || (row.counterparty !== '-' ? row.counterparty : '') || '';
+    payeeInp.disabled = !isExpense;
+  }
+  if (tInp) {
+    tInp.value = (exp && exp.invoiceNumber) || row.invoiceNumber || '';
+  }
+  if (typeSel) {
+    const curType = (exp && exp.invoiceType) || row.invoiceType || 'none';
+    typeSel.value = ['qualified', 'transitional', 'none'].includes(curType) ? curType : 'none';
+  }
+  if (rateSel) {
+    const rRate = exp ? Number(exp.taxRate !== undefined ? exp.taxRate : 10) : (row.taxBucket || 10);
+    rateSel.value = String([10, 8, 0].includes(rRate) ? rRate : 10);
+    rateSel.disabled = !isExpense;
+  }
+  if (catSel) {
+    const curCat = (exp && exp.category) || row.category || row.accountName || '雑費';
+    if (isExpense && !Array.from(catSel.options).some(o => o.value === curCat)) {
+      const opt = document.createElement('option');
+      opt.value = curCat;
+      opt.textContent = curCat;
+      catSel.appendChild(opt);
+    }
+    catSel.value = Array.from(catSel.options).some(o => o.value === curCat) ? curCat : '雑費';
+    catSel.disabled = !isExpense;
+  }
+  if (amtInp) {
+    amtInp.value = exp ? (Number(exp.amount) || 0) : (Number(row.grossAmount) || 0);
+    amtInp.disabled = !isExpense;
+  }
+  if (noteInp) {
+    noteInp.value = (exp && exp.note) || row.description || '';
+    noteInp.disabled = !isExpense;
+  }
+
+  // 同一取引先の過去T番号候補を表示
+  const sugWrap = document.getElementById('taxEditSuggestionsWrap');
+  const sugList = document.getElementById('taxEditSuggestionsList');
+  if (sugWrap && sugList) {
+    const candidates = findSuggestedTNumbersForPayee(payeeInp ? payeeInp.value : row.counterparty, row.sourceId);
+    if (candidates.length > 0) {
+      sugWrap.style.display = 'block';
+      sugList.innerHTML = candidates.map(c => `
+        <button type="button" class="btn btn-xs btn-secondary btn-tax-apply-t-suggestion" data-t-num="${escapeHtml(c.invoiceNumber)}"
+          style="background: #ecfdf5; color: #047857; border: 1px solid #86efac; padding: 3px 8px; font-size: 0.72rem; font-weight: 700; cursor: pointer;">
+          🏷️ ${escapeHtml(c.invoiceNumber)} <span style="font-weight: 500; color: #475569;">(${escapeHtml(c.name)} / ${escapeHtml(c.sourceLabel)})</span>
+        </button>
+      `).join('');
+    } else {
+      sugWrap.style.display = 'none';
+      sugList.innerHTML = '';
+    }
+  }
+
+  // 「保存して次へ」ボタンラベル調整
+  const saveNextBtn = document.getElementById('btnTaxEditSaveNext');
+  if (saveNextBtn) {
+    const hasNext = posInEditable >= 0 && posInEditable < editableRows.length - 1;
+    saveNextBtn.textContent = hasNext ? '💾 保存して次へ →' : '💾 保存して一覧を完了';
+  }
+
+  updateTaxEditRealtimePreview();
+}
+
+async function handleSaveTaxDetailEdit(goNext = false) {
+  const { editableRows, row, posInEditable } = getCurrentEditingTaxRowContext();
+  if (!row) {
+    backToTaxDetailList();
+    return;
+  }
+
+  const nextCandidateRow = (posInEditable >= 0 && posInEditable + 1 < editableRows.length)
+    ? editableRows[posInEditable + 1]
+    : null;
+
+  const payee = (document.getElementById('taxEditPayee')?.value || '').trim();
+  const rawT = document.getElementById('taxEditInvoiceNumber')?.value || '';
+  const cleanT = normalizeTNumberInput(rawT);
+  const selectedType = document.getElementById('taxEditInvoiceType')?.value || 'none';
+  const taxRate = Number(document.getElementById('taxEditTaxRate')?.value ?? 10);
+  const category = document.getElementById('taxEditCategory')?.value || row.category || '雑費';
+  const amount = Math.round(Number(document.getElementById('taxEditAmount')?.value) || 0);
+  const note = (document.getElementById('taxEditNote')?.value || '').trim();
+
+  console.log('【消費税インボイス修正】保存開始', {
+    rowId: row.id,
+    sourceType: row.sourceType,
+    sourceId: row.sourceId,
+    cleanT,
+    selectedType,
+    taxRate,
+    goNext
+  });
+
+  if (cleanT && !isValidTaxTNumber(cleanT)) {
+    showToast('インボイス登録番号は「T + 半角数字13桁」で入力するか、空欄にして経過措置を選択してください。', 'warning');
+    return;
+  }
+
+  if (typeof isMonthLocked === 'function' && isMonthLocked(row.date)) {
+    showToast(`対象月（${String(row.date).slice(0, 7)}）は月次締め（会計ロック）されているため修正できません。`, 'danger');
+    return;
+  }
+
+  const finalType = isValidTaxTNumber(cleanT) ? 'qualified' : selectedType;
+  const finalVerified = finalType === 'qualified' || finalType === 'transitional';
+
+  if (row.sourceType === 'expense' && row.sourceId) {
+    const allExpenses = typeof getExpenseList === 'function' ? getExpenseList() : [];
+    const targetExp = allExpenses.find(e => String(e.id) === String(row.sourceId));
+    if (!targetExp) {
+      showToast('対象の経費データが見つかりませんでした', 'danger');
+      return;
+    }
+    if (amount <= 0) {
+      showToast('金額は1円以上を入力してください', 'warning');
+      return;
+    }
+
+    const updatedExp = {
+      ...targetExp,
+      payee,
+      invoiceNumber: cleanT,
+      invoiceType: finalType,
+      invoiceVerified: finalVerified,
+      taxRate,
+      taxType: taxRate === 8 ? 'taxable_8' : (taxRate === 10 ? 'taxable_10' : 'exempt'),
+      category,
+      amount,
+      note
+    };
+
+    const pendingImg = taxDetailUiState.pendingReceiptDataUrl;
+    if (pendingImg && pendingImg.startsWith('data:image/') && typeof fetch !== 'undefined') {
+      try {
+        const upRes = await (window.apiFetch || fetch)('save-receipt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: targetExp.id, image: pendingImg })
+        });
+        const upData = await upRes.json();
+        if (upData && upData.url) {
+          updatedExp.receiptImage = upData.url;
+          updatedExp.receiptDataUrl = upData.url;
+        }
+      } catch (uploadErr) {
+        console.warn('【消費税インボイス修正】証憑アップロード失敗（番号等は保存続行）:', uploadErr);
+      }
+    }
+
+    saveExpense(updatedExp);
+    if (typeof syncReceiptStorageWithExpenses === 'function') {
+      syncReceiptStorageWithExpenses();
+    }
+    if (typeof syncExpensesWithServer === 'function') {
+      syncExpensesWithServer().catch(e => console.warn('Server expenses sync warning:', e));
+    }
+  } else if (row.journalId && typeof getManualJournals === 'function' && typeof saveManualJournal === 'function') {
+    const list = getManualJournals() || [];
+    const targetJnl = list.find(j => String(j.id) === String(row.journalId));
+    if (!targetJnl) {
+      showToast('対象の振替仕訳が見つかりませんでした', 'danger');
+      return;
+    }
+    const patchLine = (line) => (line ? {
+      ...line,
+      invoiceNumber: cleanT,
+      invoiceType: finalType,
+      invoiceVerified: finalVerified
+    } : line);
+    const updatedJnl = {
+      ...targetJnl,
+      debitLines: (targetJnl.debitLines || []).map(patchLine),
+      creditLines: (targetJnl.creditLines || []).map(patchLine)
+    };
+    saveManualJournal(updatedJnl);
+  } else {
+    showToast('この明細種別は直接編集に対応していません', 'warning');
+    return;
+  }
+
+  taxDetailUiState.pendingReceiptDataUrl = null;
+  if (typeof applyAccGlobalPeriod === 'function' && typeof currentAccGlobalPeriod !== 'undefined') {
+    applyAccGlobalPeriod(currentAccGlobalPeriod.preset);
+  } else {
+    renderTaxSummaryCard(currentAccGlobalPeriod);
+  }
+
+  console.log('【消費税インボイス修正】保存・再計算完了', {
+    rowId: row.id,
+    cleanT,
+    finalType,
+    finalVerified
+  });
+
+  showToast(
+    cleanT
+      ? `インボイス番号（${cleanT}）を保存・反映しました`
+      : (finalType === 'transitional' ? '経過措置（80%控除・確認済）として保存しました' : '内容を保存・反映しました'),
+    'success'
+  );
+
+  if (goNext) {
+    const afterDetails = getCurrentConsumptionTaxDetails(currentAccGlobalPeriod);
+    taxDetailUiState.lastDetails = afterDetails;
+    const remainingEditable = getFilteredTaxDetailRows(afterDetails).filter(r => isEditableTaxDetailRow(r));
+    const nextTarget = nextCandidateRow
+      ? remainingEditable.find(r => r.id === nextCandidateRow.id && r.id !== row.id)
+      : null;
+    if (nextTarget) {
+      openTaxDetailEditStep(nextTarget.id);
+      return;
+    }
+    showToast('対象リストの確認・修正が完了したため一覧へ戻ります', 'success');
+  }
+
+  backToTaxDetailList();
 }
 
 function handleExportTaxDetailCSV() {
@@ -19842,13 +20344,94 @@ document.addEventListener('click', (e) => {
     handleExportTaxDetailCSV();
     return;
   }
-  if (e.target.closest('#btnCloseTaxDetailModal') || e.target.closest('#btnCloseTaxDetailModal2') || e.target.id === 'taxDetailModal') {
+  if (e.target.closest('#btnCloseTaxDetailModal') || e.target.closest('#btnCloseTaxDetailModal2') || (e.target.id === 'taxDetailModal' && taxDetailUiState.mode !== 'edit')) {
     closeTaxDetailModal();
+    return;
+  }
+  if (e.target.closest('#btnTaxDetailBackToList') || e.target.closest('#btnTaxEditCancel')) {
+    backToTaxDetailList();
+    return;
+  }
+  if (e.target.closest('#btnStartTaxVerifyFlow')) {
+    const details = taxDetailUiState.lastDetails || getCurrentConsumptionTaxDetails(currentAccGlobalPeriod);
+    const first = getFilteredTaxDetailRows(details).find(r => r.needsCheck && isEditableTaxDetailRow(r));
+    if (first) openTaxDetailEditStep(first.id);
+    return;
+  }
+  if (e.target.closest('#btnTaxEditPrev')) {
+    const { editableRows, posInEditable } = getCurrentEditingTaxRowContext();
+    if (posInEditable > 0) openTaxDetailEditStep(editableRows[posInEditable - 1].id);
+    return;
+  }
+  if (e.target.closest('#btnTaxEditNext')) {
+    const { editableRows, posInEditable } = getCurrentEditingTaxRowContext();
+    if (posInEditable >= 0 && posInEditable + 1 < editableRows.length) openTaxDetailEditStep(editableRows[posInEditable + 1].id);
+    return;
+  }
+  if (e.target.closest('#btnTaxEditRotateImg')) {
+    taxDetailUiState.imgRotation = (taxDetailUiState.imgRotation + 90) % 360;
+    const imgEl = document.getElementById('taxEditReceiptImg');
+    if (imgEl) imgEl.style.transform = `rotate(${taxDetailUiState.imgRotation}deg)`;
+    console.log('【消費税インボイス修正】証憑画像回転', { rotation: taxDetailUiState.imgRotation });
+    return;
+  }
+  if (e.target.closest('#btnTaxEditFullZoom')) {
+    const imgEl = document.getElementById('taxEditReceiptImg');
+    const { row } = getCurrentEditingTaxRowContext();
+    if (imgEl && imgEl.src && imgEl.style.display !== 'none' && typeof openReceiptZoom === 'function') {
+      openReceiptZoom(imgEl.src, row ? {
+        date: row.date,
+        payee: document.getElementById('taxEditPayee')?.value || row.counterparty,
+        amount: Number(document.getElementById('taxEditAmount')?.value) || row.grossAmount,
+        invoiceNumber: document.getElementById('taxEditInvoiceNumber')?.value || row.invoiceNumber
+      } : null);
+    }
+    return;
+  }
+  if (e.target.closest('#btnTaxEditPrefixT')) {
+    const tInp = document.getElementById('taxEditInvoiceNumber');
+    const typeSel = document.getElementById('taxEditInvoiceType');
+    if (tInp) {
+      const norm = normalizeTNumberInput(tInp.value);
+      tInp.value = norm && !norm.startsWith('T') ? `T${norm}` : norm;
+      if (typeSel && isValidTaxTNumber(tInp.value)) typeSel.value = 'qualified';
+      updateTaxEditRealtimePreview();
+    }
+    return;
+  }
+  if (e.target.closest('#btnTaxEditClearT')) {
+    const tInp = document.getElementById('taxEditInvoiceNumber');
+    if (tInp) {
+      tInp.value = '';
+      updateTaxEditRealtimePreview();
+    }
+    return;
+  }
+  const sugBtn = e.target.closest('.btn-tax-apply-t-suggestion');
+  if (sugBtn) {
+    const tNum = sugBtn.getAttribute('data-t-num') || '';
+    const tInp = document.getElementById('taxEditInvoiceNumber');
+    const typeSel = document.getElementById('taxEditInvoiceType');
+    if (tInp && tNum) {
+      tInp.value = tNum;
+      if (typeSel) typeSel.value = 'qualified';
+      updateTaxEditRealtimePreview();
+      console.log('【消費税インボイス修正】候補T番号をワンクリック適用', { tNum });
+    }
+    return;
+  }
+  if (e.target.closest('#btnTaxEditSaveReturn')) {
+    handleSaveTaxDetailEdit(false);
+    return;
+  }
+  if (e.target.closest('#btnTaxEditSaveNext')) {
+    handleSaveTaxDetailEdit(true);
     return;
   }
   const tabBtn = e.target.closest('.tax-detail-tab-btn');
   if (tabBtn) {
     taxDetailUiState.tab = tabBtn.getAttribute('data-tax-tab') || 'all';
+    setTaxDetailModalViewMode('list');
     renderTaxDetailModalContent();
     return;
   }
@@ -19874,12 +20457,49 @@ document.addEventListener('click', (e) => {
     }
     return;
   }
+  const verifyEditBtn = e.target.closest('.btn-tax-verify-edit') || e.target.closest('.tax-invoice-cell-editable');
+  if (verifyEditBtn) {
+    const rowId = verifyEditBtn.getAttribute('data-tax-row-id');
+    if (rowId) openTaxDetailEditStep(rowId);
+    return;
+  }
 });
 
 document.addEventListener('change', (e) => {
   if (e.target && e.target.id === 'taxDetailRateFilter') {
     taxDetailUiState.rate = e.target.value || 'all';
     renderTaxDetailModalContent();
+    return;
+  }
+  if (e.target && (e.target.id === 'taxEditInvoiceType' || e.target.id === 'taxEditTaxRate')) {
+    updateTaxEditRealtimePreview();
+    return;
+  }
+  if (e.target && e.target.id === 'taxEditReceiptFileInput') {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target && ev.target.result;
+      if (typeof dataUrl === 'string') {
+        taxDetailUiState.pendingReceiptDataUrl = dataUrl;
+        taxDetailUiState.imgRotation = 0;
+        const imgEl = document.getElementById('taxEditReceiptImg');
+        const noRecBox = document.getElementById('taxEditNoReceiptBox');
+        const zoomBtn = document.getElementById('btnTaxEditFullZoom');
+        const rotBtn = document.getElementById('btnTaxEditRotateImg');
+        if (imgEl) {
+          imgEl.src = dataUrl;
+          imgEl.style.display = 'block';
+          imgEl.style.transform = 'rotate(0deg)';
+        }
+        if (noRecBox) noRecBox.style.display = 'none';
+        if (zoomBtn) zoomBtn.disabled = false;
+        if (rotBtn) rotBtn.disabled = false;
+        showToast('証憑画像をプレビューに読み込みました。「保存」で確定します。', 'info');
+      }
+    };
+    reader.readAsDataURL(file);
   }
 });
 
@@ -19887,6 +20507,19 @@ document.addEventListener('input', (e) => {
   if (e.target && e.target.id === 'taxDetailSearchInput') {
     taxDetailUiState.search = e.target.value || '';
     renderTaxDetailModalContent();
+    return;
+  }
+  if (e.target && e.target.id === 'taxEditInvoiceNumber') {
+    const norm = normalizeTNumberInput(e.target.value);
+    const typeSel = document.getElementById('taxEditInvoiceType');
+    if (typeSel && isValidTaxTNumber(norm)) {
+      typeSel.value = 'qualified';
+    }
+    updateTaxEditRealtimePreview();
+    return;
+  }
+  if (e.target && e.target.id === 'taxEditAmount') {
+    updateTaxEditRealtimePreview();
   }
 });
 

@@ -4614,6 +4614,7 @@ export function saveExpense(expense) {
       paymentAccount: expense.paymentAccount || expense.paymentMethod || '普通預金',
       taxType: expense.taxType || 'taxable_10',
       invoiceType: expense.invoiceType || (expense.invoiceNumber ? 'qualified' : 'none'),
+      invoiceVerified: !!expense.invoiceVerified,
       linkedInventoryId: expense.linkedInventoryId || '',
       linkedInventoryQty: Number(expense.linkedInventoryQty) || 0,
       updatedAt: new Date().toISOString()

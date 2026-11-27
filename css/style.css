@@ -3676,3 +3676,35 @@ label.form-label {
     transform: rotate(360deg);
   }
 }
+
+/* ==========================================================================
+   消費税申告チェックモーダル：証憑確認・インボイス番号修正ステップ（スプリットビュー）
+   ========================================================================== */
+.tax-edit-split-grid {
+  display: grid;
+  grid-template-columns: 1.05fr 0.95fr;
+  gap: 16px;
+  align-items: stretch;
+  flex: 1;
+  min-height: 0;
+}
+
+.tax-edit-receipt-pane,
+.tax-edit-form-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+#taxDetailTableBody tr.tax-row-editable:hover {
+  background-color: #f8fafc !important;
+}
+
+@media (max-width: 900px) {
+  .tax-edit-split-grid {
+    grid-template-columns: 1fr;
+  }
+  .tax-edit-receipt-viewport {
+    max-height: 42vh !important;
+  }
+}

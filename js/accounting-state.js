@@ -1536,7 +1536,7 @@ export function calculateConsumptionTaxDetails({
 
   const isValidTNumber = (num) => /^T\d{13}$/i.test(String(num || '').trim());
 
-  const classifyInputInvoice = (rawType, invoiceNum, isImportTax) => {
+  const classifyInputInvoice = (rawType, invoiceNum, isImportTax, invoiceVerified = false) => {
     if (isImportTax) {
       return { invoiceType: 'import', label: '輸入許可等 (100%控除)', deductionRate: 1.0, needsCheck: false };
     }
@@ -1544,7 +1544,12 @@ export function calculateConsumptionTaxDetails({
       return { invoiceType: 'qualified', label: '適格請求書 (100%控除)', deductionRate: 1.0, needsCheck: false };
     }
     if (rawType === 'transitional') {
-      return { invoiceType: 'transitional', label: '経過措置 (80%控除)', deductionRate: 0.8, needsCheck: true };
+      return {
+        invoiceType: 'transitional',
+        label: invoiceVerified ? '経過措置 (80%控除・確認済)' : '経過措置 (80%控除)',
+        deductionRate: 0.8,
+        needsCheck: !invoiceVerified
+      };
     }
     return { invoiceType: 'none', label: 'T番号なし・要確認', deductionRate: 0.0, needsCheck: true };
   };
@@ -1695,7 +1700,8 @@ export function calculateConsumptionTaxDetails({
         const bucket = detectTaxBucket(cl, creditLines);
         const isImport = String(cl.subAccount || '').includes('輸入');
         const invNum = (exp && exp.invoiceNumber) || cl.invoiceNumber || '';
-        const invInfo = classifyInputInvoice(cl.invoiceType || (exp && exp.invoiceType), invNum, isImport);
+        const verifiedFlag = Boolean((exp && exp.invoiceVerified) || cl.invoiceVerified);
+        const invInfo = classifyInputInvoice(cl.invoiceType || (exp && exp.invoiceType), invNum, isImport, verifiedFlag);
         const taxAmt = -rawAmt;
         const baseAmt = exp
           ? -splitTaxInclusiveAmount(exp.amount, bucket).amountEx
@@ -1705,6 +1711,7 @@ export function calculateConsumptionTaxDetails({
         const dedTax = Math.round(taxAmt * invInfo.deductionRate);
         pushRow({
           id: `${jnl.id}_cr116_${bucket}`,
+          journalId: jnl.id,
           direction: 'input',
           sign: -1,
           date: jnl.date || '',
@@ -1715,6 +1722,8 @@ export function calculateConsumptionTaxDetails({
           accountCode: (primaryExpDebit && primaryExpDebit.accountCode) || '116',
           accountName: (primaryExpDebit && primaryExpDebit.accountName) || '仮払消費税(訂正)',
           subAccount: cl.subAccount || '',
+          category: (exp && exp.category) || (primaryExpDebit && primaryExpDebit.accountName) || '',
+          note: (exp && exp.note) || '',
           counterparty: (exp && exp.payee) || (primaryExpDebit && primaryExpDebit.subAccount) || '-',
           description: jnl.description || '',
           taxBucket: bucket,
@@ -1725,6 +1734,7 @@ export function calculateConsumptionTaxDetails({
           grossAmount: baseAmt + taxAmt,
           invoiceNumber: invNum,
           invoiceType: invInfo.invoiceType,
+          invoiceVerified: verifiedFlag,
           invoiceStatusLabel: invInfo.label,
           deductibleTaxAmount: dedTax,
           needsCheck: invInfo.needsCheck,
@@ -1741,7 +1751,8 @@ export function calculateConsumptionTaxDetails({
         const bucket = detectTaxBucket(dl, debitLines);
         const isImport = String(dl.subAccount || '').includes('輸入');
         const invNum = (exp && exp.invoiceNumber) || dl.invoiceNumber || '';
-        const invInfo = classifyInputInvoice(dl.invoiceType || (exp && exp.invoiceType), invNum, isImport);
+        const verifiedFlag = Boolean((exp && exp.invoiceVerified) || dl.invoiceVerified);
+        const invInfo = classifyInputInvoice(dl.invoiceType || (exp && exp.invoiceType), invNum, isImport, verifiedFlag);
         let baseAmt = 0;
         if (exp) {
           baseAmt = splitTaxInclusiveAmount(exp.amount, bucket).amountEx;
@@ -1753,6 +1764,7 @@ export function calculateConsumptionTaxDetails({
         const dedTax = Math.floor(rawAmt * invInfo.deductionRate);
         pushRow({
           id: `${jnl.id}_db116_${bucket}`,
+          journalId: jnl.id,
           direction: 'input',
           sign: 1,
           date: jnl.date || '',
@@ -1763,6 +1775,8 @@ export function calculateConsumptionTaxDetails({
           accountCode: (primaryExpDebit && primaryExpDebit.accountCode) || dl.accountCode || '116',
           accountName: isImport ? '仮払消費税(輸入分)' : ((primaryExpDebit && primaryExpDebit.accountName) || (exp && exp.category) || '仮払消費税'),
           subAccount: dl.subAccount || '',
+          category: (exp && exp.category) || (primaryExpDebit && primaryExpDebit.accountName) || '',
+          note: (exp && exp.note) || '',
           counterparty: (exp && exp.payee) || (primaryExpDebit && primaryExpDebit.subAccount) || '-',
           description: jnl.description || '',
           taxBucket: bucket,
@@ -1773,6 +1787,7 @@ export function calculateConsumptionTaxDetails({
           grossAmount: baseAmt + rawAmt,
           invoiceNumber: invNum,
           invoiceType: invInfo.invoiceType,
+          invoiceVerified: verifiedFlag,
           invoiceStatusLabel: invInfo.label,
           deductibleTaxAmount: dedTax,
           needsCheck: invInfo.needsCheck,
@@ -1860,10 +1875,12 @@ export function calculateConsumptionTaxDetails({
         if (rate > 0) {
           const { amountEx, taxAmt } = splitTaxInclusiveAmount(amt, rate);
           const invNum = dl.invoiceNumber || (exp && exp.invoiceNumber) || '';
-          const invInfo = classifyInputInvoice(dl.invoiceType || (exp && exp.invoiceType), invNum, false);
+          const verifiedFlag = Boolean((exp && exp.invoiceVerified) || dl.invoiceVerified);
+          const invInfo = classifyInputInvoice(dl.invoiceType || (exp && exp.invoiceType), invNum, false, verifiedFlag);
           const dedTax = Math.floor(taxAmt * invInfo.deductionRate);
           pushRow({
             id: `${jnl.id}_fbIn_${idx}`,
+            journalId: jnl.id,
             direction: 'input',
             sign: 1,
             date: jnl.date || '',
@@ -1874,6 +1891,8 @@ export function calculateConsumptionTaxDetails({
             accountCode: dl.accountCode || '',
             accountName: dl.accountName || '',
             subAccount: dl.subAccount || '',
+            category: (exp && exp.category) || dl.accountName || '',
+            note: (exp && exp.note) || '',
             counterparty: (exp && exp.payee) || dl.subAccount || '-',
             description: jnl.description || '',
             taxBucket: rate,
@@ -1884,6 +1903,7 @@ export function calculateConsumptionTaxDetails({
             grossAmount: amt,
             invoiceNumber: invNum,
             invoiceType: invInfo.invoiceType,
+            invoiceVerified: verifiedFlag,
             invoiceStatusLabel: invInfo.label,
             deductibleTaxAmount: dedTax,
             needsCheck: invInfo.needsCheck,

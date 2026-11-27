@@ -23,7 +23,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
 
-  <link rel="stylesheet" href="css/style.css?v=20261127_remove_dup_expense_card">
+  <link rel="stylesheet" href="css/style.css?v=20261127_tax_invoice_workflow">
   <link rel="stylesheet" href="css/print.css?v=20261118_print_pagebreak_fix" media="print">
   <!-- ブラウザ内AI文字認識（OCR）エンジン -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -343,7 +343,7 @@
           style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
           <span
-            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.27-remove-dup-expense-card</span>
+            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.27-tax-invoice-workflow</span>
         </div>
       </div>
 
@@ -4712,110 +4712,8 @@
           </div>
 
           <!-- 📦 棚卸資産（在庫マスタ）連動 ＆ 売上原価（期末棚卸高）計上パネル -->
-          <div id="accInventoryIntegrationPanel" class="acc-inventory-panel"
-            style="background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); border: 1.5px solid #cbd5e1; border-radius: 12px; padding: 18px 20px; margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
-            <div
-              style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 8px;">
-              <div style="display: flex; align-items: center; gap: 10px;">
-                <span style="font-size: 1.3rem;">📦</span>
-                <div>
-                  <h4 style="margin: 0; font-size: 0.95rem; font-weight: 800; color: #1e293b;">
-                    棚卸資産（在庫マスタ）連動 ＆ 売上原価（期末棚卸高）計上
-                  </h4>
-                  <p style="margin: 2px 0 0 0; font-size: 0.75rem; color: #64748b;">
-                    「在庫マスタ」の最新理論在庫額（現在庫数 × 仕入単価）を期末棚卸高としてP/L（売上原価）およびB/S（131 商品・棚卸資産）に完全自動連動します
-                  </p>
-                </div>
-              </div>
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <span id="accInventoryStatusBadge"
-                  style="font-size: 0.75rem; font-weight: 700; padding: 3px 10px; border-radius: 9999px; background: #e0f2fe; color: #0369a1; border: 1px solid #7dd3fc;">
-                  理論在庫集計中
-                </span>
-              </div>
-            </div>
-
-            <!-- 3カラム在庫評価額サマリーグリッド -->
-            <div
-              style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-bottom: 16px;">
-              <!-- ① 期首商品棚卸高 -->
-              <div style="background: #ffffff; border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 12px 14px;">
-                <div style="font-size: 0.75rem; font-weight: 700; color: #64748b; margin-bottom: 4px;">
-                  1️⃣ 期首商品棚卸高 (B/S 131期首残高)
-                </div>
-                <div id="accInvOpeningValue"
-                  style="font-size: 1.35rem; font-weight: 800; color: #334155; font-family: monospace;">
-                  ¥0
-                </div>
-                <div style="font-size: 0.7rem; color: #94a3b8; margin-top: 2px;">
-                  期首残高設定より自動取得
-                </div>
-              </div>
-
-              <!-- ② 現在の理論在庫評価額（期末棚卸高） -->
-              <div
-                style="background: #ffffff; border: 1.5px solid #6366f1; border-radius: 8px; padding: 12px 14px; box-shadow: 0 2px 8px rgba(99, 102, 241, 0.08);">
-                <div
-                  style="font-size: 0.75rem; font-weight: 700; color: #4f46e5; margin-bottom: 4px; display: flex; justify-content: space-between;">
-                  <span>2️⃣ 現在の理論在庫評価額 (期末棚卸高)</span>
-                  <span id="accInvItemCountBadge"
-                    style="font-size: 0.7rem; background: #e0e7ff; color: #3730a3; padding: 1px 6px; border-radius: 4px;">0品目</span>
-                </div>
-                <div id="accInvEndingValue"
-                  style="font-size: 1.35rem; font-weight: 900; color: #4338ca; font-family: monospace;">
-                  ¥0
-                </div>
-                <div style="font-size: 0.7rem; color: #6366f1; margin-top: 2px;">
-                  実在庫（0個超）の現物評価額合計（マイナス在庫は¥0換算）
-                </div>
-              </div>
-
-              <!-- ③ 棚卸増減（売上原価調整額） -->
-              <div style="background: #ffffff; border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 12px 14px;">
-                <div style="font-size: 0.75rem; font-weight: 700; color: #64748b; margin-bottom: 4px;">
-                  3️⃣ 棚卸増減 (期末 - 期首)
-                </div>
-                <div id="accInvDeltaValue"
-                  style="font-size: 1.35rem; font-weight: 800; color: #059669; font-family: monospace;">
-                  ¥0
-                </div>
-                <div id="accInvDeltaHelp" style="font-size: 0.7rem; color: #059669; margin-top: 2px;">
-                  在庫増加時は売上原価から控除されます
-                </div>
-              </div>
-            </div>
-
-            <!-- ⚠️ マイナス在庫注意喚起アラート -->
-            <div id="accInvNegativeWarning"
-              style="display: none; background: #fff1f2; border: 1.5px solid #fecdd3; border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; font-size: 0.775rem; color: #be123c; line-height: 1.5;">
-              <!-- JSで動的出力 -->
-            </div>
-
-            <!-- 操作アクションバー ＆ 現在の連動ステータス -->
-            <div
-              style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; background: #ffffff; padding: 10px 14px; border-radius: 8px; border: 1px solid #cbd5e1;">
-              <div style="display: flex; align-items: center; gap: 8px; font-size: 0.775rem;">
-                <span id="accInvJournalStatusText" style="color: #475569; font-weight: 600;">
-                  ※「在庫評価額をB/S・P/Lに反映」ボタンを押すと、差額調整仕訳（棚卸仕訳）が自動生成されます。
-                </span>
-              </div>
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <button type="button" class="btn btn-secondary btn-xs" id="btnRefreshInventoryTheory"
-                  onclick="window.refreshInventoryTheoryValue && window.refreshInventoryTheoryValue()"
-                  style="padding: 5px 12px; font-size: 0.75rem;">
-                  🔄 最新評価額を再計算
-                </button>
-                <button type="button" class="btn btn-primary btn-xs" id="btnSyncInventoryToAccounting"
-                  onclick="window.syncInventoryToAccounting && window.syncInventoryToAccounting()"
-                  style="padding: 6px 14px; font-size: 0.8rem; font-weight: 700; background: #4f46e5; border-color: #4f46e5; color: #fff; box-shadow: 0 2px 4px rgba(79, 70, 229, 0.2);">
-                  ⚡ 在庫評価額をB/S・P/Lに反映
-                </button>
-              </div>
-            </div>
-          </div>
-
           <!-- 財務諸表形式 損益計算書 (Profit & Loss Statement) テーブル -->
-          <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px;">
+          <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin-bottom: 24px;">
             <div
               style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 2px solid #6366f1; padding-bottom: 8px; flex-wrap: wrap; gap: 8px;">
               <div>
@@ -4934,6 +4832,109 @@
                     ※仮受消費税 － 仮払消費税（原則課税方式による概算）
                   </div>
                 </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 📦 棚卸資産（在庫マスタ）連動 ＆ 売上原価（期末棚卸高）計上パネル -->
+          <div id="accInventoryIntegrationPanel" class="acc-inventory-panel"
+            style="background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); border: 1.5px solid #cbd5e1; border-radius: 12px; padding: 18px 20px; margin-bottom: 8px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
+            <div
+              style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 8px;">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 1.3rem;">📦</span>
+                <div>
+                  <h4 style="margin: 0; font-size: 0.95rem; font-weight: 800; color: #1e293b;">
+                    棚卸資産（在庫マスタ）連動 ＆ 売上原価（期末棚卸高）計上
+                  </h4>
+                  <p style="margin: 2px 0 0 0; font-size: 0.75rem; color: #64748b;">
+                    「在庫マスタ」の最新理論在庫額（現在庫数 × 仕入単価）を期末棚卸高としてP/L（売上原価）およびB/S（131 商品・棚卸資産）に完全自動連動します
+                  </p>
+                </div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span id="accInventoryStatusBadge"
+                  style="font-size: 0.75rem; font-weight: 700; padding: 3px 10px; border-radius: 9999px; background: #e0f2fe; color: #0369a1; border: 1px solid #7dd3fc;">
+                  理論在庫集計中
+                </span>
+              </div>
+            </div>
+
+            <!-- 3カラム在庫評価額サマリーグリッド -->
+            <div
+              style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-bottom: 16px;">
+              <!-- ① 期首商品棚卸高 -->
+              <div style="background: #ffffff; border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 12px 14px;">
+                <div style="font-size: 0.75rem; font-weight: 700; color: #64748b; margin-bottom: 4px;">
+                  1️⃣ 期首商品棚卸高 (B/S 131期首残高)
+                </div>
+                <div id="accInvOpeningValue"
+                  style="font-size: 1.35rem; font-weight: 800; color: #334155; font-family: monospace;">
+                  ¥0
+                </div>
+                <div style="font-size: 0.7rem; color: #94a3b8; margin-top: 2px;">
+                  期首残高設定より自動取得
+                </div>
+              </div>
+
+              <!-- ② 現在の理論在庫評価額（期末棚卸高） -->
+              <div
+                style="background: #ffffff; border: 1.5px solid #6366f1; border-radius: 8px; padding: 12px 14px; box-shadow: 0 2px 8px rgba(99, 102, 241, 0.08);">
+                <div
+                  style="font-size: 0.75rem; font-weight: 700; color: #4f46e5; margin-bottom: 4px; display: flex; justify-content: space-between;">
+                  <span>2️⃣ 現在の理論在庫評価額 (期末棚卸高)</span>
+                  <span id="accInvItemCountBadge"
+                    style="font-size: 0.7rem; background: #e0e7ff; color: #3730a3; padding: 1px 6px; border-radius: 4px;">0品目</span>
+                </div>
+                <div id="accInvEndingValue"
+                  style="font-size: 1.35rem; font-weight: 900; color: #4338ca; font-family: monospace;">
+                  ¥0
+                </div>
+                <div style="font-size: 0.7rem; color: #6366f1; margin-top: 2px;">
+                  実在庫（0個超）の現物評価額合計（マイナス在庫は¥0換算）
+                </div>
+              </div>
+
+              <!-- ③ 棚卸増減（売上原価調整額） -->
+              <div style="background: #ffffff; border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 12px 14px;">
+                <div style="font-size: 0.75rem; font-weight: 700; color: #64748b; margin-bottom: 4px;">
+                  3️⃣ 棚卸増減 (期末 - 期首)
+                </div>
+                <div id="accInvDeltaValue"
+                  style="font-size: 1.35rem; font-weight: 800; color: #059669; font-family: monospace;">
+                  ¥0
+                </div>
+                <div id="accInvDeltaHelp" style="font-size: 0.7rem; color: #059669; margin-top: 2px;">
+                  在庫増加時は売上原価から控除されます
+                </div>
+              </div>
+            </div>
+
+            <!-- ⚠️ マイナス在庫注意喚起アラート -->
+            <div id="accInvNegativeWarning"
+              style="display: none; background: #fff1f2; border: 1.5px solid #fecdd3; border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; font-size: 0.775rem; color: #be123c; line-height: 1.5;">
+              <!-- JSで動的出力 -->
+            </div>
+
+            <!-- 操作アクションバー ＆ 現在の連動ステータス -->
+            <div
+              style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; background: #ffffff; padding: 10px 14px; border-radius: 8px; border: 1px solid #cbd5e1;">
+              <div style="display: flex; align-items: center; gap: 8px; font-size: 0.775rem;">
+                <span id="accInvJournalStatusText" style="color: #475569; font-weight: 600;">
+                  ※「在庫評価額をB/S・P/Lに反映」ボタンを押すと、差額調整仕訳（棚卸仕訳）が自動生成されます。
+                </span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <button type="button" class="btn btn-secondary btn-xs" id="btnRefreshInventoryTheory"
+                  onclick="window.refreshInventoryTheoryValue && window.refreshInventoryTheoryValue()"
+                  style="padding: 5px 12px; font-size: 0.75rem;">
+                  🔄 最新評価額を再計算
+                </button>
+                <button type="button" class="btn btn-primary btn-xs" id="btnSyncInventoryToAccounting"
+                  onclick="window.syncInventoryToAccounting && window.syncInventoryToAccounting()"
+                  style="padding: 6px 14px; font-size: 0.8rem; font-weight: 700; background: #4f46e5; border-color: #4f46e5; color: #fff; box-shadow: 0 2px 4px rgba(79, 70, 229, 0.2);">
+                  ⚡ 在庫評価額をB/S・P/Lに反映
+                </button>
               </div>
             </div>
           </div>
@@ -5948,7 +5949,7 @@
           <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             <h2 class="view-screen-title" style="margin: 0;">勤怠管理・退勤タイムカード</h2>
             <span
-              style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.27-remove-dup-expense-card</span>
+              style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.27-tax-invoice-workflow</span>
           </div>
           <span class="view-screen-subtitle">休憩1時間自動控除・ワンタップ出退勤打刻・月次出勤簿・打刻漏れ修正</span>
         </div>
@@ -8329,19 +8330,30 @@
     </div>
   </div>
 
-  <!-- 税理士提出・インボイス確認用 消費税詳細モーダル -->
+  <!-- 税理士提出・インボイス確認用 消費税詳細モーダル（一覧 ↔ 証憑確認・修正ステップ統合） -->
   <div class="modal-overlay" id="taxDetailModal"
     style="display: none; opacity: 1 !important; pointer-events: auto !important; position: fixed; inset: 0; z-index: 90000; background: rgba(15, 23, 42, 0.72); align-items: center; justify-content: center; padding: 14px; box-sizing: border-box;">
-    <div class="modal-card" style="max-width: 1220px; width: 96vw; height: 90vh; max-height: 90vh; display: flex; flex-direction: column; transform: none !important; opacity: 1 !important;">
-      <div class="modal-header" style="background: linear-gradient(135deg, #1e293b, #0f172a); color: #ffffff; border-bottom: 1.5px solid #334155; padding: 12px 18px; display: flex; justify-content: space-between; align-items: center; gap: 10px;">
-        <div style="display: flex; align-items: center; gap: 10px;">
+    <div class="modal-card" style="max-width: 1260px; width: 96vw; height: 92vh; max-height: 92vh; display: flex; flex-direction: column; transform: none !important; opacity: 1 !important;">
+      <div class="modal-header" style="background: linear-gradient(135deg, #1e293b, #0f172a); color: #ffffff; border-bottom: 1.5px solid #334155; padding: 12px 18px; display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;">
+        <div style="display: flex; align-items: center; gap: 10px; min-width: 0;">
+          <button type="button" class="btn btn-secondary btn-sm" id="btnTaxDetailBackToList"
+            style="display: none; background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.28); color: #ffffff; font-weight: 700; font-size: 0.78rem; padding: 5px 11px; white-space: nowrap;">
+            ← 一覧に戻る
+          </button>
           <span style="font-size: 1.3rem;">🧾</span>
-          <div>
+          <div style="min-width: 0;">
             <h3 class="modal-title" id="taxDetailModalTitle" style="margin: 0; color: #ffffff; font-size: 1.05rem;">消費税申告チェック・課税取引明細（税理士確認用）</h3>
             <div id="taxDetailPeriodBadge" style="font-size: 0.75rem; color: #cbd5e1; margin-top: 2px;">対象期間: -</div>
           </div>
         </div>
-        <div style="display: flex; align-items: center; gap: 8px;">
+        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+          <div id="taxDetailStepNav" style="display: none; align-items: center; gap: 6px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; padding: 3px 6px;">
+            <button type="button" class="btn btn-xs" id="btnTaxEditPrev"
+              style="background: rgba(255,255,255,0.16); color: #fff; border: none; padding: 3px 8px; font-weight: 700; cursor: pointer;">◀ 前へ</button>
+            <span id="taxEditStepCounter" style="font-size: 0.76rem; font-weight: 700; color: #f8fafc; padding: 0 4px; font-family: monospace;">1 / 1</span>
+            <button type="button" class="btn btn-xs" id="btnTaxEditNext"
+              style="background: rgba(255,255,255,0.16); color: #fff; border: none; padding: 3px 8px; font-weight: 700; cursor: pointer;">次へ ▶</button>
+          </div>
           <button type="button" class="btn btn-secondary btn-sm" id="btnExportTaxDetailCSVModal"
             style="background: #10b981; border: none; color: #ffffff; font-weight: 700; font-size: 0.78rem; padding: 6px 12px;">
             📥 税理士用CSVダウンロード
@@ -8350,59 +8362,233 @@
         </div>
       </div>
 
-      <div class="modal-body" style="padding: 12px 16px; overflow-y: auto; flex: 1; background: #ffffff; display: flex; flex-direction: column; gap: 10px;">
-        <!-- 1. コンパクト税区分サマリーストリップ（明細をすぐ主役表示） -->
-        <div id="taxDetailSummaryBox" style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px 12px; flex-shrink: 0;">
-          <!-- JSで動的描画 -->
+      <div class="modal-body" style="padding: 12px 16px; overflow: hidden; flex: 1; background: #ffffff; display: flex; flex-direction: column; gap: 10px; min-height: 0;">
+        <!-- ステップ1: 課税取引明細一覧ビュー -->
+        <div id="taxDetailListStep" style="display: flex; flex-direction: column; gap: 10px; flex: 1; min-height: 0;">
+          <!-- 1. コンパクト税区分サマリーストリップ（明細をすぐ主役表示） -->
+          <div id="taxDetailSummaryBox" style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px 12px; flex-shrink: 0;">
+            <!-- JSで動的描画 -->
+          </div>
+
+          <!-- 2. タブ・税率フィルタ・キーワード検索・連続修正導線 -->
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; flex-shrink: 0;">
+            <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
+              <button type="button" class="btn btn-sm tax-detail-tab-btn active" data-tax-tab="all"
+                style="font-weight: 700;">すべて</button>
+              <button type="button" class="btn btn-sm tax-detail-tab-btn" data-tax-tab="output"
+                style="font-weight: 700;">💰 仮受消費税 (売上)</button>
+              <button type="button" class="btn btn-sm tax-detail-tab-btn" data-tax-tab="input"
+                style="font-weight: 700;">💳 仮払消費税 (仕入・経費・輸入)</button>
+              <button type="button" class="btn btn-sm tax-detail-tab-btn" data-tax-tab="unverified"
+                style="font-weight: 700; color: #b45309; background: #fffbeb; border-color: #fcd34d;">⚠️ T番号なし・要確認</button>
+              <button type="button" class="btn btn-sm" id="btnStartTaxVerifyFlow"
+                style="display: none; font-weight: 800; background: #ea580c; border: 1px solid #c2410c; color: #ffffff; padding: 4px 10px; box-shadow: 0 2px 4px rgba(234,88,12,0.2);">
+                🚀 要確認を1件目から証憑確認・修正
+              </button>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+              <select id="taxDetailRateFilter" class="form-select" style="width: auto; font-size: 0.8rem; padding: 5px 10px; height: auto;">
+                <option value="all">すべての税率</option>
+                <option value="10">10% 標準</option>
+                <option value="8">8% 軽減</option>
+                <option value="import">輸入消費税 (別枠)</option>
+              </select>
+              <input type="search" id="taxDetailSearchInput" class="form-input"
+                placeholder="取引先・T番号・科目・摘要で検索..."
+                style="width: 240px; font-size: 0.8rem; padding: 5px 10px; height: auto;">
+            </div>
+          </div>
+
+          <!-- 3. 明細テーブル（残りの高さを最大限活用） -->
+          <div id="taxDetailTableScrollBox" style="border: 1px solid #cbd5e1; border-radius: 8px; overflow: auto; flex: 1; min-height: 260px;">
+            <table class="acc-table" style="width: 100%; border-collapse: collapse; font-size: 0.78rem; min-width: 960px;">
+              <thead style="position: sticky; top: 0; background: #f1f5f9; z-index: 2; border-bottom: 2px solid #cbd5e1;">
+                <tr style="text-align: left; color: #334155;">
+                  <th style="padding: 8px 10px; width: 88px;">取引日</th>
+                  <th style="padding: 8px 10px; width: 72px;">区分</th>
+                  <th style="padding: 8px 10px; width: 118px;">種別 / 番号</th>
+                  <th style="padding: 8px 10px; width: 115px;">勘定科目</th>
+                  <th style="padding: 8px 10px;">取引先・支払先 / 内容</th>
+                  <th style="padding: 8px 10px; width: 155px;">インボイス番号 / 区分</th>
+                  <th style="padding: 8px 10px; width: 80px; text-align: center;">税率</th>
+                  <th style="padding: 8px 10px; text-align: right; width: 92px;">税抜本体</th>
+                  <th style="padding: 8px 10px; text-align: right; width: 88px;">消費税額</th>
+                  <th style="padding: 8px 10px; text-align: right; width: 94px;">税込合計</th>
+                  <th style="padding: 8px 10px; width: 132px; text-align: center;">証憑 / 修正</th>
+                </tr>
+              </thead>
+              <tbody id="taxDetailTableBody">
+                <!-- JSで動的生成 -->
+              </tbody>
+            </table>
+          </div>
         </div>
 
-        <!-- 2. タブ・税率フィルタ・キーワード検索 -->
-        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; flex-shrink: 0;">
-          <div style="display: flex; gap: 6px; flex-wrap: wrap;">
-            <button type="button" class="btn btn-sm tax-detail-tab-btn active" data-tax-tab="all"
-              style="font-weight: 700;">すべて</button>
-            <button type="button" class="btn btn-sm tax-detail-tab-btn" data-tax-tab="output"
-              style="font-weight: 700;">💰 仮受消費税 (売上)</button>
-            <button type="button" class="btn btn-sm tax-detail-tab-btn" data-tax-tab="input"
-              style="font-weight: 700;">💳 仮払消費税 (仕入・経費・輸入)</button>
-            <button type="button" class="btn btn-sm tax-detail-tab-btn" data-tax-tab="unverified"
-              style="font-weight: 700; color: #b45309; background: #fffbeb; border-color: #fcd34d;">⚠️ T番号なし・要確認</button>
+        <!-- ステップ2: 証憑確認 ＆ インボイス番号修正ステップ（スプリットビュー） -->
+        <div id="taxDetailEditStep" style="display: none; flex-direction: column; gap: 10px; flex: 1; min-height: 0; overflow-y: auto;">
+          <!-- 上部取引サマリーバー -->
+          <div id="taxEditMetaBanner"
+            style="background: #fffbeb; border: 1.5px solid #fcd34d; border-radius: 8px; padding: 8px 14px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; flex-shrink: 0; font-size: 0.8rem;">
+            <!-- JSで動的描画 -->
           </div>
-          <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-            <select id="taxDetailRateFilter" class="form-select" style="width: auto; font-size: 0.8rem; padding: 5px 10px; height: auto;">
-              <option value="all">すべての税率</option>
-              <option value="10">10% 標準</option>
-              <option value="8">8% 軽減</option>
-              <option value="import">輸入消費税 (別枠)</option>
-            </select>
-            <input type="search" id="taxDetailSearchInput" class="form-input"
-              placeholder="取引先・T番号・科目・摘要で検索..."
-              style="width: 240px; font-size: 0.8rem; padding: 5px 10px; height: auto;">
-          </div>
-        </div>
 
-        <!-- 3. 明細テーブル（残りの高さを最大限活用） -->
-        <div style="border: 1px solid #cbd5e1; border-radius: 8px; overflow: auto; flex: 1; min-height: 280px;">
-          <table class="acc-table" style="width: 100%; border-collapse: collapse; font-size: 0.78rem; min-width: 920px;">
-            <thead style="position: sticky; top: 0; background: #f1f5f9; z-index: 2; border-bottom: 2px solid #cbd5e1;">
-              <tr style="text-align: left; color: #334155;">
-                <th style="padding: 8px 10px; width: 88px;">取引日</th>
-                <th style="padding: 8px 10px; width: 72px;">区分</th>
-                <th style="padding: 8px 10px; width: 120px;">種別 / 番号</th>
-                <th style="padding: 8px 10px; width: 115px;">勘定科目</th>
-                <th style="padding: 8px 10px;">取引先・支払先 / 内容</th>
-                <th style="padding: 8px 10px; width: 155px;">インボイス番号 / 区分</th>
-                <th style="padding: 8px 10px; width: 82px; text-align: center;">税率</th>
-                <th style="padding: 8px 10px; text-align: right; width: 96px;">税抜本体</th>
-                <th style="padding: 8px 10px; text-align: right; width: 92px;">消費税額</th>
-                <th style="padding: 8px 10px; text-align: right; width: 98px;">税込合計</th>
-                <th style="padding: 8px 10px; width: 68px; text-align: center;">証憑</th>
-              </tr>
-            </thead>
-            <tbody id="taxDetailTableBody">
-              <!-- JSで動的生成 -->
-            </tbody>
-          </table>
+          <!-- 左右2カラム: 左=証憑プレビュー / 右=インボイス番号＆区分編集 -->
+          <div class="tax-edit-split-grid">
+            <!-- 左ペイン: 証憑画像ビューア -->
+            <div class="tax-edit-receipt-pane" style="background: #0f172a; border-radius: 10px; border: 1px solid #334155; overflow: hidden;">
+              <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: #1e293b; border-bottom: 1px solid #334155; flex-wrap: wrap; gap: 6px;">
+                <span style="color: #f8fafc; font-weight: 700; font-size: 0.8rem;">📸 領収書・証憑プレビュー</span>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                  <button type="button" class="btn btn-xs" id="btnTaxEditRotateImg"
+                    style="background: rgba(255,255,255,0.14); color: #fff; border: 1px solid rgba(255,255,255,0.22); padding: 3px 8px; font-size: 0.72rem; font-weight: 700; cursor: pointer;">
+                    ↻ 90°回転
+                  </button>
+                  <button type="button" class="btn btn-xs" id="btnTaxEditFullZoom"
+                    style="background: rgba(56,189,248,0.22); color: #bae6fd; border: 1px solid rgba(56,189,248,0.4); padding: 3px 8px; font-size: 0.72rem; font-weight: 700; cursor: pointer;">
+                    🔍 別枠拡大
+                  </button>
+                </div>
+              </div>
+              <div class="tax-edit-receipt-viewport"
+                style="flex: 1; min-height: 280px; max-height: 58vh; overflow: auto; display: flex; align-items: center; justify-content: center; padding: 14px; background: #090d16;">
+                <img id="taxEditReceiptImg" src="" alt="証憑プレビュー"
+                  style="display: none; max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px; box-shadow: 0 8px 24px rgba(0,0,0,0.6); transition: transform 0.2s ease;">
+                <div id="taxEditNoReceiptBox" style="display: none; text-align: center; color: #94a3b8; padding: 24px;">
+                  <div style="font-size: 2.2rem; margin-bottom: 8px;">🧾</div>
+                  <div style="font-weight: 700; color: #e2e8f0; margin-bottom: 4px;">証憑画像が添付されていません</div>
+                  <div style="font-size: 0.75rem; color: #94a3b8;">右側の支払先・取引日をもとにT番号を確認して入力するか、下から画像を添付できます。</div>
+                </div>
+              </div>
+              <div id="taxEditReceiptUploadBar"
+                style="display: flex; justify-content: space-between; align-items: center; padding: 7px 12px; background: #1e293b; border-top: 1px solid #334155; font-size: 0.72rem; color: #cbd5e1; gap: 8px; flex-wrap: wrap;">
+                <span id="taxEditReceiptHint">T番号（登録番号 T+13桁）を読み取りながら右欄へ入力してください</span>
+                <label class="btn btn-xs" for="taxEditReceiptFileInput" id="lblTaxEditReceiptUpload"
+                  style="background: #334155; color: #f8fafc; border: 1px solid #475569; padding: 3px 9px; font-size: 0.72rem; font-weight: 700; cursor: pointer; margin: 0;">
+                  📎 証憑画像を添付/変更
+                </label>
+                <input type="file" id="taxEditReceiptFileInput" accept="image/*" style="display: none;">
+              </div>
+            </div>
+
+            <!-- 右ペイン: インボイス確認・修正フォーム -->
+            <div class="tax-edit-form-pane" style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 10px; padding: 14px 16px; overflow-y: auto; gap: 11px;">
+              <div>
+                <label class="form-label" style="font-size: 0.76rem; font-weight: 700; color: #334155; margin-bottom: 4px;">🏢 取引先・支払先名</label>
+                <input type="text" id="taxEditPayee" class="form-input" placeholder="例: ヤマト運輸株式会社"
+                  style="font-size: 0.88rem; font-weight: 700; padding: 7px 10px; background: #ffffff;">
+              </div>
+
+              <div style="background: #ffffff; border: 1.5px solid #93c5fd; border-radius: 8px; padding: 11px 12px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; flex-wrap: wrap; gap: 6px;">
+                  <label class="form-label" style="font-size: 0.8rem; font-weight: 800; color: #1e40af; margin: 0;">
+                    🏷️ インボイス登録番号（T + 13桁）
+                  </label>
+                  <a href="https://www.invoice-kohyo.nta.go.jp/" target="_blank" rel="noopener noreferrer"
+                    style="font-size: 0.7rem; color: #2563eb; font-weight: 700; text-decoration: underline;">
+                    🔎 国税庁インボイス公表サイトで検索 ↗
+                  </a>
+                </div>
+                <div style="display: flex; gap: 6px; align-items: center;">
+                  <input type="text" id="taxEditInvoiceNumber" class="form-input" placeholder="例: T1010001092605"
+                    maxlength="20"
+                    style="flex: 1; font-family: monospace; font-size: 1rem; font-weight: 800; letter-spacing: 0.04em; padding: 8px 10px; border: 1.5px solid #3b82f6; background: #eff6ff;">
+                  <button type="button" class="btn btn-xs btn-secondary" id="btnTaxEditPrefixT"
+                    title="数字13桁の先頭にTを付与・整形" style="padding: 7px 10px; font-size: 0.74rem; font-weight: 700; white-space: nowrap;">T付与</button>
+                  <button type="button" class="btn btn-xs btn-secondary" id="btnTaxEditClearT"
+                    title="番号をクリア" style="padding: 7px 9px; font-size: 0.74rem; white-space: nowrap;">クリア</button>
+                </div>
+                <div id="taxEditTNumStatus" style="margin-top: 6px; font-size: 0.74rem; font-weight: 700;">
+                  <!-- JSでリアルタイム表示 -->
+                </div>
+                <!-- 同一取引先の過去登録T番号サジェスト -->
+                <div id="taxEditSuggestionsWrap" style="display: none; margin-top: 8px; padding-top: 8px; border-top: 1px dashed #cbd5e1;">
+                  <div style="font-size: 0.7rem; font-weight: 700; color: #475569; margin-bottom: 4px;">
+                    💡 同じ取引先の登録済みT番号候補（クリックで入力）:
+                  </div>
+                  <div id="taxEditSuggestionsList" style="display: flex; flex-wrap: wrap; gap: 6px;"></div>
+                </div>
+              </div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <div>
+                  <label class="form-label" style="font-size: 0.75rem; font-weight: 700; color: #334155; margin-bottom: 4px;">📋 インボイス控除区分</label>
+                  <select id="taxEditInvoiceType" class="form-select" style="font-size: 0.82rem; font-weight: 700; padding: 6px 8px; background: #ffffff;">
+                    <option value="qualified">✅ 適格請求書（T番号あり・100%控除）</option>
+                    <option value="transitional">📝 経過措置 80%控除（免税事業者・個人店等／確認済）</option>
+                    <option value="none">⚠️ T番号なし・要確認（保留）</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="form-label" style="font-size: 0.75rem; font-weight: 700; color: #334155; margin-bottom: 4px;">💹 消費税率</label>
+                  <select id="taxEditTaxRate" class="form-select" style="font-size: 0.82rem; font-weight: 700; padding: 6px 8px; background: #ffffff;">
+                    <option value="10">10%（標準税率）</option>
+                    <option value="8">8%（軽減税率・飲食料品等）</option>
+                    <option value="0">0%（非課税・不課税）</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <div>
+                  <label class="form-label" style="font-size: 0.75rem; font-weight: 700; color: #334155; margin-bottom: 4px;">📂 勘定科目</label>
+                  <select id="taxEditCategory" class="form-select" style="font-size: 0.82rem; padding: 6px 8px; background: #ffffff;">
+                    <option value="消耗品費">消耗品費</option>
+                    <option value="旅費交通費">旅費交通費</option>
+                    <option value="通信費">通信費</option>
+                    <option value="接待交際費">接待交際費</option>
+                    <option value="仕入高">仕入高</option>
+                    <option value="外注加工費">外注加工費</option>
+                    <option value="支払手数料">支払手数料</option>
+                    <option value="水道光熱費">水道光熱費</option>
+                    <option value="車両費">車両費</option>
+                    <option value="広告宣伝費">広告宣伝費</option>
+                    <option value="地代家賃">地代家賃</option>
+                    <option value="新聞図書費">新聞図書費</option>
+                    <option value="福利厚生費">福利厚生費</option>
+                    <option value="修繕費">修繕費</option>
+                    <option value="荷造運賃">荷造運賃</option>
+                    <option value="外注費">外注費</option>
+                    <option value="租税公課">租税公課</option>
+                    <option value="保険料">保険料</option>
+                    <option value="雑費">雑費</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="form-label" style="font-size: 0.75rem; font-weight: 700; color: #334155; margin-bottom: 4px;">💴 税込金額 (円)</label>
+                  <input type="number" id="taxEditAmount" class="form-input" min="0" step="1"
+                    style="font-size: 0.9rem; font-weight: 800; font-family: monospace; text-align: right; padding: 6px 10px; background: #ffffff;">
+                </div>
+              </div>
+
+              <div>
+                <label class="form-label" style="font-size: 0.75rem; font-weight: 700; color: #334155; margin-bottom: 4px;">📝 摘要・メモ</label>
+                <input type="text" id="taxEditNote" class="form-input" placeholder="内容・補足メモ"
+                  style="font-size: 0.82rem; padding: 6px 10px; background: #ffffff;">
+              </div>
+
+              <!-- 税抜・税額リアルタイムプレビュー -->
+              <div id="taxEditCalcPreview"
+                style="background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 8px; padding: 8px 12px; font-size: 0.78rem; color: #312e81; font-weight: 700; font-family: monospace;">
+                税抜: ¥0 / 消費税: ¥0
+              </div>
+
+              <!-- ステップ完了アクションボタン -->
+              <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; padding-top: 6px;">
+                <button type="button" class="btn btn-primary" id="btnTaxEditSaveReturn"
+                  style="flex: 1 1 180px; background: #059669; border-color: #059669; color: #ffffff; font-weight: 800; padding: 9px 14px; font-size: 0.86rem;">
+                  ✅ 保存して一覧に戻る
+                </button>
+                <button type="button" class="btn btn-primary" id="btnTaxEditSaveNext"
+                  style="flex: 1 1 180px; background: #4f46e5; border-color: #4f46e5; color: #ffffff; font-weight: 800; padding: 9px 14px; font-size: 0.86rem;">
+                  💾 保存して次の要確認へ →
+                </button>
+                <button type="button" class="btn btn-secondary" id="btnTaxEditCancel"
+                  style="padding: 9px 14px; font-size: 0.82rem; font-weight: 700;">
+                  一覧に戻る
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -8420,7 +8606,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261127_remove_dup_expense_card"></script>
+  <script src="js/app.bundle.js?v=20261127_tax_invoice_workflow"></script>
 </body>
 
 </html>
