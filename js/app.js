@@ -23106,7 +23106,7 @@ function resolveGeneralLedgerDrilldown(entry, ctx) {
       targetId: String(matchedInv.id),
       label: docNo,
       badgeText: `↗ ${docNo}`,
-      title: `クリックして「納品・請求書」画面で伝票 (${docNo}) を開く`
+      title: `クリックして請求書・伝票 (${docNo}) の詳細をその場でプレビュー`
     };
   }
 
@@ -23122,11 +23122,11 @@ function resolveGeneralLedgerDrilldown(entry, ctx) {
       targetId: String(matchedExp.id),
       label: matchedExp.payee || expLabel,
       badgeText: `↗ 経費・証憑`,
-      title: `クリックして「経費」画面で ${matchedExp.payee || expLabel} を開く`
+      title: `クリックして経費・証憑 (${matchedExp.payee || expLabel}) の詳細をその場でプレビュー`
     };
   }
 
-  // 3. 手動振替伝票・その他仕訳（仕訳帳タブへ遷移して該当行ハイライト）
+  // 3. 手動振替伝票・その他仕訳（仕訳伝票プレビュー / 仕訳帳タブ連携）
   const jnlId = String(entry.journalId || '').trim();
   if (jnlId) {
     return {
@@ -23134,15 +23134,293 @@ function resolveGeneralLedgerDrilldown(entry, ctx) {
       targetId: jnlId,
       label: entryNo || jnlId,
       badgeText: '↗ 仕訳帳',
-      title: 'クリックして「仕訳帳・振替伝票」タブで該当仕訳を表示・ハイライト'
+      title: 'クリックして仕訳伝票の全明細をその場でプレビュー'
     };
   }
 
   return { type: 'none', targetId: '', label: '', badgeText: '', title: '' };
 }
 
+const glPreviewUiState = {
+  drillType: '',
+  targetId: '',
+  label: ''
+};
+
+function closeGlDetailPreviewModal() {
+  const modal = document.getElementById('glDetailPreviewModal');
+  if (modal) {
+    modal.style.display = 'none';
+    modal.classList.remove('active');
+  }
+  glPreviewUiState.drillType = '';
+  glPreviewUiState.targetId = '';
+  glPreviewUiState.label = '';
+}
+
+function openGlDetailPreviewModal(drillType, targetId, label = '') {
+  console.log('【総勘定元帳プレビュー】表示開始', { drillType, targetId, label });
+  const modal = document.getElementById('glDetailPreviewModal');
+  const bodyEl = document.getElementById('glPreviewModalBody');
+  const titleEl = document.getElementById('glPreviewModalTitle');
+  const subEl = document.getElementById('glPreviewModalSub');
+  const iconEl = document.getElementById('glPreviewHeaderIcon');
+  const editBtn = document.getElementById('btnGlPreviewEditInOrigin');
+  if (!modal || !bodyEl) return;
+
+  glPreviewUiState.drillType = drillType;
+  glPreviewUiState.targetId = targetId;
+  glPreviewUiState.label = label;
+
+  let bodyHtml = '';
+  let found = false;
+
+  if (drillType === 'invoice') {
+    const rawFull = typeof getDocFromHistory === 'function' ? getDocFromHistory(targetId) : null;
+    const list = typeof getHistoryList === 'function' ? getHistoryList() : [];
+    const rawFallback = list.find(d => String(d.id || '').trim() === String(targetId).trim());
+    const rawDoc = rawFull || rawFallback;
+    if (rawDoc) {
+      found = true;
+      const norm = normalizeInvoiceDoc(rawDoc);
+      const inner = rawDoc.fullDoc || rawDoc;
+      const docTypeLabel = (DOC_TYPES && DOC_TYPES[norm.docType]?.label) || '請求書・伝票';
+      const docNo = norm.docNumber || '-';
+      const clientName = norm.clientName || inner.client?.name || '名称未設定';
+      const endUser = inner.endUserName || inner.client?.endUserName || '';
+      const docTitle = inner.title || '';
+      const isPaid = !!norm.isPaid;
+      const items = Array.isArray(norm.items) ? norm.items : [];
+
+      if (iconEl) iconEl.textContent = '📄';
+      if (titleEl) titleEl.textContent = `${docTypeLabel} プレビュー (${docNo})`;
+      if (subEl) subEl.textContent = `取引先: ${clientName} ｜ 発行日: ${norm.issueDate || '-'}`;
+      if (editBtn) editBtn.textContent = '✏️ この伝票を編集画面で開く';
+
+      const statusBadge = isPaid
+        ? `<span style="background:#dcfce7; color:#166534; border:1px solid #86efac; padding:2px 8px; border-radius:9999px; font-weight:700; font-size:0.75rem;">✓ 入金済${norm.paidDate ? ` (${escapeHtml(norm.paidDate)})` : ''}</span>`
+        : '<span style="background:#fee2e2; color:#b91c1c; border:1px solid #fecaca; padding:2px 8px; border-radius:9999px; font-weight:700; font-size:0.75rem;">⏳ 未入金（売掛金）</span>';
+
+      const itemsHtml = items.length > 0
+        ? items.map(it => {
+            const qty = Number(it.quantity) || 0;
+            const price = Number(it.unitPrice) || 0;
+            const amt = Math.round(qty * price);
+            const rate = Number(it.taxRate !== undefined ? it.taxRate : 10);
+            return `
+              <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 7px 8px; font-weight: 600; color: #1e293b;">
+                  ${escapeHtml(it.name || '-')}
+                  ${it.endUserName ? `<div style="font-size:0.7rem; color:#047857;">EU: ${escapeHtml(it.endUserName)}</div>` : ''}
+                </td>
+                <td style="padding: 7px 8px; text-align: right; font-family: monospace;">${qty}${escapeHtml(it.unit || '')}</td>
+                <td style="padding: 7px 8px; text-align: right; font-family: monospace;">${formatCurrency(price)}</td>
+                <td style="padding: 7px 8px; text-align: center; font-size: 0.72rem;">${rate}%</td>
+                <td style="padding: 7px 8px; text-align: right; font-family: monospace; font-weight: 700;">${formatCurrency(amt)}</td>
+              </tr>
+            `;
+          }).join('')
+        : '<tr><td colspan="5" style="padding: 16px; text-align: center; color: #94a3b8;">明細行データはありません</td></tr>';
+
+      bodyHtml = `
+        <div style="display: flex; flex-direction: column; gap: 14px;">
+          <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px 14px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
+              <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                <span style="background:#e0e7ff; color:#3730a3; padding:2px 8px; border-radius:4px; font-weight:800; font-size:0.76rem;">${escapeHtml(docTypeLabel)}</span>
+                <span style="font-family: monospace; font-weight: 800; font-size: 0.95rem; color: #0f172a;">${escapeHtml(docNo)}</span>
+              </div>
+              ${statusBadge}
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; font-size: 0.8rem;">
+              <div><span style="color:#64748b;">取引先名:</span> <strong style="color:#0f172a;">${escapeHtml(clientName)}</strong></div>
+              <div><span style="color:#64748b;">請求日 / 発行日:</span> <strong style="font-family:monospace;">${escapeHtml(norm.issueDate || '-')}</strong></div>
+              <div><span style="color:#64748b;">お支払期日:</span> <strong style="font-family:monospace;">${escapeHtml(norm.dueDate || '-')}</strong></div>
+              ${endUser ? `<div><span style="color:#64748b;">ユーザー名:</span> <strong>${escapeHtml(endUser)}</strong></div>` : ''}
+              ${docTitle ? `<div style="grid-column: 1 / -1;"><span style="color:#64748b;">件名:</span> <strong>${escapeHtml(docTitle)}</strong></div>` : ''}
+            </div>
+          </div>
+
+          <div style="border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden;">
+            <table class="acc-table" style="width: 100%; border-collapse: collapse; font-size: 0.78rem;">
+              <thead style="background: #f1f5f9; border-bottom: 1.5px solid #cbd5e1; color: #475569;">
+                <tr style="text-align: left;">
+                  <th style="padding: 7px 8px;">商品名・項目</th>
+                  <th style="padding: 7px 8px; text-align: right; width: 78px;">数量</th>
+                  <th style="padding: 7px 8px; text-align: right; width: 100px;">単価</th>
+                  <th style="padding: 7px 8px; text-align: center; width: 54px;">税率</th>
+                  <th style="padding: 7px 8px; text-align: right; width: 110px;">金額(税抜)</th>
+                </tr>
+              </thead>
+              <tbody>${itemsHtml}</tbody>
+            </table>
+          </div>
+
+          <div style="display: flex; justify-content: flex-end;">
+            <div style="min-width: 280px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px 14px; font-size: 0.82rem; display: flex; flex-direction: column; gap: 4px;">
+              <div style="display: flex; justify-content: space-between;"><span style="color:#64748b;">小計（税抜）:</span><strong style="font-family:monospace;">${formatCurrency(norm.subtotal)}</strong></div>
+              <div style="display: flex; justify-content: space-between;"><span style="color:#64748b;">消費税計 (10%:${formatCurrency(norm.tax10)} / 8%:${formatCurrency(norm.tax8)}):</span><strong style="font-family:monospace;">${formatCurrency(norm.taxTotal)}</strong></div>
+              <div style="display: flex; justify-content: space-between; border-top: 1.5px solid #cbd5e1; padding-top: 5px; margin-top: 3px; font-size: 0.96rem;">
+                <span style="font-weight:800; color:#1e293b;">合計金額（税込）:</span>
+                <strong style="font-family:monospace; color:#1d4ed8; font-weight:900;">${formatCurrency(norm.grandTotal)}</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+  } else if (drillType === 'expense') {
+    const allExpenses = typeof getExpenseList === 'function' ? getExpenseList() : [];
+    const exp = allExpenses.find(e => String(e.id || '').trim() === String(targetId).trim());
+    if (exp) {
+      found = true;
+      const rate = Number(exp.taxRate !== undefined ? exp.taxRate : 10);
+      const split = rate > 0 ? splitTaxInclusiveAmount(Number(exp.amount) || 0, rate) : { amountEx: Number(exp.amount) || 0, taxAmt: 0 };
+      const catName = (typeof ACCOUNT_CATEGORIES !== 'undefined' && ACCOUNT_CATEGORIES[exp.category]?.name) || exp.category || '雑費';
+      const hasValidT = /^T\d{13}$/i.test(String(exp.invoiceNumber || '').trim());
+      const invLabel = hasValidT
+        ? '適格請求書 (T番号あり・100%控除)'
+        : (exp.invoiceType === 'transitional' ? '経過措置 (80%控除)' : 'T番号なし・要確認');
+      const rImg = exp.receiptImage || exp.receiptDataUrl || '';
+
+      if (iconEl) iconEl.textContent = '🧾';
+      if (titleEl) titleEl.textContent = `経費・仕入 プレビュー (EXP-${String(exp.id).slice(-6)})`;
+      if (subEl) subEl.textContent = `日付: ${exp.date || '-'} ｜ 支払先: ${exp.payee || '-'}`;
+      if (editBtn) editBtn.textContent = '✏️ この伝票を編集画面で開く';
+
+      const receiptPreviewHtml = rImg
+        ? `
+          <div style="background: #0f172a; border-radius: 8px; padding: 10px; text-align: center; border: 1px solid #334155;">
+            <div style="font-size: 0.72rem; color: #cbd5e1; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
+              <span>📸 添付レシート・領収書サムネイル</span>
+              <button type="button" class="btn btn-xs" id="btnGlPreviewZoomReceipt"
+                data-rec-src="${escapeHtml(rImg)}" data-rec-date="${escapeHtml(exp.date || '')}" data-rec-payee="${escapeHtml(exp.payee || '')}" data-rec-amt="${escapeHtml(String(exp.amount || 0))}" data-rec-inv="${escapeHtml(exp.invoiceNumber || '')}"
+                style="background: rgba(56,189,248,0.22); color: #bae6fd; border: 1px solid rgba(56,189,248,0.4); padding: 2px 8px; font-size: 0.7rem; font-weight: 700; cursor: pointer;">
+                🔍 拡大表示
+              </button>
+            </div>
+            <img src="${escapeHtml(rImg)}" alt="領収書サムネイル"
+              style="max-width: 100%; max-height: 260px; object-fit: contain; border-radius: 6px; cursor: pointer;"
+              onclick="document.getElementById('btnGlPreviewZoomReceipt')?.click()">
+          </div>
+        `
+        : '<div style="background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 14px; text-align: center; color: #94a3b8; font-size: 0.78rem;">📷 この経費には証憑画像が添付されていません</div>';
+
+      bodyHtml = `
+        <div style="display: flex; flex-direction: column; gap: 14px;">
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 14px; font-size: 0.82rem;">
+            <div><span style="color:#64748b;">📅 日付:</span> <strong style="font-family:monospace;">${escapeHtml(exp.date || '-')}</strong></div>
+            <div><span style="color:#64748b;">🏢 支払先:</span> <strong>${escapeHtml(exp.payee || '-')}</strong></div>
+            <div><span style="color:#64748b;">📂 勘定科目:</span> <span class="badge badge-primary">${escapeHtml(catName)}</span></div>
+            <div><span style="color:#64748b;">💹 税区分:</span> <strong>${rate > 0 ? `課税仕入 ${rate}%` : '非課税 / 対象外 (0%)'}</strong></div>
+            <div><span style="color:#64748b;">🏷️ インボイス番号:</span> <strong style="font-family:monospace;">${escapeHtml(exp.invoiceNumber || '未登録')}</strong></div>
+            <div><span style="color:#64748b;">📋 インボイス区分:</span> <strong style="color:${hasValidT ? '#047857' : '#b45309'};">${escapeHtml(invLabel)}</strong></div>
+            <div><span style="color:#64748b;">👤 立替 / 支払方法:</span> <strong>${escapeHtml(exp.claimant || '会社')} (${escapeHtml(exp.paymentMethod || '-')})</strong></div>
+            <div><span style="color:#64748b;">💴 税込金額:</span> <strong style="font-family:monospace; font-size:0.98rem; color:#c2410c;">${formatCurrency(exp.amount || 0)}</strong> <span style="font-size:0.72rem; color:#64748b;">(税抜 ${formatCurrency(split.amountEx)} / 税 ${formatCurrency(split.taxAmt)})</span></div>
+            <div style="grid-column: 1 / -1;"><span style="color:#64748b;">📝 備考:</span> <span>${escapeHtml(exp.note || '（なし）')}</span></div>
+          </div>
+          ${receiptPreviewHtml}
+        </div>
+      `;
+    }
+  } else if (drillType === 'journal') {
+    const invoices = typeof getHistoryList === 'function' ? getHistoryList() : [];
+    const expenses = typeof getExpenseList === 'function' ? getExpenseList() : [];
+    const manualJournals = typeof getManualJournals === 'function' ? getManualJournals() : [];
+    const payrollRecords = typeof getPayrollRecords === 'function' ? getPayrollRecords() : [];
+    const unified = typeof buildUnifiedJournals === 'function'
+      ? buildUnifiedJournals(invoices, expenses, manualJournals, payrollRecords, 'all')
+      : [];
+    const jnl = unified.find(j => String(j.id || '').trim() === String(targetId).trim())
+      || manualJournals.find(j => String(j.id || '').trim() === String(targetId).trim());
+
+    if (jnl) {
+      found = true;
+      const debLines = jnl.debitLines || [];
+      const credLines = jnl.creditLines || [];
+      const maxLen = Math.max(debLines.length, credLines.length, 1);
+
+      if (iconEl) iconEl.textContent = '📒';
+      if (titleEl) titleEl.textContent = `仕訳伝票 プレビュー (${jnl.entryNumber || jnl.id})`;
+      if (subEl) subEl.textContent = `伝票日付: ${jnl.date || '-'} ｜ 種別: ${jnl.sourceType || 'manual'}`;
+      if (editBtn) editBtn.textContent = '📋 この伝票を編集画面（仕訳帳タブ）で開く';
+
+      let rowsHtml = '';
+      let sumDeb = 0;
+      let sumCred = 0;
+      for (let i = 0; i < maxLen; i++) {
+        const d = debLines[i];
+        const c = credLines[i];
+        const dAmt = d ? (Number(d.amount) || 0) : 0;
+        const cAmt = c ? (Number(c.amount) || 0) : 0;
+        sumDeb += dAmt;
+        sumCred += cAmt;
+        rowsHtml += `
+          <tr style="border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: 7px 8px; font-weight: 600; color: #1e293b;">
+              ${d ? `${escapeHtml(d.accountCode ? `${d.accountCode} ` : '')}${escapeHtml(d.accountName || '')}` : ''}
+              ${d && d.subAccount ? `<div style="font-size:0.7rem; color:#4f46e5;">(${escapeHtml(d.subAccount)})</div>` : ''}
+            </td>
+            <td style="padding: 7px 8px; text-align: right; font-family: monospace; font-weight: 700; color: #1e40af;">${d ? formatCurrency(dAmt) : ''}</td>
+            <td style="padding: 7px 8px; font-weight: 600; color: #1e293b;">
+              ${c ? `${escapeHtml(c.accountCode ? `${c.accountCode} ` : '')}${escapeHtml(c.accountName || '')}` : ''}
+              ${c && c.subAccount ? `<div style="font-size:0.7rem; color:#15803d;">(${escapeHtml(c.subAccount)})</div>` : ''}
+            </td>
+            <td style="padding: 7px 8px; text-align: right; font-family: monospace; font-weight: 700; color: #166534;">${c ? formatCurrency(cAmt) : ''}</td>
+          </tr>
+        `;
+      }
+
+      bodyHtml = `
+        <div style="display: flex; flex-direction: column; gap: 14px;">
+          <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px 14px; font-size: 0.82rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px;">
+            <div><span style="color:#64748b;">📅 伝票日付:</span> <strong style="font-family:monospace;">${escapeHtml(jnl.date || '-')}</strong></div>
+            <div><span style="color:#64748b;">🔢 仕訳番号:</span> <strong style="font-family:monospace;">${escapeHtml(jnl.entryNumber || jnl.id)}</strong></div>
+            <div style="grid-column: 1 / -1;"><span style="color:#64748b;">📝 摘要:</span> <strong>${escapeHtml(jnl.description || '-')}</strong></div>
+          </div>
+
+          <div style="border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden;">
+            <table class="acc-table" style="width: 100%; border-collapse: collapse; font-size: 0.8rem;">
+              <thead style="background: #f1f5f9; border-bottom: 1.5px solid #cbd5e1; color: #475569;">
+                <tr style="text-align: left;">
+                  <th style="padding: 7px 8px;">借方勘定科目（補助）</th>
+                  <th style="padding: 7px 8px; text-align: right; width: 120px;">借方金額</th>
+                  <th style="padding: 7px 8px;">貸方勘定科目（補助）</th>
+                  <th style="padding: 7px 8px; text-align: right; width: 120px;">貸方金額</th>
+                </tr>
+              </thead>
+              <tbody>${rowsHtml}</tbody>
+              <tfoot>
+                <tr style="background: #f8fafc; border-top: 2px solid #cbd5e1; font-weight: 800;">
+                  <td style="padding: 8px;">合計</td>
+                  <td style="padding: 8px; text-align: right; font-family: monospace; color: #1e40af;">${formatCurrency(sumDeb)}</td>
+                  <td style="padding: 8px;">合計</td>
+                  <td style="padding: 8px; text-align: right; font-family: monospace; color: #166534;">${formatCurrency(sumCred)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+  }
+
+  if (!found) {
+    if (typeof showToast === 'function') {
+      showToast('この仕訳に対応する元伝票・データが見つかりませんでした', 'info');
+    }
+    console.log('【総勘定元帳プレビュー】元データ不在', { drillType, targetId });
+    return;
+  }
+
+  bodyEl.innerHTML = bodyHtml;
+  modal.style.display = 'flex';
+  modal.classList.add('active');
+  console.log('【総勘定元帳プレビュー】表示完了', { drillType, targetId });
+}
+
 function navigateFromGeneralLedgerEntry(drillType, targetId, label = '') {
-  console.log('【総勘定元帳ドリルダウン】遷移開始', { drillType, targetId, label });
+  console.log('【総勘定元帳ドリルダウン】編集画面遷移開始', { drillType, targetId, label });
 
   if (drillType === 'invoice') {
     const list = typeof getHistoryList === 'function' ? getHistoryList() : [];
@@ -23239,18 +23517,55 @@ function navigateFromGeneralLedgerEntry(drillType, targetId, label = '') {
 }
 
 document.addEventListener('click', (e) => {
-  const rowEl = e.target && typeof e.target.closest === 'function'
-    ? e.target.closest('#glTableBody tr.gl-drilldown-row')
-    : null;
+  if (!e.target || typeof e.target.closest !== 'function') return;
+
+  if (e.target.closest('#btnCloseGlPreviewModal') || e.target.closest('#btnCloseGlPreviewModal2') || e.target.id === 'glDetailPreviewModal') {
+    closeGlDetailPreviewModal();
+    return;
+  }
+
+  if (e.target.closest('#btnGlPreviewEditInOrigin')) {
+    const { drillType, targetId, label } = glPreviewUiState;
+    closeGlDetailPreviewModal();
+    if (drillType && targetId) {
+      navigateFromGeneralLedgerEntry(drillType, targetId, label);
+    }
+    return;
+  }
+
+  const zoomRecBtn = e.target.closest('#btnGlPreviewZoomReceipt');
+  if (zoomRecBtn) {
+    const src = zoomRecBtn.getAttribute('data-rec-src');
+    if (src && typeof openReceiptZoom === 'function') {
+      openReceiptZoom(src, {
+        date: zoomRecBtn.getAttribute('data-rec-date') || '',
+        payee: zoomRecBtn.getAttribute('data-rec-payee') || '',
+        amount: Number(zoomRecBtn.getAttribute('data-rec-amt')) || 0,
+        invoiceNumber: zoomRecBtn.getAttribute('data-rec-inv') || ''
+      });
+    }
+    return;
+  }
+
+  const rowEl = e.target.closest('#glTableBody tr.gl-drilldown-row');
   if (!rowEl) return;
   const drillType = rowEl.getAttribute('data-gl-drill-type') || 'none';
   const targetId = rowEl.getAttribute('data-gl-target-id') || '';
   const label = rowEl.getAttribute('data-gl-target-label') || '';
   if (drillType === 'none' || !targetId) return;
-  navigateFromGeneralLedgerEntry(drillType, targetId, label);
+  openGlDetailPreviewModal(drillType, targetId, label);
 });
 
 document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    const glModal = document.getElementById('glDetailPreviewModal');
+    const recModal = document.getElementById('receiptZoomModal');
+    // レシート拡大モーダルが開いているときはそちらが先に閉じる
+    if (glModal && glModal.classList.contains('active') && (!recModal || recModal.style.display !== 'flex')) {
+      closeGlDetailPreviewModal();
+      return;
+    }
+  }
   if (e.key !== 'Enter' && e.key !== ' ') return;
   const rowEl = e.target && typeof e.target.closest === 'function'
     ? e.target.closest('#glTableBody tr.gl-drilldown-row')
@@ -23261,7 +23576,7 @@ document.addEventListener('keydown', (e) => {
   const targetId = rowEl.getAttribute('data-gl-target-id') || '';
   const label = rowEl.getAttribute('data-gl-target-label') || '';
   if (drillType === 'none' || !targetId) return;
-  navigateFromGeneralLedgerEntry(drillType, targetId, label);
+  openGlDetailPreviewModal(drillType, targetId, label);
 });
 
 function renderGeneralLedger(periodFilter = currentAccGlobalPeriod) {
