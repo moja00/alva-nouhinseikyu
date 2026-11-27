@@ -17854,25 +17854,100 @@ function buildEnglishExportDocumentsHtml(doc, totals) {
     measurementVal ? `<div style="font-size: 9px; color: #0369a1; font-weight: 700; margin-top: 2px;">${escapeHtml(measurementVal)}</div>` : ''
   ].filter(Boolean).join('') || '-';
 
+  // カートン単位の自動グルーピング（空欄行または直前と同名のカートン行を自動縦結合 rowspan）
+  const hasAnyItemCarton = packingSourceItems.some(it => it.cartonNo && it.cartonNo.trim() !== '');
+  const cartonGroups = [];
+  if (packingSourceItems.length > 0) {
+    if (hasAnyItemCarton) {
+      packingSourceItems.forEach((it, idx) => {
+        const ctn = (it.cartonNo || '').trim();
+        const prev = cartonGroups[cartonGroups.length - 1];
+        if (ctn !== '') {
+          if (prev && prev.label === ctn) {
+            prev.span += 1;
+            prev.endIdx = idx;
+          } else {
+            cartonGroups.push({ startIdx: idx, endIdx: idx, span: 1, label: ctn, isMixedAuto: false });
+          }
+        } else if (prev && prev.label && prev.label !== '-') {
+          // 空欄は直上カートンへの混載（同梱）として縦結合
+          prev.span += 1;
+          prev.endIdx = idx;
+          prev.isMixedAuto = true;
+        } else {
+          cartonGroups.push({ startIdx: idx, endIdx: idx, span: 1, label: '-', isMixedAuto: false });
+        }
+      });
+    } else {
+      cartonGroups.push({
+        startIdx: 0,
+        endIdx: packingSourceItems.length - 1,
+        span: packingSourceItems.length,
+        label: cartonsSummaryVal,
+        isMixedAuto: false
+      });
+    }
+  }
+  const rowGroupMap = new Array(packingSourceItems.length);
+  cartonGroups.forEach((g, gIdx) => {
+    for (let i = g.startIdx; i <= g.endIdx; i++) {
+      rowGroupMap[i] = {
+        groupIndex: gIdx,
+        isGroupStart: i === g.startIdx,
+        isGroupEnd: i === g.endIdx,
+        span: g.span,
+        label: g.label,
+        isMixed: hasAnyItemCarton && g.span > 1
+      };
+    }
+  });
+  const useCartonStripe = cartonGroups.length >= 2;
+  const totalPackingRows = packingSourceItems.length;
+
   const packingRowsHtml = packingSourceItems.map((it, idx) => {
-    const rowCtn = hasPerItemPacking ? (it.cartonNo ? escapeHtml(it.cartonNo) : '') : (idx === 0 ? escapeHtml(cartonsSummaryVal) : '-');
-    const rowNw = hasPerItemPacking ? (it.netWeight !== '' ? formatWeightVal(it.netWeight) : '-') : (idx === 0 ? totalNetWeightDisp : '-');
-    const rowGw = hasPerItemPacking ? (it.grossWeight !== '' ? formatWeightVal(it.grossWeight) : '-') : (idx === 0 ? totalGrossWeightDisp : '-');
-    const rowDim = idx === 0 ? dimsAndMeasHtml : '-';
+    const gm = rowGroupMap[idx] || { groupIndex: 0, isGroupStart: true, isGroupEnd: true, span: 1, label: '-', isMixed: false };
+    const rowBg = (useCartonStripe && gm.groupIndex % 2 === 1) ? '#f8fafc' : '#ffffff';
+    const topBorderStyle = (idx > 0 && gm.isGroupStart)
+      ? 'border-top: 1.5px solid #475569;'
+      : (!gm.isGroupStart ? 'border-top: 1px dashed #cbd5e1;' : 'border-top: 1px solid #cbd5e1;');
+    const bottomBorderStyle = (idx === totalPackingRows - 1)
+      ? 'border-bottom: 1.5px solid #475569;'
+      : (gm.isGroupEnd ? 'border-bottom: 1.5px solid #475569;' : 'border-bottom: 1px dashed #cbd5e1;');
+    const cellBorder = `border-left: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1; ${topBorderStyle} ${bottomBorderStyle}`;
+
+    const cartonCellHtml = gm.isGroupStart ? `
+      <td rowspan="${gm.span}" style="border-left: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1; border-top: ${idx > 0 ? '1.5px solid #475569' : '1px solid #cbd5e1'}; border-bottom: 1.5px solid #475569; padding: 6px 4px; text-align: center; vertical-align: middle; background: ${rowBg}; font-size: 10px; word-break: break-word;">
+        <div style="font-weight: ${gm.label && gm.label !== '-' ? '800' : '400'}; color: #0f172a;">${escapeHtml(gm.label || '-')}</div>
+        ${gm.isMixed ? `<div style="font-size: 8.5px; color: #0369a1; font-weight: 700; margin-top: 3px; background: #e0f2fe; border: 1px solid #bae6fd; border-radius: 3px; padding: 1px 4px; display: inline-block; line-height: 1.25;">Mixed / ${gm.span} items</div>` : ''}
+      </td>
+    ` : '';
+
+    const nwCellHtml = hasPerItemPacking
+      ? `<td style="${cellBorder} padding: 6px 5px; text-align: right; font-family: monospace; font-size: 10px; white-space: nowrap;">${it.netWeight !== '' ? formatWeightVal(it.netWeight) : '-'}</td>`
+      : (idx === 0 ? `<td rowspan="${totalPackingRows}" style="border: 1px solid #cbd5e1; border-bottom: 1.5px solid #475569; padding: 6px 5px; text-align: right; vertical-align: middle; background: #ffffff; font-family: monospace; font-size: 10px; white-space: nowrap;">${totalNetWeightDisp}</td>` : '');
+
+    const gwCellHtml = hasPerItemPacking
+      ? `<td style="${cellBorder} padding: 6px 5px; text-align: right; font-family: monospace; font-size: 10px; white-space: nowrap;">${it.grossWeight !== '' ? formatWeightVal(it.grossWeight) : '-'}</td>`
+      : (idx === 0 ? `<td rowspan="${totalPackingRows}" style="border: 1px solid #cbd5e1; border-bottom: 1.5px solid #475569; padding: 6px 5px; text-align: right; vertical-align: middle; background: #ffffff; font-family: monospace; font-size: 10px; white-space: nowrap;">${totalGrossWeightDisp}</td>` : '');
+
+    const dimCellHtml = idx === 0
+      ? `<td rowspan="${totalPackingRows}" style="border: 1px solid #cbd5e1; border-bottom: 1.5px solid #475569; padding: 6px 4px; text-align: center; vertical-align: middle; background: #ffffff; font-size: 9.5px; word-break: break-word;">${dimsAndMeasHtml}</td>`
+      : '';
+
     return `
-    <tr>
-      <td style="border: 1px solid #cbd5e1; padding: 6px 4px; text-align: center; font-family: monospace; font-size: 10px; word-break: break-word;">${escapeHtml(it.sku)}</td>
-      <td style="border: 1px solid #cbd5e1; padding: 6px 7px; text-align: left; font-size: 10.5px; word-break: break-word;">
+    <tr style="background: ${rowBg};">
+      <td style="${cellBorder} padding: 6px 4px; text-align: center; font-family: monospace; font-size: 10px; word-break: break-word;">${escapeHtml(it.sku)}</td>
+      <td style="${cellBorder} padding: 6px 7px; text-align: left; font-size: 10.5px; word-break: break-word;">
         <div style="font-weight: 600;">${escapeHtml(it.description)}</div>
         ${it.hsCode ? `<div style="font-size: 9px; color: #0369a1; font-family: monospace; margin-top: 2px;">HSN / HS Code: ${escapeHtml(it.hsCode)}</div>` : ''}
         ${it.sn ? `<div style="font-size: 9px; color: #475569; font-family: monospace; margin-top: 2px;">S/N: ${escapeHtml(it.sn)}</div>` : ''}
       </td>
-      <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: right; font-family: monospace; font-weight: 700; font-size: 10.5px; white-space: nowrap;">${it.qty ? it.qty.toLocaleString('en-US') : ''}</td>
-      <td style="border: 1px solid #cbd5e1; padding: 6px 4px; text-align: center; font-size: 10px; color: #475569; white-space: nowrap;">${it.qty ? escapeHtml(it.unitEn) : ''}</td>
-      <td style="border: 1px solid #cbd5e1; padding: 6px 4px; text-align: center; font-size: 10px; font-weight: ${it.cartonNo ? '700' : '400'}; word-break: break-word;">${rowCtn}</td>
-      <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: right; font-family: monospace; font-size: 10px; white-space: nowrap;">${rowNw}</td>
-      <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: right; font-family: monospace; font-size: 10px; white-space: nowrap;">${rowGw}</td>
-      <td style="border: 1px solid #cbd5e1; padding: 6px 4px; text-align: center; font-size: 9.5px; word-break: break-word;">${rowDim}</td>
+      <td style="${cellBorder} padding: 6px 5px; text-align: right; font-family: monospace; font-weight: 700; font-size: 10.5px; white-space: nowrap;">${it.qty ? it.qty.toLocaleString('en-US') : ''}</td>
+      <td style="${cellBorder} padding: 6px 4px; text-align: center; font-size: 10px; color: #475569; white-space: nowrap;">${it.qty ? escapeHtml(it.unitEn) : ''}</td>
+      ${cartonCellHtml}
+      ${nwCellHtml}
+      ${gwCellHtml}
+      ${dimCellHtml}
     </tr>
   `;
   }).join('');
@@ -18399,9 +18474,14 @@ function renderPackingItemsEditor() {
     <div class="packing-item-card" data-pkg-index="${idx}"
       style="background: #ffffff; border: 1px solid #a7f3d0; border-radius: 8px; padding: 9px 10px; margin-bottom: 8px; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);">
       <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 7px;">
-        <span style="font-size: 0.72rem; font-weight: 800; color: #065f46; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 4px;">
-          📦 梱包行 #${idx + 1}
-        </span>
+        <div style="display: flex; align-items: center; gap: 5px; flex-wrap: wrap;">
+          <span style="font-size: 0.72rem; font-weight: 800; color: #065f46; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 4px;">
+            📦 梱包行 #${idx + 1}
+          </span>
+          <span class="pkg-mixed-badge" data-pkg-index="${idx}"
+            style="display: none; font-size: 0.67rem; font-weight: 700; color: #0369a1; background: #e0f2fe; border: 1px solid #bae6fd; padding: 1px 6px; border-radius: 4px;">
+          </span>
+        </div>
         <div style="display: flex; align-items: center; gap: 5px;">
           <button type="button" class="btn-split-packing-item" data-pkg-index="${idx}"
             style="font-size: 0.7rem; font-weight: 700; color: #0369a1; background: #f0f9ff; border: 1px solid #7dd3fc; border-radius: 5px; padding: 2px 7px; cursor: pointer;"
@@ -18419,7 +18499,7 @@ function renderPackingItemsEditor() {
       <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; margin-bottom: 6px;">
         <div>
           <label style="font-size: 0.63rem; font-weight: 700; color: #334155; display: block; margin-bottom: 2px;">カートン数 (C/t)</label>
-          <input type="text" class="form-input pkg-input-carton-no" data-pkg-index="${idx}" placeholder="例: 9 Ctn." value="${escapeHtml(pk.cartonNo || '')}" style="font-size: 0.75rem; padding: 3px 6px;">
+          <input type="text" class="form-input pkg-input-carton-no" data-pkg-index="${idx}" placeholder="${idx === 0 ? '例: 9 Ctn.' : '空欄＝上の箱に混載'}" value="${escapeHtml(pk.cartonNo || '')}" style="font-size: 0.75rem; padding: 3px 6px;">
         </div>
         <div>
           <label style="font-size: 0.63rem; font-weight: 700; color: #334155; display: block; margin-bottom: 2px;">品番 (Item No.)</label>
@@ -18457,7 +18537,54 @@ function renderPackingItemsEditor() {
     </div>
   `).join('');
 
+  updatePackingMixedGuides();
   updatePackingQtyCheckBadge();
+}
+
+/**
+ * 各梱包行カードの「↳ 上の『1 Ctn.』に混載中」ガイド表示を軽量更新（DOM再構築なし・フォーカス維持）
+ */
+function updatePackingMixedGuides() {
+  const container = document.getElementById('packingItemsContainer');
+  if (!container || !currentDoc || !Array.isArray(currentDoc.packingItems)) return;
+  let lastCarton = '';
+  currentDoc.packingItems.forEach((pk, idx) => {
+    const ctn = (pk && pk.cartonNo != null ? String(pk.cartonNo).trim() : '');
+    const card = container.querySelector(`.packing-item-card[data-pkg-index="${idx}"]`);
+    const badge = container.querySelector(`.pkg-mixed-badge[data-pkg-index="${idx}"]`);
+    if (ctn !== '') {
+      const isSameAsPrev = (lastCarton !== '' && ctn === lastCarton);
+      lastCarton = ctn;
+      if (badge) {
+        if (isSameAsPrev) {
+          badge.style.display = 'inline-block';
+          badge.textContent = `↳ 「${ctn}」に混載`;
+        } else {
+          badge.style.display = 'none';
+          badge.textContent = '';
+        }
+      }
+      if (card) {
+        card.style.borderLeft = isSameAsPrev ? '3px solid #38bdf8' : '1px solid #a7f3d0';
+      }
+    } else if (lastCarton !== '') {
+      if (badge) {
+        badge.style.display = 'inline-block';
+        badge.textContent = `↳ 上の「${lastCarton}」に混載中`;
+      }
+      if (card) {
+        card.style.borderLeft = '3px solid #38bdf8';
+      }
+    } else {
+      if (badge) {
+        badge.style.display = 'none';
+        badge.textContent = '';
+      }
+      if (card) {
+        card.style.borderLeft = '1px solid #a7f3d0';
+      }
+    }
+  });
 }
 
 // Packing List 専用梱包明細のイベント委譲（クリック・入力）
@@ -18615,6 +18742,7 @@ function renderPackingItemsEditor() {
     if (target.classList.contains('pkg-input-net-weight')) row.netWeight = val;
     if (target.classList.contains('pkg-input-gross-weight')) row.grossWeight = val;
 
+    updatePackingMixedGuides();
     updatePackingQtyCheckBadge();
     schedulePackingPreviewRender(e.type === 'change');
   };
