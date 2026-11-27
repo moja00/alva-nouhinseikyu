@@ -324,7 +324,7 @@ function isDateInRange(dateStr, startStr, endStr) {
 }
 
 function normalizeLookupName(str) {
-  return String(str || '')
+  return String(str ?? '')
     .normalize('NFKC')
     .replace(/[\s\u3000]+/g, ' ')
     .trim()

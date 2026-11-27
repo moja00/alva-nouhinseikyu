@@ -3708,3 +3708,74 @@ label.form-label {
     max-height: 42vh !important;
   }
 }
+
+/* ==========================================================================
+   総勘定元帳 ドリルダウン遷移＆対象行ハイライト
+   ========================================================================== */
+tr.gl-drilldown-row {
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+tr.gl-drilldown-row:hover {
+  background-color: #eef2ff !important;
+}
+
+.gl-link-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+  vertical-align: middle;
+  white-space: nowrap;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+tr.gl-drilldown-row:hover .gl-link-badge {
+  transform: translateY(-1px);
+  box-shadow: 0 1px 3px rgba(79, 70, 229, 0.22);
+}
+
+.gl-link-badge-invoice {
+  background: #dbeafe;
+  color: #1d4ed8;
+  border: 1px solid #93c5fd;
+}
+
+.gl-link-badge-expense {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+}
+
+.gl-link-badge-journal {
+  background: #e0e7ff;
+  color: #4338ca;
+  border: 1px solid #c7d2fe;
+}
+
+@keyframes accDrilldownPulse {
+  0% {
+    background-color: #fde047;
+  }
+  65% {
+    background-color: #fef9c3;
+  }
+  100% {
+    background-color: #fef08a;
+  }
+}
+
+tr.acc-drilldown-highlight,
+tr.acc-drilldown-highlight td {
+  background-color: #fef9c3 !important;
+  animation: accDrilldownPulse 1.4s ease-out 2;
+}
+
+tr.acc-drilldown-highlight td:first-child {
+  box-shadow: inset 4px 0 0 #d97706;
+}

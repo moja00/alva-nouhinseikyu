@@ -62,6 +62,15 @@ function safeEscAnalytics(str) {
     .replace(/'/g, '&#39;');
 }
 
+function safeLowerStr(val) {
+  return String(val ?? '').trim().toLowerCase();
+}
+
+function safeJoinStrings(arr) {
+  if (!Array.isArray(arr)) return '';
+  return arr.map(v => String(v ?? '')).join(' ');
+}
+
 // ==========================================================================
 // 1. ロット別原価ビュー レンダリング（財務会計 & 在庫マスタ共通）
 // ==========================================================================
@@ -86,14 +95,14 @@ function renderLotCostAnalyticsView(targetContainerId = null) {
     const docs = typeof getHistoryList === 'function' ? getHistoryList(false) : [];
 
     const data = buildLotCostAnalytics({ lots, itemsMaster, inventoryList, serials, docs });
-    const q = lotCostViewState.searchQuery.trim().toLowerCase();
+    const q = safeLowerStr(lotCostViewState.searchQuery);
 
     // フィルタ適用
-    let filteredRows = data.rows.filter(r => {
+    let filteredRows = (data.rows || []).filter(r => {
       if (lotCostViewState.itemFilter !== 'all' && r.itemId !== lotCostViewState.itemFilter) return false;
       if (lotCostViewState.procFilter !== 'all' && r.procurementType !== lotCostViewState.procFilter) return false;
       if (q) {
-        const hay = `${r.lotNumber} ${r.itemName} ${r.sku} ${r.supplier} ${r.category} ${r.arrivalDate}`.toLowerCase();
+        const hay = `${r?.lotNumber ?? ''} ${r?.itemName ?? ''} ${r?.sku ?? ''} ${r?.supplier ?? ''} ${r?.category ?? ''} ${r?.arrivalDate ?? ''}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -118,10 +127,10 @@ function renderLotCostAnalyticsView(targetContainerId = null) {
       }
     });
 
-    const filteredTrends = data.itemTrends.filter(t => {
+    const filteredTrends = (data.itemTrends || []).filter(t => {
       if (lotCostViewState.itemFilter !== 'all' && t.itemId !== lotCostViewState.itemFilter) return false;
       if (q) {
-        const hay = `${t.itemName} ${t.sku} ${t.category}`.toLowerCase();
+        const hay = `${t?.itemName ?? ''} ${t?.sku ?? ''} ${t?.category ?? ''}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -472,8 +481,8 @@ function renderBusinessAnalyticsView(period = null) {
       : '全期間（累計）';
 
     // --- Section 1（統合版）: 大枠＝地域（地方エリア / 都道府県）別 売上・デモ経費バランス ＋ 直下＝各販売店＆デモ出張セッション ---
-    const clientQ = bizAnalyticsViewState.clientSearch.trim().toLowerCase();
-    const rawGeoGroups = bizAnalyticsViewState.geoGranularity === 'prefecture' ? data.prefectureSummary : data.regionSummary;
+    const clientQ = safeLowerStr(bizAnalyticsViewState.clientSearch);
+    const rawGeoGroups = (bizAnalyticsViewState.geoGranularity === 'prefecture' ? data.prefectureSummary : data.regionSummary) || [];
 
     const sortClientList = (list) => [...list].sort((a, b) => {
       switch (bizAnalyticsViewState.clientSortBy) {
@@ -487,16 +496,18 @@ function renderBusinessAnalyticsView(period = null) {
     });
 
     const filteredGeoGroups = rawGeoGroups.filter(g => {
+      if (!g) return false;
       if (bizAnalyticsViewState.tripRegion !== 'all' && g.region !== bizAnalyticsViewState.tripRegion) return false;
       if (bizAnalyticsViewState.tripPrefecture !== 'all' && g.prefecture !== bizAnalyticsViewState.tripPrefecture) return false;
       if (clientQ) {
-        const geoHit = `${g.label} ${g.region} ${g.prefecture}`.toLowerCase().includes(clientQ);
-        const clientHit = (g.clients || []).some(c =>
-          `${c.clientName} ${c.prefecture} ${c.endUsers.join(' ')} ${c.titles.join(' ')}`.toLowerCase().includes(clientQ)
+        const geoHit = `${g.label ?? ''} ${g.region ?? ''} ${g.prefecture ?? ''}`.toLowerCase().includes(clientQ);
+        const clientHit = (Array.isArray(g.clients) ? g.clients : []).some(c =>
+          `${c?.clientName ?? ''} ${c?.prefecture ?? ''} ${safeJoinStrings(c?.endUsers)} ${safeJoinStrings(c?.titles)}`.toLowerCase().includes(clientQ)
         );
-        const sessHit = (g.demoSessions || []).some(s =>
-          `${s.startDate} ${s.endDate} ${s.prefecture} ${(s.items || []).map(x => `${x.payee} ${x.note}`).join(' ')}`.toLowerCase().includes(clientQ)
-        );
+        const sessHit = (Array.isArray(g.demoSessions) ? g.demoSessions : []).some(s => {
+          const itemsStr = (Array.isArray(s?.items) ? s.items : []).map(x => `${x?.payee ?? ''} ${x?.note ?? ''}`).join(' ');
+          return `${s?.startDate ?? ''} ${s?.endDate ?? ''} ${s?.prefecture ?? ''} ${itemsStr}`.toLowerCase().includes(clientQ);
+        });
         return geoHit || clientHit || sessHit;
       }
       return true;
@@ -517,10 +528,11 @@ function renderBusinessAnalyticsView(period = null) {
 
     const renderClientRowsForGroup = (clientsInGroup) => {
       const matchedClients = sortClientList(
-        (clientsInGroup || []).filter(c => {
+        (Array.isArray(clientsInGroup) ? clientsInGroup : []).filter(c => {
+          if (!c) return false;
           if (bizAnalyticsViewState.tripClient !== 'all' && c.clientName !== bizAnalyticsViewState.tripClient) return false;
           if (!clientQ) return true;
-          const hay = `${c.clientName} ${c.region} ${c.prefecture} ${c.endUsers.join(' ')} ${c.titles.join(' ')}`.toLowerCase();
+          const hay = `${c.clientName ?? ''} ${c.region ?? ''} ${c.prefecture ?? ''} ${safeJoinStrings(c.endUsers)} ${safeJoinStrings(c.titles)}`.toLowerCase();
           return hay.includes(clientQ);
         })
       );
@@ -817,12 +829,14 @@ function renderBusinessAnalyticsView(period = null) {
     let clientRankingHtml = '';
     if (isClientRankingMode) {
       const flatClients = sortClientList(
-        (data.clientSummary || []).filter(c => {
+        (Array.isArray(data.clientSummary) ? data.clientSummary : []).filter(c => {
+          if (!c) return false;
           if (bizAnalyticsViewState.tripRegion !== 'all' && c.region !== bizAnalyticsViewState.tripRegion) return false;
           if (bizAnalyticsViewState.tripPrefecture !== 'all' && c.prefecture !== bizAnalyticsViewState.tripPrefecture) return false;
           if (bizAnalyticsViewState.tripClient !== 'all' && c.clientName !== bizAnalyticsViewState.tripClient) return false;
           if (!clientQ) return true;
-          const hay = `${c.clientName} ${c.region} ${c.prefecture} ${c.endUsers.join(' ')} ${c.titles.join(' ')} ${(c.soldItemSummary || []).map(s => s.name).join(' ')}`.toLowerCase();
+          const soldNames = (Array.isArray(c.soldItemSummary) ? c.soldItemSummary : []).map(s => s?.name ?? '').join(' ');
+          const hay = `${c.clientName ?? ''} ${c.region ?? ''} ${c.prefecture ?? ''} ${safeJoinStrings(c.endUsers)} ${safeJoinStrings(c.titles)} ${soldNames}`.toLowerCase();
           return hay.includes(clientQ);
         })
       );

@@ -22451,7 +22451,7 @@ function renderAccountingExpenses(periodFilter = currentAccGlobalPeriod) {
       const payBadge = `<div style="font-size: 10px; color: #475569; margin-top: 2px;">💳 ${escapeHtml(payMethod)}</div>`;
 
       html += `
-        <tr ${isDup ? 'style="background: #fffbfa;"' : ''}>
+        <tr data-expense-id="${escapeHtml(exp.id || '')}"${activeDrilldownHighlightExpenseId && String(exp.id) === String(activeDrilldownHighlightExpenseId) ? ' class="acc-drilldown-highlight"' : ''} ${isDup ? 'style="background: #fffbfa;"' : ''}>
           <td>${escapeHtml(exp.date)}</td>
           <td>${claimantBadge}</td>
           <td>
@@ -22747,7 +22747,7 @@ function renderAccountingJournals(periodFilter = currentAccGlobalPeriod) {
       const borderTop = isFirst ? '1px solid #e2e8f0' : 'none';
 
       html += `
-        <tr style="background: ${rowBg}; border-top: ${borderTop};">
+        <tr data-journal-id="${escapeHtml(j.id || '')}" data-entry-number="${escapeHtml(j.entryNumber || '')}"${activeDrilldownHighlightJournalId && String(j.id) === String(activeDrilldownHighlightJournalId) ? ' class="acc-drilldown-highlight"' : ''} style="background: ${rowBg}; border-top: ${borderTop};">
           <td style="color: #64748b; font-size: 11px;">${isFirst ? escapeHtml(j.date) : ''}</td>
           <td style="font-weight: 600; color: #1e293b;">
             ${escapeHtml(deb.accountName || '')}
@@ -23023,8 +23023,247 @@ function renderTrialBalance(periodFilter = currentAccGlobalPeriod) {
 }
 
 // ==========================================================================
-// 総勘定元帳 (General Ledger) レンダラー（諸口対応）
+// 総勘定元帳 (General Ledger) レンダラー ＆ 元伝票ドリルダウン遷移
 // ==========================================================================
+let activeDrilldownHighlightExpenseId = null;
+let activeDrilldownHighlightJournalId = null;
+let drilldownHighlightClearTimer = null;
+
+function scheduleDrilldownHighlightClear() {
+  if (drilldownHighlightClearTimer) clearTimeout(drilldownHighlightClearTimer);
+  drilldownHighlightClearTimer = setTimeout(() => {
+    activeDrilldownHighlightExpenseId = null;
+    activeDrilldownHighlightJournalId = null;
+  }, 5000);
+}
+
+function escapeAttrSelectorVal(val) {
+  const s = String(val ?? '');
+  return (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') ? CSS.escape(s) : s.replace(/["\\]/g, '\\$&');
+}
+
+function highlightAccTargetRows(selector, scrollOptions = { behavior: 'smooth', block: 'center' }) {
+  document.querySelectorAll('.acc-drilldown-highlight').forEach(el => el.classList.remove('acc-drilldown-highlight'));
+  const rows = Array.from(document.querySelectorAll(selector));
+  if (rows.length === 0) return false;
+  rows.forEach(tr => tr.classList.add('acc-drilldown-highlight'));
+  try {
+    rows[0].scrollIntoView(scrollOptions);
+  } catch (_) { /* noop */ }
+  return true;
+}
+
+function buildGlDrilldownContext(invoices = [], expenses = [], manualJournals = []) {
+  const invById = new Map();
+  const invByDocNo = new Map();
+  (invoices || []).forEach(doc => {
+    if (!doc) return;
+    if (doc.id) invById.set(String(doc.id).trim(), doc);
+    const num = String(doc.docNumber || doc.fullDoc?.docNumber || '').trim();
+    if (num && !doc.isSuperseded && doc.status !== 'superseded') {
+      invByDocNo.set(num, doc);
+    }
+  });
+
+  const expById = new Map();
+  const expBySuffix = new Map();
+  (expenses || []).forEach(exp => {
+    if (!exp || !exp.id) return;
+    const idStr = String(exp.id).trim();
+    expById.set(idStr, exp);
+    expBySuffix.set(`EXP-${idStr.slice(-6)}`, exp);
+  });
+
+  const journalById = new Map();
+  (manualJournals || []).forEach(j => {
+    if (j && j.id) journalById.set(String(j.id).trim(), j);
+  });
+
+  return { invById, invByDocNo, expById, expBySuffix, journalById };
+}
+
+function resolveGeneralLedgerDrilldown(entry, ctx) {
+  if (!entry || !ctx) return { type: 'none', targetId: '', label: '', badgeText: '', title: '' };
+  const sType = String(entry.sourceType || '').trim();
+  const sId = String(entry.sourceId || '').trim();
+  const entryNo = String(entry.entryNumber || '').trim();
+
+  // 1. 売上・入金・原価系の請求書リンク
+  const isInvoiceSource = ['invoice_sales', 'invoice_receipt', 'receipt', 'sales_cogs'].includes(sType);
+  let matchedInv = (isInvoiceSource && sId) ? ctx.invById.get(sId) : null;
+  if (!matchedInv && (isInvoiceSource || (!sType && entryNo))) {
+    const cleanNo = entryNo.replace(/^(REC|COG)-/i, '').trim();
+    matchedInv = ctx.invByDocNo.get(entryNo) || ctx.invByDocNo.get(cleanNo) || null;
+  }
+  if (!matchedInv && isInvoiceSource && entry.description) {
+    const m = String(entry.description).match(/\(([A-Z]{2,5}-\d{4,}[A-Z0-9-]*)\)\s*$/i);
+    if (m && m[1]) matchedInv = ctx.invByDocNo.get(m[1].trim()) || null;
+  }
+  if (matchedInv && matchedInv.id) {
+    const docNo = matchedInv.docNumber || matchedInv.fullDoc?.docNumber || entryNo || '伝票';
+    return {
+      type: 'invoice',
+      targetId: String(matchedInv.id),
+      label: docNo,
+      badgeText: `↗ ${docNo}`,
+      title: `クリックして「納品・請求書」画面で伝票 (${docNo}) を開く`
+    };
+  }
+
+  // 2. 経費・仕入系リンク
+  const isExpenseSource = sType === 'expense' || sId.startsWith('exp_');
+  const matchedExp = isExpenseSource
+    ? (ctx.expById.get(sId) || ctx.expBySuffix.get(entryNo) || null)
+    : null;
+  if (matchedExp && matchedExp.id) {
+    const expLabel = entryNo || `EXP-${String(matchedExp.id).slice(-6)}`;
+    return {
+      type: 'expense',
+      targetId: String(matchedExp.id),
+      label: matchedExp.payee || expLabel,
+      badgeText: `↗ 経費・証憑`,
+      title: `クリックして「経費」画面で ${matchedExp.payee || expLabel} を開く`
+    };
+  }
+
+  // 3. 手動振替伝票・その他仕訳（仕訳帳タブへ遷移して該当行ハイライト）
+  const jnlId = String(entry.journalId || '').trim();
+  if (jnlId) {
+    return {
+      type: 'journal',
+      targetId: jnlId,
+      label: entryNo || jnlId,
+      badgeText: '↗ 仕訳帳',
+      title: 'クリックして「仕訳帳・振替伝票」タブで該当仕訳を表示・ハイライト'
+    };
+  }
+
+  return { type: 'none', targetId: '', label: '', badgeText: '', title: '' };
+}
+
+function navigateFromGeneralLedgerEntry(drillType, targetId, label = '') {
+  console.log('【総勘定元帳ドリルダウン】遷移開始', { drillType, targetId, label });
+
+  if (drillType === 'invoice') {
+    const list = typeof getHistoryList === 'function' ? getHistoryList() : [];
+    const doc = (typeof getDocFromHistory === 'function' ? getDocFromHistory(targetId) : null)
+      || list.find(d => String(d.id || '').trim() === String(targetId).trim());
+    if (!doc) {
+      if (typeof showToast === 'function') showToast('該当する請求書・納品書データが見つかりませんでした', 'info');
+      console.log('【総勘定元帳ドリルダウン】該当伝票なし', { targetId });
+      return;
+    }
+    if (typeof switchAppView === 'function') switchAppView('invoice');
+    requestAnimationFrame(() => {
+      if (typeof openInvoiceQuickEdit === 'function') {
+        openInvoiceQuickEdit(targetId);
+      }
+    });
+    if (typeof showToast === 'function') {
+      showToast(`「納品・請求書」画面で伝票（${label || doc.docNumber || targetId}）を開きました`, 'info');
+    }
+    console.log('【総勘定元帳ドリルダウン】請求書画面・詳細モーダル表示完了', { targetId });
+    return;
+  }
+
+  if (drillType === 'expense') {
+    const allExpenses = typeof getExpenseList === 'function' ? getExpenseList() : [];
+    const exp = allExpenses.find(e => String(e.id || '').trim() === String(targetId).trim());
+    if (!exp) {
+      if (typeof showToast === 'function') showToast('該当する経費データが見つかりませんでした', 'info');
+      console.log('【総勘定元帳ドリルダウン】該当経費なし', { targetId });
+      return;
+    }
+
+    // 経費画面の一覧フィルタに対象経費が確実に表示されるよう必要な条件を調整
+    if (typeof currentExpenseGlobalPeriod !== 'undefined' && exp.date && !isDateInPeriod(exp.date, currentExpenseGlobalPeriod)) {
+      currentExpenseGlobalPeriod = { preset: 'all', start: '', end: '' };
+    }
+    if (DOM.expenseFilterClaimant && DOM.expenseFilterClaimant.value !== 'all') {
+      DOM.expenseFilterClaimant.value = 'all';
+    }
+    if (DOM.expenseFilterUnsettledOnly && DOM.expenseFilterUnsettledOnly.checked && exp.isSettled) {
+      DOM.expenseFilterUnsettledOnly.checked = false;
+    }
+
+    activeDrilldownHighlightExpenseId = String(exp.id);
+    activeDrilldownHighlightJournalId = null;
+    scheduleDrilldownHighlightClear();
+
+    if (typeof switchAppView === 'function') switchAppView('expenses');
+
+    requestAnimationFrame(() => {
+      if (typeof renderAccountingExpenses === 'function') {
+        renderAccountingExpenses(typeof currentAccGlobalPeriod !== 'undefined' ? currentAccGlobalPeriod : { preset: 'all' });
+      }
+      if (typeof window.__editExpense === 'function') {
+        window.__editExpense(exp.id);
+      }
+      if (window.innerWidth <= 1024 && typeof switchExpenseMobileTab === 'function') {
+        switchExpenseMobileTab('input');
+      }
+      highlightAccTargetRows(`#expenseTableBody tr[data-expense-id="${escapeAttrSelectorVal(exp.id)}"]`);
+    });
+
+    if (typeof showToast === 'function') {
+      showToast(`「経費」画面で ${exp.date || ''} ${exp.payee || label || '経費明細'} を開きました`, 'info');
+    }
+    console.log('【総勘定元帳ドリルダウン】経費画面表示完了', { expenseId: exp.id });
+    return;
+  }
+
+  if (drillType === 'journal') {
+    activeDrilldownHighlightJournalId = String(targetId);
+    activeDrilldownHighlightExpenseId = null;
+    scheduleDrilldownHighlightClear();
+
+    if (typeof switchAccountingTab === 'function') {
+      switchAccountingTab('acc-tab-journals');
+    }
+    requestAnimationFrame(() => {
+      const found = highlightAccTargetRows(`#accJournalTableBody tr[data-journal-id="${escapeAttrSelectorVal(targetId)}"]`);
+      if (found) {
+        if (typeof showToast === 'function') showToast('「仕訳帳・振替伝票」タブの該当仕訳へ移動しました', 'info');
+        console.log('【総勘定元帳ドリルダウン】仕訳帳ハイライト完了', { journalId: targetId });
+      } else {
+        if (typeof showToast === 'function') showToast('この仕訳に対応する仕訳帳データが見つかりませんでした', 'info');
+        console.log('【総勘定元帳ドリルダウン】仕訳帳該当行なし', { journalId: targetId });
+      }
+    });
+    return;
+  }
+
+  if (typeof showToast === 'function') {
+    showToast('この仕訳は参照元の伝票が特定できませんでした', 'info');
+  }
+}
+
+document.addEventListener('click', (e) => {
+  const rowEl = e.target && typeof e.target.closest === 'function'
+    ? e.target.closest('#glTableBody tr.gl-drilldown-row')
+    : null;
+  if (!rowEl) return;
+  const drillType = rowEl.getAttribute('data-gl-drill-type') || 'none';
+  const targetId = rowEl.getAttribute('data-gl-target-id') || '';
+  const label = rowEl.getAttribute('data-gl-target-label') || '';
+  if (drillType === 'none' || !targetId) return;
+  navigateFromGeneralLedgerEntry(drillType, targetId, label);
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const rowEl = e.target && typeof e.target.closest === 'function'
+    ? e.target.closest('#glTableBody tr.gl-drilldown-row')
+    : null;
+  if (!rowEl) return;
+  e.preventDefault();
+  const drillType = rowEl.getAttribute('data-gl-drill-type') || 'none';
+  const targetId = rowEl.getAttribute('data-gl-target-id') || '';
+  const label = rowEl.getAttribute('data-gl-target-label') || '';
+  if (drillType === 'none' || !targetId) return;
+  navigateFromGeneralLedgerEntry(drillType, targetId, label);
+});
+
 function renderGeneralLedger(periodFilter = currentAccGlobalPeriod) {
   const select = document.getElementById('glAccountSelect');
   if (!select) return;
@@ -23052,6 +23291,7 @@ function renderGeneralLedger(periodFilter = currentAccGlobalPeriod) {
   const selectedAccount = select.value || '普通預金';
   console.log('【総勘定元帳】描画開始', { selectedAccount, periodFilter });
   const gl = calculateGeneralLedger(selectedAccount, invoices, expenses, fiscalSettings, accountMaster, manualJournals, periodFilter);
+  const drillCtx = buildGlDrilldownContext(invoices, expenses, manualJournals);
 
   const formatGlYen = (val) => {
     const num = Math.round(Number(val) || 0);
@@ -23086,12 +23326,22 @@ function renderGeneralLedger(periodFilter = currentAccGlobalPeriod) {
 
       const debitVal = Number(e.debitAmount ?? e.debit ?? 0);
       const creditVal = Number(e.creditAmount ?? e.credit ?? 0);
+      const drill = resolveGeneralLedgerDrilldown(e, drillCtx);
+      const isClickable = drill.type !== 'none' && !!drill.targetId;
+      const badgeClass = drill.type === 'invoice'
+        ? 'gl-link-badge-invoice'
+        : (drill.type === 'expense' ? 'gl-link-badge-expense' : 'gl-link-badge-journal');
+      const linkBadgeHtml = isClickable
+        ? `<span class="gl-link-badge ${badgeClass}">${escapeHtml(drill.badgeText)}</span>`
+        : '';
 
       html += `
-        <tr style="border-bottom: 1px solid #f1f5f9;">
-          <td style="padding: 8px 10px; color: #64748b; font-size: 11px;">${escapeHtml(e.date)}</td>
+        <tr class="${isClickable ? 'gl-drilldown-row' : ''}"${isClickable ? ` tabindex="0" role="button" data-gl-drill-type="${escapeHtml(drill.type)}" data-gl-target-id="${escapeHtml(drill.targetId)}" data-gl-target-label="${escapeHtml(drill.label)}" title="${escapeHtml(drill.title)}"` : ''} style="border-bottom: 1px solid #f1f5f9;">
+          <td style="padding: 8px 10px; color: #64748b; font-size: 11px; white-space: nowrap;">${escapeHtml(e.date)}</td>
           <td style="padding: 8px 10px;">${counterAccountText}</td>
-          <td style="padding: 8px 10px; color: #475569; font-size: 12px;">${escapeHtml(e.description || '')}</td>
+          <td style="padding: 8px 10px; color: #475569; font-size: 12px;">
+            <span>${escapeHtml(e.description || '')}</span>${linkBadgeHtml}
+          </td>
           <td style="padding: 8px 10px; text-align: right; font-family: monospace; font-weight: 700; color: #2563eb;">
             ${debitVal > 0 ? formatGlYen(debitVal) : '-'}
           </td>
