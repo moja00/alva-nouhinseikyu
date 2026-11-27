@@ -26474,11 +26474,29 @@ function updatePayrollSummaryDisplays(r) {
   }
 
   if (DOM.dispPayrollCardDeductionSub) {
-    if (r.childcareExemptSocialInsurance) {
-      DOM.dispPayrollCardDeductionSub.textContent = `社保免除 ¥0 ＋ 雇用保険 ¥${formatPayrollCurrency(r.employmentInsurance)}・所得税等`;
-    } else {
-      DOM.dispPayrollCardDeductionSub.textContent = `社保計 ¥${formatPayrollCurrency(r.totalSocialInsurance)} ＋ 所得税・住民税`;
+    const nonEmpSocialIns = (Number(r.healthInsurance) || 0)
+      + (Number(r.welfarePension) || 0)
+      + (Number(r.welfarePensionFund) || 0)
+      + (Number(r.nursingInsurance) || 0);
+    const empIns = Number(r.employmentInsurance) || 0;
+    const incTax = Number(r.incomeTax) || 0;
+    const resTax = Number(r.residentTax) || 0;
+    const mutualAid = Number(r.mutualAid) || 0;
+
+    const socialPart = (r.childcareExemptSocialInsurance && nonEmpSocialIns === 0)
+      ? '社保免除 ¥0'
+      : `社保 ¥${formatPayrollCurrency(nonEmpSocialIns)}`;
+
+    const parts = [
+      socialPart,
+      `雇用保険 ¥${formatPayrollCurrency(empIns)}`,
+      `所得税 ¥${formatPayrollCurrency(incTax)}`,
+      `住民税 ¥${formatPayrollCurrency(resTax)}`
+    ];
+    if (mutualAid !== 0) {
+      parts.push(`共済費 ¥${formatPayrollCurrency(mutualAid)}`);
     }
+    DOM.dispPayrollCardDeductionSub.textContent = parts.join(' + ');
   }
 }
 
