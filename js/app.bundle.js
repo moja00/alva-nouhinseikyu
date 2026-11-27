@@ -35253,20 +35253,35 @@ function openTaxDetailModal(initialTab = 'all') {
   if (rateSel) rateSel.value = 'all';
   if (searchInp) searchInp.value = '';
 
+  modal.style.display = 'flex';
   modal.classList.add('active');
   renderTaxDetailModalContent();
-  console.log('【消費税明細】詳細モーダル描画完了');
+  console.log('【消費税明細】詳細モーダル描画完了', { display: modal.style.display, zIndex: modal.style.zIndex });
 }
 
 function closeTaxDetailModal() {
   const modal = document.getElementById('taxDetailModal');
-  if (modal) modal.classList.remove('active');
+  if (modal) {
+    modal.style.display = 'none';
+    modal.classList.remove('active');
+  }
 }
 
 function renderTaxDetailModalContent() {
   const details = getCurrentConsumptionTaxDetails(currentAccGlobalPeriod);
   taxDetailUiState.lastDetails = details;
   const s = details.summary;
+
+  const titleEl = document.getElementById('taxDetailModalTitle');
+  if (titleEl) {
+    const titleMap = {
+      output: '💰 仮受消費税（課税売上 10% / 8%）明細一覧',
+      input: '💳 仮払消費税（経費・仕入・輸入・T番号確認）明細一覧',
+      unverified: '⚠️ インボイス T番号未登録・要確認 明細一覧',
+      all: '🧾 消費税申告チェック・課税取引 全明細（税理士確認用）'
+    };
+    titleEl.textContent = titleMap[taxDetailUiState.tab] || titleMap.all;
+  }
 
   const periodBadge = document.getElementById('taxDetailPeriodBadge');
   if (periodBadge) {
@@ -35288,60 +35303,26 @@ function renderTaxDetailModalContent() {
     }
   });
 
-  // 1. 付表照合用サマリーテーブル描画
+  // 1. コンパクト付表照合＆インボイスサマリー（下の明細一覧を広く見せる）
   const summaryBox = document.getElementById('taxDetailSummaryBox');
   if (summaryBox) {
-    const diffRef = s.netPayableRef - s.netPayable;
     summaryBox.innerHTML = `
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px;">
-        <div style="background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px 12px;">
-          <div style="font-size: 0.76rem; font-weight: 800; color: #1e3a8a; margin-bottom: 6px;">📊 消費税申告 付表照合（税率・区分別）</div>
-          <table style="width: 100%; border-collapse: collapse; font-size: 0.74rem;">
-            <thead>
-              <tr style="border-bottom: 1px solid #e2e8f0; color: #64748b;">
-                <th style="text-align: left; padding: 3px 4px;">区分</th>
-                <th style="text-align: right; padding: 3px 4px;">税抜本体額</th>
-                <th style="text-align: right; padding: 3px 4px;">消費税額</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr><td style="padding: 3px 4px;">課税売上 10% (仮受)</td><td style="text-align: right; font-family: monospace;">${formatCurrency(s.outBase10)}</td><td style="text-align: right; font-family: monospace; font-weight: 700; color: #1e40af;">${formatCurrency(s.outTax10)}</td></tr>
-              <tr><td style="padding: 3px 4px;">課税売上 8%軽減 (仮受)</td><td style="text-align: right; font-family: monospace;">${formatCurrency(s.outBase8)}</td><td style="text-align: right; font-family: monospace; font-weight: 700; color: #1e40af;">${formatCurrency(s.outTax8)}</td></tr>
-              <tr style="border-top: 1px dashed #cbd5e1;"><td style="padding: 3px 4px;">課税仕入 国内10% (仮払)</td><td style="text-align: right; font-family: monospace;">${formatCurrency(s.inBase10)}</td><td style="text-align: right; font-family: monospace; font-weight: 700; color: #c2410c;">${formatCurrency(s.inDomesticTax10)}</td></tr>
-              <tr><td style="padding: 3px 4px;">課税仕入 国内8%軽減 (仮払)</td><td style="text-align: right; font-family: monospace;">${formatCurrency(s.inBase8)}</td><td style="text-align: right; font-family: monospace; font-weight: 700; color: #c2410c;">${formatCurrency(s.inDomesticTax8)}</td></tr>
-              <tr><td style="padding: 3px 4px;">輸入消費税 (別枠・${s.inImportCount}件)</td><td style="text-align: right; color: #94a3b8;">-</td><td style="text-align: right; font-family: monospace; font-weight: 700; color: #7c2d12;">${formatCurrency(s.inImportTax)}</td></tr>
-              <tr style="border-top: 1.5px solid #94a3b8; background: #f8fafc; font-weight: 800;">
-                <td style="padding: 4px;">差引納付税額 (帳簿基準)</td>
-                <td style="text-align: right;">-</td>
-                <td style="text-align: right; font-family: monospace; color: ${s.netPayable >= 0 ? '#14532d' : '#1d4ed8'};">${formatCurrency(s.netPayable)}</td>
-              </tr>
-            </tbody>
-          </table>
-          ${s.outBaseExempt > 0 ? `<div style="margin-top: 4px; font-size: 0.7rem; color: #475569;">※ 非課税売上等（課税売上割合判定用参考）: <strong>${formatCurrency(s.outBaseExempt)}</strong></div>` : ''}
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px; font-size: 0.74rem;">
+        <div style="background: #fff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 6px 10px;">
+          <div style="font-weight: 800; color: #1e40af;">💰 仮受(売上)計: ${formatCurrency(s.totalOutTax)}</div>
+          <div style="color: #475569; margin-top: 2px;">10%: <strong>${formatCurrency(s.outTax10)}</strong> (本体${formatCurrency(s.outBase10)}) / 8%: <strong>${formatCurrency(s.outTax8)}</strong></div>
         </div>
-
-        <div style="background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px 12px;">
-          <div style="font-size: 0.76rem; font-weight: 800; color: #0f172a; margin-bottom: 6px;">🏷️ インボイス制度 仕入税額控除チェック</div>
-          <table style="width: 100%; border-collapse: collapse; font-size: 0.74rem;">
-            <tbody>
-              <tr><td style="padding: 4px;">✅ 適格請求書 (T番号あり / 100%)</td><td style="text-align: right;">${s.inQualifiedCount}件</td><td style="text-align: right; font-family: monospace; font-weight: 700; color: #047857;">${formatCurrency(s.inQualifiedTax)}</td></tr>
-              <tr><td style="padding: 4px;">🛳️ 輸入消費税 (輸入許可書等 / 100%)</td><td style="text-align: right;">${s.inImportCount}件</td><td style="text-align: right; font-family: monospace; font-weight: 700; color: #0369a1;">${formatCurrency(s.inImportTax)}</td></tr>
-              <tr><td style="padding: 4px;">🕒 経過措置指定 (80%控除)</td><td style="text-align: right;">${s.inTransitionalCount}件</td><td style="text-align: right; font-family: monospace; font-weight: 700; color: #b45309;">${formatCurrency(s.inTransitionalTax)}</td></tr>
-              <tr style="background: ${s.inUnverifiedCount > 0 ? '#fffbeb' : 'transparent'};">
-                <td style="padding: 4px; font-weight: 700; color: ${s.inUnverifiedCount > 0 ? '#b45309' : '#475569'};">⚠️ T番号未登録・要確認</td>
-                <td style="text-align: right; font-weight: 700;">${s.inUnverifiedCount}件</td>
-                <td style="text-align: right; font-family: monospace; font-weight: 700; color: ${s.inUnverifiedCount > 0 ? '#dc2626' : '#475569'};">${formatCurrency(s.inUnverifiedTax)}</td>
-              </tr>
-              <tr style="border-top: 1.5px solid #94a3b8; background: #f8fafc; font-weight: 700;">
-                <td style="padding: 4px;">控除見込額 (T番号判定基準参考)</td>
-                <td style="text-align: right;">-</td>
-                <td style="text-align: right; font-family: monospace;">${formatCurrency(s.inDeductibleRefTotal)}</td>
-              </tr>
-            </tbody>
-          </table>
-          <div style="margin-top: 4px; font-size: 0.7rem; color: #64748b;">
-            ※少額特例（1万円未満）やT番号未登録の経費確認用です（参考納付差額: ${diffRef >= 0 ? '+' : ''}${formatCurrency(diffRef)}）。
-          </div>
+        <div style="background: #fff; border: 1px solid #fed7aa; border-radius: 6px; padding: 6px 10px;">
+          <div style="font-weight: 800; color: #c2410c;">💳 仮払(仕入・輸入)計: ${formatCurrency(s.totalInTax)}</div>
+          <div style="color: #475569; margin-top: 2px;">国内10%: <strong>${formatCurrency(s.inDomesticTax10)}</strong> / 国内8%: <strong>${formatCurrency(s.inDomesticTax8)}</strong> / 輸入: <strong style="color:#6b21a8;">${formatCurrency(s.inImportTax)}</strong></div>
+        </div>
+        <div style="background: #fff; border: 1px solid ${s.inUnverifiedCount > 0 ? '#fcd34d' : '#bbf7d0'}; border-radius: 6px; padding: 6px 10px;">
+          <div style="font-weight: 800; color: ${s.inUnverifiedCount > 0 ? '#b45309' : '#047857'};">🏷️ インボイス内訳 (仮払)</div>
+          <div style="color: #475569; margin-top: 2px;">適格:${s.inQualifiedCount}件(${formatCurrency(s.inQualifiedTax)}) / 輸入:${s.inImportCount}件 / 経過80%:${s.inTransitionalCount}件 / <strong style="color:${s.inUnverifiedCount > 0 ? '#dc2626' : '#475569'};">T無:${s.inUnverifiedCount}件(${formatCurrency(s.inUnverifiedTax)})</strong></div>
+        </div>
+        <div style="background: #fff; border: 1px solid #bbf7d0; border-radius: 6px; padding: 6px 10px;">
+          <div style="font-weight: 800; color: ${s.netPayable >= 0 ? '#14532d' : '#1d4ed8'};">⚖️ 差引納付(帳簿): ${formatCurrency(s.netPayable)}</div>
+          <div style="color: #475569; margin-top: 2px;">T番号控除見込参考: <strong>${formatCurrency(s.netPayableRef)}</strong>${s.outBaseExempt > 0 ? ` / 非課税売:${formatCurrency(s.outBaseExempt)}` : ''}</div>
         </div>
       </div>
     `;

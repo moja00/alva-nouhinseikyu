@@ -23,7 +23,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
 
-  <link rel="stylesheet" href="css/style.css?v=20261127_tax_detail_audit">
+  <link rel="stylesheet" href="css/style.css?v=20261127_tax_detail_v2">
   <link rel="stylesheet" href="css/print.css?v=20261118_print_pagebreak_fix" media="print">
   <!-- ブラウザ内AI文字認識（OCR）エンジン -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -343,7 +343,7 @@
           style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
           <span
-            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.27-tax-detail-audit</span>
+            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.27-tax-detail-v2</span>
         </div>
       </div>
 
@@ -4267,7 +4267,7 @@
   </div>
 
   <!-- 財務会計 売上・入金消込 連動：請求書詳細・直接編集モーダル（1対1完全同期） -->
-  <div class="modal-overlay" id="invoiceQuickEditModal" style="z-index: 1070;">
+  <div class="modal-overlay" id="invoiceQuickEditModal" style="z-index: 99990;">
     <div class="modal-card" style="max-width: 880px; max-height: 90vh; display: flex; flex-direction: column;">
       <div class="modal-header"
         style="background: linear-gradient(135deg, #1e293b, #0f172a); color: white; padding: 14px 20px; border-top-left-radius: 12px; border-top-right-radius: 12px;">
@@ -5958,7 +5958,7 @@
           <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             <h2 class="view-screen-title" style="margin: 0;">勤怠管理・退勤タイムカード</h2>
             <span
-              style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.27-tax-detail-audit</span>
+              style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.27-tax-detail-v2</span>
           </div>
           <span class="view-screen-subtitle">休憩1時間自動控除・ワンタップ出退勤打刻・月次出勤簿・打刻漏れ修正</span>
         </div>
@@ -8340,33 +8340,34 @@
   </div>
 
   <!-- 税理士提出・インボイス確認用 消費税詳細モーダル -->
-  <div class="modal-overlay" id="taxDetailModal" style="z-index: 1060;">
-    <div class="modal-card" style="max-width: 1180px; width: 96vw; max-height: 92vh; display: flex; flex-direction: column;">
-      <div class="modal-header" style="background: #f8fafc; border-bottom: 1.5px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; gap: 10px;">
+  <div class="modal-overlay" id="taxDetailModal"
+    style="display: none; opacity: 1 !important; pointer-events: auto !important; position: fixed; inset: 0; z-index: 90000; background: rgba(15, 23, 42, 0.72); align-items: center; justify-content: center; padding: 14px; box-sizing: border-box;">
+    <div class="modal-card" style="max-width: 1220px; width: 96vw; height: 90vh; max-height: 90vh; display: flex; flex-direction: column; transform: none !important; opacity: 1 !important;">
+      <div class="modal-header" style="background: linear-gradient(135deg, #1e293b, #0f172a); color: #ffffff; border-bottom: 1.5px solid #334155; padding: 12px 18px; display: flex; justify-content: space-between; align-items: center; gap: 10px;">
         <div style="display: flex; align-items: center; gap: 10px;">
           <span style="font-size: 1.3rem;">🧾</span>
           <div>
-            <h3 class="modal-title" style="margin: 0;">消費税申告チェック・課税取引明細（税理士確認用）</h3>
-            <div id="taxDetailPeriodBadge" style="font-size: 0.75rem; color: #475569; margin-top: 2px;">対象期間: -</div>
+            <h3 class="modal-title" id="taxDetailModalTitle" style="margin: 0; color: #ffffff; font-size: 1.05rem;">消費税申告チェック・課税取引明細（税理士確認用）</h3>
+            <div id="taxDetailPeriodBadge" style="font-size: 0.75rem; color: #cbd5e1; margin-top: 2px;">対象期間: -</div>
           </div>
         </div>
         <div style="display: flex; align-items: center; gap: 8px;">
           <button type="button" class="btn btn-secondary btn-sm" id="btnExportTaxDetailCSVModal"
-            style="background: #ecfdf5; border: 1px solid #86efac; color: #047857; font-weight: 700; font-size: 0.78rem;">
+            style="background: #10b981; border: none; color: #ffffff; font-weight: 700; font-size: 0.78rem; padding: 6px 12px;">
             📥 税理士用CSVダウンロード
           </button>
-          <button type="button" class="btn-icon-danger" id="btnCloseTaxDetailModal" style="font-size: 1.2rem;">✕</button>
+          <button type="button" class="btn-icon-danger" id="btnCloseTaxDetailModal" style="font-size: 1.15rem; background: rgba(255,255,255,0.15); color: #ffffff;">✕</button>
         </div>
       </div>
 
-      <div class="modal-body" style="padding: 16px 20px; overflow-y: auto; flex: 1; background: #ffffff;">
-        <!-- 1. 税率別・インボイス区分別サマリー（付表照合テーブル） -->
-        <div id="taxDetailSummaryBox" style="margin-bottom: 14px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px 14px;">
+      <div class="modal-body" style="padding: 12px 16px; overflow-y: auto; flex: 1; background: #ffffff; display: flex; flex-direction: column; gap: 10px;">
+        <!-- 1. コンパクト税区分サマリーストリップ（明細をすぐ主役表示） -->
+        <div id="taxDetailSummaryBox" style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px 12px; flex-shrink: 0;">
           <!-- JSで動的描画 -->
         </div>
 
         <!-- 2. タブ・税率フィルタ・キーワード検索 -->
-        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; flex-shrink: 0;">
           <div style="display: flex; gap: 6px; flex-wrap: wrap;">
             <button type="button" class="btn btn-sm tax-detail-tab-btn active" data-tax-tab="all"
               style="font-weight: 700;">すべて</button>
@@ -8390,8 +8391,8 @@
           </div>
         </div>
 
-        <!-- 3. 明細テーブル -->
-        <div style="border: 1px solid #cbd5e1; border-radius: 8px; overflow: auto; max-height: 48vh;">
+        <!-- 3. 明細テーブル（残りの高さを最大限活用） -->
+        <div style="border: 1px solid #cbd5e1; border-radius: 8px; overflow: auto; flex: 1; min-height: 280px;">
           <table class="acc-table" style="width: 100%; border-collapse: collapse; font-size: 0.78rem; min-width: 920px;">
             <thead style="position: sticky; top: 0; background: #f1f5f9; z-index: 2; border-bottom: 2px solid #cbd5e1;">
               <tr style="text-align: left; color: #334155;">
@@ -8416,7 +8417,7 @@
       </div>
 
       <div class="modal-footer"
-        style="padding: 12px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+        style="padding: 10px 18px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
         <div id="taxDetailFooterSummary" style="font-size: 0.8rem; font-weight: 700; color: #1e293b;">
           表示件数: 0件
         </div>
@@ -8429,7 +8430,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261127_tax_detail_audit"></script>
+  <script src="js/app.bundle.js?v=20261127_tax_detail_v2"></script>
 </body>
 
 </html>
