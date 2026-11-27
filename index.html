@@ -23,7 +23,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
 
-  <link rel="stylesheet" href="css/style.css?v=20261127_lot_card_responsive">
+  <link rel="stylesheet" href="css/style.css?v=20261127_doc_lang_guard">
   <link rel="stylesheet" href="css/print.css?v=20261118_print_pagebreak_fix" media="print">
   <!-- ブラウザ内AI文字認識（OCR）エンジン -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -343,7 +343,7 @@
           style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
           <span
-            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.27-lot-card-responsive</span>
+            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.27-doc-lang-guard</span>
         </div>
       </div>
 
@@ -434,6 +434,10 @@
                 🌐 English（海外輸出）
               </button>
             </div>
+          </div>
+          <div id="docLangLockHint"
+            style="display: none; font-size: 0.68rem; color: #b45309; background: #fffbeb; border: 1px solid #fde68a; border-radius: 5px; padding: 3px 7px; font-weight: 600; line-height: 1.35;">
+            🔒 確定発行済みの日本語伝票はEnglishモードに切り替えできません（変更する場合は「確定取消」後に操作してください）
           </div>
 
           <!-- 海外輸出（English）モード専用：通貨・Incoterms・輸送経路・出荷元・梱包・英語銀行情報パネル -->
@@ -5949,7 +5953,7 @@
           <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             <h2 class="view-screen-title" style="margin: 0;">勤怠管理・退勤タイムカード</h2>
             <span
-              style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.27-lot-card-responsive</span>
+              style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.27-doc-lang-guard</span>
           </div>
           <span class="view-screen-subtitle">休憩1時間自動控除・ワンタップ出退勤打刻・月次出勤簿・打刻漏れ修正</span>
         </div>
@@ -8637,7 +8641,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261127_lot_card_responsive"></script>
+  <script src="js/app.bundle.js?v=20261127_doc_lang_guard"></script>
 </body>
 
 </html>

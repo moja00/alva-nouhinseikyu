@@ -114,6 +114,7 @@ export function createEmptyInvoice(docType = 'invoice') {
   return {
     id: 'doc_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
     docType: docType,
+    docLanguage: 'ja',
     docNumber: generateDocNumber(docType),
     issueDate: dates.issue,
     dueDate: dates.due,

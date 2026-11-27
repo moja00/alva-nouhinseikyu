@@ -947,6 +947,7 @@ function initApp() {
 
   if (saved) {
     currentDoc = saved;
+    normalizeLoadedDocLanguage(currentDoc);
     if (!currentDoc.issuer) currentDoc.issuer = {};
     // プロファイルの最新自社情報をベースに確実に補完
     currentDoc.issuer = {
@@ -1528,11 +1529,34 @@ setInterval(() => {
 }, 1000);
 
 // ==========================================================================
-// フォームへのデータ設定
+// フォームへのデータ設定 ＆ 伝票ロード正規化ヘルパー
 // ==========================================================================
+function normalizeLoadedDocLanguage(doc) {
+  if (!doc || typeof doc !== 'object') return doc;
+  doc.docLanguage = (doc.docLanguage === 'en') ? 'en' : 'ja';
+  return doc;
+}
+
+function applyLoadedDocToEditor(rawDoc, { saveActive = true } = {}) {
+  if (!rawDoc) return null;
+  const cloned = JSON.parse(JSON.stringify(rawDoc));
+  normalizeLoadedDocLanguage(cloned);
+  currentDoc = cloned;
+  if (saveActive && typeof saveActiveDoc === 'function') {
+    saveActiveDoc(currentDoc);
+  }
+  populateFormFromDoc();
+  if (typeof updateThemeColor === 'function') {
+    updateThemeColor(currentDoc.themeColor || 'indigo');
+  }
+  renderAll({ skipSave: !saveActive });
+  return currentDoc;
+}
+
 function populateFormFromDoc() {
+  normalizeLoadedDocLanguage(currentDoc);
   if (typeof syncExportSettingsFormFromDoc === 'function') {
-    syncExportSettingsFormFromDoc();
+    syncExportSettingsFormFromDoc(true);
   }
   if (typeof renderPackingItemsEditor === 'function') {
     renderPackingItemsEditor();
@@ -2189,8 +2213,11 @@ function renderAll(options = {}) {
     DOM.sheetNotesCard.style.display = 'none';
   }
 
-  // 確定発行状態とツールバーボタン・財務会計連携バッジの更新
+  // 確定発行状態とツールバーボタン・財務会計連携バッジ・帳票言語ロック状態の更新
   const isDocIssued = !!(currentDoc.isIssued && !currentDoc.isCancelled);
+  if (typeof syncDocLanguageBarUI === 'function') {
+    syncDocLanguageBarUI();
+  }
 
   if (DOM.btnCancelIssueDoc) {
     DOM.btnCancelIssueDoc.style.display = isDocIssued ? 'inline-flex' : 'none';
@@ -2334,12 +2361,14 @@ function populateShipFromVendorSelect(forceRefresh = false) {
   if (currentVal) sel.value = currentVal;
 }
 
-function syncExportSettingsFormFromDoc() {
+function syncDocLanguageBarUI() {
   if (!currentDoc) return;
   const lang = currentDoc.docLanguage === 'en' ? 'en' : 'ja';
   const btnJa = document.getElementById('btnDocLangJa');
   const btnEn = document.getElementById('btnDocLangEn');
   const panel = document.getElementById('exportSettingsPanel');
+  const lockHint = document.getElementById('docLangLockHint');
+  const isIssuedJaLocked = !!(currentDoc.isIssued && !currentDoc.isCancelled && lang !== 'en');
 
   if (btnJa && btnEn) {
     if (lang === 'en') {
@@ -2349,15 +2378,38 @@ function syncExportSettingsFormFromDoc() {
       btnJa.style.border = '1.5px solid #2563eb'; btnJa.style.background = '#eff6ff'; btnJa.style.color = '#1d4ed8';
       btnEn.style.border = '1px solid #cbd5e1'; btnEn.style.background = '#ffffff'; btnEn.style.color = '#475569';
     }
+    btnEn.disabled = isIssuedJaLocked;
+    btnEn.style.opacity = isIssuedJaLocked ? '0.45' : '1';
+    btnEn.style.cursor = isIssuedJaLocked ? 'not-allowed' : 'pointer';
+    btnEn.title = isIssuedJaLocked
+      ? '確定発行済みの日本語伝票はEnglishモードに切り替えできません（確定取消後に切替可能）'
+      : '海外輸出用の英語3点セット（Commercial Invoice / Packing List / Receipt）に切り替え';
+  }
+  if (lockHint) {
+    lockHint.style.display = isIssuedJaLocked ? 'block' : 'none';
   }
   if (panel) panel.style.display = (lang === 'en') ? 'flex' : 'none';
-  if (lang === 'en') populateShipFromVendorSelect();
+  return lang;
+}
+
+function syncExportSettingsFormFromDoc(forceSync = false) {
+  if (!currentDoc) return;
+  const lang = syncDocLanguageBarUI();
+  const hintEl = document.getElementById('expJpyEquivHint');
+  if (lang !== 'en') {
+    if (hintEl) hintEl.style.display = 'none';
+    if (typeof updatePackingQtyCheckBadge === 'function') {
+      updatePackingQtyCheckBadge();
+    }
+    return;
+  }
+  populateShipFromVendorSelect();
 
   const meta = ensureExportMeta(currentDoc);
   const setVal = (id, val) => {
     const el = document.getElementById(id);
     if (!el) return;
-    if (document.activeElement === el) return;
+    if (!forceSync && document.activeElement === el) return;
     const strVal = String(val ?? '');
     if (el.value !== strVal) el.value = strVal;
   };
@@ -2382,11 +2434,10 @@ function syncExportSettingsFormFromDoc() {
   setVal('expBankInfoEn', meta.bankInfoEn || '');
 
   // 円換算ヒント更新
-  const hintEl = document.getElementById('expJpyEquivHint');
   if (hintEl) {
     const rate = Number(meta.exchangeRate) || 0;
     const curr = meta.currency || 'USD';
-    if (lang === 'en' && curr !== 'JPY' && rate > 0) {
+    if (curr !== 'JPY' && rate > 0) {
       const foreignSub = (currentDoc.items || []).reduce((s, it) => s + ((Number(it.quantity) || 0) * (Number(it.unitPrice) || 0)), 0);
       const jpyEquiv = Math.round(foreignSub * rate);
       hintEl.textContent = `💱 社内会計参考 円換算: ¥${jpyEquiv.toLocaleString('ja-JP')} (${curr} ${formatPoMoney(foreignSub, curr)} × @${rate})`;
@@ -2403,26 +2454,53 @@ function syncExportSettingsFormFromDoc() {
 }
 
 window.setDocLanguage = function (lang = 'ja') {
-  if (!currentDoc) return;
+  if (!currentDoc) return false;
+  const prevLang = (currentDoc.docLanguage === 'en') ? 'en' : 'ja';
   const targetLang = (lang === 'en') ? 'en' : 'ja';
-  console.log('【帳票言語切替】実行開始', { from: currentDoc.docLanguage || 'ja', to: targetLang });
+
+  // 日本語で確定発行済みの伝票は、税率・会計整合性保護のためイングリッシュへの切替を禁止
+  if (targetLang === 'en' && currentDoc.isIssued && !currentDoc.isCancelled && prevLang !== 'en') {
+    console.warn('【帳票言語切替】ブロック: 日本語で確定発行済みの伝票はEnglishに切替不可', {
+      id: currentDoc.id,
+      docNumber: currentDoc.docNumber
+    });
+    syncDocLanguageBarUI();
+    showToast('🔒 確定発行済みの日本語伝票は海外輸出（English）モードに切り替えできません。変更する場合は先に「確定取消（下書きに戻す）」を行ってください。', 'warning');
+    return false;
+  }
+
+  console.log('【帳票言語切替】実行開始', { from: prevLang, to: targetLang });
   currentDoc.docLanguage = targetLang;
   const meta = ensureExportMeta(currentDoc);
   const notesEl = document.getElementById('inputNotes');
 
   if (targetLang === 'en') {
-    // 備考が未入力または日本語のデフォルト定型文であれば英語定型文へ自動切替（手動編集時は尊重）
-    if (isDefaultJapaneseRemark(currentDoc.notes)) {
-      if ((currentDoc.notes || '').trim()) {
-        meta.savedJaNotes = currentDoc.notes;
+    // 元の日本語状態（備考・明細税率）を初回切替時のみ完全退避
+    if (prevLang !== 'en') {
+      meta.savedJaNotes = currentDoc.notes ?? '';
+      meta.hasSavedJaNotes = true;
+      if (isDefaultJapaneseRemark(currentDoc.notes)) {
+        currentDoc.notes = DEFAULT_EN_EXPORT_REMARK;
+        if (notesEl) notesEl.value = DEFAULT_EN_EXPORT_REMARK;
       }
+      meta.savedJaItemTaxRates = (currentDoc.items || []).map(it => {
+        if (!it) return 10;
+        const origTax = (it.taxRate !== undefined && it.taxRate !== null && it.taxRate !== '') ? Number(it.taxRate) : 10;
+        it._savedJaTaxRate = origTax;
+        return origTax;
+      });
+    } else if (isDefaultJapaneseRemark(currentDoc.notes)) {
       currentDoc.notes = DEFAULT_EN_EXPORT_REMARK;
       if (notesEl) notesEl.value = DEFAULT_EN_EXPORT_REMARK;
     }
 
-    // 海外モード選択時：デフォルト税率を 0%（輸出免税）に設定し、マスタに英語表記・HSコードがあれば自動引用
+    // 海外モード選択時：デフォルト税率を 0%（輸出免税）に設定し、マスタに英語表記・HSコードがあれば自動引用（自動補完分を記録）
     const itemMasters = typeof getItemMasterList === 'function' ? getItemMasterList(false) : [];
     (currentDoc.items || []).forEach(it => {
+      if (!it) return;
+      if (it._savedJaTaxRate === undefined) {
+        it._savedJaTaxRate = (it.taxRate !== undefined && it.taxRate !== null && it.taxRate !== '') ? Number(it.taxRate) : 10;
+      }
       it.taxRate = 0;
       const m = itemMasters.find(x => x && (
         (it.itemId && x.id === it.itemId) ||
@@ -2431,27 +2509,61 @@ window.setDocLanguage = function (lang = 'ja') {
         (x.name && it.name && String(x.name).trim() === String(it.name).trim())
       ));
       if (m) {
-        if (m.nameEn && !it.nameEn) it.nameEn = m.nameEn;
-        if (m.unitEn && !it.unitEn) it.unitEn = m.unitEn;
-        if (m.hsCode && !it.hsCode) it.hsCode = m.hsCode;
+        const autoFilled = Array.isArray(it._autoFilledExportFields) ? it._autoFilledExportFields : [];
+        if (m.nameEn && !it.nameEn) { it.nameEn = m.nameEn; if (!autoFilled.includes('nameEn')) autoFilled.push('nameEn'); }
+        if (m.unitEn && !it.unitEn) { it.unitEn = m.unitEn; if (!autoFilled.includes('unitEn')) autoFilled.push('unitEn'); }
+        if (m.hsCode && !it.hsCode) { it.hsCode = m.hsCode; if (!autoFilled.includes('hsCode')) autoFilled.push('hsCode'); }
+        if (autoFilled.length > 0) it._autoFilledExportFields = autoFilled;
       }
     });
     if (typeof renderItemInputCards === 'function') renderItemInputCards();
   } else {
-    // 日本語モードに戻した時、英語デフォルト文言のままなら退避していた日本語備考を復元
-    if ((currentDoc.notes || '').trim() === DEFAULT_EN_EXPORT_REMARK && meta.savedJaNotes) {
-      currentDoc.notes = meta.savedJaNotes;
-      if (notesEl) notesEl.value = meta.savedJaNotes;
+    // 日本語モードに戻した時：退避していた日本語備考・税率・自動補完フィールドを完全復元
+    if (meta.hasSavedJaNotes && (currentDoc.notes || '').trim() === DEFAULT_EN_EXPORT_REMARK) {
+      currentDoc.notes = meta.savedJaNotes ?? '';
+      if (notesEl) notesEl.value = currentDoc.notes;
+    } else if (!meta.hasSavedJaNotes && (currentDoc.notes || '').trim() === DEFAULT_EN_EXPORT_REMARK) {
+      currentDoc.notes = meta.savedJaNotes || 'お振込手数料は貴社にてご負担くださいますようお願い申し上げます。\nご不明な点がございましたらお気軽にお問い合わせください。';
+      if (notesEl) notesEl.value = currentDoc.notes;
     }
+    delete meta.savedJaNotes;
+    delete meta.hasSavedJaNotes;
+
+    const itemMasters = typeof getItemMasterList === 'function' ? getItemMasterList(false) : [];
+    const savedRates = Array.isArray(meta.savedJaItemTaxRates) ? meta.savedJaItemTaxRates : [];
+    (currentDoc.items || []).forEach((it, idx) => {
+      if (!it) return;
+      if (it._savedJaTaxRate !== undefined) {
+        it.taxRate = Number(it._savedJaTaxRate);
+        delete it._savedJaTaxRate;
+      } else if (savedRates[idx] !== undefined) {
+        it.taxRate = Number(savedRates[idx]);
+      } else if (prevLang === 'en' && Number(it.taxRate) === 0) {
+        const m = itemMasters.find(x => x && (
+          (it.itemId && x.id === it.itemId) ||
+          (it.productId && x.id === it.productId) ||
+          (it.sku && x.sku && String(x.sku).toUpperCase() === String(it.sku).toUpperCase()) ||
+          (x.name && it.name && String(x.name).trim() === String(it.name).trim())
+        ));
+        it.taxRate = (m && m.taxRate !== undefined && m.taxRate !== null) ? Number(m.taxRate) : 10;
+      }
+      if (Array.isArray(it._autoFilledExportFields)) {
+        it._autoFilledExportFields.forEach(f => { delete it[f]; });
+        delete it._autoFilledExportFields;
+      }
+    });
+    delete meta.savedJaItemTaxRates;
+
     if (typeof renderItemInputCards === 'function') renderItemInputCards();
   }
 
-  syncExportSettingsFormFromDoc();
+  syncExportSettingsFormFromDoc(true);
   if (typeof renderPackingItemsEditor === 'function') renderPackingItemsEditor();
   renderAll();
   showToast(targetLang === 'en'
     ? '🌐 海外輸出モード（English: Commercial Invoice / Packing List / Receipt）に切り替えました（デフォルト税率0%）'
-    : '🇯🇵 国内モード（日本語: 請求書・納品書・領収書）に切り替えました', 'info');
+    : '🇯🇵 国内モード（日本語: 請求書・納品書・領収書）に切り替え・元の税率等を復元しました', 'info');
+  return true;
 };
 
 function buildEnglishExportDocumentsHtml(doc, totals) {
@@ -3178,6 +3290,7 @@ function renderEnglishExportSheets(totals, enContainer) {
     }
 
     if (!id || !fieldMap[id]) return;
+    if (currentDoc.docLanguage !== 'en') return;
     const meta = ensureExportMeta(currentDoc);
     let val = target.value;
     if (id === 'expExchangeRate' || id === 'expNetWeight' || id === 'expGrossWeight' || id === 'expPalletWeight') {
@@ -5755,11 +5868,9 @@ function setupEventListeners() {
     DOM.btnLoadSample.addEventListener('click', () => {
       const targetType = currentDoc.docType === 'delivery' ? 'delivery' : 'invoice';
       const sample = SAMPLE_DOCUMENTS[targetType] || SAMPLE_DOCUMENTS.invoice;
-      currentDoc = JSON.parse(JSON.stringify(sample));
-      currentDoc.issuer.stampDataUrl = generateCompanyStamp(currentDoc.issuer.name);
-      populateFormFromDoc();
-      updateThemeColor(currentDoc.themeColor || 'indigo');
-      renderAll();
+      const sampleCopy = JSON.parse(JSON.stringify(sample));
+      sampleCopy.issuer.stampDataUrl = generateCompanyStamp(sampleCopy.issuer.name);
+      applyLoadedDocToEditor(sampleCopy, { saveActive: true });
       showToast('サンプルデータを読み込みました');
     });
   }
@@ -5854,9 +5965,7 @@ function setupEventListeners() {
         const result = importDataFromJSON(event.target.result);
         if (result.success) {
           if (result.activeDoc) {
-            currentDoc = result.activeDoc;
-            populateFormFromDoc();
-            renderAll();
+            applyLoadedDocToEditor(result.activeDoc, { saveActive: true });
           }
           closeBackupModal();
           showToast('データを正常に復元しました！', 'success');
@@ -7011,11 +7120,7 @@ function setupEventListeners() {
       if (!currentIqeDoc) return;
       const docId = DOM.iqeDocId ? DOM.iqeDocId.value : currentIqeDoc.id;
       const full = getDocFromHistory(docId) || currentIqeDoc;
-      currentDoc = JSON.parse(JSON.stringify(full));
-      saveActiveDoc(currentDoc);
-      populateFormFromDoc();
-      updateThemeColor(currentDoc.themeColor || 'indigo');
-      renderAll();
+      applyLoadedDocToEditor(full, { saveActive: true });
       closeInvoiceQuickEditModal();
       switchAppView('invoice');
       showToast(`伝票「${currentDoc.docNumber || ''}」を納品請求書エディタで開きました`, 'success');
@@ -8066,10 +8171,7 @@ function filterAndRenderHistoryList() {
     card.querySelector('.btn-load-doc').addEventListener('click', () => {
       const full = getDocFromHistory(item.id);
       if (full) {
-        currentDoc = full;
-        populateFormFromDoc();
-        updateThemeColor(currentDoc.themeColor || 'indigo');
-        renderAll();
+        applyLoadedDocToEditor(full, { saveActive: true });
         closeHistoryModal();
         showToast(`「${item.clientName || '取引先'}」の書類を読み込みました`, 'success');
       }
@@ -11614,10 +11716,7 @@ function openInvoiceFromSerial(docId, docNumber) {
     }
   }
   if (doc) {
-    currentDoc = doc;
-    if (typeof populateFormFromDoc === 'function') populateFormFromDoc();
-    if (typeof updateThemeColor === 'function') updateThemeColor(currentDoc.themeColor || 'indigo');
-    if (typeof renderAll === 'function') renderAll();
+    applyLoadedDocToEditor(doc, { saveActive: true });
     switchAppView('invoice');
     showToast(`書類「${doc.docNumber || doc.id}」を開きました`, 'success');
   } else {
@@ -27710,8 +27809,7 @@ function startDocCorrection(origDocNumber) {
   } catch (e) { }
 
   // 4. エディタにロードして開く
-  currentDoc = newDoc;
-  if (typeof renderAll === 'function') renderAll();
+  applyLoadedDocToEditor(newDoc, { saveActive: true });
 
   // 書類一覧モーダルを閉じてエディタ画面に遷移
   const histModal = document.getElementById('historyModal');
