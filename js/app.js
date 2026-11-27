@@ -693,7 +693,6 @@ const DOM = {
   kpiUnpaidSales: document.getElementById('kpiUnpaidSales'),
   kpiCollectionRate: document.getElementById('kpiCollectionRate'),
   accMonthlyChart: document.getElementById('accMonthlyChart'),
-  accExpenseCategoryList: document.getElementById('accExpenseCategoryList'),
   accSalesTableBody: document.getElementById('accSalesTableBody'),
   btnFilterAllInvoices: document.getElementById('btnFilterAllInvoices'),
   btnFilterUnpaidInvoices: document.getElementById('btnFilterUnpaidInvoices'),
@@ -18982,9 +18981,6 @@ function renderAccountingDashboard(periodFilter = currentAccGlobalPeriod) {
   if (DOM.kpiUnpaidSales) DOM.kpiUnpaidSales.textContent = formatCurrency(pnl.unpaidSalesInc || 0);
   if (DOM.kpiCollectionRate) DOM.kpiCollectionRate.textContent = `回収率: ${(pnl.collectionRate || 0).toFixed(1)}%`;
 
-  // 科目別経費内訳の描画
-  renderExpenseCategoryBreakdown(pnl);
-
   // 財務諸表形式 損益計算書テーブルの描画
   renderFormalProfitAndLossTable(pnl);
 
@@ -19179,41 +19175,6 @@ function renderFormalProfitAndLossTable(pnl) {
   `;
 
   tbody.innerHTML = html;
-}
-
-function renderExpenseCategoryBreakdown(pnl) {
-  if (!DOM.accExpenseCategoryList) return;
-  const sgaSource = pnl.sgaByCategory || pnl.expenseByCategory || {};
-  const categories = Object.entries(sgaSource)
-    .filter(([catName, amt]) => {
-      if (amt <= 0) return false;
-      const def = typeof findAccountDef === 'function' ? findAccountDef(catName) : null;
-      return !def || (def.subType !== 'cost_of_sales' && def.subType !== 'non_operating_expense');
-    })
-    .sort((a, b) => b[1] - a[1]);
-
-  if (categories.length === 0) {
-    DOM.accExpenseCategoryList.innerHTML = `<div style="text-align: center; color: var(--slate-400); padding: 24px;">この期間の経費データはありません</div>`;
-    return;
-  }
-
-  const totalExp = pnl.totalOperatingExpenses || 1;
-  let html = '';
-  categories.forEach(([catName, amount]) => {
-    const percent = totalExp > 0 ? ((amount / totalExp) * 100).toFixed(1) : 0;
-    html += `
-      <div style="margin-bottom: 12px;">
-        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;">
-          <span style="font-weight: 600; color: var(--slate-700);">${escapeHtml(catName)}</span>
-          <span style="font-weight: 700; color: var(--slate-900); font-family: monospace;">${formatCurrency(amount)} <span style="font-size: 11px; color: var(--slate-500); font-weight: normal;">(${percent}%)</span></span>
-        </div>
-        <div style="background: var(--slate-100); height: 8px; border-radius: 9999px; overflow: hidden;">
-          <div style="background: var(--indigo-600); width: ${percent}%; height: 100%; border-radius: 9999px; transition: width 0.3s ease;"></div>
-        </div>
-      </div>
-    `;
-  });
-  DOM.accExpenseCategoryList.innerHTML = html;
 }
 
 function renderMonthlyBarChart(periodFilter = currentAccGlobalPeriod) {

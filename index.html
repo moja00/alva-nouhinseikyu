@@ -23,7 +23,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
 
-  <link rel="stylesheet" href="css/style.css?v=20261127_tax_detail_v2">
+  <link rel="stylesheet" href="css/style.css?v=20261127_remove_dup_expense_card">
   <link rel="stylesheet" href="css/print.css?v=20261118_print_pagebreak_fix" media="print">
   <!-- ブラウザ内AI文字認識（OCR）エンジン -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -343,7 +343,7 @@
           style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
           <span
-            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.27-tax-detail-v2</span>
+            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.27-remove-dup-expense-card</span>
         </div>
       </div>
 
@@ -4711,16 +4711,6 @@
             </div>
           </div>
 
-          <!-- 科目別経費内訳 -->
-          <div
-            style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
-            <span style="font-size: 0.875rem; font-weight: 700; color: #1e293b; display: block; margin-bottom: 12px;">📑
-              経費科目別内訳</span>
-            <div id="accExpenseCategoryList" style="display: flex; flex-direction: column; gap: 8px;">
-              <!-- JSで科目別プログレスバーを出力 -->
-            </div>
-          </div>
-
           <!-- 📦 棚卸資産（在庫マスタ）連動 ＆ 売上原価（期末棚卸高）計上パネル -->
           <div id="accInventoryIntegrationPanel" class="acc-inventory-panel"
             style="background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); border: 1.5px solid #cbd5e1; border-radius: 12px; padding: 18px 20px; margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
@@ -5958,7 +5948,7 @@
           <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             <h2 class="view-screen-title" style="margin: 0;">勤怠管理・退勤タイムカード</h2>
             <span
-              style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.27-tax-detail-v2</span>
+              style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.27-remove-dup-expense-card</span>
           </div>
           <span class="view-screen-subtitle">休憩1時間自動控除・ワンタップ出退勤打刻・月次出勤簿・打刻漏れ修正</span>
         </div>
@@ -8430,7 +8420,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261127_tax_detail_v2"></script>
+  <script src="js/app.bundle.js?v=20261127_remove_dup_expense_card"></script>
 </body>
 
 </html>
