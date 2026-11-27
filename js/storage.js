@@ -1175,6 +1175,9 @@ export function deduplicateClientMasterList(list) {
 /**
  * 現在編集中の帳票を保存
  */
+let _saveActiveDocServerTimer = null;
+let _pendingActiveDocForServer = null;
+
 export function saveActiveDoc(doc) {
   try {
     const serialized = JSON.stringify(doc);
@@ -1183,10 +1186,18 @@ export function saveActiveDoc(doc) {
       if (localStorage.getItem(KEYS.ACTIVE_DOC) === serialized) return;
     } catch (_) { }
     localStorageSetItemAndSync(KEYS.ACTIVE_DOC, serialized);
-    // サーバーファイル（data/invoices/active_doc.json）にも即時保存
-    saveServerActiveDoc(doc).catch(e => {
-      console.warn('Server active doc save failed:', e);
-    });
+    // 連続タイピング中のサーバーPOST連打を防ぎつつ 500ms 後に自動同期
+    _pendingActiveDocForServer = doc;
+    if (_saveActiveDocServerTimer) clearTimeout(_saveActiveDocServerTimer);
+    _saveActiveDocServerTimer = setTimeout(() => {
+      const targetDoc = _pendingActiveDocForServer;
+      _saveActiveDocServerTimer = null;
+      _pendingActiveDocForServer = null;
+      if (!targetDoc) return;
+      saveServerActiveDoc(targetDoc).catch(e => {
+        console.warn('Server active doc save failed:', e);
+      });
+    }, 500);
   } catch (e) {
     console.error('Failed to save active doc to localStorage:', e);
   }

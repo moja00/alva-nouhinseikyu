@@ -1533,6 +1533,9 @@ function populateFormFromDoc() {
   if (typeof syncExportSettingsFormFromDoc === 'function') {
     syncExportSettingsFormFromDoc();
   }
+  if (typeof renderPackingItemsEditor === 'function') {
+    renderPackingItemsEditor();
+  }
   // ⚠️ ユーザーが編集・削除した内容を勝手に上書き復元させないため、syncEndUsersToDocItems は呼ばない
 
   // 書類種別ボタングループの選択状態（納品請求書 vs 見積書）
@@ -2311,10 +2314,11 @@ function ensureExportMeta(doc) {
   return doc.exportMeta;
 }
 
-function populateShipFromVendorSelect() {
+function populateShipFromVendorSelect(forceRefresh = false) {
   const sel = document.getElementById('expShipFromVendorSelect');
   if (!sel || typeof getClientMasterList !== 'function') return;
-  const list = getClientMasterList() || [];
+  if (!forceRefresh && sel.options && sel.options.length > 1) return;
+  const list = getClientMasterList(false) || [];
   const candidates = list.filter(c => c && (c.nameEn || c.name));
   const currentVal = sel.value;
   let html = '<option value="">マスタから引用...</option>';
@@ -2391,9 +2395,9 @@ function syncExportSettingsFormFromDoc() {
     }
   }
 
-  // Packing List 専用梱包明細エディタを同期描画
-  if (typeof renderPackingItemsEditor === 'function') {
-    renderPackingItemsEditor();
+  // ※ 入力中にフォームDOMを破壊しないよう、ここでは軽量な整合チェックバッジのみ更新
+  if (typeof updatePackingQtyCheckBadge === 'function') {
+    updatePackingQtyCheckBadge();
   }
 }
 
@@ -2442,6 +2446,7 @@ window.setDocLanguage = function (lang = 'ja') {
   }
 
   syncExportSettingsFormFromDoc();
+  if (typeof renderPackingItemsEditor === 'function') renderPackingItemsEditor();
   renderAll();
   showToast(targetLang === 'en'
     ? '🌐 海外輸出モード（English: Commercial Invoice / Packing List / Receipt）に切り替えました（デフォルト税率0%）'
@@ -2457,8 +2462,8 @@ function buildEnglishExportDocumentsHtml(doc, totals) {
   const issueDateEn = formatPoDateEN(doc.issueDate);
   const dueDateEn = formatPoDateEN(doc.dueDate);
 
-  // 取引先マスタから英語社名・英語住所を優先解決
-  const clients = typeof getClientMasterList === 'function' ? getClientMasterList() : [];
+  // 取引先マスタから英語社名・英語住所を優先解決（頻度ソート不要で高速化）
+  const clients = typeof getClientMasterList === 'function' ? getClientMasterList(false) : [];
   const matchedClient = clients.find(c => c && (
     (doc.client?.id && c.id === doc.client.id) ||
     (c.name && doc.client?.name && c.name.trim() === doc.client.name.trim())
@@ -3516,6 +3521,22 @@ function renderPackingItemsEditor() {
     }
   });
 
+  let _packingRenderTimer = null;
+  const schedulePackingPreviewRender = (immediate = false) => {
+    if (_packingRenderTimer) {
+      clearTimeout(_packingRenderTimer);
+      _packingRenderTimer = null;
+    }
+    if (immediate) {
+      renderAll();
+      return;
+    }
+    _packingRenderTimer = setTimeout(() => {
+      _packingRenderTimer = null;
+      renderAll();
+    }, 120);
+  };
+
   const handlePackingFieldChange = (e) => {
     const target = e.target;
     if (!target || !target.classList || !currentDoc || !Array.isArray(currentDoc.packingItems)) return;
@@ -3557,7 +3578,7 @@ function renderPackingItemsEditor() {
     if (target.classList.contains('pkg-input-gross-weight')) row.grossWeight = val;
 
     updatePackingQtyCheckBadge();
-    renderAll();
+    schedulePackingPreviewRender(e.type === 'change');
   };
 
   document.addEventListener('input', handlePackingFieldChange);
