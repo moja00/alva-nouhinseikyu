@@ -1801,6 +1801,7 @@ export function saveDocToHistory(doc) {
       issueDate: doc.issueDate || doc.date || '',
       dueDate: doc.dueDate || '',
       items: doc.items || [],
+      packingItems: Array.isArray(doc.packingItems) ? doc.packingItems : [],
       subtotal,
       taxTotal,
       grandTotal,

@@ -2238,6 +2238,11 @@ function renderAll(options = {}) {
   // 納品請求書モード時は、納品書（Page 2）および領収証（Page 3）を動的レンダリング
   renderDeliveryAndReceiptSubSheets(totals, displayUsers, endUserNamePart);
 
+  // Packing List 梱包明細セクションの表示・数量整合チェックバッジをリアルタイム更新
+  if (typeof updatePackingQtyCheckBadge === 'function') {
+    updatePackingQtyCheckBadge();
+  }
+
   // LocalStorageに常時保存（起動時・同期反映の再描画ではサーバー送信をスキップ）
   if (!options || !options.skipSave) {
     saveActiveDoc(currentDoc);
@@ -2384,6 +2389,11 @@ function syncExportSettingsFormFromDoc() {
     } else {
       hintEl.style.display = 'none';
     }
+  }
+
+  // Packing List 専用梱包明細エディタを同期描画
+  if (typeof renderPackingItemsEditor === 'function') {
+    renderPackingItemsEditor();
   }
 }
 
@@ -2735,6 +2745,7 @@ function buildEnglishExportDocumentsHtml(doc, totals) {
 
   // -------------------------------------------------------------------------
   // Page 2: PACKING LIST（単価・金額欄なし、数量・HSコード・行別梱包・パレット風袋・容積・荷印対応）
+  // ハイブリッド方式: doc.packingItems が1行以上あれば独立梱包明細を使用し、空なら Invoice 明細を自動引用
   // -------------------------------------------------------------------------
   const formatWeightVal = (raw) => {
     if (raw === '' || raw === null || raw === undefined) return '-';
@@ -2744,7 +2755,38 @@ function buildEnglishExportDocumentsHtml(doc, totals) {
     return `${rounded.toLocaleString('en-US')} kg`;
   };
 
-  const hasPerItemPacking = normalizedItems.some(it => it.cartonNo || it.netWeight !== '' || it.grossWeight !== '');
+  const hasCustomPackingItems = Array.isArray(doc.packingItems) && doc.packingItems.length > 0;
+  const packingSourceItems = hasCustomPackingItems
+    ? doc.packingItems.map((pk, idx) => {
+        const m = itemMasters.find(x => x && (
+          (pk.itemId && x.id === pk.itemId) ||
+          (pk.sku && x.sku && String(x.sku).toUpperCase() === String(pk.sku).toUpperCase())
+        ));
+        const qty = Number(pk.quantity) || 0;
+        const descEn = (pk.nameEn && String(pk.nameEn).trim()) || (pk.description && String(pk.description).trim()) || (m && m.nameEn) || (pk.name || '');
+        const unitEn = resolvePoUnitEn(pk.unit, pk.unitEn || (m && m.unitEn));
+        const hsCode = (pk.hsCode && String(pk.hsCode).trim()) || (m && m.hsCode && String(m.hsCode).trim()) || '';
+        const skuDisp = (pk.sku && String(pk.sku).trim()) || (m && m.sku) || String(idx + 1);
+        const snDisp = (pk.sn || pk.serialNumber || '').trim();
+        return {
+          sku: skuDisp,
+          description: descEn,
+          hsCode,
+          qty,
+          unitEn,
+          sn: snDisp,
+          cartonNo: (pk.cartonNo != null ? String(pk.cartonNo).trim() : ''),
+          netWeight: (pk.netWeight != null ? String(pk.netWeight).trim() : ''),
+          grossWeight: (pk.grossWeight != null ? String(pk.grossWeight).trim() : '')
+        };
+      })
+    : normalizedItems;
+
+  const packingTotalQty = hasCustomPackingItems
+    ? packingSourceItems.reduce((s, it) => s + (Number(it.qty) || 0), 0)
+    : totalQty;
+
+  const hasPerItemPacking = packingSourceItems.some(it => it.cartonNo || it.netWeight !== '' || it.grossWeight !== '');
   const palletTareNum = Number(meta.palletWeight) || 0;
   const cartonsSummaryVal = (meta.cartons || '').trim() || '-';
   const dimsVal = (meta.dimensions || '').trim();
@@ -2752,10 +2794,10 @@ function buildEnglishExportDocumentsHtml(doc, totals) {
   const shippingMarksText = (meta.shippingMarks || '').trim();
 
   // 行別重量が入力されていれば自動合算（＋パレット風袋重量）、未入力時は全体欄をフォールバック
-  const sumItemNet = normalizedItems.reduce((s, it) => s + (Number(it.netWeight) || 0), 0);
-  const sumItemGross = normalizedItems.reduce((s, it) => s + (Number(it.grossWeight) || 0), 0);
-  const hasItemNetWeights = normalizedItems.some(it => it.netWeight !== '' && Number.isFinite(Number(it.netWeight)));
-  const hasItemGrossWeights = normalizedItems.some(it => it.grossWeight !== '' && Number.isFinite(Number(it.grossWeight)));
+  const sumItemNet = packingSourceItems.reduce((s, it) => s + (Number(it.netWeight) || 0), 0);
+  const sumItemGross = packingSourceItems.reduce((s, it) => s + (Number(it.grossWeight) || 0), 0);
+  const hasItemNetWeights = packingSourceItems.some(it => it.netWeight !== '' && Number.isFinite(Number(it.netWeight)));
+  const hasItemGrossWeights = packingSourceItems.some(it => it.grossWeight !== '' && Number.isFinite(Number(it.grossWeight)));
 
   const totalNetWeightDisp = hasItemNetWeights
     ? formatWeightVal(sumItemNet)
@@ -2769,7 +2811,7 @@ function buildEnglishExportDocumentsHtml(doc, totals) {
     measurementVal ? `<div style="font-size: 9px; color: #0369a1; font-weight: 700; margin-top: 2px;">${escapeHtml(measurementVal)}</div>` : ''
   ].filter(Boolean).join('') || '-';
 
-  const packingRowsHtml = normalizedItems.map((it, idx) => {
+  const packingRowsHtml = packingSourceItems.map((it, idx) => {
     const rowCtn = hasPerItemPacking ? (it.cartonNo ? escapeHtml(it.cartonNo) : '') : (idx === 0 ? escapeHtml(cartonsSummaryVal) : '-');
     const rowNw = hasPerItemPacking ? (it.netWeight !== '' ? formatWeightVal(it.netWeight) : '-') : (idx === 0 ? totalNetWeightDisp : '-');
     const rowGw = hasPerItemPacking ? (it.grossWeight !== '' ? formatWeightVal(it.grossWeight) : '-') : (idx === 0 ? totalGrossWeightDisp : '-');
@@ -2828,7 +2870,7 @@ function buildEnglishExportDocumentsHtml(doc, totals) {
 
   const page2Html = `
     <div class="sheet-page-indicator no-print" data-sheet-page="2" style="margin-top: 28px; margin-bottom: 8px; font-size: 0.8rem; font-weight: 700; color: #047857; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 4px 12px; border-radius: 6px; display: inline-flex; align-items: center; gap: 6px;">
-      <span>📦</span> Page 2 / 3 【PACKING LIST】
+      <span>📦</span> Page 2 / 3 【PACKING LIST】${hasCustomPackingItems ? '<span style="font-size: 0.7rem; background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; padding: 1px 6px; border-radius: 4px; margin-left: 4px;">箱別梱包明細</span>' : ''}
     </div>
     <article class="invoice-sheet invoice-sheet-page" id="enPackingListSheet" data-sheet-page="2" style="font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', sans-serif;">
       ${buildEnHeaderAndParties('PACKING LIST', `
@@ -2876,7 +2918,7 @@ function buildEnglishExportDocumentsHtml(doc, totals) {
           ${palletRowHtml}
           <tr style="background: #f1f5f9; font-weight: 800; font-size: 10px;">
             <td colspan="2" style="border: 1px solid #cbd5e1; padding: 6px 8px; text-align: right;">TOTAL SUMMARY</td>
-            <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: right; font-family: monospace; white-space: nowrap;">${totalQty.toLocaleString('en-US')}</td>
+            <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: right; font-family: monospace; white-space: nowrap;">${packingTotalQty.toLocaleString('en-US')}</td>
             <td style="border: 1px solid #cbd5e1; padding: 6px 4px; text-align: center;">-</td>
             <td style="border: 1px solid #cbd5e1; padding: 6px 4px; text-align: center; word-break: break-word;">${escapeHtml(cartonsSummaryVal)}</td>
             <td style="border: 1px solid #cbd5e1; padding: 6px 5px; text-align: right; font-family: monospace; white-space: nowrap;">${totalNetWeightDisp}</td>
@@ -3123,6 +3165,408 @@ function renderEnglishExportSheets(totals, enContainer) {
   document.addEventListener('input', handler);
   document.addEventListener('change', handler);
 })();
+
+// ==========================================================================
+// 📦 Packing List 専用 梱包明細（箱別内訳・ハイブリッド方式）エディタ＆数量整合チェック
+// ==========================================================================
+
+/**
+ * Invoice明細とPacking List梱包明細の品目別数量整合チェック
+ * @param {Array} invoiceItems - Commercial Invoice の明細配列
+ * @param {Array} packingItems - Packing List の独立梱包明細配列
+ * @returns {{ isActive: boolean, isMatched: boolean, invoiceTotalQty: number, packingTotalQty: number, diffs: Array }}
+ */
+function validatePackingItemsAgainstInvoice(invoiceItems = [], packingItems = []) {
+  const invList = Array.isArray(invoiceItems) ? invoiceItems : [];
+  const pkgList = Array.isArray(packingItems) ? packingItems : [];
+  if (pkgList.length === 0) {
+    const invTotal = invList.reduce((s, it) => {
+      const qty = Number(it.quantity) || 0;
+      const price = Number(it.unitPrice) || 0;
+      return (qty > 0 && price >= 0) ? s + qty : s;
+    }, 0);
+    return { isActive: false, isMatched: true, invoiceTotalQty: invTotal, packingTotalQty: invTotal, diffs: [] };
+  }
+
+  const normalizeKey = (it) => {
+    const sku = (it && it.sku != null) ? String(it.sku).trim() : '';
+    if (sku) return sku.toUpperCase();
+    const desc = (it && (it.nameEn || it.description || it.name)) ? String(it.nameEn || it.description || it.name).trim() : '';
+    return desc.toUpperCase() || '(UNNAMED)';
+  };
+
+  const invMap = new Map();
+  const labelMap = new Map();
+  let invoiceTotalQty = 0;
+
+  invList.forEach(it => {
+    const qty = Number(it.quantity) || 0;
+    const price = Number(it.unitPrice) || 0;
+    if (qty <= 0 || price < 0) return; // 値引き行や0数量行は除外
+    const key = normalizeKey(it);
+    invMap.set(key, (invMap.get(key) || 0) + qty);
+    if (!labelMap.has(key)) {
+      labelMap.set(key, (it.sku && String(it.sku).trim()) || (it.nameEn && String(it.nameEn).trim()) || (it.name && String(it.name).trim()) || key);
+    }
+    invoiceTotalQty += qty;
+  });
+
+  const pkgMap = new Map();
+  let packingTotalQty = 0;
+  pkgList.forEach(pk => {
+    const qty = Number(pk.quantity) || 0;
+    const key = normalizeKey(pk);
+    pkgMap.set(key, (pkgMap.get(key) || 0) + qty);
+    if (!labelMap.has(key)) {
+      labelMap.set(key, (pk.sku && String(pk.sku).trim()) || (pk.nameEn && String(pk.nameEn).trim()) || (pk.description && String(pk.description).trim()) || key);
+    }
+    packingTotalQty += qty;
+  });
+
+  const allKeys = new Set([...invMap.keys(), ...pkgMap.keys()]);
+  const diffs = [];
+  allKeys.forEach(key => {
+    const iQty = invMap.get(key) || 0;
+    const pQty = pkgMap.get(key) || 0;
+    if (Math.abs(iQty - pQty) > 1e-6) {
+      diffs.push({
+        key,
+        label: labelMap.get(key) || key,
+        invoiceQty: iQty,
+        packingQty: pQty
+      });
+    }
+  });
+
+  return {
+    isActive: true,
+    isMatched: diffs.length === 0,
+    invoiceTotalQty,
+    packingTotalQty,
+    diffs
+  };
+}
+
+function buildPackingItemsFromInvoice(doc) {
+  const items = Array.isArray(doc && doc.items) ? doc.items : [];
+  const itemMasters = typeof getItemMasterList === 'function' ? getItemMasterList(false) : [];
+  const result = [];
+  items.forEach((it, idx) => {
+    const price = Number(it.unitPrice) || 0;
+    if (price < 0) return; // 値引き行は Packing List には含めない
+    const m = itemMasters.find(x => x && (
+      (it.itemId && x.id === it.itemId) ||
+      (it.productId && x.id === it.productId) ||
+      (it.sku && x.sku && String(x.sku).toUpperCase() === String(it.sku).toUpperCase()) ||
+      (x.name && it.name && String(x.name).trim() === String(it.name).trim())
+    ));
+    result.push({
+      id: 'pkg_' + Date.now() + '_' + idx + '_' + Math.random().toString(36).slice(2, 6),
+      itemId: it.itemId || (m && m.id) || '',
+      sku: (it.sku && String(it.sku).trim()) || (m && m.sku) || '',
+      nameEn: (it.nameEn && String(it.nameEn).trim()) || (m && m.nameEn) || (it.name || ''),
+      hsCode: (it.hsCode && String(it.hsCode).trim()) || (m && m.hsCode && String(m.hsCode).trim()) || '',
+      quantity: Number(it.quantity) || 0,
+      unitEn: (it.unitEn && String(it.unitEn).trim()) || (m && m.unitEn) || resolvePoUnitEn(it.unit, ''),
+      cartonNo: (it.cartonNo != null ? String(it.cartonNo).trim() : ''),
+      netWeight: (it.netWeight != null ? String(it.netWeight).trim() : ''),
+      grossWeight: (it.grossWeight != null ? String(it.grossWeight).trim() : ''),
+      sn: (it.serialNumber || (Array.isArray(it.assignedSerials) ? it.assignedSerials.map(s => s.serialNumber).join(', ') : '') || '').trim()
+    });
+  });
+  return result;
+}
+
+function updatePackingQtyCheckBadge() {
+  const section = document.getElementById('packingItemsSection');
+  if (!section) return;
+  const isEnExport = !!(currentDoc && currentDoc.docLanguage === 'en' && currentDoc.docType !== 'estimate');
+  section.style.display = isEnExport ? 'block' : 'none';
+  if (!isEnExport) return;
+
+  const badge = document.getElementById('packingQtyCheckBadge');
+  if (!badge) return;
+  const res = validatePackingItemsAgainstInvoice(currentDoc.items || [], currentDoc.packingItems || []);
+  if (!res.isActive) {
+    badge.style.display = 'none';
+    badge.innerHTML = '';
+    return;
+  }
+
+  badge.style.display = 'block';
+  if (res.isMatched) {
+    badge.style.background = '#dcfce7';
+    badge.style.color = '#166534';
+    badge.style.border = '1px solid #86efac';
+    badge.textContent = `✅ Invoice数量と完全一致（計 ${res.packingTotalQty.toLocaleString('en-US')}点）`;
+  } else {
+    badge.style.background = '#fef2f2';
+    badge.style.color = '#b91c1c';
+    badge.style.border = '1px solid #fca5a5';
+    const summary = res.diffs.map(d => `${d.label}: Invoice ${d.invoiceQty} vs Packing ${d.packingQty}`).join(' / ');
+    badge.textContent = `⚠️ 数量不一致: ${summary}`;
+  }
+}
+
+function renderPackingItemsEditor() {
+  const section = document.getElementById('packingItemsSection');
+  const container = document.getElementById('packingItemsContainer');
+  const modeBadge = document.getElementById('packingModeBadge');
+  const btnCopy = document.getElementById('btnCopyInvoiceToPacking');
+  const btnAdd = document.getElementById('btnAddPackingItem');
+  const btnReset = document.getElementById('btnResetPackingItems');
+  if (!section || !container) return;
+
+  const isEnExport = !!(currentDoc && currentDoc.docLanguage === 'en' && currentDoc.docType !== 'estimate');
+  section.style.display = isEnExport ? 'block' : 'none';
+  if (!isEnExport) return;
+
+  const pkgList = Array.isArray(currentDoc.packingItems) ? currentDoc.packingItems : [];
+  const hasCustom = pkgList.length > 0;
+
+  if (modeBadge) {
+    if (hasCustom) {
+      modeBadge.textContent = `箱別独立編集（${pkgList.length}行）`;
+      modeBadge.style.background = '#dbeafe';
+      modeBadge.style.color = '#1d4ed8';
+    } else {
+      modeBadge.textContent = 'Invoice自動連動中';
+      modeBadge.style.background = '#d1fae5';
+      modeBadge.style.color = '#047857';
+    }
+  }
+  if (btnCopy) {
+    btnCopy.textContent = hasCustom ? '📋 Invoiceから再コピー' : '📋 Invoice明細からコピーして箱分け';
+  }
+  if (btnAdd) btnAdd.style.display = hasCustom ? 'inline-flex' : 'none';
+  if (btnReset) btnReset.style.display = hasCustom ? 'inline-flex' : 'none';
+
+  if (!hasCustom) {
+    container.innerHTML = `
+      <div style="background: #ffffff; border: 1px dashed #86efac; border-radius: 6px; padding: 10px 12px; font-size: 0.74rem; color: #475569; line-height: 1.5;">
+        現在は上の <strong>Commercial Invoice 明細</strong> がそのまま Packing List に自動連動しています。<br>
+        同じ商品を複数カートンに分けて記載したい場合のみ、上の「Invoice明細からコピーして箱分け」を押してください。
+      </div>
+    `;
+    updatePackingQtyCheckBadge();
+    return;
+  }
+
+  container.innerHTML = pkgList.map((pk, idx) => `
+    <div class="packing-item-card" data-pkg-index="${idx}"
+      style="background: #ffffff; border: 1px solid #a7f3d0; border-radius: 8px; padding: 9px 10px; margin-bottom: 8px; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);">
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 7px;">
+        <span style="font-size: 0.72rem; font-weight: 800; color: #065f46; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 4px;">
+          📦 梱包行 #${idx + 1}
+        </span>
+        <div style="display: flex; align-items: center; gap: 5px;">
+          <button type="button" class="btn-split-packing-item" data-pkg-index="${idx}"
+            style="font-size: 0.7rem; font-weight: 700; color: #0369a1; background: #f0f9ff; border: 1px solid #7dd3fc; border-radius: 5px; padding: 2px 7px; cursor: pointer;"
+            title="同じ品目の梱包行を直下に複製して箱分けする">
+            ✂️ 行を分割
+          </button>
+          <button type="button" class="btn-delete-packing-item" data-pkg-index="${idx}"
+            style="font-size: 0.72rem; font-weight: 700; color: #dc2626; background: #fef2f2; border: 1px solid #fecaca; border-radius: 5px; padding: 2px 7px; cursor: pointer;"
+            title="この梱包行を削除">
+            ✕
+          </button>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; margin-bottom: 6px;">
+        <div>
+          <label style="font-size: 0.63rem; font-weight: 700; color: #334155; display: block; margin-bottom: 2px;">カートン数 (C/t)</label>
+          <input type="text" class="form-input pkg-input-carton-no" data-pkg-index="${idx}" placeholder="例: 9 Ctn." value="${escapeHtml(pk.cartonNo || '')}" style="font-size: 0.75rem; padding: 3px 6px;">
+        </div>
+        <div>
+          <label style="font-size: 0.63rem; font-weight: 700; color: #334155; display: block; margin-bottom: 2px;">品番 (Item No.)</label>
+          <input type="text" class="form-input pkg-input-sku" data-pkg-index="${idx}" placeholder="PP-10" value="${escapeHtml(pk.sku || '')}" style="font-size: 0.75rem; font-family: monospace; padding: 3px 6px;">
+        </div>
+        <div>
+          <label style="font-size: 0.63rem; font-weight: 700; color: #334155; display: block; margin-bottom: 2px;">HSコード</label>
+          <input type="text" class="form-input pkg-input-hs-code" data-pkg-index="${idx}" placeholder="8467.19" value="${escapeHtml(pk.hsCode || '')}" style="font-size: 0.75rem; font-family: monospace; padding: 3px 6px;">
+        </div>
+      </div>
+
+      <div style="margin-bottom: 6px;">
+        <label style="font-size: 0.63rem; font-weight: 700; color: #334155; display: block; margin-bottom: 2px;">英語商品名 (Description)</label>
+        <input type="text" class="form-input pkg-input-name-en" data-pkg-index="${idx}" placeholder="CARBON PUSH PULL PRESS BODY ONLY" value="${escapeHtml(pk.nameEn || '')}" style="font-size: 0.76rem; padding: 3px 6px;">
+      </div>
+
+      <div style="display: grid; grid-template-columns: 0.9fr 0.75fr 1fr 1fr; gap: 5px;">
+        <div>
+          <label style="font-size: 0.63rem; font-weight: 700; color: #334155; display: block; margin-bottom: 2px;">数量 (Qty)</label>
+          <input type="text" inputmode="decimal" class="form-input pkg-input-qty" data-pkg-index="${idx}" placeholder="54" value="${escapeHtml(pk.quantity !== undefined && pk.quantity !== null ? String(pk.quantity) : '')}" style="font-size: 0.76rem; font-family: monospace; font-weight: 700; padding: 3px 6px;">
+        </div>
+        <div>
+          <label style="font-size: 0.63rem; font-weight: 700; color: #334155; display: block; margin-bottom: 2px;">単位</label>
+          <input type="text" class="form-input pkg-input-unit-en" data-pkg-index="${idx}" placeholder="Pcs" value="${escapeHtml(pk.unitEn || 'Pcs')}" style="font-size: 0.75rem; padding: 3px 6px;">
+        </div>
+        <div>
+          <label style="font-size: 0.63rem; font-weight: 700; color: #334155; display: block; margin-bottom: 2px;">N/W (kg)</label>
+          <input type="text" inputmode="decimal" class="form-input pkg-input-net-weight" data-pkg-index="${idx}" placeholder="185" value="${escapeHtml(pk.netWeight || '')}" style="font-size: 0.75rem; font-family: monospace; padding: 3px 6px;">
+        </div>
+        <div>
+          <label style="font-size: 0.63rem; font-weight: 700; color: #334155; display: block; margin-bottom: 2px;">G/W (kg)</label>
+          <input type="text" inputmode="decimal" class="form-input pkg-input-gross-weight" data-pkg-index="${idx}" placeholder="209" value="${escapeHtml(pk.grossWeight || '')}" style="font-size: 0.75rem; font-family: monospace; padding: 3px 6px;">
+        </div>
+      </div>
+    </div>
+  `).join('');
+
+  updatePackingQtyCheckBadge();
+}
+
+// Packing List 専用梱包明細のイベント委譲（クリック・入力）
+(function bindPackingItemsDelegatedEvents() {
+  document.addEventListener('click', (e) => {
+    if (!currentDoc || !e.target || !e.target.closest) return;
+
+    const btnCopy = e.target.closest('#btnCopyInvoiceToPacking');
+    if (btnCopy) {
+      const existing = Array.isArray(currentDoc.packingItems) ? currentDoc.packingItems : [];
+      if (existing.length > 0 && !confirm('現在の梱包明細を上書きして、Invoice明細からコピーし直しますか？')) {
+        return;
+      }
+      console.log('【Packing梱包明細】Invoiceからコピー開始', { invoiceItemCount: (currentDoc.items || []).length });
+      currentDoc.packingItems = buildPackingItemsFromInvoice(currentDoc);
+      console.log('【Packing梱包明細】Invoiceからコピー完了', { packingItemCount: currentDoc.packingItems.length });
+      renderPackingItemsEditor();
+      if (typeof renderItemInputCards === 'function') renderItemInputCards();
+      renderAll();
+      showToast(`📦 Invoice明細（${currentDoc.packingItems.length}行）を梱包明細にコピーしました。「✂️ 行を分割」で箱分けできます`, 'success');
+      return;
+    }
+
+    const btnAdd = e.target.closest('#btnAddPackingItem');
+    if (btnAdd) {
+      console.log('【Packing梱包明細】空の梱包行追加開始');
+      if (!Array.isArray(currentDoc.packingItems)) currentDoc.packingItems = [];
+      currentDoc.packingItems.push({
+        id: 'pkg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+        sku: '',
+        nameEn: '',
+        hsCode: '',
+        quantity: 1,
+        unitEn: 'Pcs',
+        cartonNo: '',
+        netWeight: '',
+        grossWeight: '',
+        sn: ''
+      });
+      console.log('【Packing梱包明細】空の梱包行追加完了', { total: currentDoc.packingItems.length });
+      renderPackingItemsEditor();
+      renderAll();
+      return;
+    }
+
+    const btnReset = e.target.closest('#btnResetPackingItems');
+    if (btnReset) {
+      if (!confirm('独立した梱包明細をクリアし、Invoice明細との自動連動に戻しますか？')) return;
+      console.log('【Packing梱包明細】Invoice自動連動へリセット実行');
+      currentDoc.packingItems = [];
+      renderPackingItemsEditor();
+      if (typeof renderItemInputCards === 'function') renderItemInputCards();
+      renderAll();
+      showToast('🔄 Packing ListをInvoice明細との自動連動に戻しました', 'info');
+      return;
+    }
+
+    const btnSplit = e.target.closest('.btn-split-packing-item');
+    if (btnSplit) {
+      const idx = Number(btnSplit.dataset.pkgIndex);
+      if (!Number.isNaN(idx) && Array.isArray(currentDoc.packingItems) && currentDoc.packingItems[idx]) {
+        const src = currentDoc.packingItems[idx];
+        console.log('【Packing梱包明細】行分割開始', { index: idx, sku: src.sku, quantity: src.quantity });
+        const cloned = {
+          id: 'pkg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+          itemId: src.itemId || '',
+          sku: src.sku || '',
+          nameEn: src.nameEn || '',
+          hsCode: src.hsCode || '',
+          quantity: 0,
+          unitEn: src.unitEn || 'Pcs',
+          cartonNo: '',
+          netWeight: '',
+          grossWeight: '',
+          sn: ''
+        };
+        currentDoc.packingItems.splice(idx + 1, 0, cloned);
+        console.log('【Packing梱包明細】行分割完了', { total: currentDoc.packingItems.length });
+        renderPackingItemsEditor();
+        renderAll();
+        showToast(`✂️ 「${src.sku || src.nameEn || '梱包行'}」を分割しました。それぞれの数量と箱数(C/t)を入力してください`, 'info');
+      }
+      return;
+    }
+
+    const btnDel = e.target.closest('.btn-delete-packing-item');
+    if (btnDel) {
+      const idx = Number(btnDel.dataset.pkgIndex);
+      if (!Number.isNaN(idx) && Array.isArray(currentDoc.packingItems) && currentDoc.packingItems[idx]) {
+        const removed = currentDoc.packingItems.splice(idx, 1);
+        console.log('【Packing梱包明細】行削除完了', { index: idx, removedSku: removed[0]?.sku, remaining: currentDoc.packingItems.length });
+        renderPackingItemsEditor();
+        if (currentDoc.packingItems.length === 0 && typeof renderItemInputCards === 'function') {
+          renderItemInputCards();
+        }
+        renderAll();
+      }
+      return;
+    }
+  });
+
+  const handlePackingFieldChange = (e) => {
+    const target = e.target;
+    if (!target || !target.classList || !currentDoc || !Array.isArray(currentDoc.packingItems)) return;
+    const isPkgInput = (
+      target.classList.contains('pkg-input-carton-no') ||
+      target.classList.contains('pkg-input-sku') ||
+      target.classList.contains('pkg-input-hs-code') ||
+      target.classList.contains('pkg-input-name-en') ||
+      target.classList.contains('pkg-input-qty') ||
+      target.classList.contains('pkg-input-unit-en') ||
+      target.classList.contains('pkg-input-net-weight') ||
+      target.classList.contains('pkg-input-gross-weight')
+    );
+    if (!isPkgInput) return;
+
+    const idx = Number(target.dataset.pkgIndex);
+    if (Number.isNaN(idx) || !currentDoc.packingItems[idx]) return;
+    const row = currentDoc.packingItems[idx];
+    let val = target.value;
+
+    if (
+      target.classList.contains('pkg-input-qty') ||
+      target.classList.contains('pkg-input-net-weight') ||
+      target.classList.contains('pkg-input-gross-weight')
+    ) {
+      if (!e.isComposing && typeof normalizePoHalfWidthNumberStr === 'function') {
+        const norm = normalizePoHalfWidthNumberStr(val, true);
+        if (val !== norm) { val = norm; target.value = norm; }
+      }
+    }
+
+    if (target.classList.contains('pkg-input-carton-no')) row.cartonNo = val;
+    if (target.classList.contains('pkg-input-sku')) row.sku = val;
+    if (target.classList.contains('pkg-input-hs-code')) row.hsCode = val;
+    if (target.classList.contains('pkg-input-name-en')) row.nameEn = val;
+    if (target.classList.contains('pkg-input-qty')) row.quantity = Number(val) || 0;
+    if (target.classList.contains('pkg-input-unit-en')) row.unitEn = val;
+    if (target.classList.contains('pkg-input-net-weight')) row.netWeight = val;
+    if (target.classList.contains('pkg-input-gross-weight')) row.grossWeight = val;
+
+    updatePackingQtyCheckBadge();
+    renderAll();
+  };
+
+  document.addEventListener('input', handlePackingFieldChange);
+  document.addEventListener('change', handlePackingFieldChange);
+})();
+
+window.validatePackingItemsAgainstInvoice = validatePackingItemsAgainstInvoice;
+window.buildEnglishExportDocumentsHtml = buildEnglishExportDocumentsHtml;
+window.renderPackingItemsEditor = renderPackingItemsEditor;
 
 /**
  * A4印刷・PDF出力セーフ実行ヘルパー
@@ -4134,6 +4578,11 @@ function renderItemInputCards() {
                 <input type="text" inputmode="decimal" class="form-input item-input-gross-weight" data-index="${index}" placeholder="例: 209" value="${escapeHtml(item.grossWeight || '')}" style="font-size: 0.74rem; font-family: monospace; padding: 3px 6px;">
               </div>
             </div>
+            ${Array.isArray(currentDoc?.packingItems) && currentDoc.packingItems.length > 0 ? `
+              <div style="font-size: 0.65rem; color: #047857; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 4px; padding: 3px 6px;">
+                📦 Packing List は下部の「箱別梱包明細」が優先適用されています
+              </div>
+            ` : ''}
           </div>
         ` : ''}
         <div style="position: relative;">

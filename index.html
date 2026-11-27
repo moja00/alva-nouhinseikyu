@@ -343,7 +343,7 @@
           style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
           <span
-            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.25-remove-acc-lot-cost-tab</span>
+            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.27-packing-items-split</span>
         </div>
       </div>
 
@@ -868,6 +868,39 @@
 
           <!-- 明細カードリストコンテナ -->
           <div id="itemsContainer"></div>
+
+          <!-- 📦 Packing List 専用 梱包明細（海外輸出 English モード時のみ表示・ハイブリッド方式） -->
+          <div id="packingItemsSection" class="form-section"
+            style="display: none; margin-top: 16px; border: 1.5px solid #a7f3d0; background: #f0fdf4; border-radius: 10px; padding: 12px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; margin-bottom: 6px;">
+              <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                <span style="font-size: 0.84rem; font-weight: 800; color: #065f46;">📦 Packing List 梱包明細（箱別内訳）</span>
+                <span id="packingModeBadge"
+                  style="font-size: 0.67rem; font-weight: 700; padding: 2px 7px; border-radius: 999px; background: #d1fae5; color: #047857;">Invoice自動連動中</span>
+              </div>
+            </div>
+            <div id="packingQtyCheckBadge"
+              style="display: none; font-size: 0.72rem; font-weight: 700; padding: 5px 8px; border-radius: 6px; margin-bottom: 8px; line-height: 1.4;">
+            </div>
+            <div style="font-size: 0.72rem; color: #047857; line-height: 1.45; margin-bottom: 10px;">
+              Invoice（請求）は1行にまとめ、Packing Listだけ箱分け（例: 56個 → 54個［9 Ctn.］＋ 2個［1 Ctn.］）にしたい場合に設定します。未設定時は上のInvoice明細が自動反映されます。
+            </div>
+            <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 10px;">
+              <button type="button" id="btnCopyInvoiceToPacking" class="btn btn-sm"
+                style="background: #059669; color: #ffffff; border: 1px solid #047857; font-size: 0.73rem; font-weight: 700; padding: 5px 10px; border-radius: 6px; cursor: pointer;">
+                📋 Invoice明細からコピーして箱分け
+              </button>
+              <button type="button" id="btnAddPackingItem" class="btn btn-secondary btn-sm"
+                style="display: none; font-size: 0.73rem; padding: 5px 9px; background: #ffffff;">
+                ＋ 梱包行を追加
+              </button>
+              <button type="button" id="btnResetPackingItems" class="btn btn-secondary btn-sm"
+                style="display: none; font-size: 0.73rem; padding: 5px 9px; color: #b91c1c; border-color: #fecaca; background: #ffffff;">
+                🔄 Invoice連動に戻す
+              </button>
+            </div>
+            <div id="packingItemsContainer"></div>
+          </div>
 
           <!-- 計算・端数処理設定 -->
           <div class="form-section" style="margin-top: 20px;">
@@ -5899,7 +5932,7 @@
           <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             <h2 class="view-screen-title" style="margin: 0;">勤怠管理・退勤タイムカード</h2>
             <span
-              style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.25-remove-acc-lot-cost-tab</span>
+              style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.27-packing-items-split</span>
           </div>
           <span class="view-screen-subtitle">休憩1時間自動控除・ワンタップ出退勤打刻・月次出勤簿・打刻漏れ修正</span>
         </div>
@@ -7824,6 +7857,17 @@
                 style="font-size: 0.85rem; font-weight: 700; color: #1e293b; background: #f8fafc;">
                 <option value="小林俊介">小林 俊介</option>
                 <option value="宮崎真輔">宮崎 真輔</option>
+          <input type="hidden" name="multiReceiptEntryType" id="radioMultiReceiptTypeExpense" value="expense">
+
+          <!-- フォームフィールド群 -->
+          <div class="form-row" style="margin-bottom: 10px;">
+            <div class="form-group" style="flex: 1;">
+              <label class="form-label" style="font-size: 0.75rem;" for="multiReceiptInputClaimant">👤 立替者 <span
+                  style="color: var(--danger);">*</span></label>
+              <select id="multiReceiptInputClaimant" class="form-select"
+                style="font-size: 0.85rem; font-weight: 700; color: #1e293b; background: #f8fafc;">
+                <option value="小林俊介">小林 俊介</option>
+                <option value="宮崎真輔">宮崎 真輔</option>
                 <option value="会社立替/その他">会社立替/その他</option>
               </select>
             </div>
@@ -8013,7 +8057,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261125_remove_acc_lot_cost_tab"></script>
+  <script src="js/app.bundle.js?v=20261127_packing_items_split"></script>
 </body>
 
 </html>

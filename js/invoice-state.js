@@ -141,6 +141,7 @@ export function createEmptyInvoice(docType = 'invoice') {
       showStamp: true
     },
     items: [], // 明細は空白
+    packingItems: [], // Packing List 専用梱包明細（空のときは items と自動連動）
     taxFractionRule: 'floor', // 'floor' | 'round' | 'ceil'
     notes: 'お振込手数料は貴社にてご負担くださいますようお願い申し上げます。\nご不明な点がございましたらお気軽にお問い合わせください。',
     themeColor: 'indigo',
