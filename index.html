@@ -343,7 +343,7 @@
           style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; padding: 4px 8px;">
           <span>システムバージョン:</span>
           <span
-            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.27-packing-items-split</span>
+            style="color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 8px; border-radius: 9999px;">v2026.11.27-fix-modal-html</span>
         </div>
       </div>
 
@@ -5932,7 +5932,7 @@
           <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             <h2 class="view-screen-title" style="margin: 0;">勤怠管理・退勤タイムカード</h2>
             <span
-              style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.27-packing-items-split</span>
+              style="font-size: 10px; color: #047857; font-weight: 700; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 9999px;">v2026.11.27-fix-modal-html</span>
           </div>
           <span class="view-screen-subtitle">休憩1時間自動控除・ワンタップ出退勤打刻・月次出勤簿・打刻漏れ修正</span>
         </div>
@@ -7857,17 +7857,6 @@
                 style="font-size: 0.85rem; font-weight: 700; color: #1e293b; background: #f8fafc;">
                 <option value="小林俊介">小林 俊介</option>
                 <option value="宮崎真輔">宮崎 真輔</option>
-          <input type="hidden" name="multiReceiptEntryType" id="radioMultiReceiptTypeExpense" value="expense">
-
-          <!-- フォームフィールド群 -->
-          <div class="form-row" style="margin-bottom: 10px;">
-            <div class="form-group" style="flex: 1;">
-              <label class="form-label" style="font-size: 0.75rem;" for="multiReceiptInputClaimant">👤 立替者 <span
-                  style="color: var(--danger);">*</span></label>
-              <select id="multiReceiptInputClaimant" class="form-select"
-                style="font-size: 0.85rem; font-weight: 700; color: #1e293b; background: #f8fafc;">
-                <option value="小林俊介">小林 俊介</option>
-                <option value="宮崎真輔">宮崎 真輔</option>
                 <option value="会社立替/その他">会社立替/その他</option>
               </select>
             </div>
@@ -7941,6 +7930,277 @@
 
           <div class="form-group" style="margin-bottom: 8px;">
             <label class="form-label" style="font-size: 0.75rem;" for="multiReceiptInputNote">摘要・名目・品名メモ</label>
+            <input type="text" id="multiReceiptInputNote" class="form-input" placeholder="例: 打ち合わせ茶代、消耗品仕入 など"
+              style="font-size: 0.85rem;">
+          </div>
+        </div>
+
+      </div>
+
+      <!-- フッター（アクションバー） -->
+      <div
+        style="padding: 12px 20px; background: #ffffff; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <button type="button" class="btn btn-outline btn-sm" id="btnMultiReceiptSkip"
+            onclick="window.skipCurrentMultiReceiptItem && window.skipCurrentMultiReceiptItem()"
+            style="color: #ef4444; border-color: #fca5a5; background: #fff5f5; cursor: pointer;"
+            title="このレシートを登録せずにスキップ">
+            🗑️ この画像を除外
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm" id="btnMultiReceiptSaveAll"
+            onclick="window.saveAllRemainingMultiReceiptItems && window.saveAllRemainingMultiReceiptItems()"
+            style="font-weight: 600; cursor: pointer;" title="残りのレシートを現在のAI解析結果のまま一括登録">
+            ⚡ 残りを一括登録
+          </button>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <button type="button" class="btn btn-secondary btn-sm" id="btnMultiReceiptPrev"
+            onclick="window.prevMultiReceiptItem && window.prevMultiReceiptItem()" style="cursor: pointer;">
+            ◀ 前へ
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm" id="btnMultiReceiptNext"
+            onclick="window.nextMultiReceiptItem && window.nextMultiReceiptItem()" style="cursor: pointer;">
+            次へ ▶
+          </button>
+          <button type="button" class="btn btn-primary btn-sm" id="btnMultiReceiptSaveSingle"
+            onclick="window.saveCurrentMultiReceiptItem && window.saveCurrentMultiReceiptItem(true)"
+            style="background: #4f46e5; border-color: #4f46e5; font-weight: 700; padding: 6px 18px; box-shadow: 0 2px 6px rgba(79, 70, 229, 0.3); cursor: pointer;">
+            💾 この内容で登録（次へ ➔）
+          </button>
+          <button type="button" class="btn btn-outline btn-sm" id="btnMultiReceiptDone"
+            onclick="window.closeMultiReceiptModal && window.closeMultiReceiptModal()" style="cursor: pointer;">
+            完了して閉じる
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ==========================================================================
+       振替伝票（複合仕訳）作成・編集モーダル
+       ========================================================================== -->
+  <div class="modal" id="manualJournalModal"
+    style="display: none; position: fixed !important; inset: 0 !important; z-index: 99999 !important; background: rgba(0,0,0,0.5) !important; align-items: center !important; justify-content: center !important;">
+    <div class="modal-overlay" onclick="window.closeManualJournalModal && window.closeManualJournalModal()"
+      style="position: absolute; inset: 0;"></div>
+    <div class="modal-content"
+      style="position: relative !important; z-index: 100000 !important; background: #ffffff !important; max-width: 960px; width: 95%; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; padding: 0; border-radius: 12px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4) !important;">
+
+      <!-- モーダルヘッダー -->
+      <div class="modal-header"
+        style="padding: 14px 20px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 1.1rem;">📑</span>
+          <h3 class="modal-title" style="margin: 0; font-size: 1rem; font-weight: 700; color: #1e293b;">振替伝票（複合仕訳入力）
+          </h3>
+        </div>
+        <button type="button" class="btn-close"
+          onclick="window.closeManualJournalModal && window.closeManualJournalModal()"
+          style="border: none; background: transparent; font-size: 1.2rem; cursor: pointer; color: #64748b;">✕</button>
+      </div>
+
+      <!-- モーダルボディ -->
+      <div class="modal-body" style="padding: 20px; overflow-y: auto; flex: 1;">
+        <!-- 基本情報（日付・伝票番号・全体摘要） -->
+        <div style="display: grid; grid-template-columns: 140px 140px 1fr; gap: 12px; margin-bottom: 16px;">
+          <div>
+            <label class="form-label" style="font-size: 0.75rem; font-weight: 700; color: #475569;">取引日付 <span
+                style="color: #ef4444;">*</span></label>
+            <input type="date" id="mjDate" class="form-control" style="font-size: 0.825rem; padding: 6px 8px;">
+          </div>
+          <div>
+            <label class="form-label" style="font-size: 0.75rem; font-weight: 700; color: #475569;">伝票番号</label>
+            <input type="text" id="mjEntryNumber" class="form-control" placeholder="自動採番"
+              style="font-size: 0.825rem; padding: 6px 8px;">
+          </div>
+          <div>
+            <label class="form-label" style="font-size: 0.75rem; font-weight: 700; color: #475569;">取引摘要（共通）</label>
+            <input type="text" id="mjDescription" class="form-control" placeholder="例: 9月分役員報酬・社保控除、売掛金一部入金など"
+              style="font-size: 0.825rem; padding: 6px 8px;">
+          </div>
+        </div>
+
+        <!-- 2カラム仕訳明細入力（左: 借方 / 右: 貸方） -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+          <!-- 借方テーブル -->
+          <div style="border: 1.5px solid #bfdbfe; border-radius: 8px; overflow: hidden; background: #ffffff;">
+            <div
+              style="background: #eff6ff; padding: 8px 12px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #bfdbfe;">
+              <span style="font-size: 0.85rem; font-weight: 700; color: #1e40af;">【借方】(Debit)</span>
+              <button type="button" class="btn btn-outline btn-xs" id="btnAddDebitLine"
+                onclick="window.addDebitLine && window.addDebitLine()"
+                style="color: #1e40af; border-color: #93c5fd; background: #fff; font-size: 11px; padding: 2px 8px; font-weight: 700;">＋
+                行追加</button>
+            </div>
+            <div style="max-height: 240px; overflow-y: auto; padding: 8px;">
+              <table style="width: 100%; border-collapse: collapse; font-size: 0.75rem;">
+                <thead>
+                  <tr style="color: #64748b; text-align: left; border-bottom: 1px solid #e2e8f0;">
+                    <th style="padding: 4px;">勘定科目</th>
+                    <th style="padding: 4px; width: 85px;">補助</th>
+                    <th style="padding: 4px; width: 95px; text-align: right;">金額(円)</th>
+                    <th style="padding: 4px; width: 80px;">税/インボイス</th>
+                    <th style="padding: 4px; width: 24px;"></th>
+                  </tr>
+                </thead>
+                <tbody id="mjDebitLinesBody"></tbody>
+              </table>
+            </div>
+            <div
+              style="background: #f8fafc; padding: 6px 12px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; font-weight: 700; font-size: 0.85rem;">
+              <span style="color: #1e40af;">借方合計:</span>
+              <span id="mjDebitTotalText" style="font-family: monospace; color: #1e40af; font-size: 1rem;">¥0</span>
+            </div>
+          </div>
+
+          <!-- 貸方テーブル -->
+          <div style="border: 1.5px solid #bbf7d0; border-radius: 8px; overflow: hidden; background: #ffffff;">
+            <div
+              style="background: #f0fdf4; padding: 8px 12px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #bbf7d0;">
+              <span style="font-size: 0.85rem; font-weight: 700; color: #166534;">【貸方】(Credit)</span>
+              <button type="button" class="btn btn-outline btn-xs" id="btnAddCreditLine"
+                onclick="window.addCreditLine && window.addCreditLine()"
+                style="color: #166534; border-color: #86efac; background: #fff; font-size: 11px; padding: 2px 8px; font-weight: 700;">＋
+                行追加</button>
+            </div>
+            <div style="max-height: 240px; overflow-y: auto; padding: 8px;">
+              <table style="width: 100%; border-collapse: collapse; font-size: 0.75rem;">
+                <thead>
+                  <tr style="color: #64748b; text-align: left; border-bottom: 1px solid #e2e8f0;">
+                    <th style="padding: 4px;">勘定科目</th>
+                    <th style="padding: 4px; width: 85px;">補助</th>
+                    <th style="padding: 4px; width: 95px; text-align: right;">金額(円)</th>
+                    <th style="padding: 4px; width: 80px;">税/インボイス</th>
+                    <th style="padding: 4px; width: 24px;"></th>
+                  </tr>
+                </thead>
+                <tbody id="mjCreditLinesBody"></tbody>
+              </table>
+            </div>
+            <div
+              style="background: #f8fafc; padding: 6px 12px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; font-weight: 700; font-size: 0.85rem;">
+              <span style="color: #166534;">貸方合計:</span>
+              <span id="mjCreditTotalText" style="font-family: monospace; color: #166534; font-size: 1rem;">¥0</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 貸借バランス判定＆差額アラート -->
+        <div id="mjBalanceAlert"
+          style="padding: 8px 14px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; font-size: 0.825rem; font-weight: 700; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0;">
+          <span id="mjBalanceMessage">✅ 借方・貸方の金額が一致しています</span>
+          <span id="mjDiffText" style="font-family: monospace;">差額: ¥0</span>
+        </div>
+      </div>
+
+      <!-- モーダルフッター -->
+      <div class="modal-footer"
+        style="padding: 12px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+        <button type="button" class="btn btn-secondary btn-sm"
+          onclick="window.closeManualJournalModal && window.closeManualJournalModal()">キャンセル</button>
+        <button type="button" class="btn btn-primary btn-sm" id="btnSaveManualJournal"
+          onclick="window.saveManualJournalFromUI && window.saveManualJournalFromUI()"
+          style="font-weight: 700; padding: 6px 20px;">
+          振替伝票を登録
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ==========================================================================
+       売掛金 振込手数料差引消込モーダル
+       ========================================================================== -->
+  <div class="modal" id="reconcileFeeModal"
+    style="display: none; position: fixed !important; inset: 0 !important; z-index: 99999 !important; background: rgba(0,0,0,0.5) !important; align-items: center !important; justify-content: center !important;">
+    <div class="modal-overlay" onclick="window.closeReconcileFeeModal && window.closeReconcileFeeModal()"
+      style="position: absolute; inset: 0;"></div>
+    <div class="modal-content"
+      style="position: relative !important; z-index: 100000 !important; background: #ffffff !important; max-width: 520px; width: 95%; border-radius: 12px; overflow: hidden; padding: 0; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4) !important;">
+
+      <div class="modal-header"
+        style="padding: 14px 20px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+        <h3 class="modal-title" style="margin: 0; font-size: 1rem; font-weight: 700; color: #1e293b;">💰 振込手数料を差引いて入金消込
+        </h3>
+        <button type="button" class="btn-close"
+          onclick="window.closeReconcileFeeModal && window.closeReconcileFeeModal()"
+          style="border: none; background: transparent; font-size: 1.2rem; cursor: pointer; color: #64748b;">✕</button>
+      </div>
+
+      <div class="modal-body" style="padding: 20px;">
+        <input type="hidden" id="rfInvoiceId" value="">
+        <div style="background: #f1f5f9; padding: 12px; border-radius: 6px; margin-bottom: 16px; font-size: 0.825rem;">
+          <div style="color: #475569; margin-bottom: 4px;">対象請求書: <strong id="rfDocNumber"
+              style="color: #1e293b;">-</strong></div>
+          <div style="color: #475569; margin-bottom: 4px;">取引先: <strong id="rfClientName"
+              style="color: #1e293b;">-</strong></div>
+          <div style="color: #475569;">請求総額（消込対象売掛金）: <strong id="rfInvoiceTotal"
+              style="color: #4338ca; font-size: 1rem; font-family: monospace;">¥0</strong></div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px;">
+          <div>
+            <label class="form-label" style="font-size: 0.75rem; font-weight: 700;">入金日</label>
+            <input type="date" id="rfDate" class="form-control" style="font-size: 0.85rem; padding: 6px 8px;">
+          </div>
+          <div>
+            <label class="form-label" style="font-size: 0.75rem; font-weight: 700;">入金先口座</label>
+            <select id="rfAccount" class="form-select" style="font-size: 0.85rem; padding: 6px 8px;">
+              <option value="普通預金">普通預金</option>
+              <option value="当座預金">当座預金</option>
+              <option value="現金">現金</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+          <div>
+            <label class="form-label" style="font-size: 0.75rem; font-weight: 700; color: #1e40af;">実際入金額 (普通預金)</label>
+            <input type="number" id="rfActualAmount" class="form-control"
+              oninput="window.calcReconcileFee && window.calcReconcileFee()"
+              style="font-size: 0.95rem; font-weight: 700; color: #1e40af; font-family: monospace; padding: 6px 8px;">
+          </div>
+          <div>
+            <label class="form-label" style="font-size: 0.75rem; font-weight: 700; color: #dc2626;">振込手数料差額
+              (支払手数料)</label>
+            <input type="number" id="rfFeeAmount" class="form-control"
+              oninput="window.calcActualFromFee && window.calcActualFromFee()"
+              style="font-size: 0.95rem; font-weight: 700; color: #dc2626; font-family: monospace; padding: 6px 8px;">
+          </div>
+        </div>
+
+        <div
+          style="background: #eff6ff; border: 1px dashed #93c5fd; padding: 10px 12px; border-radius: 6px; font-size: 0.75rem; color: #1e40af; line-height: 1.4;">
+          💡 <strong>自動生成される仕訳（振替伝票）:</strong><br>
+          【借方】普通預金（入金額） ＋ 支払手数料（手数料）<br>
+          【貸方】売掛金（請求総額）<br>
+          ※既存の単一自動仕訳とは重複せず、排他制御により当複合仕訳のみが計上されます。
+        </div>
+      </div>
+
+      <div class="modal-footer"
+        style="padding: 12px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between;">
+        <button type="button" class="btn btn-secondary btn-sm"
+          onclick="window.closeReconcileFeeModal && window.closeReconcileFeeModal()">キャンセル</button>
+        <button type="button" class="btn btn-primary btn-sm" id="btnSubmitReconcileFee"
+          onclick="window.submitReconcileFee && window.submitReconcileFee()"
+          style="font-weight: 700; padding: 6px 20px; background: #4f46e5; border-color: #4f46e5;">
+          手数料を差引いて消込実行
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ==========================================================================
+       勘定科目 新規追加モーダル
+       ========================================================================== -->
+  <div class="modal" id="newAccountModal"
+    style="display: none; position: fixed !important; inset: 0 !important; z-index: 99999 !important; background: rgba(0,0,0,0.5) !important; align-items: center !important; justify-content: center !important;">
+    <div class="modal-overlay" onclick="window.closeNewAccountModal && window.closeNewAccountModal()"
+      style="position: absolute; inset: 0;"></div>
+    <div class="modal-content"
       style="position: relative !important; z-index: 100000 !important; background: #ffffff !important; max-width: 480px; width: 95%; border-radius: 12px; overflow: hidden; padding: 0; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4) !important;">
 
       <div class="modal-header"
@@ -8057,7 +8317,7 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- JavaScript エントリーポイント (file:// 及び http:// 部分両対応) -->
-  <script src="js/app.bundle.js?v=20261127_packing_items_split"></script>
+  <script src="js/app.bundle.js?v=20261127_fix_modal_html"></script>
 </body>
 
 </html>
